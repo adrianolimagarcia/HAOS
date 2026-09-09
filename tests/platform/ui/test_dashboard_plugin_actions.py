@@ -72,6 +72,7 @@ class _IsolatedStoreBase(unittest.TestCase):
     def tearDown(self):
         self.mod.configure_stats(None)
         self.adapter.close()
+        self.store.close()
         if self._env_kanban is None:
             os.environ.pop("HERMES_KANBAN_HOME", None)
         else:

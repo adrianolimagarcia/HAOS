@@ -44,6 +44,7 @@ from hermes.platform.context.memory.events import (
     KnowledgeEventType,
 )
 from hermes.platform.context.memory.graphrag import GraphRAGAdapter
+from hermes.platform.context.memory.graphrag_store import GraphRAGStore
 from hermes.platform.context.memory.incremental_graphrag import IncrementalGraphRAGUpdater
 from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
@@ -100,6 +101,7 @@ class FederatedMemoryCoordinator:
         memory_provider: Optional[HermesFabricMemoryProvider] = None,
         decision_store: Optional[DecisionStore] = None,
         event_bus: Optional[KnowledgeEventBus] = None,
+        graphrag_store: Optional[GraphRAGStore] = None,
         auto_start_worker: bool = False,
     ) -> None:
         if obsidian_adapter is not None:
@@ -110,11 +112,21 @@ class FederatedMemoryCoordinator:
         self.decisions = decision_store or DecisionStore()
         self.event_bus = event_bus or KnowledgeEventBus()
 
+        # Store persistente do grafo (ADR-008): quando o fabric sincroniza
+        # conhecimento, cada KnowledgeEvent publicado é espelhado no store
+        # canônico ($HERMES_HOME/memory/graphrag.db) e sobrevive a reinícios,
+        # legível pela ferramenta graphrag_query (stack B). Criação é LAZY (na
+        # primeira sync): instanciar o coordinator para leitura/status não
+        # deve criar arquivos. Store injetado pertence ao chamador.
+        self.graphrag_store = graphrag_store
+        self._owns_graphrag_store = graphrag_store is None
+
         # Incremental GraphRAG updater ouvindo o event bus
         self.graphrag_updater = IncrementalGraphRAGUpdater(
             graphrag_adapter=self.graphrag,
             event_bus=self.event_bus,
             auto_subscribe=True,
+            store=self.graphrag_store,
         )
 
         # Provedor upstream
@@ -363,6 +375,17 @@ class FederatedMemoryCoordinator:
         text = re.sub(r"[^\w\s]", " ", text)
         return re.sub(r"\s+", " ", text).strip()
 
+    def _ensure_graphrag_store(self) -> GraphRAGStore:
+        """Garante o store canônico antes da primeira sync de conhecimento.
+
+        Cria no default canônico e liga no updater ANTES do publish do
+        KnowledgeEvent, para o write-through capturar o evento corrente.
+        """
+        if self.graphrag_store is None:
+            self.graphrag_store = GraphRAGStore()
+            self.graphrag_updater.store = self.graphrag_store
+        return self.graphrag_store
+
     def _sync_stores(self, record: FederatedFactRecord, superseded_ids: List[str]) -> None:
         """Executa a sincronização multi-store do fato:
         - Obsidian Vault: Escreve nota canônica em markdown se for decisão, convenção ou projeto.
@@ -375,6 +398,10 @@ class FederatedMemoryCoordinator:
             or "decision" in record.fact.lower()
             or "decision" in record.metadata.get("type", "").lower()
         )
+
+        # Persistência do grafo: cria (lazy) o store canônico e liga no
+        # updater antes do publish, para o KnowledgeEvent abaixo ser espelhado.
+        self._ensure_graphrag_store()
 
         title = record.metadata.get("title") or f"Memory Note - {record.id}"
         meta = {
@@ -495,3 +522,5 @@ class FederatedMemoryCoordinator:
         """Encerra threads em background e fecha recursos."""
         self.stop_background_worker()
         self.memory_provider.shutdown()
+        if self._owns_graphrag_store and self.graphrag_store is not None:
+            self.graphrag_store.close()

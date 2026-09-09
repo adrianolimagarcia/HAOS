@@ -155,6 +155,7 @@ class TestDashboardPluginDerivation(unittest.TestCase):
     def tearDown(self):
         plugin_api.configure_stats(None)
         self.adapter.close()
+        self.store.close()
         self._tmp.cleanup()
 
     def test_state_payload_matches_dashboard_payload_and_evolution(self):

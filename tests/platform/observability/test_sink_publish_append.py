@@ -39,6 +39,7 @@ class TestSinkAppend(unittest.TestCase):
         self.sink = EventStoreSink(self.store)
 
     def tearDown(self):
+        self.store.close()
         self._tmp.cleanup()
 
     def test_append_event_preserves_envelope(self):
@@ -86,6 +87,7 @@ class TestSinkBusIntegration(unittest.TestCase):
         self.bus = EventBus()
 
     def tearDown(self):
+        self.store.close()
         self._tmp.cleanup()
 
     def test_publish_reaches_store_and_sync_listener(self):
@@ -134,6 +136,7 @@ class TestRouteExhaustedSink(unittest.TestCase):
 
     def tearDown(self):
         unsubscribe_route_exhausted(self._listener)
+        self.store.close()
         self._tmp.cleanup()
 
     def test_exhausted_router_persists_domain_event(self):

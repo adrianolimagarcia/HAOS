@@ -1,17 +1,21 @@
 """B4 — GraphRAG real: memória relacional via SERVIÇO (forma B) + fallback de
-índice local determinístico.
+índice local determinístico + store SQLite canônico (ADR-008).
 
-Dois modos, fail-closed:
+Três modos, fail-closed:
 - serviço (``service_url``): cliente HTTP (urllib seam injetável) sobre
   ``POST /query`` com ``{question, method: global|local}`` — o deployment real
   roda o GraphRAG out-of-process; este processo NUNCA importa o pacote.
+- store SQLite canônico (``store_path``): lê o grafo persistido pela stack A
+  (``IncrementalGraphRAGUpdater`` + ``GraphRAGStore`` em
+  ``hermes/platform/context/memory/``) — o caminho real de produção para
+  ``graphrag_query`` devolver entidades/arestas sem CSV feito à mão.
 - índice local (``index_dir`` com ``entities.csv``/``relationships.csv``):
   busca por palavras do ``entities.csv`` sem embeddings — contexto honesto,
   determinístico, para CI/demo e quando o serviço está ausente.
 
-``available()``: no modo serviço, probe ``GET /health`` (200); no modo índice,
-exigência de entities.csv. Se nenhum modo configurado -> available False e
-``query_*`` levanta ``GraphRAGError``.
+``available()``: no modo serviço, probe ``GET /health`` (200); no modo store,
+arquivo SQLite presente; no modo índice, exigência de entities.csv. Se nenhum
+modo configurado -> available False e ``query_*`` levanta ``GraphRAGError``.
 """
 
 import csv
@@ -60,17 +64,20 @@ def _load_entities(index_dir: str) -> List[Dict[str, str]]:
 
 
 class GraphRAGClient:
-    """Memória relacional (entidades/comunidades) — serviço ou índice local."""
+    """Memória relacional (entidades/comunidades) — serviço, store ou índice."""
 
     def __init__(self, *, service_url: Optional[str] = None,
                  index_dir: Optional[str] = None,
+                 store_path: Optional[str] = None,
                  transport: Optional[Transport] = None,
                  timeout_seconds: float = 30.0):
-        if service_url is None and index_dir is None:
+        if service_url is None and index_dir is None and store_path is None:
             raise GraphRAGError(
-                "GraphRAGClient needs service_url or index_dir (fail-closed)")
+                "GraphRAGClient needs service_url, store_path or index_dir "
+                "(fail-closed)")
         self.service_url = (service_url or "").rstrip("/")
         self.index_dir = index_dir
+        self.store_path = store_path
         self.transport = transport or _default_transport
         self.timeout_seconds = timeout_seconds
 
@@ -78,6 +85,8 @@ class GraphRAGClient:
     def mode(self) -> str:
         if self.service_url:
             return "service"
+        if self.store_path:
+            return "sqlite"
         return "index"
 
     def available(self) -> bool:
@@ -89,9 +98,15 @@ class GraphRAGClient:
                 return status == 200
             except Exception:
                 return False
+        if self.store_path and os.path.isfile(self.store_path):
+            return True
         if self.index_dir:
             return os.path.isfile(os.path.join(self.index_dir, "entities.csv"))
         return False
+
+    def _store_ready(self) -> bool:
+        """Store SQLite canônico presente em disco (fail-closed na ausência)."""
+        return bool(self.store_path) and os.path.isfile(self.store_path)
 
     def _require(self) -> None:
         if not self.available():
@@ -131,7 +146,47 @@ class GraphRAGClient:
                 "sources": data.get("sources") or [],
                 "entities": data.get("entities") or [],
             }
+        if self._store_ready():
+            return self._store_query(question, method=method)
         return self._index_query(question, method=method)
+
+    def _store_query(self, question: str, *, method: str) -> Dict[str, Any]:
+        """Consulta o store SQLite canônico (stack A grava; stack B lê).
+
+        Import lazy do pacote context para não arrastar as fontes de contexto
+        no import deste módulo (a stack B só alcança o store em tempo de query).
+        """
+        # pylint: disable=import-outside-toplevel
+        from hermes.platform.context.memory.graphrag_store import GraphRAGStore
+
+        store = GraphRAGStore(self.store_path)
+        try:
+            terms = [t for t in question.lower().split() if len(t) > 2]
+            matched = store.search_entities(terms) if terms else store.list_entities()
+            matched_names = {str(r.get("entity", "")) for r in matched}
+            relationships = [
+                r for r in store.list_relations()
+                if r.get("source") in matched_names or r.get("target") in matched_names
+            ]
+            entities = [
+                {"entity": r.get("entity", ""),
+                 "type": r.get("entity_type", ""),
+                 "description": r.get("description", "")}
+                for r in matched
+            ]
+            return {
+                "mode": "sqlite",
+                "method": method,
+                "response": f"Local GraphRAG context: {len(matched)} entities "
+                            f"matched for {len(terms)} terms.",
+                "entities": entities,
+                "sources": [{"source": r.get("entity", ""),
+                             "description": r.get("description", "")}
+                            for r in matched],
+                "relationships": relationships,
+            }
+        finally:
+            store.close()
 
     def _index_query(self, question: str, *, method: str) -> Dict[str, Any]:
         rows = _load_entities(self.index_dir or "")

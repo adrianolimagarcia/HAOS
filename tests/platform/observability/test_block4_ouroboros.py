@@ -25,6 +25,7 @@ class TestBlock4ObservabilityAndOuroboros(unittest.TestCase):
 
     def tearDown(self):
         self.adapter.close()
+        self.store.close()
         self._tmp.cleanup()
 
     def test_kanban_adapter_projects_run_events_to_event_store(self):

@@ -75,6 +75,7 @@ class _IsolatedHome(unittest.TestCase):
         self.mod.configure_stats(None)
         self.mod.configure_acp(None)
         self.adapter.close()
+        self.store.close()
         if self._env_kanban is None:
             os.environ.pop("HERMES_KANBAN_HOME", None)
         else:

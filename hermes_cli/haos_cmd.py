@@ -743,6 +743,35 @@ def cmd_haos_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_haos_benchmark(args: argparse.Namespace) -> int:
+    """Executes 'hermes haos benchmark [--rows N] [--out PATH] [--json]'.
+
+    Runs the scale benchmark harness for the HAOS hot stores/search paths
+    (p50/p95 ms + ops/s) on seeded synthetic data in temp dirs; prints the
+    table, and with --out/--json also persists/prints the full JSON report.
+    """
+    from hermes.platform.benchmarks.haos_scale_bench import (
+        format_report_table,
+        run_scale_benchmark,
+    )
+
+    report = run_scale_benchmark(rows=getattr(args, "rows", None))
+
+    out_path = getattr(args, "out", None)
+    if out_path:
+        Path(out_path).write_text(
+            json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print(format_report_table(report))
+        if out_path:
+            print(f"JSON report written to {out_path}")
+    return 0
+
+
 def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     """Builds and registers the parser for 'hermes haos'."""
     haos_parser = subparsers.add_parser(
@@ -833,11 +862,24 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     promote_parser.set_defaults(func=cmd_haos_skills_promote)
 
     # hermes haos eval [--tasks <ids>] [--label <label>] [--json]
-    eval_parser = haos_sub.add_parser("eval", aliases=["benchmark"], help="Executa o benchmark Golden Tasks e gera nota objetiva")
+    # (sem alias 'benchmark': esse nome agora é o scale benchmark abaixo)
+    eval_parser = haos_sub.add_parser("eval", help="Executa o benchmark Golden Tasks e gera nota objetiva")
     eval_parser.add_argument("--tasks", help="Tarefas a executar (ex: G001,G002 ou vazio para todas)")
     eval_parser.add_argument("--label", default="current", help="Rótulo da medição (ex: baseline-v1, deepseek-v4)")
     eval_parser.add_argument("--json", action="store_true", help="Output metrics as JSON")
     eval_parser.set_defaults(func=cmd_haos_eval)
+
+    # hermes haos benchmark [--rows N] [--out PATH] [--json]
+    bench_parser = haos_sub.add_parser(
+        "benchmark",
+        help="Escala dos stores HAOS: p50/p95/ops de appends e buscas quentes (dados sintéticos em tmp)",
+    )
+    bench_parser.add_argument("--rows", type=int, default=None,
+                              help="Linhas semeadas por tabela (padrão: 50000; testes usem pequeno)")
+    bench_parser.add_argument("--out", default=None,
+                              help="Caminho para gravar o relatório JSON completo")
+    bench_parser.add_argument("--json", action="store_true", help="Imprime o relatório JSON completo")
+    bench_parser.set_defaults(func=cmd_haos_benchmark)
 
     # hermes haos graph [build|path]
     graph_parser = haos_sub.add_parser("graph", help="Code Knowledge Graph determinístico (Graphify Engine)")

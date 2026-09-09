@@ -2,16 +2,26 @@
 
 Implementa acesso ao cofre (Vault) com estratégia Filesystem First + frontmatter parsing.
 O Obsidian é a fonte de verdade canônica humana; o GraphRAG é apenas uma projeção derivada.
+
+``retrieve(query)`` usa um índice FTS5 derivado (``VaultFTSIndex``, refresh
+incremental por mtime) quando ele é construível; se o índice não puder ser
+criado/consultado (ex.: HERMES_HOME sem escrita, SQLite sem FTS5), cai no
+comportamento histórico rglob+substring — o índice nunca levanta para o
+chamador, e o conjunto de resultados é idêntico nos dois caminhos.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from hermes.platform.context.primitives.item import AuthorityLevel, ContextItem, TrustLevel
 from hermes.platform.context.sources.base import ContextSource
+from hermes.platform.memory.vault_fts import VaultFTSIndex, parse_obsidian_frontmatter
+
+logger = logging.getLogger("hermes.platform.context.memory.obsidian")
 
 
 class ObsidianAdapter(ContextSource):
@@ -23,6 +33,10 @@ class ObsidianAdapter(ContextSource):
         else:
             self.vault_path = vault_path or Path(".hermes/obsidian_vault")
         self._cache: Dict[str, ContextItem] = {}
+        # Lazy FTS index over the vault; None until first built, and rebuilt
+        # when set_vault_path() points the adapter at another vault.
+        self._fts_idx: Optional[VaultFTSIndex] = None
+        self._fts_fallback_warned = False
 
     @property
     def source_name(self) -> str:
@@ -31,21 +45,39 @@ class ObsidianAdapter(ContextSource):
     def set_vault_path(self, path: Path) -> None:
         self.vault_path = path
         self._cache.clear()
+        self._fts_idx = None  # index is keyed by vault path; rebuild lazily
 
     def _parse_frontmatter_and_body(self, content: str) -> tuple[Dict[str, Any], str]:
-        """Extrai frontmatter YAML simples e corpo do documento."""
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            if len(parts) >= 3:
-                raw_front = parts[1]
-                body = parts[2].strip()
-                front = {}
-                for line in raw_front.splitlines():
-                    if ":" in line:
-                        k, v = line.split(":", 1)
-                        front[k.strip().lower()] = v.strip()
-                return front, body
-        return {}, content.strip()
+        """Extrai frontmatter YAML simples e corpo do documento.
+
+        Delegates to the vault_fts parser — the index derives a note's title
+        from the same code, so a query that matches via the stem-fallback title
+        can never disagree between read_note() and the FTS index.
+        """
+        return parse_obsidian_frontmatter(content)
+
+    def _fts_index(self) -> Optional[VaultFTSIndex]:
+        """Index for the current vault, built on first use.
+
+        Returns None (never raises) when the index cannot be created — read-only
+        HERMES_HOME, no FTS5 in this SQLite, a DB that cannot be opened — in
+        which case retrieve() keeps the original rglob+substring behaviour. A
+        failed attempt is retried on the next call (cheap to fail) but logged
+        only once per adapter instance to avoid log spam.
+        """
+        if self._fts_idx is not None:
+            return self._fts_idx
+        try:
+            self._fts_idx = VaultFTSIndex(self.vault_path)
+        except Exception as exc:  # noqa: BLE001 — index is an optimization
+            if not self._fts_fallback_warned:
+                self._fts_fallback_warned = True
+                logger.warning(
+                    "obsidian FTS index unavailable for %s; retrieve() falls "
+                    "back to the rglob+substring scan: %s", self.vault_path, exc,
+                )
+            return None
+        return self._fts_idx
 
     def read_note(self, relative_path: str) -> Optional[ContextItem]:
         """Lê uma nota Markdown do cofre e constrói o ContextItem com metadados."""
@@ -107,6 +139,26 @@ class ObsidianAdapter(ContextSource):
         results: List[ContextItem] = []
         if not self.vault_path.exists():
             return results
+
+        if query:
+            # Index fast path: substring search over the FTS5-derived index
+            # (incrementally synced by mtime), then build ContextItems through
+            # read_note() exactly like the scan below. Any index failure falls
+            # back to the original behaviour — the index never raises here.
+            index = self._fts_index()
+            if index is not None:
+                try:
+                    for rel in index.search(query):
+                        item = self.read_note(rel)
+                        if item:
+                            results.append(item)
+                    return results
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "obsidian FTS index query failed; falling back to "
+                        "rglob+substring for %r", query, exc_info=True,
+                    )
+                    results = []
 
         q_lower = query.lower()
         for md_file in self.vault_path.rglob("*.md"):

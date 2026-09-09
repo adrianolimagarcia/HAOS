@@ -18,6 +18,7 @@ import pytest
 from hermes_cli.haos_cmd import (
     _get_haos_status,
     build_haos_parser,
+    cmd_haos_benchmark,
     cmd_haos_federation_ping,
     cmd_haos_skills_list,
     cmd_haos_skills_promote,
@@ -57,6 +58,18 @@ def test_build_haos_parser():
     assert args.haos_command == "skills"
     assert args.skills_command == "promote"
     assert args.skill_id == "test-skill"
+
+    # Test argument parsing for benchmark (scale bench; rows default None ->
+    # harness DEFAULT_ROWS)
+    args = parser.parse_args(["haos", "benchmark", "--rows", "500", "--out", "/tmp/x.json"])
+    assert args.subcommand == "haos"
+    assert args.haos_command == "benchmark"
+    assert args.rows == 500
+    assert args.out == "/tmp/x.json"
+    assert args.json is False
+    args = parser.parse_args(["haos", "benchmark"])
+    assert args.rows is None
+    assert args.json is False
 
 
 def test_haos_status_json(capsys):
@@ -208,3 +221,45 @@ def test_haos_doctor_json(tmp_path, capsys):
         assert "overall_status" in data
         assert "checks" in data
         assert data["summary"]["total"] >= 5
+
+
+# --------------------------------------------------------------------------- #
+# 'hermes haos benchmark' — scale benchmark of the HAOS hot stores/search
+# paths. Small --rows keep the E2E fast; latency values are environment
+# dependent, so we assert shape/relations only (never absolute timings).
+# --------------------------------------------------------------------------- #
+def test_haos_benchmark_human_table(capsys):
+    args = argparse.Namespace(rows=250, out=None, json=False)
+    ret = cmd_haos_benchmark(args)
+    assert ret == 0
+
+    out = capsys.readouterr().out
+    assert "HAOS scale benchmark" in out
+    assert "state_messages_append" in out
+    assert "search_like_substring" in out
+    assert "p50 ms" in out
+    assert "vault_obsidian_scan_vs_index" in out  # skipped op is documented
+
+
+def test_haos_benchmark_json(capsys):
+    args = argparse.Namespace(rows=250, out=None, json=True)
+    ret = cmd_haos_benchmark(args)
+    assert ret == 0
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["harness"] == "haos-scale-bench"
+    assert data["config"]["rows"] == 250
+    for stats in data["operations"].values():
+        assert 0.0 <= stats["p50_ms"] <= stats["p95_ms"]
+        assert stats["ops_per_sec"] > 0.0
+
+
+def test_haos_benchmark_out_file(tmp_path):
+    out_path = tmp_path / "report.json"
+    args = argparse.Namespace(rows=250, out=str(out_path), json=False)
+    ret = cmd_haos_benchmark(args)
+    assert ret == 0
+
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    assert "operations" in data
+    assert "event_store_append" in data["operations"]

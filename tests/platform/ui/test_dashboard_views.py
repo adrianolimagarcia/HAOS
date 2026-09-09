@@ -42,6 +42,7 @@ class TestUiStats(unittest.TestCase):
 
     def tearDown(self):
         self.adapter.close()
+        self.store.close()
         self._tmp.cleanup()
 
     def _seed_task(self, tid: str, status: str = "READY") -> str:
@@ -98,6 +99,7 @@ class TestUiViews(unittest.TestCase):
 
     def tearDown(self):
         self.adapter.close()
+        self.store.close()
         self._tmp.cleanup()
 
     def test_taskboard_view_shape(self):

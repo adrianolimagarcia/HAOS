@@ -2,17 +2,25 @@
 
 Camada B com contrato fechado: o VAULT é a fonte (diretório de notas .md com
 convenção ADR em ``adrs/``), lido com stdlib (filesystem = transporte). A CLI
-(ex.: ``rg``) é SEAM opcional p/ busca: sem CLI configurada o adapter usa o
-matcher determinístico embutido; com CLI, delega em subprocesso peer
-(``_cli + [query, vault]``). Fail-closed: vault ausente => available() False e
-qualquer leitura levanta ``ObsidianError`` — nunca devolve dados de outro
-vault nem dados fabricados.
+(ex.: ``rg``) é SEAM opcional p/ busca: com CLI configurada e executável o
+adapter delega em subprocesso peer (``_cli + [query, vault]``); sem CLI, a
+busca vai pelo índice FTS5 derivado do vault (``VaultFTSIndex`` — refresh
+incremental por mtime, mesmo conjunto de resultados do matcher substring),
+com fallback para o matcher stdlib embutido se o índice não puder ser
+construído. Fail-closed: vault ausente => available() False e qualquer leitura
+levanta ``ObsidianError`` — nunca devolve dados de outro vault nem dados
+fabricados.
 """
 
+import logging
 import os
 import shutil
 import subprocess
 from typing import Any, Dict, List, Optional
+
+from hermes.platform.memory.vault_fts import VaultFTSIndex
+
+logger = logging.getLogger("hermes.platform.memory.obsidian")
 
 
 class ObsidianError(RuntimeError):
@@ -27,6 +35,9 @@ class ObsidianAdapter:
         self.vault_path = vault_path
         self.adr_prefix = adr_prefix
         self.cli = cli  # e.g. ["rg", "-l"] — subprocesso quando presente
+        # Lazy FTS index (search fast path); None until first built.
+        self._fts_idx: Optional[VaultFTSIndex] = None
+        self._fts_fallback_warned = False
 
     # ------------------------------------------------------------------ #
     # probe / contrato
@@ -103,6 +114,17 @@ class ObsidianAdapter:
             hits = sorted({ln.strip() for ln in proc.stdout.splitlines() if ln.strip()})
             return [os.path.relpath(h, self.vault_path).replace(os.sep, "/")
                     for h in hits]
+        index = self._fts_index()
+        if index is not None:
+            try:
+                # Content-only substring match, same set as the stdlib matcher
+                # below (the B3 adapter never matches on note title/stem).
+                return index.search(query, match_title=False)
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "obsidian FTS index query failed; falling back to the "
+                    "stdlib matcher for %r", query, exc_info=True,
+                )
         lowered = query.lower()
         return [
             str(p.relative_to(self.vault_path)).replace(os.sep, "/")
@@ -110,6 +132,29 @@ class ObsidianAdapter:
             if p.suffix == ".md"
             and lowered in p.read_text(encoding="utf-8", errors="replace").lower()
         ]
+
+    def _fts_index(self) -> Optional[VaultFTSIndex]:
+        """Index for the current vault, built on first use.
+
+        Returns None (never raises) when the index cannot be created (read-only
+        HERMES_HOME, no FTS5/trigram in this SQLite, unopenable DB) — search
+        then uses the stdlib matcher unchanged and stays fail-closed (a missing
+        vault still raises via ``_require()`` before this runs). Failed
+        attempts are retried per call but logged only once per instance.
+        """
+        if self._fts_idx is not None:
+            return self._fts_idx
+        try:
+            self._fts_idx = VaultFTSIndex(self.vault_path)
+        except Exception as exc:  # noqa: BLE001 — index is an optimization
+            if not self._fts_fallback_warned:
+                self._fts_fallback_warned = True
+                logger.warning(
+                    "obsidian FTS index unavailable for %s; search() falls "
+                    "back to the stdlib matcher: %s", self.vault_path, exc,
+                )
+            return None
+        return self._fts_idx
 
 
 def _walk(directory: str):

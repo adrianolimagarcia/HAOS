@@ -5,7 +5,13 @@ Incrementally extracts entities, relations, and communities from markdown knowle
 without wiping the existing graph.
 
 Deterministic heuristics and regexes only: zero network/LLM dependencies.
-Strictly stdlib-only.
+Strictly stdlib-only (``graphrag_store`` também é stdlib-only — sqlite3).
+
+Quando um ``store`` (GraphRAGStore) é injetado, o updater vira write-through:
+cada KnowledgeEvent processado também é espelhado no store SQLite canônico —
+upsert por PK, remoção em NOTE_DELETED e supersessão temporal
+(``superseded_by``) derivada das arestas ``supersedes`` do evento. Com
+``store=None`` (default) o comportamento é 100% em memória como antes.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from hermes.platform.context.memory.events import KnowledgeEvent, KnowledgeEventBus, KnowledgeEventType
 from hermes.platform.context.memory.graphrag import GraphEntity, GraphRAGAdapter, GraphRelation
+from hermes.platform.context.memory.graphrag_store import GraphRAGStore
 
 
 # Regex patterns for deterministic extraction
@@ -42,9 +49,13 @@ class IncrementalGraphRAGUpdater:
         graphrag_adapter: GraphRAGAdapter,
         event_bus: Optional[KnowledgeEventBus] = None,
         auto_subscribe: bool = True,
+        store: Optional[GraphRAGStore] = None,
     ) -> None:
         self.adapter = graphrag_adapter
         self.event_bus = event_bus
+        # Store persistente opcional: quando presente, cada evento processado é
+        # espelhado no SQLite canônico (write-through). None = só memória.
+        self.store = store
         # Track which entities/relations originated from which URI for clean updates/deletions
         self._uri_entities: Dict[str, Set[str]] = {}
         self._uri_relations: Dict[str, Set[Tuple[str, str, str]]] = {}
@@ -128,6 +139,12 @@ class IncrementalGraphRAGUpdater:
                     del self.adapter._entities[ent_name]
                     removed_count += 1
 
+        # Espelha a remoção no store persistente (mesmas regras de claime).
+        if self.store is not None:
+            self.store.remove_relations(old_relations)
+            unclaimed = [e for e in old_entities if e not in all_other_entities]
+            self.store.remove_entities(unclaimed)
+
         return removed_count
 
     def _prune_uri_items(self, uri: str, keep_entities: Set[str]) -> None:
@@ -140,9 +157,15 @@ class IncrementalGraphRAGUpdater:
             if other_uri != uri:
                 all_other_entities.update(ent_set)
 
+        removed_names: List[str] = []
         for ent_name in entities_to_remove:
             if ent_name not in all_other_entities and ent_name in self.adapter._entities:
                 del self.adapter._entities[ent_name]
+                removed_names.append(ent_name)
+
+        # Espelha no store as entidades que este URI deixou de extrair.
+        if self.store is not None:
+            self.store.remove_entities(removed_names)
 
     def _extract_knowledge(
         self, event: KnowledgeEvent
@@ -397,5 +420,40 @@ class IncrementalGraphRAGUpdater:
                 self.adapter._communities[community_id] = f"{existing_comm}\n{community_summary}"
             else:
                 self.adapter._communities[community_id] = community_summary
+
+        # Espelha a aplicação no store persistente (write-through): upsert por
+        # PK refletindo o ESTADO FINAL do adapter (descrições já mescladas).
+        if self.store is not None:
+            for ent in entities:
+                current = self.adapter._entities.get(ent.name)
+                if current is not None:
+                    self.store.upsert_entity(
+                        name=current.name,
+                        entity_type=current.entity_type,
+                        description=current.description,
+                        community_id=current.community_id,
+                    )
+            for rel in relations:
+                key = (rel.source, rel.target, rel.relation_type)
+                stored = next(
+                    (r for r in self.adapter._relations
+                     if (r.source, r.target, r.relation_type) == key),
+                    rel,
+                )
+                self.store.upsert_relation(
+                    source=stored.source,
+                    target=stored.target,
+                    relation_type=stored.relation_type,
+                    description=stored.description,
+                )
+            if community_id and community_summary:
+                # Delta fresco do evento (não o acumulado do adapter): o merge
+                # idempotente por conteúdo acontece dentro do store.
+                self.store.upsert_community(community_id, community_summary)
+            # Supersessão temporal (ADR-008): arestas "supersedes" deste evento
+            # marcam o alvo como supersedido pelo emissor.
+            for rel in relations:
+                if rel.relation_type == "supersedes":
+                    self.store.mark_superseded(rel.target, rel.source)
 
         return count
