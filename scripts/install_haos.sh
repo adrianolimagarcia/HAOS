@@ -2,15 +2,16 @@
 # ============================================================================
 # HAOS (Hermes Agentic OS) — Universal Standalone Installer
 # ============================================================================
-# Installs HAOS from github.com/adrianolimagarcia/hermes-agent (branch haos-fork).
+# Installs HAOS from github.com/adrianolimagarcia/HAOS (branch haos-standalone).
 # Designed to coexist safely with or without an existing upstream Hermes installation.
 # Sets up isolated virtual environment, dependencies, CLI binaries, and default configs.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/adrianolimagarcia/hermes-agent/haos-fork/scripts/install_haos.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/adrianolimagarcia/HAOS/main/scripts/install_haos.sh | bash
 #
 # Or with options:
-#   ./scripts/install_haos.sh --branch haos-fork --haos-home ~/.haos
+#   ./scripts/install_haos.sh --branch haos-standalone --haos-home ~/.haos \
+#       --update-key /path/to/haos-update-key   # read-only deploy key for private-repo `haos update`
 # ============================================================================
 
 set -euo pipefail
@@ -31,7 +32,7 @@ log_error() { echo -e "${RED}✗${NC} $1"; }
 log_step()  { echo -e "\n${BOLD}${BLUE}==>${NC} ${BOLD}$1${NC}"; }
 
 # Defaults
-REPO_URL="${HAOS_REPO_URL:-https://github.com/adrianolimagarcia/hermes-agent.git}"
+REPO_URL="${HAOS_REPO_URL:-https://github.com/adrianolimagarcia/HAOS.git}"
 BRANCH="${HAOS_BRANCH:-haos-standalone}"
 HAOS_HOME="${HAOS_HOME:-$HOME/.haos}"
 
@@ -46,6 +47,8 @@ fi
 INSTALL_DIR="${HAOS_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 SKIP_SYSTEM_DEPS=false
 API_KEY="${A6_API_KEY:-}"
+# Read-only deploy key (private HAOS repo) used by `haos update`; never committed to the repo.
+UPDATE_KEY_SRC="${HAOS_UPDATE_KEY:-}"
 
 # Argument parsing
 while [[ $# -gt 0 ]]; do
@@ -54,14 +57,16 @@ while [[ $# -gt 0 ]]; do
         --branch) BRANCH="$2"; shift 2 ;;
         --haos-home) HAOS_HOME="$2"; shift 2 ;;
         --api-key) API_KEY="$2"; shift 2 ;;
+        --update-key) UPDATE_KEY_SRC="$2"; shift 2 ;;
         --skip-system-deps) SKIP_SYSTEM_DEPS=true; shift ;;
         --help|-h)
             echo "HAOS Standalone Installer"
             echo "Options:"
             echo "  --dir <path>          Target checkout directory (default: $DEFAULT_INSTALL_DIR)"
-            echo "  --branch <name>       Git branch to clone (default: haos-fork)"
+            echo "  --branch <name>       Git branch to clone (default: haos-standalone)"
             echo "  --haos-home <path>    Configuration & data home directory (default: ~/.haos)"
             echo "  --api-key <key>       A6API Key to register in .env"
+            echo "  --update-key <path>   Read-only deploy key for private-repo 'haos update'"
             echo "  --skip-system-deps    Skip apt/pacman/dnf package installation"
             exit 0
             ;;
@@ -335,6 +340,61 @@ EOF
 chmod +x "$BIN_DIR/haos-motd"
 
 log_ok "Installed wrappers: $BIN_DIR/haos, $BIN_DIR/haos-agent, $BIN_DIR/haos-controlplane, $BIN_DIR/haos-motd"
+
+# 6b. Provision read-only update key (fetch from the PRIVATE HAOS repo via `haos update`)
+# -------------------------------------------------------------------------------
+# The private repo can only be fetched with a credential. We use a GitHub deploy key
+# registered as READ-ONLY (Settings → Deploy keys, "Allow write access" OFF), stored
+# out-of-band (never committed to the repo). One shared key for the fleet (route 1):
+# revoke = delete the deploy key on GitHub + replace the key file on each machine.
+log_step "Provisioning read-only update key for private HAOS repo..."
+if [ -z "$UPDATE_KEY_SRC" ]; then
+    for _cand in "/root/.haos/keys/update_ed25519" "/etc/haos/keys/update_ed25519" "$HOME/.haos/keys/update_ed25519"; do
+        if [ -f "$_cand" ]; then
+            UPDATE_KEY_SRC="$_cand"
+            break
+        fi
+    done
+fi
+
+if [ -n "$UPDATE_KEY_SRC" ] && [ -f "$UPDATE_KEY_SRC" ]; then
+    mkdir -p "$HAOS_HOME/keys"
+    cp "$UPDATE_KEY_SRC" "$HAOS_HOME/keys/update_ed25519"
+    chmod 700 "$HAOS_HOME/keys"
+    chmod 600 "$HAOS_HOME/keys/update_ed25519"
+    log_ok "Installed read-only update key -> $HAOS_HOME/keys/update_ed25519"
+
+    cd "$INSTALL_DIR"
+    # Fetch (downloads) via the read-only SSH deploy key; push stays HTTPS (maintainer admin creds).
+    git remote set-url origin "git@github.com:adrianolimagarcia/HAOS.git"
+    git remote set-url --push origin "https://github.com/adrianolimagarcia/HAOS.git"
+    git config core.sshCommand "ssh -i $HAOS_HOME/keys/update_ed25519 -o IdentitiesOnly=yes"
+    log_ok "origin configured: fetch = read-only SSH key; push = HTTPS admin"
+
+    # Trust github.com host key (SSH refuses non-interactive first contact otherwise).
+    if [ "$(id -u)" -eq 0 ] && [ -w /etc/ssh/ ]; then
+        _KNOWN_HOSTS="/etc/ssh/ssh_known_hosts"
+    else
+        _KNOWN_HOSTS="$HOME/.ssh/known_hosts"
+        mkdir -p "$HOME/.ssh"
+    fi
+    [ -f "$_KNOWN_HOSTS" ] || touch "$_KNOWN_HOSTS"
+    if ! ssh-keygen -F github.com -f "$_KNOWN_HOSTS" >/dev/null 2>&1; then
+        ssh-keyscan -t ed25519 github.com >> "$_KNOWN_HOSTS" 2>/dev/null || \
+            log_warn "Could not write host key to $_KNOWN_HOSTS"
+    fi
+    log_ok "Registered github.com host key"
+
+    # Verify the read-only fetch actually works.
+    if git fetch origin "$BRANCH" >/dev/null 2>&1; then
+        log_ok "Verified: 'git fetch origin $BRANCH' via read-only deploy key OK"
+    else
+        log_warn "git fetch via deploy key failed. Register the public key in GitHub → Settings → Deploy keys (read-only)."
+    fi
+else
+    log_warn "No read-only update key found (pass --update-key <path> or place one at /etc/haos/keys/update_ed25519)."
+    log_warn "'haos update' will only work if the checkout already has credentials for the private repo."
+fi
 
 # 7. Initialize HAOS_HOME & Default Configs
 log_step "Initializing configuration in $HAOS_HOME..."
