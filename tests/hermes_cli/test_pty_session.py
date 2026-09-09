@@ -226,6 +226,44 @@ async def test_eof_marks_dead_and_closes_socket_4410():
     await s.close()
 
 
+@pytest.mark.asyncio
+async def test_stalled_send_detaches_socket_and_keeps_buffering(monkeypatch):
+    """A backgrounded tab that stops draining its socket must not wedge the
+    PTY drain loop: the send times out, the socket is detached (and closed with
+    the backpressure code), and subsequent chunks keep flowing into the ring
+    buffer for the next attach."""
+    from hermes_cli import pty_session as ps
+
+    bridge = FakeBridge([b"first", b"second"])
+    s = ps.PtySession("k", bridge, buffer_cap=1024, read_timeout=0.01)
+    await s.start()
+
+    class StalledWS(FakeWS):
+        async def send_bytes(self, data):
+            await asyncio.sleep(3600)              # never drains
+
+    ws = StalledWS()
+    await s.attach(ws)
+
+    # Make the bounded send fire immediately instead of waiting the real 2s.
+    # raising=False keeps the red-on-base failure behavioral (the drain parks
+    # in the unbounded send) rather than an AttributeError on the constant.
+    monkeypatch.setattr(ps, "PTY_WS_SEND_TIMEOUT", 0.01, raising=False)
+
+    await asyncio.sleep(0.1)                       # first chunk times out
+    assert s.attached is False
+    assert s._ws is None
+    assert s.last_detached_at is not None
+    assert ws.close_code == ps.WS_CLOSE_BACKPRESSURE
+
+    ws2 = FakeWS()
+    await s.attach(ws2)
+    replay = b"".join(p for kind, p in ws2.sent if kind == "bytes")
+    assert b"first" in replay
+    assert b"second" in replay
+    await s.close()
+
+
 from hermes_cli.pty_session import PtySessionRegistry, RegistryFull
 
 

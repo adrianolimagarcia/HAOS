@@ -57,3 +57,28 @@ class TestTerminalIoBrokenFreeze:
         cli._force_full_redraw = MagicMock()
         cli._recover_terminal_after_interrupt()
         cli._force_full_redraw.assert_not_called()
+
+    def test_force_full_redraw_force_unbreak_recovers(self):
+        cli = _make_cli_stub()
+        cli._terminal_io_broken = True
+        cli._clear_prompt_toolkit_screen = MagicMock()
+        cli._pet_queue_kitty_frame = MagicMock()
+        cli._force_full_redraw(force_unbreak=True)
+        assert cli._terminal_io_broken is False
+        cli._app.invalidate.assert_called_once()
+
+    def test_check_termios_drift_auto_heals_terminal_io(self, monkeypatch):
+        import sys
+        cli = _make_cli_stub()
+        cli._terminal_io_broken = True
+        cli._last_termios_drift_check = 0.0
+        cli._app._is_running = True
+        cli._app._running_in_terminal = False
+        cli._termios_drift_notice_shown = False
+
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(sys.stdin, "fileno", lambda: 0)
+        monkeypatch.setattr("cli._heal_cooked_mode_drift", lambda fd: False)
+
+        cli._check_termios_drift()
+        assert cli._terminal_io_broken is False

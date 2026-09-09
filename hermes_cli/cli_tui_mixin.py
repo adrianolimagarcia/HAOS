@@ -1149,7 +1149,7 @@ class CLITuiMixin:
     def _tui_handle_ctrl_l(self, event):
         """Ctrl+L forces a clean repaint after terminal buffer drift (tmux/cmux tab switches,
         ``clear`` from a subshell, SSH restores) that prompt_toolkit can't detect."""
-        self._force_full_redraw()
+        self._force_full_redraw(force_unbreak=True)
 
     def _tui_insert_newline(self, event):
         """Newline for multi-line input (Alt+Enter; Ctrl+J/Ctrl+Enter with multiline shortcuts).

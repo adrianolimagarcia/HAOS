@@ -122,6 +122,79 @@ class TestGetDefaultHermesRoot:
         )
 
 
+class TestRootOperatorUsesNodeStore:
+    """A root CLI on a HAOS node must default to the haos user's ~/.haos store.
+
+    The node's daemons (haos-gateway.service & co) and haos-setup anchor ALL
+    state at the ``haos`` user's ``~/.haos``. A root shell without
+    HAOS_HOME/HERMES_HOME would otherwise default to /root/.hermes — a fresh
+    store with no profiles/providers — so ``haos`` as root misses the sticky
+    profile and falls into the first-run provider wizard.
+    """
+
+    @pytest.mark.linux_only
+    def test_root_uses_haos_node_store(self, tmp_path, monkeypatch):
+        """euid 0 + haos user with ~/.haos → the node store, not /root/.hermes."""
+        haos_home = tmp_path / "home" / "haos"
+        (haos_home / ".haos").mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "root")
+        monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("HAOS_HOME", raising=False)
+        import pwd
+
+        monkeypatch.setattr(
+            pwd, "getpwnam", lambda name: SimpleNamespace(pw_dir=str(haos_home))
+        )
+        monkeypatch.setattr(
+            hermes_constants, "_default_hermes_root_memo", None, raising=False
+        )
+
+        assert get_default_hermes_root() == haos_home / ".haos"
+
+    @pytest.mark.linux_only
+    def test_root_without_haos_store_keeps_native_home(self, tmp_path, monkeypatch):
+        """euid 0 but the haos user has no ~/.haos → /root/.hermes (unchanged)."""
+        haos_home = tmp_path / "home" / "haos"
+        haos_home.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "root")
+        monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("HAOS_HOME", raising=False)
+        import pwd
+
+        monkeypatch.setattr(
+            pwd, "getpwnam", lambda name: SimpleNamespace(pw_dir=str(haos_home))
+        )
+        monkeypatch.setattr(
+            hermes_constants, "_default_hermes_root_memo", None, raising=False
+        )
+
+        assert get_default_hermes_root() == tmp_path / "root" / ".hermes"
+
+    @pytest.mark.linux_only
+    def test_haos_home_env_still_wins_for_root(self, tmp_path, monkeypatch):
+        """Explicit HAOS_HOME keeps precedence even for a root operator."""
+        haos_home = tmp_path / "home" / "haos"
+        (haos_home / ".haos").mkdir(parents=True)
+        custom = tmp_path / "custom" / "store"
+        custom.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "root")
+        monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+        monkeypatch.setenv("HAOS_HOME", str(custom))
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        import pwd
+
+        monkeypatch.setattr(
+            pwd, "getpwnam", lambda name: SimpleNamespace(pw_dir=str(haos_home))
+        )
+        monkeypatch.setattr(
+            hermes_constants, "_default_hermes_root_memo", None, raising=False
+        )
+
+        assert get_default_hermes_root() == custom
+
+
 
 
 

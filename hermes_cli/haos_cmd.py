@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -421,17 +422,30 @@ def cmd_haos_evolution_blast_radius(args: argparse.Namespace) -> int:
     import json
 
     files = args.files or []
+    root = os.getcwd()
+    # O gráfico de símbolos precisa ser povoado (AST scan) — antes retornava 0
+    # sempre porque cada chamada criava um CodeSymbolGraph() vazio.
     graph = CodeSymbolGraph()
+    try:
+        excludes = {
+            ".git", ".venv", "venv", "__pycache__", ".worktrees", ".haos",
+            "dist", "build", "node_modules", "distro", "website", "docs",
+            "evals", "vendor", ".cargo",
+        }
+        graph.scan_directory(root, exclude_dirs=excludes, max_files=2500)
+    except Exception:
+        pass
     analyzer = ImpactAnalyzer(graph)
 
     try:
-        blast = analyzer.calculate_blast_radius(modified_files=files)
+        blast = analyzer.calculate_blast_radius(modified_files=files, root_dir=root)
         res = {
             "impacted_files": list(blast.affected_files),
             "impacted_callers": list(blast.affected_callers),
             "impacted_tests": list(blast.affected_test_suites),
             "risk_score": round(min(1.0, (len(blast.affected_files) * 0.15) + (len(blast.affected_callers) * 0.05)), 2),
             "severity": blast.severity,
+            "indexed_files": len(graph.file_symbols),
         }
         if getattr(args, "json", False):
             print(json.dumps(res, indent=2, ensure_ascii=False))

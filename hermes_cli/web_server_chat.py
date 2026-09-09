@@ -18,6 +18,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pathlib import Path
 from typing import Optional
 from hermes_cli.pty_session import PtySessionRegistry
+from hermes_cli.pty_session import PTY_WS_SEND_TIMEOUT
 
 # Same logger the code used before extraction (record parity).
 _log = logging.getLogger("hermes_cli.web_server")
@@ -78,7 +79,14 @@ async def _legacy_pump(ws: "WebSocket", bridge) -> None:
                     await asyncio.sleep(_PTY_IDLE_BACKOFF)
                     continue
                 try:
-                    await ws.send_bytes(chunk)
+                    # Bounded send: a background tab can stop draining its
+                    # socket (see pty_session.PTY_WS_SEND_TIMEOUT); an
+                    # unbounded await here would park the pump with the same
+                    # PTY-backpressure consequence. EOF/teardown runs in the
+                    # ``finally`` below.
+                    await asyncio.wait_for(
+                        ws.send_bytes(chunk), timeout=PTY_WS_SEND_TIMEOUT
+                    )
                 except Exception:
                     return
         finally:

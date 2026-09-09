@@ -124,6 +124,53 @@ class TestApplyProfileOverrideHermesHomeGuard:
         assert sys.argv == ["hermes", "gateway", "install", "--system"]
 
 
+    def test_sudo_resolver_tries_haos_store_first_on_haos(self, tmp_path, monkeypatch):
+        """sudo haos -p <name> must resolve the invoking user's ~/.haos store.
+
+        HAOS nodes keep the profile store at ~/.haos (the native HAOS home),
+        not ~/.hermes. Before the fix _resolve_sudo_user_profile_env only
+        looked under ~/.hermes, so `sudo haos -p work ...` on a node whose
+        profiles live in ~/.haos failed with "profile does not exist".
+        """
+        user_home = tmp_path / "home" / "haos"
+        haos_profile = user_home / ".haos" / "profiles" / "work"
+        haos_profile.mkdir(parents=True)
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "root")
+        monkeypatch.setenv("SUDO_USER", "haos")
+        monkeypatch.setenv("HAOS_HOME", str(user_home / ".haos"))
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+
+        import pwd
+
+        monkeypatch.setattr(pwd, "getpwnam", lambda name: SimpleNamespace(pw_dir=str(user_home)))
+
+        from hermes_cli.main import _resolve_sudo_user_profile_env
+
+        assert _resolve_sudo_user_profile_env("work") == str(haos_profile)
+
+    def test_sudo_resolver_falls_back_to_hermes_store_when_no_haos(self, tmp_path, monkeypatch):
+        """Stock ~/.hermes profile store still resolves for `sudo hermes -p x`."""
+        user_home = tmp_path / "home" / "dev"
+        hermes_profile = user_home / ".hermes" / "profiles" / "work"
+        hermes_profile.mkdir(parents=True)
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "root")
+        monkeypatch.setenv("SUDO_USER", "dev")
+        monkeypatch.delenv("HAOS_HOME", raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+
+        import pwd
+
+        monkeypatch.setattr(pwd, "getpwnam", lambda name: SimpleNamespace(pw_dir=str(user_home)))
+
+        from hermes_cli.main import _resolve_sudo_user_profile_env
+
+        assert _resolve_sudo_user_profile_env("work") == str(hermes_profile)
+
+
 
 
 class TestSupervisedChildIgnoresStickyProfile:

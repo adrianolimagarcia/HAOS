@@ -134,3 +134,16 @@ class TestBracketedPasteTimeout:
 
         assert parser._in_bracketed_paste
         assert not callback.called
+
+    def test_async_timer_flushes_without_subsequent_feed(self):
+        """If user stops typing completely, the background timer should flush the paste."""
+        parser, callback = self._make_parser()
+        parser.feed("\x1b[200~abandoned paste")
+        assert parser._in_bracketed_paste
+        timer = getattr(parser, "_hermes_bp_timer", None)
+        assert timer is not None
+        # Simulate timer firing immediately by executing its target function
+        timer.function(*timer.args, **timer.kwargs)
+        assert not parser._in_bracketed_paste
+        callback.assert_called_once()
+        assert callback.call_args[0][0].data == "abandoned paste"

@@ -1933,6 +1933,35 @@ def _apply_bracketed_paste_timeout_patch() -> None:
             return
 
         _BP_TIMEOUT_S = 2.0
+        import threading
+
+        def _cancel_bp_timer(self_parser):
+            timer = getattr(self_parser, "_hermes_bp_timer", None)
+            if timer is not None:
+                try:
+                    timer.cancel()
+                except Exception:
+                    pass
+                self_parser._hermes_bp_timer = None
+
+        def _flush_unclosed_paste(self_parser):
+            if getattr(self_parser, "_in_bracketed_paste", False):
+                paste_content = getattr(self_parser, "_paste_buffer", "")
+                bp_start = getattr(self_parser, "_hermes_bp_start", None)
+                now = time.monotonic()
+                dur = (now - bp_start) if bp_start else _BP_TIMEOUT_S
+                self_parser._in_bracketed_paste = False
+                self_parser._paste_buffer = ""
+                self_parser._hermes_bp_start = None
+                self_parser._hermes_bp_timer = None
+                if paste_content:
+                    self_parser.feed_key_callback(_PtKeyPress(_PtKeys.BracketedPaste, paste_content))
+                    logger.warning(
+                        "Bracketed-paste timeout (%.1fs) — flushed %d bytes "
+                        "without end mark. Terminal may have dropped ESC[201~ "
+                        "(see #16263).",
+                        dur, len(paste_content),
+                    )
 
         def _patched_vt100_feed(self_parser, data: str) -> None:
             if self_parser._in_bracketed_paste:
@@ -1940,6 +1969,7 @@ def _apply_bracketed_paste_timeout_patch() -> None:
                 end_mark = "\x1b[201~"
 
                 if end_mark in self_parser._paste_buffer:
+                    _cancel_bp_timer(self_parser)
                     end_index = self_parser._paste_buffer.index(end_mark)
                     paste_content = self_parser._paste_buffer[:end_index]
                     self_parser.feed_key_callback(_PtKeyPress(_PtKeys.BracketedPaste, paste_content))
@@ -1955,22 +1985,24 @@ def _apply_bracketed_paste_timeout_patch() -> None:
                     if bp_start is None:
                         self_parser._hermes_bp_start = now
                     elif now - bp_start > _BP_TIMEOUT_S:
-                        paste_content = self_parser._paste_buffer
-                        self_parser._in_bracketed_paste = False
-                        self_parser._paste_buffer = ""
-                        self_parser._hermes_bp_start = None
-                        if paste_content:
-                            self_parser.feed_key_callback(_PtKeyPress(_PtKeys.BracketedPaste, paste_content))
-                            logger.warning(
-                                "Bracketed-paste timeout (%.1fs) — flushed %d bytes "
-                                "without end mark. Terminal may have dropped ESC[201~ "
-                                "(see #16263).",
-                                now - bp_start, len(paste_content),
-                            )
+                        _cancel_bp_timer(self_parser)
+                        _flush_unclosed_paste(self_parser)
+                        return
+
+                    if getattr(self_parser, "_hermes_bp_timer", None) is None:
+                        t = threading.Timer(_BP_TIMEOUT_S, lambda: _flush_unclosed_paste(self_parser))
+                        t.daemon = True
+                        self_parser._hermes_bp_timer = t
+                        t.start()
             else:
                 # Re-inlined: calling the original would double-buffer after entering paste mode.
                 for i, c in enumerate(data):
                     if self_parser._in_bracketed_paste:
+                        if getattr(self_parser, "_hermes_bp_timer", None) is None:
+                            t = threading.Timer(_BP_TIMEOUT_S, lambda: _flush_unclosed_paste(self_parser))
+                            t.daemon = True
+                            self_parser._hermes_bp_timer = t
+                            t.start()
                         _patched_vt100_feed(self_parser, data[i:])
                         break
                     self_parser._input_parser.send(c)

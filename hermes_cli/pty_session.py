@@ -12,7 +12,11 @@ from typing import Callable, Dict, Optional, Tuple
 
 WS_CLOSE_PROCESS_EXITED = 4410
 WS_CLOSE_SUPERSEDED = 4409
+WS_CLOSE_BACKPRESSURE = 1013
 TUI_FORCE_REDRAW = b"\x0c"
+# Browsers may stop servicing a WebSocket while its tab is backgrounded.
+# Bound sends so transport backpressure cannot freeze the PTY reader.
+PTY_WS_SEND_TIMEOUT = 2.0
 
 
 class RingBuffer:
@@ -71,11 +75,24 @@ class PtySession:
                 await asyncio.sleep(0)
                 continue
             self.buffer.append(chunk)
+            if self._ws is None:
+                continue                             # detached; buffer only
+            stalled_ws = self._ws                    # fixed before the await
             try:
-                if self._ws is not None:
-                    await self._ws.send_bytes(chunk)
+                await asyncio.wait_for(
+                    stalled_ws.send_bytes(chunk), timeout=PTY_WS_SEND_TIMEOUT
+                )
             except Exception:
-                pass                                 # detached mid-send; keep buffering
+                # A backgrounded browser can stop draining its socket and the
+                # unbounded await would park the drain loop (PTY backpressure
+                # then wedges the TUI child). Detach — only the socket that
+                # failed, never a newer attach — and keep buffering; the
+                # client's page-resume reconnect reattaches and replays.
+                if self._ws is stalled_ws:
+                    self._ws = None
+                    self.attached = False
+                    self.last_detached_at = time.monotonic()
+                    await _close_ws(stalled_ws, WS_CLOSE_BACKPRESSURE)
 
     async def write(self, ws, data: bytes) -> bool:
         """Serialize input and discard bytes from a superseded socket."""
@@ -108,7 +125,16 @@ class PtySession:
         self.attached = True
         self.last_detached_at = None
         if snap := self.buffer.snapshot():
-            await ws.send_bytes(snap)
+            try:
+                await asyncio.wait_for(
+                    ws.send_bytes(snap), timeout=PTY_WS_SEND_TIMEOUT
+                )
+            except Exception:
+                # Same bounded-send contract as the drain loop: a stalled
+                # socket must not park the attach. The handler's failure path
+                # (attach returns False) tears the socket down and the client
+                # retries.
+                return False
         if force_redraw:
             return await self.write(ws, TUI_FORCE_REDRAW)
         return True

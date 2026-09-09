@@ -110,7 +110,7 @@ class CLITerminalMixin:
         if app is not None:
             self._app_invalidate(app, "paint_now", swallow=True)
 
-    def _force_full_redraw(self) -> None:
+    def _force_full_redraw(self, *, force_unbreak: bool = False) -> None:
         """Force a clean full-screen repaint of the prompt_toolkit UI (Ctrl+L, ``/redraw``).
 
         Recovers from terminal buffer drift caused by external redraws we can't detect
@@ -119,7 +119,9 @@ class CLITerminalMixin:
         and the next incremental redraw stacks on old content (ghost status bars).
         """
         from cli import _replay_output_history
-        if getattr(self, "_terminal_io_broken", False):
+        if force_unbreak:
+            self._terminal_io_broken = False
+        elif getattr(self, "_terminal_io_broken", False):
             return
         app = getattr(self, "_app", None)
         if not app:
@@ -407,6 +409,22 @@ class CLITerminalMixin:
             fd = sys.stdin.fileno()
         except Exception:
             return
+
+        # Heal terminal I/O freeze if stdout has recovered from transient EIO (#81521)
+        if getattr(self, "_terminal_io_broken", False):
+            try:
+                if sys.stdout and not sys.stdout.closed:
+                    sys.stdout.flush()
+                self._terminal_io_broken = False
+                logger.info("Terminal I/O recovered — unfreezing UI paints (#81521 auto-heal)")
+                self._invalidate(min_interval=0.0)
+            except OSError as _exc:
+                from cli import _is_eio
+                if not _is_eio(_exc):
+                    self._terminal_io_broken = False
+            except Exception:
+                pass
+
         if _heal_cooked_mode_drift(fd):
             logger.warning(
                 "Healed cooked-mode termios drift on stdin — a "

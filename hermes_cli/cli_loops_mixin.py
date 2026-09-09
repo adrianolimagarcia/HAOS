@@ -50,7 +50,7 @@ class CLILoopsMixin:
         # Manual recovery for terminal buffer drift (mux tab switches, subshell ``clear``,
         # SSH restores; #8688). Ctrl+L is bound to the same helper.
         from cli import _DIM, _RST, _cprint
-        self._force_full_redraw()
+        self._force_full_redraw(force_unbreak=True)
         _cprint(f"  {_DIM}✓ UI redrawn{_RST}")
 
     def _cmd_clear(self, cmd_original: str):

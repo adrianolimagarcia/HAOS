@@ -42,6 +42,30 @@ def get_hermes_home_override() -> str | None:
     return str(override) if override is not _UNSET and override else None
 
 
+def _node_store_for_root_operator() -> Path | None:
+    """HAOS appliance node store when the CLI runs as root.
+
+    The node's daemons (haos-gateway.service, haos-mesh.service, ...) and
+    haos-setup anchor ALL state at the ``haos`` user's ``~/.haos``. A root
+    shell that inherits no HAOS_HOME/HERMES_HOME would otherwise default to
+    /root/.hermes — a fresh store with no profiles and no providers — so
+    ``haos`` run as root misses the sticky profile and falls into the
+    first-run provider wizard. When root invokes and a ``haos`` user with a
+    ``.haos`` store exists, that store IS the node state.
+
+    Returns None on ordinary hosts (no ``haos`` user, or no ``.haos`` store).
+    """
+    if sys.platform == "win32" or not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return None
+    try:
+        import pwd
+
+        store = Path(pwd.getpwnam("haos").pw_dir) / ".haos"
+    except Exception:
+        return None
+    return store if store.is_dir() else None
+
+
 def _get_platform_default_hermes_home() -> Path:
     """Return the platform-native default Hermes home path (HAOS_HOME takes precedence)."""
     if "HAOS_HOME" in os.environ and os.environ["HAOS_HOME"].strip():
@@ -50,6 +74,9 @@ def _get_platform_default_hermes_home() -> Path:
         local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
         base = Path(local_appdata) if local_appdata else Path.home() / "AppData" / "Local"
         return base / "hermes"
+    node_store = _node_store_for_root_operator()
+    if node_store is not None:
+        return node_store
     return Path.home() / ".hermes"
 
 
