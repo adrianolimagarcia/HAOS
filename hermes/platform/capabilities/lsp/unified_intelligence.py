@@ -404,15 +404,39 @@ class ImpactAnalyzer:
                 return True
         return False
 
+    @staticmethod
+    def _normalize_path(file_path: str, root_dir: Optional[str] = None) -> str:
+        """Normalize a user-supplied path into graph scan keys.
+
+        Handles: windows separators, leading ``./``, empty entries and
+        absolute paths that live under ``root_dir`` (relative to it).
+        """
+        norm = str(file_path).strip().replace("\\", "/")
+        while norm.startswith("./"):
+            norm = norm[2:]
+        if root_dir and os.path.isabs(norm):
+            try:
+                rel = os.path.relpath(norm, root_dir).replace("\\", "/")
+                if not rel.startswith(".."):
+                    norm = rel
+            except Exception:
+                pass
+        return norm
+
     def calculate_blast_radius(
         self,
         modified_symbols: Optional[Iterable[str]] = None,
         modified_files: Optional[Iterable[str]] = None,
         max_call_depth: int = 4,
+        root_dir: Optional[str] = None,
     ) -> BlastRadius:
-        """Compute the blast radius given modified symbols and/or modified files."""
+        """Compute the blast radius given modified symbols and/or modified files.
+
+        ``root_dir`` (when provided) is used to normalize absolute/relative
+        inputs into the scan-relative keys stored in the symbol graph.
+        """
         symbols_to_process: Set[str] = set()
-        files_set: Set[str] = set(modified_files or [])
+        files_set: Set[str] = {self._normalize_path(f, root_dir) for f in (modified_files or [])}
 
         # Add explicitly modified symbols
         if modified_symbols:
@@ -438,14 +462,32 @@ class ImpactAnalyzer:
         max_depth = 0
 
         for sym_id in symbols_to_process:
-            # 1. Direct and transitive callers
-            callers, depth = self.graph.get_transitive_callers(sym_id, max_depth=max_call_depth)
-            affected_callers.update(callers)
-            max_depth = max(max_depth, depth)
+            # The AST scanner records call edges under the *bare* callee name
+            # (e.g. "helper"), while symbols are keyed by qualified id
+            # ("a_mod.py::helper"). Seed the traversal with every alias so
+            # transitive callers resolve regardless of which key an edge used.
+            seeds: Set[str] = {sym_id}
+            node = self.graph.get_symbol(sym_id)
+            if node is not None:
+                seeds.add(node.name)
+                seeds.add(node.qualified_name)
+                if node.container_name:
+                    seeds.add(f"{node.container_name}.{node.name}")
+            seeds.add(sym_id.rsplit("::", 1)[-1])
+
+            for seed in seeds:
+                callers, depth = self.graph.get_transitive_callers(seed, max_depth=max_call_depth)
+                affected_callers.update(callers)
+                max_depth = max(max_depth, depth)
 
             # 2. Direct references
             refs = self.graph.get_references(sym_id)
             affected_refs.update(refs)
+
+        # Filter alias-pollution: only ids that resolve to a real symbol or a
+        # file-qualified caller count as callers (bare intra-file names from the
+        # scanner's extra edges would otherwise inflate the count).
+        affected_callers = {c for c in affected_callers if "::" in c or c in self.graph.symbols}
 
         # Map callers and references to their files
         for caller_id in affected_callers:
