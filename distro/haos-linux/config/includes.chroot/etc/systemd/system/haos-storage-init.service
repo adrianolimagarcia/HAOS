@@ -1,0 +1,13 @@
+[Unit]
+Description=HAOS Setup and Storage Optimization (Btrfs no-CoW for SQLite)
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target haos-gateway.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/haos-storage-init
+
+[Install]
+WantedBy=basic.target

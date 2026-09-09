@@ -6,7 +6,10 @@
 .build/
 binary/
 cache/
-local/
+# Anchored: only the live-build scratch dir at the distro root. A bare `local/`
+# would also swallow config/includes.chroot/usr/local/bin/* (the HAOS wrapper
+# and setup script) — anything under an unanchored "local" directory name.
+/local/
 chroot/
 *.iso
 *.iso.sha256

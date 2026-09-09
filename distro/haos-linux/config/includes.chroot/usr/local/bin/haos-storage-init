@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# HAOS Storage Initializer
+# Garante estrutura de pastas para Obsidian, GraphRAG, SQLite e desativa CoW
+# ==============================================================================
+set -euo pipefail
+
+DIRS=(
+    "/home/haos/.haos"
+    "/home/haos/.haos/sessions"
+    "/home/haos/.haos/sqlite"
+    "/home/haos/.haos/data"
+    "/home/haos/.haos/obsidian_vault"
+    "/home/haos/.haos/obsidian_vault/adrs"
+    "/home/haos/.haos/graphrag"
+    "/var/lib/haos/data"
+    "/var/lib/haos/sqlite"
+    "/var/lib/haos/obsidian_vault"
+    "/var/lib/haos/graphrag"
+    "/opt/haos/data"
+)
+
+for d in "${DIRS[@]}"; do
+    mkdir -p "$d"
+done
+
+# Copiar seeds de esqueleto se não existirem na home do usuário
+if [ ! -f /home/haos/.haos/obsidian_vault/index.md ] && [ -f /etc/skel/.haos/obsidian_vault/index.md ]; then
+    cp -rn /etc/skel/.haos/* /home/haos/.haos/ 2>/dev/null || true
+fi
+
+# Se o sistema de arquivos for Btrfs, desativar CoW em pastas de banco SQLite/WAL
+if command -v chattr >/dev/null 2>&1; then
+    chattr +C /home/haos/.haos/sqlite 2>/dev/null || true
+    chattr +C /home/haos/.haos/sessions 2>/dev/null || true
+    chattr +C /home/haos/.haos/data 2>/dev/null || true
+    chattr +C /var/lib/haos/sqlite 2>/dev/null || true
+    chattr +C /var/lib/haos/data 2>/dev/null || true
+    chattr +C /opt/haos/data 2>/dev/null || true
+fi
+
+# Inicializar schema SQLite com FTS5 se o arquivo de banco ainda não existir
+SQLITE_DB="/home/haos/.haos/sqlite/haos_state.db"
+if [ ! -f "${SQLITE_DB}" ] && [ -x /usr/local/bin/sqlite3 ]; then
+    /usr/local/bin/sqlite3 "${SQLITE_DB}" << 'EOF'
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+CREATE TABLE IF NOT EXISTS system_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO system_metadata (key, value) VALUES ('initialized', 'true');
+EOF
+fi
+
+chown -R haos:haos /home/haos /var/lib/haos /opt/haos 2>/dev/null || true
+exit 0

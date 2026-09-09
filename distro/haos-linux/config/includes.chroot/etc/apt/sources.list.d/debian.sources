@@ -1,0 +1,26 @@
+# ==============================================================================
+# HAOS Linux - Official Debian 13 (Trixie) Repositories
+# Formato Moderno DEB822 com suporte a:
+# main, contrib, non-free e non-free-firmware
+# ==============================================================================
+
+# 1. Base Debian Trixie & Updates
+Types: deb deb-src
+URIs: https://deb.debian.org/debian
+Suites: trixie trixie-updates
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+# 2. Segurança Oficial (Debian Security)
+Types: deb deb-src
+URIs: https://security.debian.org/debian-security
+Suites: trixie-security
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+# 3. Backports Oficiais (Kernel mais novo e pacotes recentes)
+Types: deb deb-src
+URIs: https://deb.debian.org/debian
+Suites: trixie-backports
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg

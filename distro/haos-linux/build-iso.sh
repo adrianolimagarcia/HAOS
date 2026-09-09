@@ -31,11 +31,18 @@ echo "  Preparando artefatos embutidos da imagem..."
 echo "========================================================"
 
 if [ -f "${KEY_SRC}" ]; then
-    install -D -m 600 "${KEY_SRC}" "${KEY_DEST}"
-    echo "  ✓ Deploy key read-only embutida: ${KEY_DEST}"
+    # Só injeta a chave PRIVADA (a .pub é inútil para autenticar o fetch).
+    if grep -q -- "-----BEGIN .*PRIVATE KEY-----" "${KEY_SRC}" 2>/dev/null; then
+        install -D -m 600 "${KEY_SRC}" "${KEY_DEST}"
+        echo "  ✓ Deploy key read-only embutida: ${KEY_DEST}"
+    else
+        echo "  ⚠ ${KEY_SRC} não parece ser a chave PRIVADA (falta o cabeçalho"
+        echo "    '-----BEGIN ... PRIVATE KEY-----'). Aponte HAOS_UPDATE_KEY para a"
+        echo "    chave privada — a .pub não autentica o fetch."
+    fi
 else
     echo "  ⚠ Chave read-only não encontrada em ${KEY_SRC} (use HAOS_UPDATE_KEY=<path>)."
-    echo "    'haos update' na imagem dependerá de outra credencial."
+    echo "    'haos update' na imagem dependerá de outra credencial (repo público usa https sem chave)."
 fi
 
 if [ -f "${INSTALLER_SRC}" ]; then

@@ -2,7 +2,8 @@
 # ============================================================================
 # HAOS (Hermes Agentic OS) — Universal Standalone Installer
 # ============================================================================
-# Installs HAOS from github.com/adrianolimagarcia/HAOS (branch haos-standalone).
+# Installs HAOS from github.com/adrianolimagarcia/HAOS (default branch: main;
+# --branch seleciona outra, ex.: haos-standalone).
 # Designed to coexist safely with or without an existing upstream Hermes installation.
 # Sets up isolated virtual environment, dependencies, CLI binaries, and default configs.
 #
@@ -10,7 +11,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/adrianolimagarcia/HAOS/main/scripts/install_haos.sh | bash
 #
 # Or with options:
-#   ./scripts/install_haos.sh --branch haos-standalone --haos-home ~/.haos \
+#   ./scripts/install_haos.sh --branch main --haos-home ~/.haos \
 #       --update-key /path/to/haos-update-key   # read-only deploy key for private-repo `haos update`
 # ============================================================================
 
@@ -33,7 +34,9 @@ log_step()  { echo -e "\n${BOLD}${BLUE}==>${NC} ${BOLD}$1${NC}"; }
 
 # Defaults
 REPO_URL="${HAOS_REPO_URL:-https://github.com/adrianolimagarcia/HAOS.git}"
-BRANCH="${HAOS_BRANCH:-haos-standalone}"
+# Repo HEAD aponta para `main` (haos-standalone e main estão no mesmo commit hoje);
+# --branch continua disponível para escolher outra.
+BRANCH="${HAOS_BRANCH:-main}"
 HAOS_HOME="${HAOS_HOME:-$HOME/.haos}"
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -63,7 +66,7 @@ while [[ $# -gt 0 ]]; do
             echo "HAOS Standalone Installer"
             echo "Options:"
             echo "  --dir <path>          Target checkout directory (default: $DEFAULT_INSTALL_DIR)"
-            echo "  --branch <name>       Git branch to clone (default: haos-standalone)"
+            echo "  --branch <name>       Git branch to clone (default: main)"
             echo "  --haos-home <path>    Configuration & data home directory (default: ~/.haos)"
             echo "  --api-key <key>       A6API Key to register in .env"
             echo "  --update-key <path>   Read-only deploy key for private-repo 'haos update'"
@@ -117,17 +120,87 @@ command -v git >/dev/null 2>&1 || { log_error "git is required. Please install g
 command -v curl >/dev/null 2>&1 || { log_error "curl is required. Please install curl."; exit 1; }
 
 # 3. Clone or Update Repo
+# -----------------------------------------------------------------------------
+# Um repo PRIVADO só pode ser clonado com a deploy key read-only (SSH) — o clone
+# https exige credencial interativa. Por isso a chave é localizada ANTES do
+# primeiro git e, quando presente, o clone/fetch vai por SSH. Sem chave, o https
+# anônimo funciona apenas se o repositório for público (o `haos update` então
+# também funciona sem credencial — ver nota no fim).
+_resolve_update_key() {
+    if [ -n "$UPDATE_KEY_SRC" ] && [ -r "$UPDATE_KEY_SRC" ]; then
+        return
+    fi
+    # Só chaves LEGÍVEIS contam: o instalador pode rodar como root ou como um
+    # usuário comum que não enxerga /root/.haos nem /etc/haos (0600 root).
+    for _cand in "/root/.haos/keys/update_ed25519" "/etc/haos/keys/update_ed25519" \
+                 "/home/haos/.haos/keys/update_ed25519" "$HOME/.haos/keys/update_ed25519"; do
+        if [ -r "$_cand" ]; then
+            UPDATE_KEY_SRC="$_cand"
+            return
+        fi
+    done
+}
+_resolve_update_key
+
 log_step "Fetching HAOS repository from GitHub..."
 mkdir -p "$(dirname "$INSTALL_DIR")"
+
+# Trust github.com host key before the first non-interactive SSH contact
+# (root writes the global file; a normal user gets ~/.ssh/known_hosts).
+_register_github_host_key() {
+    if [ "$(id -u)" -eq 0 ] && [ -w /etc/ssh/ ]; then
+        _KNOWN_HOSTS="/etc/ssh/ssh_known_hosts"
+    else
+        _KNOWN_HOSTS="$HOME/.ssh/known_hosts"
+        mkdir -p "$HOME/.ssh" 2>/dev/null || true
+    fi
+    [ -f "$_KNOWN_HOSTS" ] || touch "$_KNOWN_HOSTS" 2>/dev/null || true
+    if ! ssh-keygen -F github.com -f "$_KNOWN_HOSTS" >/dev/null 2>&1; then
+        ssh-keyscan -t ed25519 github.com >> "$_KNOWN_HOSTS" 2>/dev/null || \
+            log_warn "Could not write host key to $_KNOWN_HOSTS"
+    fi
+}
+
+_SSH_REPO="git@github.com:adrianolimagarcia/HAOS.git"
+_HTTPS_REPO="https://github.com/adrianolimagarcia/HAOS.git"
+_USE_SSH=false
+if [ -n "$UPDATE_KEY_SRC" ] && [ -r "$UPDATE_KEY_SRC" ]; then
+    case "$REPO_URL" in
+        "$_SSH_REPO"|"$_HTTPS_REPO")
+            _USE_SSH=true
+            log_info "Read-only deploy key found — cloning the private repo over SSH."
+            ;;
+    esac
+fi
+
 if [ -d "$INSTALL_DIR/.git" ]; then
     log_info "Updating existing checkout at $INSTALL_DIR..."
-    cd "$INSTALL_DIR"
-    git fetch origin "$BRANCH" || true
-    git checkout "$BRANCH" || true
-    git pull origin "$BRANCH" || true
+    if [ "$_USE_SSH" = true ]; then
+        # Garante o transporte SSH no checkout existente antes de qualquer fetch.
+        # (core.sshCommand definitivo é gravado no passo 6b, apontando para a
+        # cópia persistida em $HAOS_HOME/keys — aqui só o fetch por env.)
+        git -C "$INSTALL_DIR" remote set-url origin "$_SSH_REPO" 2>/dev/null || true
+        _register_github_host_key
+        _git_fetch() { GIT_SSH_COMMAND="ssh -i ${UPDATE_KEY_SRC} -o IdentitiesOnly=yes" git "$@"; }
+    else
+        # Sem deploy key: usa a URL escolhida (https anônimo se o repo for
+        # público) e remove core.sshCommand legado de um provisionamento por chave.
+        git -C "$INSTALL_DIR" remote set-url origin "$REPO_URL" 2>/dev/null || true
+        git -C "$INSTALL_DIR" config --unset core.sshCommand 2>/dev/null || true
+        _git_fetch() { git "$@"; }
+    fi
+    _git_fetch -C "$INSTALL_DIR" fetch origin "$BRANCH" || true
+    git -C "$INSTALL_DIR" checkout "$BRANCH" || true
+    _git_fetch -C "$INSTALL_DIR" pull origin "$BRANCH" || true
 else
-    log_info "Cloning $REPO_URL ($BRANCH) into $INSTALL_DIR..."
-    git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$INSTALL_DIR"
+    log_info "Cloning $([ "$_USE_SSH" = true ] && echo "$_SSH_REPO" || echo "$REPO_URL") ($BRANCH) into $INSTALL_DIR..."
+    if [ "$_USE_SSH" = true ]; then
+        _register_github_host_key
+        GIT_SSH_COMMAND="ssh -i ${UPDATE_KEY_SRC} -o IdentitiesOnly=yes" \
+            git clone --branch "$BRANCH" --single-branch "$_SSH_REPO" "$INSTALL_DIR"
+    else
+        git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$INSTALL_DIR"
+    fi
     cd "$INSTALL_DIR"
 fi
 
@@ -341,23 +414,15 @@ chmod +x "$BIN_DIR/haos-motd"
 
 log_ok "Installed wrappers: $BIN_DIR/haos, $BIN_DIR/haos-agent, $BIN_DIR/haos-controlplane, $BIN_DIR/haos-motd"
 
-# 6b. Provision read-only update key (fetch from the PRIVATE HAOS repo via `haos update`)
+# 6b. Provision read-only update key (fetch from a PRIVATE HAOS repo via `haos update`)
 # -------------------------------------------------------------------------------
-# The private repo can only be fetched with a credential. We use a GitHub deploy key
-# registered as READ-ONLY (Settings → Deploy keys, "Allow write access" OFF), stored
-# out-of-band (never committed to the repo). One shared key for the fleet (route 1):
-# revoke = delete the deploy key on GitHub + replace the key file on each machine.
-log_step "Provisioning read-only update key for private HAOS repo..."
-if [ -z "$UPDATE_KEY_SRC" ]; then
-    for _cand in "/root/.haos/keys/update_ed25519" "/etc/haos/keys/update_ed25519" "$HOME/.haos/keys/update_ed25519"; do
-        if [ -f "$_cand" ]; then
-            UPDATE_KEY_SRC="$_cand"
-            break
-        fi
-    done
-fi
-
-if [ -n "$UPDATE_KEY_SRC" ] && [ -f "$UPDATE_KEY_SRC" ]; then
+# The deploy key was already resolved before the clone (step 3) — this step only
+# persists it into the node store and pins the remote for the configured transport:
+#   * key present  -> fetch via the read-only SSH deploy key; push stays HTTPS admin;
+#   * repo público -> o clone já foi https e o origin permanece https (fetch anônimo,
+#                     sem credencial alguma — a chave é desnecessária nesse caso).
+if [ -n "$UPDATE_KEY_SRC" ] && [ -r "$UPDATE_KEY_SRC" ]; then
+    log_step "Provisioning read-only update key for private HAOS repo..."
     mkdir -p "$HAOS_HOME/keys"
     cp "$UPDATE_KEY_SRC" "$HAOS_HOME/keys/update_ed25519"
     chmod 700 "$HAOS_HOME/keys"
@@ -372,17 +437,7 @@ if [ -n "$UPDATE_KEY_SRC" ] && [ -f "$UPDATE_KEY_SRC" ]; then
     log_ok "origin configured: fetch = read-only SSH key; push = HTTPS admin"
 
     # Trust github.com host key (SSH refuses non-interactive first contact otherwise).
-    if [ "$(id -u)" -eq 0 ] && [ -w /etc/ssh/ ]; then
-        _KNOWN_HOSTS="/etc/ssh/ssh_known_hosts"
-    else
-        _KNOWN_HOSTS="$HOME/.ssh/known_hosts"
-        mkdir -p "$HOME/.ssh"
-    fi
-    [ -f "$_KNOWN_HOSTS" ] || touch "$_KNOWN_HOSTS"
-    if ! ssh-keygen -F github.com -f "$_KNOWN_HOSTS" >/dev/null 2>&1; then
-        ssh-keyscan -t ed25519 github.com >> "$_KNOWN_HOSTS" 2>/dev/null || \
-            log_warn "Could not write host key to $_KNOWN_HOSTS"
-    fi
+    _register_github_host_key
     log_ok "Registered github.com host key"
 
     # Verify the read-only fetch actually works.
@@ -392,8 +447,7 @@ if [ -n "$UPDATE_KEY_SRC" ] && [ -f "$UPDATE_KEY_SRC" ]; then
         log_warn "git fetch via deploy key failed. Register the public key in GitHub → Settings → Deploy keys (read-only)."
     fi
 else
-    log_warn "No read-only update key found (pass --update-key <path> or place one at /etc/haos/keys/update_ed25519)."
-    log_warn "'haos update' will only work if the checkout already has credentials for the private repo."
+    log_info "No deploy key found — if the repository is PUBLIC, 'haos update' fetches over anonymous HTTPS (no credential needed)."
 fi
 
 # 7. Initialize HAOS_HOME & Default Configs

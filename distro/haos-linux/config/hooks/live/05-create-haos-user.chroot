@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Live Hook: Criação do usuário 'haos' e grupos de sistema
+# ==============================================================================
+set -euo pipefail
+
+echo "[HAOS Hook] Criando usuário e grupos para o ambiente HAOS..."
+
+# Criar usuário 'haos' se não existir
+if ! id -u haos >/dev/null 2>&1; then
+    useradd -m -s /bin/bash -U haos
+    # Senha padrão inicial 'haos' (pode ser alterada no primeiro login)
+    echo "haos:haos" | chpasswd
+fi
+
+# Adicionar o usuário aos grupos de hardware e privilégios
+for grp in sudo audio video plugdev kvm docker netdev; do
+    if getent group "$grp" >/dev/null 2>&1; then
+        usermod -aG "$grp" haos 2>/dev/null || true
+    fi
+done
+
+# Permissões da home e de /opt/haos
+chown -R haos:haos /home/haos 2>/dev/null || true
+mkdir -p /opt/haos /var/lib/haos
+chown -R haos:haos /opt/haos /var/lib/haos 2>/dev/null || true
+
+echo "[HAOS Hook] Usuário 'haos' configurado com sucesso!"

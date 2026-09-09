@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# HAOS Main CLI Entrypoint Wrapper
+#
+# The node's state (config.yaml, .env, profiles, sessions, state.db) belongs to
+# the `haos` user at /home/haos/.haos — the same home the systemd daemons
+# (User=haos) and haos-setup use. Interactive shells may log in as root
+# (SSH/admin): re-exec as the haos user so every invocation reads and writes
+# the SAME store with the SAME owner. A root-owned run would otherwise default
+# to /root/.haos, miss every profile/provider the node was configured with,
+# and fall into the first-run provider wizard.
+# ==============================================================================
+set -euo pipefail
+
+HAOS_USER="haos"
+HAOS_NODE_HOME="/home/${HAOS_USER}"
+
+# Resolve the node store: root operator -> the haos user's home; else $HOME.
+if [ "$(id -u)" -eq 0 ] && getent passwd "${HAOS_USER}" >/dev/null 2>&1; then
+    NODE_HOME="$(getent passwd "${HAOS_USER}" | cut -d: -f6)"
+    NODE_HOME="${NODE_HOME:-${HAOS_NODE_HOME}}"
+else
+    NODE_HOME="${HOME:-${HAOS_NODE_HOME}}"
+fi
+export HAOS_HOME="${HAOS_HOME:-${NODE_HOME}/.haos}"
+
+# venv console script is the canonical entry (pyproject: haos=hermes_cli.main:main);
+# fall back to the repo-root main.py, then the module entry, for odd installs.
+if [ -x /opt/haos/venv/bin/haos ]; then
+    HAOS_ENTRY=(/opt/haos/venv/bin/haos)
+elif [ -f /opt/haos/main.py ]; then
+    HAOS_ENTRY=(/opt/haos/venv/bin/python /opt/haos/main.py)
+else
+    HAOS_ENTRY=(/opt/haos/venv/bin/python -m hermes_cli.main)
+fi
+
+# LD_PRELOAD of the node's sqlite build; only when present, so stderr stays clean.
+LD_LIB=""
+if [ -f /usr/local/lib/libsqlite3.so.0 ]; then
+    LD_LIB="/usr/local/lib/libsqlite3.so.0"
+fi
+
+# Root (not already the haos user): drop privileges so files land with the
+# daemons' owner. runuser resets HOME/USER/LOGNAME; re-export the exact node
+# environment explicitly. sudo is the fallback when runuser is absent.
+if [ "$(id -u)" -eq 0 ] && [ "$(id -un)" != "${HAOS_USER}" ] && getent passwd "${HAOS_USER}" >/dev/null 2>&1; then
+    if command -v runuser >/dev/null 2>&1; then
+        exec runuser -u "${HAOS_USER}" -- env \
+            HOME="${NODE_HOME}" \
+            USER="${HAOS_USER}" \
+            LOGNAME="${HAOS_USER}" \
+            HAOS_HOME="${HAOS_HOME}" \
+            PLAYWRIGHT_BROWSERS_PATH="/opt/haos/.playwright" \
+            PATH="/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin" \
+            LD_PRELOAD="${LD_LIB}" \
+            "${HAOS_ENTRY[@]}" "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        exec sudo -u "${HAOS_USER}" -H env \
+            HAOS_HOME="${HAOS_HOME}" \
+            PLAYWRIGHT_BROWSERS_PATH="/opt/haos/.playwright" \
+            PATH="/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin" \
+            LD_PRELOAD="${LD_LIB}" \
+            "${HAOS_ENTRY[@]}" "$@"
+    fi
+    # No privilege-drop tool: fall through and run as root against the node
+    # store (HAOS_HOME above); ownership is the caller's responsibility.
+fi
+
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/haos/.playwright}"
+export PATH="/opt/haos/venv/bin:${PATH}"
+if [ -n "${LD_LIB}" ]; then
+    export LD_PRELOAD="${LD_LIB}${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+
+exec "${HAOS_ENTRY[@]}" "$@"

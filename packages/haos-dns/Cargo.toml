@@ -1,0 +1,20 @@
+[package]
+name = "haos-dns"
+version = "0.1.0"
+edition = "2021"
+authors = ["HAOS Team"]
+description = "Ultralight async caching DNS resolver in Rust for HAOS Linux"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+hickory-proto = "0.24"
+lru = "0.12"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

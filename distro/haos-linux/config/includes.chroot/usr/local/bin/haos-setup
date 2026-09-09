@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# HAOS Linux Interactive Node Setup & Project Installer
+# Baixa e sincroniza a versão mais recente do HAOS diretamente do GitHub,
+# instala as dependências via uv e configura o nó do sistema.
+# ==============================================================================
+set -euo pipefail
+
+CYAN="\033[1;36m"
+GREEN="\033[1;32m"
+YELLOW="\033[1;33m"
+PURPLE="\033[1;35m"
+BOLD="\033[1m"
+RESET="\033[0m"
+
+clear
+echo -e "${CYAN}"
+cat << 'EOF'
+  _    _          ____   _____   _      _                  
+ | |  | |   /\   / __ \ / ____| | |    (_)                 
+ | |__| |  /  \ | |  | | (___   | |     _ _ __  _   ___  __
+ |  __  | / /\ \| |  | |\___ \  | |    | | '_ \| | | \ \/ /
+ | |  | |/ ____ \ |__| |____) | | |____| | | | | |_| |>  < 
+ |_|  |_/_/    \_\____/|_____/  |______|_|_| |_|\__,_/_/\_\
+EOF
+echo -e "${RESET}"
+echo -e "${BOLD}Assistente de Instalação e Configuração do HAOS Linux${RESET}"
+echo -e "────────────────────────────────────────────────────────────────────────"
+echo ""
+
+REPO_DEFAULT="https://github.com/adrianolimagarcia/HAOS.git"
+REPO_SSH="git@github.com:adrianolimagarcia/HAOS.git"
+INSTALL_DIR="/opt/haos"
+CONFIG_DIR="/home/haos/.haos"
+ENV_FILE="${CONFIG_DIR}/.env"
+
+# ==============================================================================
+# Passo 1: Download / Clone do Projeto do GitHub
+# ==============================================================================
+echo -e "${PURPLE}[1/4] Sincronização do Código-Fonte do HAOS via GitHub:${RESET}"
+
+# Deploy key read-only opcional: com ela o clone/fetch do repo PRIVADO vai por
+# SSH; sem ela, o https anônimo funciona apenas se o repositório for PÚBLICO.
+# Só considera chaves LEGÍVEIS (-r): se o setup rodar como usuário haos, o
+# /etc/haos/keys root-only é pulado e a cópia do nó (haos:haos) é usada.
+UPDATE_KEY_SRC=""
+for _cand in "/etc/haos/keys/update_ed25519" "/root/.haos/keys/update_ed25519" \
+             "/home/haos/.haos/keys/update_ed25519" "$HOME/.haos/keys/update_ed25519"; do
+    if [ -r "${_cand}" ]; then
+        UPDATE_KEY_SRC="${_cand}"
+        break
+    fi
+done
+if [ -n "${UPDATE_KEY_SRC}" ]; then
+    echo -e "   (deploy key read-only detectada em ${UPDATE_KEY_SRC} — clone via SSH)"
+    read -rp "Repositório Git [${REPO_SSH}]: " user_repo
+    REPO_URL="${user_repo:-${REPO_SSH}}"
+else
+    echo -e "   (sem deploy key — https anônimo; funciona apenas se o repo for público)"
+    read -rp "Repositório Git [${REPO_DEFAULT}]: " user_repo
+    REPO_URL="${user_repo:-${REPO_DEFAULT}}"
+fi
+
+read -rp "Branch [main]: " user_branch
+BRANCH="${user_branch:-main}"
+
+# URL efetiva de clone/fetch. A deploy key só autentica o repo CANÔNICO: se ela
+# existe e o usuário manteve o repo canônico (https), o clone vai por SSH — o
+# https de um repo privado pediria senha. Um repo custom/fork digitado pelo
+# usuário é respeitado como está (chave não se aplica a ele).
+_CLONE_URL="${REPO_URL}"
+if [ -n "${UPDATE_KEY_SRC}" ] && [ "${REPO_URL}" = "${REPO_DEFAULT}" ]; then
+    _CLONE_URL="${REPO_SSH}"
+fi
+
+# Confia no host key do github.com antes do primeiro contato SSH não-interativo.
+_ensure_github_host_key() {
+    if command -v ssh-keygen >/dev/null 2>&1 && command -v ssh-keyscan >/dev/null 2>&1; then
+        if [ "$(id -u)" -eq 0 ] && [ -w /etc/ssh/ ]; then
+            _KH="/etc/ssh/ssh_known_hosts"
+        else
+            _KH="${HOME}/.ssh/known_hosts"
+            mkdir -p "${HOME}/.ssh"
+        fi
+        [ -f "${_KH}" ] || touch "${_KH}"
+        if ! ssh-keygen -F github.com -f "${_KH}" >/dev/null 2>&1; then
+            ssh-keyscan -t ed25519 github.com >> "${_KH}" 2>/dev/null || true
+        fi
+    fi
+}
+
+# Ajusta o transporte do checkout em /opt/haos para o modo configurado:
+# chave + repo canônico -> fetch SSH read-only / push HTTPS admin;
+# repo público/fork -> https anônimo sem chave (ou a URL digitada pelo usuário).
+_wire_node_git_remote() {
+    if [ ! -d "${INSTALL_DIR}/.git" ]; then
+        return
+    fi
+    if [ -n "${UPDATE_KEY_SRC}" ] && [ "${_CLONE_URL}" = "${REPO_SSH}" ]; then
+        mkdir -p "${CONFIG_DIR}/keys"
+        NODE_KEY="${CONFIG_DIR}/keys/update_ed25519"
+        if [ "${UPDATE_KEY_SRC}" != "${NODE_KEY}" ]; then
+            install -m 600 "${UPDATE_KEY_SRC}" "${NODE_KEY}" 2>/dev/null || true
+        fi
+        chown haos:haos "${NODE_KEY}" 2>/dev/null || true
+        git -C "${INSTALL_DIR}" remote set-url origin "${REPO_SSH}"
+        git -C "${INSTALL_DIR}" remote set-url --push origin "${REPO_DEFAULT}"
+        git -C "${INSTALL_DIR}" config core.sshCommand "ssh -i ${NODE_KEY} -o IdentitiesOnly=yes"
+        echo -e "${GREEN}✓ origin configurado: fetch via chave read-only; push via HTTPS (admin).${RESET}"
+    else
+        # Sem deploy key: a URL digitada vira o origin (https anônimo funciona
+        # se o repo é público; uma URL ssh digitada segue como está, usando
+        # agente/outra identidade do usuário). Remove core.sshCommand legado de
+        # um provisionamento anterior por chave.
+        git -C "${INSTALL_DIR}" remote set-url origin "${REPO_URL}" 2>/dev/null || true
+        git -C "${INSTALL_DIR}" config --unset core.sshCommand 2>/dev/null || true
+        echo -e "${GREEN}✓ origin apontado para ${REPO_URL} (sem chave embarcada).${RESET}"
+    fi
+}
+
+echo -e "[-] Baixando o código de ${_CLONE_URL} (${BRANCH}) em ${INSTALL_DIR}..."
+
+mkdir -p "${INSTALL_DIR}"
+if [ -d "${INSTALL_DIR}/.git" ]; then
+    echo "[-] Atualizando instalação existente com git pull..."
+    _wire_node_git_remote
+    _ensure_github_host_key
+    if [ "${_CLONE_URL}" = "${REPO_SSH}" ]; then
+        export GIT_SSH_COMMAND="ssh -i ${UPDATE_KEY_SRC} -o IdentitiesOnly=yes"
+    fi
+    git -C "${INSTALL_DIR}" fetch origin "${BRANCH}" 2>/dev/null || git -C "${INSTALL_DIR}" fetch --all || true
+    git -C "${INSTALL_DIR}" checkout "${BRANCH}" 2>/dev/null || true
+    git -C "${INSTALL_DIR}" pull origin "${BRANCH}" 2>/dev/null || true
+    if [ "${_CLONE_URL}" = "${REPO_SSH}" ]; then
+        unset GIT_SSH_COMMAND
+    fi
+else
+    echo "[-] Clonando repositório limpo..."
+    # Se a pasta já tiver arquivos (como o wrapper pré-instalado), faz clone em temp ou preserva
+    TMP_CLONE=$(mktemp -d)
+    _ensure_github_host_key
+    if [ "${_CLONE_URL}" = "${REPO_SSH}" ]; then
+        GIT_SSH_COMMAND="ssh -i ${UPDATE_KEY_SRC} -o IdentitiesOnly=yes" \
+            git clone --branch "${BRANCH}" --depth 1 "${_CLONE_URL}" "${TMP_CLONE}"
+    else
+        git clone --branch "${BRANCH}" --depth 1 "${_CLONE_URL}" "${TMP_CLONE}"
+    fi
+    # --delete sincroniza o repositório, mas preserva os providers de modelo do
+    # node (a6api/antigravity) que o ISO injeta em /opt/haos/plugins/model-providers
+    # e o repositório upstream não carrega.
+    rsync -a --delete \
+        --exclude 'wrapper-antigravity' \
+        --exclude '.playwright' \
+        --exclude 'data' \
+        --exclude 'plugins/model-providers/a6api' \
+        --exclude 'plugins/model-providers/antigravity' \
+        "${TMP_CLONE}/" "${INSTALL_DIR}/"
+    rm -rf "${TMP_CLONE}"
+    _wire_node_git_remote
+fi
+
+echo -e "${GREEN}✓ Código sincronizado com sucesso em ${INSTALL_DIR}.${RESET}"
+echo ""
+
+# ==============================================================================
+# Passo 2: Configuração de Runtimes e Dependências
+# ==============================================================================
+echo -e "${PURPLE}[2/4] Instalando dependências e ambiente Python/Node:${RESET}"
+cd "${INSTALL_DIR}"
+
+if command -v uv >/dev/null 2>&1; then
+    echo "[-] Configurando venv Python 3.13 com uv..."
+    if [ ! -d "${INSTALL_DIR}/venv" ]; then
+        uv venv "${INSTALL_DIR}/venv" --python 3.13
+    fi
+    VIRTUAL_ENV="${INSTALL_DIR}/venv" uv sync --frozen --no-dev 2>/dev/null || \
+    VIRTUAL_ENV="${INSTALL_DIR}/venv" uv pip install -e . 2>/dev/null || true
+fi
+
+# Build dos bundles de interface (Web & TUI) se necessário
+if [ -d "${INSTALL_DIR}/web" ] && [ ! -d "${INSTALL_DIR}/web/dist" ]; then
+    echo "[-] Compilando HAOS Web Dashboard..."
+    (cd "${INSTALL_DIR}/web" && npm install --prefer-offline 2>/dev/null && npm run build 2>/dev/null || true)
+fi
+
+if [ -d "${INSTALL_DIR}/ui-tui" ] && [ ! -d "${INSTALL_DIR}/ui-tui/dist" ]; then
+    echo "[-] Compilando HAOS TUI Console..."
+    (cd "${INSTALL_DIR}/ui-tui" && npm install --prefer-offline 2>/dev/null && npm run build 2>/dev/null || true)
+fi
+
+echo -e "${GREEN}✓ Dependências e bundles configurados.${RESET}"
+echo ""
+
+# ==============================================================================
+# Passo 3: Escolha do Provedor de IA
+# ==============================================================================
+echo -e "${PURPLE}[3/4] Configuração do Provedor de Modelos:${RESET}"
+mkdir -p "${CONFIG_DIR}"
+touch "${ENV_FILE}"
+
+echo "Escolha o provider padrão para este nó:"
+echo "  1) Antigravity Local Wrapper (Gemini via OAuth local - porta 8790)"
+echo "  2) A6API (Nuvem Oficial - https://api.a6api.com/v1)"
+echo "  3) Manter existente / Configurar depois"
+read -rp "Opção [1-3]: " opt_provider
+
+# O CLI só enxerga o provider em config.yaml (model.provider). A antiga variável
+# HAOS_DEFAULT_PROVIDER gravada no .env era configuração morta — nenhum código a
+# lia — e o assistente de primeiro uso reaparecia mesmo após o setup. Limpe-a de
+# instalações antigas e grave a chave real abaixo.
+sed -i '/^HAOS_DEFAULT_PROVIDER=/d' "${ENV_FILE}" 2>/dev/null || true
+
+# Grava model.provider no config.yaml do nó via o próprio CLI (hermes_cli.main).
+# HERMES_SUPERVISED_CHILD=1 impede o CLI de seguir um profile sticky e escrever
+# no store errado; HAOS_HOME aponta sempre para o config do nó.
+set_node_provider() {
+    local provider="$1"
+    if [ ! -x "${INSTALL_DIR}/venv/bin/python" ]; then
+        echo "(!) Aviso: runtime Python ainda não instalado — rode depois:"
+        echo "    sudo -u haos -H env HAOS_HOME=${CONFIG_DIR} ${INSTALL_DIR}/venv/bin/python -m hermes_cli.main config set model.provider ${provider} --force"
+        return
+    fi
+    HAOS_HOME="${CONFIG_DIR}" HERMES_SUPERVISED_CHILD=1 \
+        "${INSTALL_DIR}/venv/bin/python" -m hermes_cli.main \
+        config set model.provider "${provider}" --force 2>/dev/null \
+        || echo "(!) Aviso: falha ao gravar model.provider=${provider} em ${CONFIG_DIR}/config.yaml"
+}
+
+case "${opt_provider}" in
+    1)
+        echo "Configurando Antigravity como provider principal..."
+        set_node_provider "antigravity"
+        # Chave local do wrapper OAuth (127.0.0.1:8790); o proxy valida via OAuth,
+        # qualquer valor de chave de cliente serve — mas precisa existir.
+        if ! grep -q '^ANTIGRAVITY_API_KEY=' "${ENV_FILE}"; then
+            echo "ANTIGRAVITY_API_KEY=antigravity-local" >> "${ENV_FILE}"
+        fi
+        echo -e "${GREEN}✓ Antigravity configurado.${RESET}"
+        ;;
+    2)
+        echo "Configurando A6API como provider principal..."
+        read -rsp "Insira sua A6API_API_KEY (ou deixe vazio para pular): " a6_key
+        echo ""
+        set_node_provider "a6api"
+        if [ -n "${a6_key}" ] && ! grep -q '^A6API_API_KEY=' "${ENV_FILE}"; then
+            echo "A6API_API_KEY=${a6_key}" >> "${ENV_FILE}"
+            echo -e "${GREEN}✓ Chave da A6API salva com segurança.${RESET}"
+        fi
+        ;;
+    *)
+        echo "Mantendo configuração de providers..."
+        ;;
+esac
+
+echo ""
+# ==============================================================================
+# Passo 4: Identidade do Nó e Inicialização
+# ==============================================================================
+echo -e "${PURPLE}[4/4] Identidade do Nó na Rede Mesh e Inicialização:${RESET}"
+read -rp "Nome do Nó (ID único) [haos-node-1]: " node_id
+node_id="${node_id:-haos-node-1}"
+echo "NODE_ID=${node_id}" >> "${ENV_FILE}"
+
+# Ajuste de Permissões
+chown -R haos:haos "${INSTALL_DIR}" "${CONFIG_DIR}" 2>/dev/null || true
+chmod 600 "${ENV_FILE}" 2>/dev/null || true
+
+# Inicializar estrutura de storage e desativar CoW no Btrfs
+/usr/local/bin/haos-storage-init 2>/dev/null || true
+
+# Reiniciar daemons
+echo "[-] Reiniciando daemons do HAOS..."
+systemctl daemon-reload 2>/dev/null || true
+systemctl restart haos-dns 2>/dev/null || true
+systemctl restart haos-gateway 2>/dev/null || true
+systemctl restart haos-mesh 2>/dev/null || true
+systemctl restart haos-antigravity 2>/dev/null || true
+
+echo ""
+echo -e "────────────────────────────────────────────────────────────────────────"
+echo -e "${GREEN}${BOLD}HAOS instalado e atualizado diretamente do GitHub com sucesso!${RESET}"
+echo -e "Inicie uma conversa agora com: ${BOLD}haos chat${RESET}"
+echo -e "Veja o status geral do nó com:   ${BOLD}haos status${RESET}"
+echo ""

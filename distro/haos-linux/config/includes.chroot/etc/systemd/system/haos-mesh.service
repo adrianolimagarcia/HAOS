@@ -1,0 +1,21 @@
+[Unit]
+Description=HAOS Federated Mesh Node Daemon
+After=network-online.target haos-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=haos
+Group=haos
+WorkingDirectory=/opt/haos
+Environment="HAOS_HOME=/home/haos/.haos"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=-/etc/haos/mesh.env
+ExecStart=/opt/haos/venv/bin/python -m hermes.platform.network.mesh_node
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

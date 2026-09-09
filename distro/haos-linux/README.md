@@ -42,27 +42,41 @@ distro/haos-linux/
 ./distro/haos-linux/scripts/fetch-dependencies.sh
 ```
 
-## Atualizações embarcadas (repo HAOS privado)
+## Atualizações embarcadas (repo HAOS)
 
-A imagem nasce pronta para `haos update` baixar direto do repositório privado
-`github.com/adrianolimagarcia/HAOS` **sem login GitHub**:
+A imagem nasce pronta para `haos update` baixar direto de
+`github.com/adrianolimagarcia/HAOS` **sem login GitHub** — em qualquer um dos
+dois modos:
+
+**Modo A — repo público (mais simples, sem chave):** o clone/fetch é HTTPS
+anônimo e funciona sem nenhuma credencial. Nada a fazer além de publicar o repo.
+
+**Modo B — repo privado (deploy key read-only):**
 
 1. **Deploy key read-only** (`haos-update-ro`) é injetada no **momento do build**
    em `/etc/haos/keys/update_ed25519` (`0600`) pelo `build-iso.sh` — a partir de
    `$HAOS_UPDATE_KEY` ou `/root/.haos/keys/update_ed25519` na máquina de build.
+   - O build valida que o arquivo é a chave **privada** (cabeçalho
+     `BEGIN ... PRIVATE KEY`) antes de injetar — apontar a `.pub` por engano é
+     detectado e ignorado.
    - A chave **nunca é commitada**: o destino está no `.gitignore` e o
      `build-iso.sh` remove os artefatos injetados do tree ao final (trap).
    - Revogação = apagar a deploy key no GitHub + reconstruir a imagem.
 2. **Host key do `github.com`** é embarcado em `/etc/ssh/ssh_known_hosts`
-   (SSH não-interativo recusa o primeiro contato).
+   (leitura pública `0644`; SSH não-interativo recusa o primeiro contato).
 3. **Instalador** (`scripts/install_haos.sh`) é embarcado em
    `/usr/local/sbin/haos-install` para re-provisionamento/manutenção no sistema
    instalado.
-4. Hook `45-haos-update-credential.chroot` endurece permissões e, se
-   `/opt/haos` já for um repo git na imagem, aponta o `origin` para
-   **fetch via chave read-only** + **push via HTTPS** (admin).
+4. Hook `45-haos-update-credential.chroot` endurece a chave de bootstrap e
+   **semeia uma cópia no store do nó** (`/home/haos/.haos/keys/update_ed25519`,
+   dono `haos:haos` `0600`) — quem executa `haos update` é o usuário `haos`,
+   não root.
+5. O wiring do `origin` (**fetch via chave read-only / push via HTTPS admin**)
+   acontece **após o clone**, no `haos-setup`/`haos-install` do primeiro boot —
+   o checkout de `/opt/haos` não existe dentro da imagem.
 
-> ⚠️ Como a chave viaja dentro do artefato, trate a ISO como sensível: quem tiver
-> a imagem consegue clonar o código do repo (read-only). Segredos (`.env`, API
-> keys) continuam proibidos dentro do repositório.
+> ⚠️ No modo B a chave viaja dentro do artefato: trate a ISO como sensível —
+> quem tiver a imagem consegue clonar o código do repo (read-only). Segredos
+> (`.env`, API keys) continuam proibidos dentro do repositório. No modo A isso
+> é irrelevante (o código já é público).
 

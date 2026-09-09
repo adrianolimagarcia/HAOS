@@ -1,0 +1,17 @@
+# ==============================================================================
+# HAOS DNS Resolver Daemon (Rust Native)
+# ==============================================================================
+
+listen_addr = "127.0.0.1:53"
+
+# Upstream Anycast DNS Servers
+upstreams = [
+    "9.9.9.9:53",      # Quad9
+    "1.1.1.1:53",      # Cloudflare
+    "8.8.8.8:53",      # Google
+    "208.67.222.222:53" # OpenDNS
+]
+
+# Cache TTL em segundos
+cache_ttl_seconds = 60
+cache_max_entries = 65536

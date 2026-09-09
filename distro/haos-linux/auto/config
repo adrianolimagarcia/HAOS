@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+lb config noauto \
+    --mode debian \
+    --distribution trixie \
+    --architectures amd64 \
+    --archive-areas "main non-free non-free-firmware" \
+    --parent-archive-areas "main non-free non-free-firmware" \
+    --image-name "haos-linux-1.0-amd64" \
+    --binary-images iso-hybrid \
+    --bootloader grub-efi \
+    --memtest none \
+    --apt-recommends false \
+    --apt-indices false \
+    --cache true \
+    --bootappend-live "boot=live components quiet splash transparent_hugepage=madvise mitigations=off preempt=full zswap.enabled=0" \
+    "${@}"

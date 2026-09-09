@@ -1,0 +1,5 @@
+name: antigravity-provider-profile
+kind: model-provider
+version: 1.0.0
+description: Antigravity Local OAuth Gemini Gateway Wrapper
+author: HAOS Team

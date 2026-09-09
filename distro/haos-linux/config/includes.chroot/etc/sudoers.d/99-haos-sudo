@@ -1,0 +1,2 @@
+# Permissão de sudo sem senha para o usuário haos operar como appliance
+haos ALL=(ALL:ALL) NOPASSWD:ALL

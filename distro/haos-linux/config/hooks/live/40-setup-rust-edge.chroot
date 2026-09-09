@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Live Hook: Setup do Rust Toolchain e HAOS Edge Daemon
+# ==============================================================================
+set -euo pipefail
+
+echo "[HAOS Hook] Configurando componentes Rust do HAOS..."
+
+# Se já houver binário haos-edge compilado localmente em assets/packages, copiar
+if [ -f /opt/haos/packages/haos-edge/target/release/haos-edge ]; then
+    cp /opt/haos/packages/haos-edge/target/release/haos-edge /usr/local/bin/haos-edge
+    chmod +x /usr/local/bin/haos-edge
+fi

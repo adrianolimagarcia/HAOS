@@ -1,0 +1,17 @@
+# ==============================================================================
+# HAOS Linux - GRUB Kernel Bootline Parameters
+# Linux 6.18 LTS Tuning Avançado:
+# - BBR & FQ ativados
+# - Transparent HugePages em madvise (ideal para IA/DB sem spikes de latência)
+# - NVMe latency minimizada (default_ps_max_latency_us=0)
+# - SCSI multiqueue ativado
+# - Mitigações desativadas para ganho máximo de IPC em appliance dedicado
+# - preempt=full para menor latência de agendamento de threads de agentes
+# - zswap.enabled=0 para não conflitar com o ZRAM zstd de alta velocidade
+# ==============================================================================
+
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=3
+GRUB_DISTRIBUTOR="HAOS Linux (Debian 13 Trixie / Kernel 6.18 LTS)"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash transparent_hugepage=madvise mitigations=off nowatchdog split_lock_mitigate=0 scsi_mod.use_blk_mq=1 pcie_aspm=performance nvme_core.default_ps_max_latency_us=0 processor.max_cstate=1 preempt=full zswap.enabled=0 libahci.ignore_sss=1"
+GRUB_CMDLINE_LINUX=""

@@ -1,0 +1,23 @@
+[Unit]
+Description=HAOS Antigravity Local Proxy Gateway
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=haos
+Group=haos
+WorkingDirectory=/opt/haos/wrapper-antigravity
+Environment="HOME=/home/haos"
+Environment="ANTIGRAVITY_PROXY_HOST=127.0.0.1"
+Environment="ANTIGRAVITY_PROXY_PORT=8790"
+Environment="ANTIGRAVITY_TOKEN_FILE=/home/haos/.gemini/antigravity-cli/antigravity-oauth-token"
+Environment="ANTIGRAVITY_OPENCODE_ACCOUNTS=/home/haos/.config/opencode/antigravity-accounts.json"
+EnvironmentFile=-/etc/haos/antigravity.env
+ExecStart=/usr/local/bin/node /opt/haos/wrapper-antigravity/server.mjs
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
