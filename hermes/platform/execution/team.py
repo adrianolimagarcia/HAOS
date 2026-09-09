@@ -131,6 +131,7 @@ class TeamRole:
     independence: str = INDEPENDENCE_SHARED  # shared | fresh_context
     multiplicity: Optional[str] = None    # None -> cardinalidade canônica (one|many)
     required: bool = True                 # False => cadeira pode ficar vazia
+    harness: Optional[str] = "native"     # "native" | "dsh" | "opencode" | "agy" | "codex" | "claude-code" | "acp"
 
 
 def _effective_multiplicity(role_id: str, explicit: Optional[str]) -> str:
@@ -323,6 +324,7 @@ class TeamResolver:
             "independence": role.independence,
             "multiplicity": role.multiplicity,
             "binding_level": binding_level,
+            "harness": role.harness or "native",
         }
 
 
@@ -343,6 +345,7 @@ def default_team_roles() -> List[TeamRole]:
                 "many" if role_id in MANY_MULTIPLICITY_ROLES else "one"
             ),
             required=(role_id != "crew"),
+            harness="native",
         )
         for role_id in CANONICAL_ROLE_IDS
     ]

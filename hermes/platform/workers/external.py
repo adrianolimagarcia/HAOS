@@ -19,78 +19,66 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from hermes.platform.workers.harness_registry import (
+    ExternalWorkerSpec,
+    HarnessRegistry,
+    HarnessUnavailableError,
+)
+
 logger = logging.getLogger("hermes.platform.workers.external")
 
 
-@dataclass
-class ExternalWorkerSpec:
-    kind: str  # "dsh" | "acp" | "generic"
-    executable: str
-    args: List[str]
-    env_vars: Dict[str, str]
-
-
 def resolve_external_worker(assignee: str, task_context: Dict[str, Any]) -> Optional[ExternalWorkerSpec]:
-    """Inspect task assignee or tags to determine if an external harness worker should be spawned.
+    """Inspect task assignee, harness, or tags to determine if an external harness worker should be spawned.
 
     Assignee conventions:
     - 'dsh', 'dsh-worker', 'dsh:<profile>'
+    - 'opencode', 'opencode:<profile>'
+    - 'agy', 'antigravity'
     - 'acp', 'acp:<server>', 'claude-code', 'codex'
     """
     assignee_clean = (assignee or "").strip().lower()
-    task_id = str(task_context.get("task_id", ""))
+    if not assignee_clean:
+        harness_override = task_context.get("harness")
+        if harness_override and harness_override != "native":
+            assignee_clean = str(harness_override).strip().lower()
+        else:
+            return None
 
-    # Determine workspace and optional git worktree isolation (Orca ADE pattern)
-    workspace = str(task_context.get("workspace", "")).strip() or os.getcwd()
-    if task_context.get("isolated") or task_context.get("use_worktree") or task_context.get("workspace_type") == "worktree":
-        try:
-            from hermes.platform.workspaces.git_worktree import GitWorktreeManager
-            repo = Path(workspace).resolve()
-            mgr = GitWorktreeManager(repo_root=repo)
-            if mgr.is_git_repo():
-                wt_path = mgr.create_worktree(task_id=task_id)
-                workspace = str(wt_path)
-                logger.info("Provisioned isolated Git worktree for worker '%s' at %s", assignee_clean, wt_path)
-        except Exception as exc:
-            logger.warning("Could not provision isolated worktree for task %s: %s", task_id, exc)
-
-    # DSH (DeepSeek Harness) Connector
+    harness_target = None
     if assignee_clean.startswith("dsh"):
-        dsh_bin = shutil.which("dsh") or os.environ.get("DSH_PATH") or "dsh"
-        objective = task_context.get("title", f"Complete task {task_id}")
+        harness_target = "dsh"
+    elif assignee_clean.startswith("opencode"):
+        harness_target = "opencode"
+    elif assignee_clean.startswith("agy") or assignee_clean.startswith("antigravity"):
+        harness_target = "agy"
+    elif assignee_clean in {"claude-code", "claude"}:
+        harness_target = "claude-code"
+    elif assignee_clean in {"codex", "openai-codex"}:
+        harness_target = "codex"
+    elif assignee_clean.startswith("acp"):
+        harness_target = "acp"
+    elif task_context.get("harness") and task_context.get("harness") != "native":
+        harness_target = str(task_context.get("harness")).strip().lower()
 
-        args = [
-            dsh_bin,
-            "exec",
-            "--objective", objective,
-            "--workdir", workspace,
-        ]
-        return ExternalWorkerSpec(
-            kind="dsh",
-            executable=dsh_bin,
-            args=args,
-            env_vars={
-                "HAOS_EXTERNAL_WORKER": "dsh",
-                "HAOS_KANBAN_TASK_ID": task_id,
-                "HAOS_WORKTREE_PATH": workspace,
-            }
+    if not harness_target:
+        return None
+
+    try:
+        registry = HarnessRegistry.get_instance()
+        return registry.allocate(harness_target, task_context)
+    except HarnessUnavailableError as exc:
+        # Tool truly absent after auto-discovery: warn loudly and continue with
+        # the native local worker (return None => Kanban dispatcher falls back).
+        logger.warning(
+            "Harness '%s' unavailable after auto-discovery for task %s. "
+            "Continuing with the native local worker. Diagnostic: %s",
+            harness_target, task_context.get("task_id", "?"), exc,
         )
-
-    # ACP (Agent Client Protocol) Connector
-    if assignee_clean.startswith("acp") or assignee_clean in {"claude-code", "codex"}:
-        acp_bin = shutil.which("hermes-acp") or shutil.which("acp") or "acp"
-        return ExternalWorkerSpec(
-            kind="acp",
-            executable=acp_bin,
-            args=[acp_bin, "--task", task_id, "--workspace", workspace],
-            env_vars={
-                "HAOS_EXTERNAL_WORKER": "acp",
-                "HAOS_KANBAN_TASK_ID": task_id,
-                "HAOS_WORKTREE_PATH": workspace,
-            }
-        )
-
-    return None
+        return None
+    except Exception as exc:
+        logger.error("Error allocating harness '%s': %s", harness_target, exc)
+        return None
 
 
 def spawn_external_worker(spec: ExternalWorkerSpec, workspace: str, env: Dict[str, str], stdout_file: Any) -> Optional[int]:

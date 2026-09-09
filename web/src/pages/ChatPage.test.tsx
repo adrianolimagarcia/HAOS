@@ -275,6 +275,32 @@ describe("ChatPage", () => {
     expect(maybeReloadForLoopbackWsAuthFailure).toHaveBeenCalledWith(4401);
   });
 
+  it("reconnects after a clean 1013 stalled-transport close instead of ending the session", async () => {
+    // pty_session recycles a socket whose background tab stopped draining it
+    // with a CLEAN close frame (code 1013). A clean 1013 must route into the
+    // reconnect backoff — the PTY is still alive on the server — never into
+    // the "[session ended]" terminal state, which blocks page-resume
+    // reconnection entirely and strands the tab until a manual refresh.
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    FakeWebSocket.instances[0].onclose?.({
+      code: 1013,
+      reason: "PTY input stalled",
+      wasClean: true,
+    });
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+    expect(FakeWebSocket.instances[1].url).toContain("/api/pty");
+  });
+
   it("attaches visualViewport keyboard-inset listeners only while the chat tab is active", async () => {
     // NS-434 follow-up: ChatPage stays mounted (hidden) on every dashboard
     // route. The keyboard-inset/scroll-pin listeners must only be live while

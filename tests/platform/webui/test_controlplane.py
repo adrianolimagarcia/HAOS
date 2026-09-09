@@ -6,7 +6,11 @@ Validates:
 3. Operator interventions (steer, pause, resume, interrupt) with EventStore audit logging.
 """
 
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 from hermes.platform.observability.event_store import EventStore
 from hermes.platform.observability.events import Event
 from hermes.platform.webui.controlplane import (
@@ -180,6 +184,96 @@ class TestPhase5ControlPlane(unittest.TestCase):
         snapshot2 = service.get_team_graph_snapshot()
         coder2 = next(w for w in snapshot2["children"][0]["children"] if w["node_id"] == "specialist-coder-01")
         self.assertEqual(coder2["status"], "running")
+
+
+class TestLiveBoardAggregation(unittest.TestCase):
+    """Overview/Team Graph must follow the live kanban board, not a stale copy.
+
+    Regression: the standalone control plane kept its own private EventStore +
+    kanban (e.g. HAOS_DATA_DIR=/tmp/...) whose events froze, so "Missões
+    Executadas / Workers Ativos" on the dashboard stopped updating while real
+    missions ran on the canonical board. These tests pin the live resolution.
+    """
+
+    def _make_kanban_db(self, tmp_path, rows):
+        import sqlite3
+        db = tmp_path / "kanban.db"
+        con = sqlite3.connect(str(db))
+        con.executescript("""
+            CREATE TABLE tasks (
+                id TEXT PRIMARY KEY, title TEXT, body TEXT, status TEXT,
+                assignee TEXT, created_at REAL, started_at REAL, completed_at REAL
+            );
+        """)
+        con.executemany(
+            "INSERT INTO tasks (id, title, body, status, assignee) VALUES (?,?,?,?,?)",
+            [(r["id"], r["title"], "", r["status"], r.get("assignee", "")) for r in rows],
+        )
+        con.commit()
+        con.close()
+        return db
+
+    def test_overview_falls_back_to_canonical_live_board(self):
+        """Empty private adapter + canonical DB with terminal tasks -> live count."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            db = self._make_kanban_db(tmp_path, [
+                {"id": "T-LIVE-1", "title": "Done live", "status": "done"},
+                {"id": "T-LIVE-2", "title": "Failed live", "status": "failed"},
+            ])
+            event_store = EventStore(db_path=":memory:")
+            with patch.dict(os.environ, {"HERMES_KANBAN_DB": str(db)}, clear=False):
+                service = ControlPlaneService(event_store=event_store)
+                overview = service.get_overview()
+                # No events: mission count comes from terminal tasks on the live board.
+                self.assertEqual(overview.total_missions, 2)
+                self.assertEqual(overview.board_db, str(db))
+                self.assertGreaterEqual(overview.pool_size, 1)
+
+    def test_overview_union_keeps_history_and_grows_with_live_board(self):
+        """Event history + terminal live-board tasks are unioned (monotonic)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            db = self._make_kanban_db(tmp_path, [
+                {"id": "T-NEW-1", "title": "Just finished", "status": "done"},
+            ])
+            event_store = EventStore(db_path=":memory:")
+            event_store.append(Event(name="haos.task.spawned", payload={"task_id": "T-OLD-1"}))
+            with patch.dict(os.environ, {"HERMES_KANBAN_DB": str(db)}, clear=False):
+                service = ControlPlaneService(event_store=event_store)
+                overview = service.get_overview()
+                self.assertEqual(overview.total_missions, 2)
+
+    def test_team_graph_uses_live_board_tasks(self):
+        """Team Graph statuses reflect rows of the canonical board when the
+        injected adapter is empty."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            db = self._make_kanban_db(tmp_path, [
+                {"id": "T-RUN-9", "title": "Running now", "status": "in_progress",
+                 "assignee": "specialist-coder-01"},
+            ])
+            event_store = EventStore(db_path=":memory:")
+            with patch.dict(os.environ, {"HERMES_KANBAN_DB": str(db)}, clear=False):
+                service = ControlPlaneService(event_store=event_store)
+                snapshot = service.get_team_graph_snapshot()
+                self.assertEqual(snapshot["status"], "running")
+                sub = snapshot["children"][0]
+                coder = next(w for w in sub["children"] if w["node_id"] == "specialist-coder-01")
+                self.assertEqual(coder["status"], "running")
+
+    def test_pool_size_reflects_concurrency_guard(self):
+        """Pool denominator on the dashboard comes from the real guard ceiling."""
+        class FakeGuard:
+            max_global = 6
+
+        service = ControlPlaneService(self_event_store(), concurrency_guard=FakeGuard())
+        overview = service.get_overview()
+        self.assertEqual(overview.pool_size, 6)
+
+
+def self_event_store():
+    return EventStore(db_path=":memory:")
 
 
 if __name__ == "__main__":

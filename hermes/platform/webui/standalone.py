@@ -64,6 +64,7 @@ from hermes.platform.evolution.analyzer import OuroborosAnalyzer
 from hermes.platform.ui.dashboard import dashboard_payload
 from hermes.platform.ui.stats import DashboardStats
 from hermes.platform.webui.controlplane import ControlPlaneService
+from hermes.platform.webui.harness_bindings import HARNESS_CATALOG
 
 from hermes.platform.webui import settings as engine_settings
 
@@ -103,11 +104,21 @@ class HAOSStandaloneState:
         self.dispatcher = HAOSDispatcher(self.kanban, concurrency_guard=self.guard)
         self.ledger = EvolutionLedger(self.event_store)
         self.analyzer = OuroborosAnalyzer()
-        self.control_plane = ControlPlaneService(self.event_store, kanban=self.kanban)
+        self.control_plane = ControlPlaneService(
+            self.event_store,
+            kanban=self.kanban,
+            concurrency_guard=self.guard,
+            data_dir=data_dir,
+        )
 
         # Aplica settings persistidos (defaults se ausente) ao guard vivo.
         self.settings = engine_settings.load_settings(data_dir)
         engine_settings.apply_to_guard(self.guard, self.settings)
+
+        # Cache do índice de símbolos (Blast Radius): construído sob demanda
+        # na primeira análise e re-construído quando o usuário pedir "recalcular".
+        self._symbol_index: Dict[str, Any] = {"root": None, "graph": None,
+                                              "files_indexed": 0, "symbols_indexed": 0}
 
         # No servidor ao vivo (fora da suíte rápida de testes unitários),
         # instala os workers agênticos reais para que tarefas executem o agente real.
@@ -183,6 +194,8 @@ class HAOSStandaloneState:
         except Exception:
             payload["control_overview"] = {}
         payload["settings"] = dict(self.settings)
+        payload["harness_bindings"] = self.control_plane.bindings.all()
+        payload["harness_catalog"] = list(HARNESS_CATALOG)
         payload["meta"] = {
             "data_dir": str(self.data_dir),
             "tasks_db": str(self.kanban_db),
@@ -191,6 +204,39 @@ class HAOSStandaloneState:
             "mode": "standalone",
         }
         return payload
+
+    def ensure_symbol_index(self, root: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
+        """Grafo de símbolos (AST) do repositório, construído sob demanda.
+
+        Reutilizado entre chamadas de Blast Radius; ``force=True`` re-indexa
+        (equivalente ao botão "recalcular" da UI). Retorna o cache com
+        estatísticas de indexação para diagnóstico honesto na UI.
+        """
+        from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph
+        root_p = Path(root) if root else Path.cwd()
+        root_s = str(root_p.resolve())
+        idx = self._symbol_index
+        if not force and idx.get("root") == root_s and idx.get("graph") is not None:
+            return idx
+
+        graph = CodeSymbolGraph()
+        excludes = {
+            ".git", ".venv", "venv", "__pycache__", ".worktrees", ".haos",
+            "dist", "build", "node_modules", "distro", "website", "docs",
+            "evals", "vendor", ".cargo", ".mypy_cache", ".pytest_cache",
+        }
+        try:
+            count = graph.scan_directory(root_s, exclude_dirs=excludes, max_files=2500)
+        except Exception:
+            count = 0
+        idx.update({
+            "root": root_s,
+            "graph": graph,
+            "files_indexed": len(graph.file_symbols),
+            "symbols_indexed": count,
+            "built_at": time.time(),
+        })
+        return idx
 
     def analyze_and_submit_proposals(self) -> List[Dict[str, Any]]:
         """Roda o Ouroboros em shadow mode e submete propostas ao ledger."""
@@ -230,6 +276,13 @@ class HAOSStandaloneState:
                         log_content = f.read()
                 except Exception:
                     pass
+
+        # Se não houver worker.log no disco (workspace já desalocado), injeta o summary como log
+        if not log_content and task.get("result"):
+            r = task["result"]
+            summary = getattr(r, "summary", "") or (r.get("summary", "") if isinstance(r, dict) else "")
+            if summary:
+                log_content = f"=== [RELATÓRIO HISTÓRICO DA TAREFA: {task_id}] ===\n\n{summary}\n"
         return {
             **task,
             "events": events,
@@ -390,10 +443,14 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._handle_v1_models()
         elif self.command == "GET" and path in ("/api/team-graph", "/api/controlplane/team_graph"):
             self._send_json(200, self.state.control_plane.get_team_graph_snapshot())
+        elif self.command == "GET" and path in ("/api/harnesses", "/api/controlplane/harnesses"):
+            self._send_json(200, self.state.control_plane.harness_overview())
         elif self.command == "GET" and path in ("/api/controlplane/overview", "/api/overview"):
             self._send_json(200, dataclasses.asdict(self.state.control_plane.get_overview()))
         elif self.command == "POST" and path in ("/api/intervene", "/api/controlplane/intervene"):
             self._intervene()
+        elif self.command == "POST" and path in ("/api/harness-binding", "/api/controlplane/harness_binding"):
+            self._set_harness_binding()
         elif self.command == "GET" and path == "/api/agent-settings":
             self._agent_settings()
         elif self.command == "POST" and path == "/api/console":
@@ -529,10 +586,28 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         try:
             resolver = ModelResolver()
             for pid, profile in resolver._profiles.items():
-                raw_models.append({"id": profile.id, "root": profile.id})
+                prov_name = getattr(profile, "provider", None) or getattr(profile, "default_provider", "profile")
+                raw_models.append({"id": profile.id, "root": profile.id, "provider": prov_name})
                 for r in profile.routes:
-                    raw_models.append({"id": r.provider_model_id, "root": r.provider_model_id})
-                    raw_models.append({"id": f"{r.provider_id}_{r.provider_model_id}", "root": r.provider_model_id})
+                    raw_models.append({"id": r.provider_model_id, "root": r.provider_model_id, "provider": r.provider_id})
+                    raw_models.append({"id": f"{r.provider_id}_{r.provider_model_id}", "root": r.provider_model_id, "provider": r.provider_id})
+        except Exception:
+            pass
+
+        # Também consulta o endpoint local ativo (ex: antigravity / 100.77.31.78:8790) se configurado
+        try:
+            import urllib.request
+            from hermes_cli.config import load_config
+            cfg = load_config()
+            base_url = cfg.get("model", {}).get("base_url") or "http://100.77.31.78:8790/v1"
+            req = urllib.request.Request(f"{base_url.rstrip('/')}/models", headers={"User-Agent": "HAOS-ControlPlane"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                for m in data.get("data", []):
+                    mid = m.get("id")
+                    if mid:
+                        owner = m.get("owned_by") or "custom"
+                        raw_models.append({"id": mid, "root": mid, "provider": owner})
         except Exception:
             pass
 
@@ -542,7 +617,7 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
                 "id": m["id"],
                 "object": "model",
                 "created": now,
-                "owned_by": "haos",
+                "owned_by": m.get("provider") or "haos",
                 "permission": [],
                 "root": m.get("root", m["id"]),
                 "parent": None,
@@ -620,6 +695,18 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         ws_path = task.get("workspace_path")
         log_file = Path(ws_path) / ".haos" / "worker.log" if ws_path else None
 
+        # Se a tarefa já está finalizada ou o log_file não existe no workspace efêmero,
+        # envia o resumo do resultado e artefatos gravados no banco para exibição imediata
+        task_res = task.get("result")
+        res_summary = ""
+        if task_res:
+            if hasattr(task_res, "summary") and task_res.summary:
+                res_summary = task_res.summary
+            elif isinstance(task_res, dict) and task_res.get("summary"):
+                res_summary = task_res["summary"]
+            elif hasattr(task_res, "__dict__") and task_res.__dict__.get("summary"):
+                res_summary = task_res.__dict__["summary"]
+
         init_pkt = json.dumps({
             "task_id": task_id,
             "status": task.get("status"),
@@ -628,12 +715,23 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             "elapsed_seconds": task.get("elapsed_seconds", 0),
             "tokens": task.get("tokens", 0),
             "cost": task.get("cost", 0.0),
+            "summary": res_summary,
         })
         try:
             self.wfile.write(f"event: status\ndata: {init_pkt}\n\n".encode("utf-8"))
             self.wfile.flush()
         except Exception:
             return
+
+        # Se já tiver resumo gravado no banco de tarefas concluídas, envia como log histórico
+        if res_summary:
+            try:
+                hist_header = f"=== [RELATÓRIO / LOG HISTÓRICO DA TAREFA CONCLUÍDA: {task_id}] ===\n\n"
+                chunk = json.dumps({"text": hist_header + res_summary + "\n"})
+                self.wfile.write(f"event: log\ndata: {chunk}\n\n".encode("utf-8"))
+                self.wfile.flush()
+            except Exception:
+                return
 
         last_pos = 0
         iterations = 0
@@ -703,6 +801,22 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         self.state.control_plane.record_intervention(target_id=target_id, action=action, reason=reason)
         self._send_json(200, {"status": "ok", "success": True, "target_id": target_id, "action": action})
 
+    def _set_harness_binding(self) -> None:
+        body = self._read_json_body()
+        role = str(body.get("role") or "").strip()
+        harness = str(body.get("harness") or "").strip()
+        if not role or not harness:
+            self._send_json(400, {"ok": False, "error": "role_and_harness_required"})
+            return
+        try:
+            result = self.state.control_plane.set_harness_binding(role, harness)
+        except ValueError as exc:
+            self._send_json(400, {"ok": False, "error": str(exc)})
+            return
+        result["ok"] = True
+        result["overview"] = self.state.control_plane.harness_overview()
+        self._send_json(200, result)
+
     def _evolution_analyze(self) -> None:
         submitted = self.state.analyze_and_submit_proposals()
         self._send_json(200, {
@@ -733,22 +847,46 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
 
     def _evolution_blast_radius(self) -> None:
         body = self._read_json_body()
-        files = body.get("files") or []
-        symbols = body.get("symbols") or []
-        from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph, ImpactAnalyzer
-        graph = CodeSymbolGraph()
+        files = [str(f) for f in (body.get("files") or []) if str(f).strip()]
+        symbols = [str(s) for s in (body.get("symbols") or []) if str(s).strip()]
+        root = body.get("root")
+        force = bool(body.get("rescan") or body.get("recalc") or body.get("force"))
+        t0 = time.time()
+
+        # Índice AST real do repositório (cache + "recalcular" = re-indexa).
+        idx = self.state.ensure_symbol_index(root=root, force=force)
+        graph = idx.get("graph")
+        if graph is None:
+            self._send_json(500, {"error": "symbol_index_unavailable"})
+            return
+
+        from hermes.platform.capabilities.lsp.unified_intelligence import ImpactAnalyzer
         analyzer = ImpactAnalyzer(graph)
         try:
             blast = analyzer.calculate_blast_radius(
                 modified_symbols=symbols,
                 modified_files=files,
+                root_dir=idx.get("root"),
             )
+            risk_score = round(min(
+                1.0,
+                (len(blast.affected_files) * 0.15)
+                + (len(blast.affected_callers) * 0.05)
+                + (len(blast.affected_test_suites) * 0.1),
+            ), 2)
             self._send_json(200, {
-                "impacted_files": list(blast.affected_files),
-                "impacted_callers": list(blast.affected_callers),
-                "impacted_tests": list(blast.affected_test_suites),
-                "risk_score": round(min(1.0, (len(blast.affected_files) * 0.15) + (len(blast.affected_callers) * 0.05)), 2),
+                "impacted_files": sorted(blast.affected_files),
+                "impacted_callers": sorted(blast.affected_callers),
+                "impacted_tests": sorted(blast.affected_test_suites),
+                "risk_score": risk_score,
                 "severity": blast.severity,
+                "depth_reached": blast.depth_reached,
+                # Diagnóstico do índice para a UI nunca mostrar "0" sem explicação.
+                "indexed_files": idx.get("files_indexed", 0),
+                "indexed_symbols": idx.get("symbols_indexed", 0),
+                "scan_root": idx.get("root", ""),
+                "elapsed_ms": int((time.time() - t0) * 1000),
+                "rescan": force,
             })
         except Exception as exc:
             self._send_json(500, {"error": str(exc)})

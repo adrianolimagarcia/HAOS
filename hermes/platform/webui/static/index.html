@@ -967,7 +967,10 @@ function render(stateData) {
     "🛡 " + (st.concurrency ? st.concurrency.active_global + "/" + st.concurrency.max_global : "0/0") +
     " · ◔ " + (st.evolution_pending ? st.evolution_pending.length : 0) + " propostas";
   renderTaskboard(st.taskboard);
+  __hBind = st.harness_bindings || __hBind || {};
+  __hLastTG = [st.team_graph, st.control_overview];
   renderTeamGraph(st.team_graph, st.control_overview);
+  if (!__hCat) ensureHarnessCatalog();
   renderScheduler(st.concurrency, st.critical_path, st.approvals);
   renderOuroboros(st.evolution_pending, st.evolution_history);
   renderEvents(st.events_tail);
@@ -1237,6 +1240,57 @@ async function saveTeamModels() {
   }
 }
 
+// ---- harness binding select (Team Graph) -------------------------------
+// Seleção de plataforma por papel, no padrão do seletor de modelos:
+// lista os harnesses detectados e persiste o vínculo papel -> plataforma.
+let __hCat = null;        // catálogo [{name,available,status,...}]
+let __hBind = {};         // bindings {role: harness}
+let __hLastTG = null;     // último (team_graph, overview) p/ re-render pós-load
+
+async function ensureHarnessCatalog() {
+  if (__hCat) return __hCat;
+  try {
+    const res = await api("/api/harnesses");
+    __hCat = (res && res.catalog) || [];
+    __hBind = (res && res.bindings) || __hBind || {};
+    if (__hLastTG) renderTeamGraph(__hLastTG[0], __hLastTG[1]);
+  } catch (_) {
+    __hCat = [];
+  }
+  return __hCat;
+}
+
+function harnessOptionsHtml(roleKey, nodeHarness) {
+  const cur = (__hBind && __hBind[roleKey]) || nodeHarness || "native";
+  const cat = (__hCat && __hCat.length)
+    ? __hCat
+    : ["native", "dsh", "opencode", "agy", "codex", "claude-code", "acp"].map((n) => ({ name: n, available: null }));
+  let hasCur = false;
+  const opts = cat.map((h) => {
+    if (h.name === cur) hasCur = true;
+    const unavail = h.available === false;
+    const mark = unavail ? " ⚠" : (h.available ? " ✓" : "");
+    return `<option value="${esc(h.name)}" ${h.name === cur ? "selected" : ""} title="${unavail ? "indisponível agora — execução fará fallback native" : (h.status || "")}">${esc(h.name)}${mark}</option>`;
+  }).join("");
+  const extra = hasCur ? "" : `<option value="${esc(cur)}" selected>${esc(cur)} (atual)</option>`;
+  return `<select class="tg-harness-sel" style="max-width:150px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:1px 4px;font:inherit;font-size:.78rem;" data-role="${esc(roleKey)}" onchange="setHarnessBinding(this,'${esc(roleKey)}')" title="Plataforma de execução deste papel">${extra}${opts}</select>`;
+}
+
+async function setHarnessBinding(sel, roleKey) {
+  const harness = sel.value;
+  const prev = sel.dataset.prev || ((__hBind && __hBind[roleKey]) || "native");
+  sel.dataset.prev = harness;
+  try {
+    const res = await api("/api/harness-binding", { role: roleKey, harness: harness });
+    if (__hBind) __hBind[roleKey] = harness;
+    if (res && res.warning) console.warn("HAOS harness:", res.warning);
+    fetchState();
+  } catch (err) {
+    sel.value = prev;
+    alert("✗ Erro ao vincular plataforma: " + err.message);
+  }
+}
+
 function renderTeamGraph(tg, ov) {
   if (!tg) return;
 
@@ -1280,6 +1334,7 @@ function renderTeamGraph(tg, ov) {
         <div class="tg-node-row"><span>ID do Nó:</span><span class="val">${esc(mayor.node_id)}</span></div>
         <div class="tg-node-row"><span>Postura:</span><span class="val" style="color:var(--accent2);">${esc(mayor.posture || 'executive')}</span></div>
         <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(mayor.provider_id || 'a6api')}:${esc(mayor.model_id || 'deepseek-v4-flash')}</span></div>
+        <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml('mayor', mayor.harness)}</span></div>
       </div>
       <div class="tg-actions">
         <button class="tg-btn" onclick="directNodeTerminal('${esc(mayor.node_id)}', 'Town Mayor')">▮ Terminal</button>
@@ -1307,6 +1362,7 @@ function renderTeamGraph(tg, ov) {
         <div class="tg-node-row"><span>Escopo:</span><span class="val" style="color:var(--accent);">software DAG (impl ➔ test ➔ review)</span></div>
         <div class="tg-node-row"><span>Postura:</span><span class="val">${esc(subOrch.posture || 'architect')}</span></div>
         <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(subOrch.provider_id || 'a6api')}:${esc(subOrch.model_id || 'deepseek-v4-flash')}</span></div>
+        <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml('sub_orchestrator', subOrch.harness)}</span></div>
       </div>
       <div class="tg-actions">
         <button class="tg-btn" onclick="directNodeTerminal('${esc(subOrch.node_id)}', 'Sub-Orchestrator')">▮ Terminal</button>
@@ -1363,6 +1419,7 @@ function renderTeamGraph(tg, ov) {
           <div class="tg-node-row"><span>Worker ID:</span><span class="val">${esc(w.node_id || w.id)}</span></div>
           <div class="tg-node-row"><span>Postura:</span><span class="val" style="color:${isReviewer ? '#d2a8ff' : 'var(--ok)'};">${esc(w.posture || (isReviewer ? 'reviewer' : 'coder'))}</span></div>
           <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(w.provider_id || 'a6api')}:${esc(w.model_id || 'deepseek-v4-flash')}</span></div>
+          <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml(isReviewer ? 'reviewer' : 'coder', w.harness)}</span></div>
           <div class="tg-node-row"><span>Tokens / Custo:</span><span class="val">${w.tokens_consumed || w.tokens || 0} tkn · $${Number(w.cost_usd || w.cost || 0).toFixed(5)}</span></div>
         </div>
         <div class="tg-actions">
@@ -1485,6 +1542,12 @@ async function runBlastRadiusAnalysis() {
     const res = await api("/api/evolution/blast-radius", { files: files });
     const tests = (res.impacted_tests || []).map((t) => `<li>${esc(t)}</li>`).join("");
     const callers = (res.impacted_callers || []).slice(0, 8).map((c) => `<li>${esc(c)}</li>`).join("");
+    const idxInfo = (res.indexed_files > 0)
+      ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">índice AST: ${res.indexed_files} arquivos · ${res.indexed_symbols} símbolos · raiz: <span class="mono">${esc(res.scan_root || '')}</span> · ${res.elapsed_ms}ms</div>`
+      : "";
+    const zeroHint = (res.impacted_files.length === 0 && res.impacted_callers.length === 0)
+      ? `<div style="font-size:0.75rem;color:var(--warn);margin-top:4px;">Nenhum impacto detectado para os arquivos informados. Verifique se o caminho está no repositório indexado (abaixo) ou clique em "Calcular" novamente para re-indexar.</div>`
+      : "";
     box.innerHTML = `
       <div style="font-weight:600;color:var(--ok);margin-bottom:6px;">✓ Análise de Blast Radius Concluída</div>
       <div class="stat"><span>Pontuação de Risco Estimada:</span><b style="color:${res.risk_score > 0.5 ? 'var(--warn)' : 'var(--ok)'};">${res.risk_score}</b></div>
@@ -1492,6 +1555,8 @@ async function runBlastRadiusAnalysis() {
       <div class="stat"><span>Chamadores Transitivos:</span><b>${res.impacted_callers.length}</b></div>
       <div class="stat"><span>Suítes de Teste Recomendadas:</span><b>${res.impacted_tests.length}</b></div>
       ${tests ? `<div style="margin-top:6px;font-size:0.75rem;color:var(--accent);"><b>Testes Críticos:</b><ul style="margin:2px 0 0 16px;">${tests}</ul></div>` : ''}
+      ${zeroHint}
+      ${idxInfo}
     `;
   } catch (err) {
     box.innerHTML = `<div class="errline">Erro ao calcular Blast Radius: ${esc(err.message)}</div>`;
