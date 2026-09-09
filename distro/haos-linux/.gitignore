@@ -1,0 +1,32 @@
+# ============================================================
+# HAOS Linux distro — never commit generated or sensitive files
+# ============================================================
+
+# Build artifacts (large / regenerable)
+.build/
+binary/
+cache/
+local/
+chroot/
+*.iso
+*.iso.sha256
+*.packages
+*.files
+chroot.installed_tmp_pkgs
+
+# Sensitive: read-only deploy key injected AT BUILD TIME by build-iso.sh
+# (never commit the private key — history survives revocation)
+config/includes.chroot/etc/haos/keys/
+
+# Installer copy injected at build time (source of truth is repo scripts/install_haos.sh)
+config/includes.chroot/usr/local/sbin/haos-install
+
+# Baixados por scripts/fetch-dependencies.sh (cache de build)
+assets/
+
+# Artefatos de build antigos que sobram no tree
+chroot.packages.*
+chroot.files
+chroot.installed_tmp_pkgs
+haos-linux-*.packages
+haos-linux-*.files
