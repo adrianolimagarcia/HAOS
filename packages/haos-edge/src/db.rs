@@ -92,6 +92,7 @@ impl DbHelper {
                  FROM haos_rag_fts f
                  JOIN haos_rag_chunks c ON f.id = c.id
                  WHERE haos_rag_fts MATCH ?
+                 ORDER BY bm25(haos_rag_fts) ASC
                  LIMIT ?;",
             )
             .map_err(|e| format!("FTS5 prepare failed: {e}"))?;
