@@ -22,6 +22,7 @@ from hermes.platform.skills.procedural_engine import (
     SkillRegistry,
     TaskExecutionRecord,
 )
+from hermes.platform.skills.procedural_evaluator import build_evaluated_pipeline
 from hermes.platform.capabilities.lsp.unified_intelligence import ImpactAnalyzer
 from hermes.platform.workspaces.automerge import AutoMergeGate
 from hermes.platform.workspaces.merge_queue import MergeCandidate, MergeQueue, MergeStatus
@@ -132,7 +133,7 @@ class OuroborosLifecycleManager:
         self._proposals: Dict[str, EvolutionProposal] = {}
         self.skill_registry = skill_registry or SkillRegistry()
         self.skill_generator = skill_generator or SkillGenerator()
-        self.skill_pipeline = skill_pipeline or SkillLifecyclePipeline(
+        self.skill_pipeline = skill_pipeline or build_evaluated_pipeline(
             registry=self.skill_registry,
             min_eval_score=promotion_threshold,
         )

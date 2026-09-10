@@ -34,6 +34,7 @@ import json
 import logging
 import sqlite3
 import threading
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from hermes.platform.observability.events import Event, MessageEnvelope
@@ -46,6 +47,29 @@ _JOURNAL_SIZE_LIMIT = 64 * 1024 * 1024
 _CHECKPOINT_EVERY_WRITES = 50
 # Escritor concorrente (outro processo/instância) espera até 30s.
 _BUSY_TIMEOUT_MS = 30_000
+
+
+def default_event_store_path() -> Path:
+    """Caminho canônico do event store do perfil ativo (``$HERMES_HOME/events.db``).
+
+    Mesmo arquivo que o standalone webui e o master-plan-orchestrator usam, para
+    que todo consumidor leia o MESMO stream.
+    """
+    from hermes_constants import get_hermes_home
+
+    return Path(get_hermes_home()) / "events.db"
+
+
+def get_event_store() -> "EventStore":
+    """EventStore file-backed do perfil ativo.
+
+    ``EventStore()`` sem argumento abre ``:memory:`` — um banco novo e vazio por
+    processo. Um consumidor de produção que use o default enxerga zero eventos
+    mesmo com o stream real cheio no disco (era o caso de todo o CLI HAOS:
+    ``haos evolution status`` reportava zero para sempre). Isolamento em memória
+    continua disponível: quem quer um store efêmero (testes) usa ``EventStore()``.
+    """
+    return EventStore(db_path=str(default_event_store_path()))
 
 
 class EventStore:

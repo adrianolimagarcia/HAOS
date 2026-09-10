@@ -40,8 +40,8 @@ def _get_haos_status() -> Dict[str, Any]:
     skills_total = 0
     skills_active = 0
     try:
-        from hermes.platform.skills.procedural_engine import SkillRegistry
-        registry = SkillRegistry()
+        from hermes.platform.skills.procedural_engine import default_procedural_registry
+        registry = default_procedural_registry()
         all_skills = registry.list_skills()
         skills_total = len(all_skills)
         skills_active = len([s for s in all_skills if getattr(s, "status", "") == "active"])
@@ -190,8 +190,8 @@ def cmd_haos_federation_ping(args: argparse.Namespace) -> int:
 def cmd_haos_skills_list(args: argparse.Namespace) -> int:
     """Executes 'hermes haos skills list'."""
     try:
-        from hermes.platform.skills.procedural_engine import SkillRegistry
-        registry = SkillRegistry()
+        from hermes.platform.skills.procedural_engine import default_procedural_registry
+        registry = default_procedural_registry()
         skills = registry.list_skills()
     except Exception as e:
         print(f"Error loading skill registry: {e}")
@@ -216,15 +216,24 @@ def cmd_haos_skills_promote(args: argparse.Namespace) -> int:
     version = getattr(args, "version", None)
 
     try:
-        from hermes.platform.skills.procedural_engine import SkillRegistry, SkillLifecyclePipeline
-        registry = SkillRegistry()
+        from hermes.platform.capabilities.registry import CapabilityRegistry
+        from hermes.platform.skills.procedural_engine import default_procedural_registry
+        from hermes.platform.skills.procedural_evaluator import build_evaluated_pipeline
+
+        registry = default_procedural_registry()
         spec = registry.get(skill_id, version)
 
         if not spec:
             print(f"✗ Skill '{skill_id}' (version: {version or 'latest'}) not found in registry.")
             return 1
 
-        pipeline = SkillLifecyclePipeline(registry=registry)
+        # Capabilities disponíveis vêm do registry REAL do platform (fonte única),
+        # não de uma lista local: o que a skill declara e o platform não publica
+        # é reportado como ausente em vez de passar batido.
+        cap_registry = CapabilityRegistry()
+        available = {c for c in spec.capabilities_required if cap_registry.get(c) is not None}
+
+        pipeline = build_evaluated_pipeline(registry=registry, available_capabilities=available)
         success, msg = pipeline.run_full_pipeline(spec)
 
         if success:
@@ -318,11 +327,11 @@ def cmd_haos_doctor(args: argparse.Namespace) -> int:
 
 def cmd_haos_evolution_status(args: argparse.Namespace) -> int:
     """Executes 'hermes haos evolution status'."""
-    from hermes.platform.observability.event_store import EventStore
+    from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.evolution.ledger import EvolutionLedger
     import json
 
-    store = EventStore()
+    store = get_event_store()
     ledger = EvolutionLedger(store)
     pending = ledger.pending()
     history = ledger.history()
@@ -357,12 +366,12 @@ def cmd_haos_evolution_status(args: argparse.Namespace) -> int:
 
 def cmd_haos_evolution_analyze(args: argparse.Namespace) -> int:
     """Executes 'hermes haos evolution analyze'."""
-    from hermes.platform.observability.event_store import EventStore
+    from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.evolution.analyzer import OuroborosAnalyzer
     from hermes.platform.evolution.ledger import EvolutionLedger
     import json
 
-    store = EventStore()
+    store = get_event_store()
     analyzer = OuroborosAnalyzer()
     ledger = EvolutionLedger(store)
 
@@ -592,13 +601,13 @@ def cmd_haos_doc_search(args: argparse.Namespace) -> int:
 
 def cmd_haos_team_graph(args: argparse.Namespace) -> int:
     """Executes 'hermes haos team'."""
-    from hermes.platform.observability.event_store import EventStore
+    from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.tasks.kanban_adapter import KanbanAdapter
     from hermes.platform.webui.controlplane import ControlPlaneService
     import json
     import dataclasses
 
-    store = EventStore()
+    store = get_event_store()
     kanban = KanbanAdapter()
     cp = ControlPlaneService(event_store=store, kanban=kanban)
     snapshot = cp.get_team_graph_snapshot()
@@ -644,12 +653,12 @@ def cmd_haos_scheduler_status(args: argparse.Namespace) -> int:
     """Executes 'hermes haos scheduler'."""
     from hermes.platform.ui.stats import DashboardStats
     from hermes.platform.tasks.kanban_adapter import KanbanAdapter
-    from hermes.platform.observability.event_store import EventStore
+    from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.execution.backpressure import ConcurrencyGuard
     import json
 
     guard = ConcurrencyGuard()
-    stats = DashboardStats(KanbanAdapter(), EventStore(), concurrency_guard=guard)
+    stats = DashboardStats(KanbanAdapter(), get_event_store(), concurrency_guard=guard)
     cg = stats.concurrency()
     cp = stats.critical_path()
 
@@ -692,10 +701,10 @@ def cmd_haos_scheduler_status(args: argparse.Namespace) -> int:
 
 def cmd_haos_team_intervene(args: argparse.Namespace) -> int:
     """Executes 'hermes haos team intervene <target_id> <action> [--reason <reason>]'."""
-    from hermes.platform.observability.event_store import EventStore
+    from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.tasks.kanban_adapter import KanbanAdapter
     from hermes.platform.webui.controlplane import ControlPlaneService
-    store = EventStore()
+    store = get_event_store()
     kanban = KanbanAdapter()
     cp = ControlPlaneService(event_store=store, kanban=kanban)
     cp.record_intervention(target_id=args.target_id, action=args.action, reason=args.reason or "CLI Operator intervention")

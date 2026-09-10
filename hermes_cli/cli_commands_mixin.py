@@ -2713,13 +2713,13 @@ class CLICommandsMixin:
         arg = parts[2] if len(parts) > 2 else ""
 
         from hermes.platform.tasks.kanban_adapter import KanbanAdapter
-        from hermes.platform.observability.event_store import EventStore
+        from hermes.platform.observability.event_store import get_event_store
         from hermes.platform.execution.dispatcher import HAOSDispatcher
         from hermes.platform.execution.lane_executor import install_real_lane_workers
 
         install_real_lane_workers()
         kanban = KanbanAdapter()
-        event_store = EventStore()
+        event_store = get_event_store()
 
         if subcmd == "status":
             tasks = kanban.list_tasks()

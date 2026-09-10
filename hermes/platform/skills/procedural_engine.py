@@ -21,12 +21,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import time
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from hermes.platform.skills.spec import SkillSpec
+
+logger = logging.getLogger("hermes.platform.skills.procedural_engine")
 
 
 def compute_spec_checksum(spec: SkillSpec) -> str:
@@ -58,11 +62,51 @@ class SkillRegistry:
     - Query highest version (latest) or exact semver matching.
     - Deprecate or retire old versions.
     - Validate collision or checksum integrity.
+    - Optional durable store (`store_path`): o registry é o lado do disco do
+      ciclo de vida; sem store ele vive só na memória do processo, e aí uma skill
+      promovida some ao terminar o comando — `haos skills promote` nunca achava
+      nada porque cada invocação começava com o registry vazio.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, store_path: Optional[Path] = None) -> None:
         # name -> { version_str -> SkillSpec }
         self._registry: Dict[str, Dict[str, SkillSpec]] = {}
+        self.store_path = Path(store_path) if store_path is not None else None
+        if self.store_path is not None and self.store_path.exists():
+            self._load()
+
+    # ------------------------------------------------------------------ #
+    # persistência (JSON; SkillSpec.to_dict/from_dict já são o formato)
+    # ------------------------------------------------------------------ #
+    def _load(self) -> None:
+        """Carrega o store; arquivo ilegível não derruba o comando (registry vazio)."""
+        try:
+            payload = json.loads(self.store_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            logger.warning("registry ilegível em %s: %s", self.store_path, exc)
+            return
+        for entry in payload.get("skills", []):
+            try:
+                spec = SkillSpec.from_dict(entry)
+            except (KeyError, TypeError, ValueError) as exc:
+                logger.warning("spec inválida no registry (%s): %s", self.store_path, exc)
+                continue
+            self._registry.setdefault(spec.name, {})[spec.version] = spec
+
+    def _persist(self) -> None:
+        if self.store_path is None:
+            return
+        payload = {
+            "skills": [
+                spec.to_dict()
+                for versions in self._registry.values()
+                for spec in versions.values()
+            ]
+        }
+        self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.store_path.with_suffix(self.store_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self.store_path)
 
     def register(self, spec: SkillSpec, overwrite: bool = False) -> SkillSpec:
         """Register a SkillSpec.
@@ -90,6 +134,7 @@ class SkillRegistry:
             raise ValueError(f"Skill '{spec.name}' version '{spec.version}' already registered")
 
         versions[spec.version] = spec
+        self._persist()
         return spec
 
     def get(self, name: str, version: Optional[str] = None) -> Optional[SkillSpec]:
@@ -138,13 +183,27 @@ class SkillRegistry:
             if spec:
                 spec.status = "deprecated"
                 spec.updated_at = time.time()
+                self._persist()
                 return True
             return False
 
         for spec in versions.values():
             spec.status = "deprecated"
             spec.updated_at = time.time()
+        self._persist()
         return True
+
+
+
+def default_procedural_registry() -> SkillRegistry:
+    """Registry procedural durável do perfil ativo (``$HERMES_HOME/skills/``).
+
+    Sem isto, o registry é um dict por processo: o CLI nunca achava a skill que o
+    comando anterior tinha promovido, e a promoção era inalcançável em produção.
+    """
+    from hermes_constants import get_hermes_home
+
+    return SkillRegistry(store_path=Path(get_hermes_home()) / "skills" / "procedural_registry.json")
 
 
 @dataclass
@@ -380,7 +439,15 @@ class SkillLifecyclePipeline:
                 scores.append(res.score if res.passed else 0.0)
             final_score = sum(scores) / len(scores) if scores else 1.0
         else:
-            final_score = spec.eval_score if spec.eval_score is not None else 1.0
+            # Fecha o gate: sem runner, sem override e sem nota medida, a promoção
+            # não tem evidência nenhuma. O fallback antigo era 1.0 — ou seja,
+            # aprovava automaticamente tudo que chegasse aqui sem medição.
+            return (
+                False,
+                "Nenhum avaliador disponível: registre um test runner "
+                "(ex.: DeterministicSkillEvaluator) ou passe eval_score_override "
+                "com nota medida. Promoção sem medição é recusada.",
+            )
 
         spec.eval_score = final_score
         try:
