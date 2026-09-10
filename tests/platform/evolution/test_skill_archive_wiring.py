@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from hermes.platform.evolution.ouroboros_lifecycle import OuroborosLifecycleManager
+from hermes.platform.evolution.promotion_holdout_gate import HoldoutVerdict
 from hermes.platform.evolution.skill_archive import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
@@ -56,6 +57,16 @@ def _spec(**overrides) -> SkillSpec:
     return spec
 
 
+class _StubHoldoutGate:
+    """Dublê do gate held-out: aqui a árvore do candidato é um repo sintético, então
+    medir o contrato do fork nela não faz sentido (o gate real a recusaria, e é isso que
+    se quer dele). A medição de verdade tem teste próprio com árvore real:
+    ``tests/platform/evolution/test_promotion_holdout_gate.py``."""
+
+    def evaluate(self, baseline_root, candidate_root):
+        return HoldoutVerdict(accepted=True, reason="dublê de teste: árvore sintética")
+
+
 def _history() -> list[TaskExecutionRecord]:
     """Três execuções do MESMO fluxo: é a recorrência que o ciclo exige."""
     return [
@@ -84,6 +95,7 @@ def _cycle(tmp_path, *, dry_run: bool):
         skill_pipeline=pipeline,
         promotion_threshold=0.80,
         min_improvement_pct=0.05,
+        holdout_gate=_StubHoldoutGate(),
     )
     return manager.simulate_evolution_cycle(
         task_history=_history(),

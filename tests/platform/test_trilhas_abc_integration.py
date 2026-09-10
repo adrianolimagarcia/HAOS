@@ -23,6 +23,7 @@ from hermes.platform.capabilities.universal_registry import (
 )
 from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph, ImpactAnalyzer
 from hermes.platform.evolution.ouroboros_lifecycle import OuroborosLifecycleManager
+from hermes.platform.evolution.promotion_holdout_gate import HoldoutVerdict
 from hermes.platform.federation.mesh import FederatedMeshNode
 from hermes.platform.federation.orchestrator import (
     HandshakeState,
@@ -45,6 +46,16 @@ from hermes.platform.skills.procedural_engine import (
 from hermes.platform.workspaces.automerge import AutoMergeGate
 from hermes.platform.workspaces.git_worktree import GitWorktreeManager
 from hermes.platform.workspaces.merge_queue import MergeQueue
+
+
+class _StubHoldoutGate:
+    """Dublê do gate held-out: aqui a árvore do candidato é um repo sintético, então
+    medir o contrato do fork nela não faz sentido (o gate real a recusaria, e é isso que
+    se quer dele). A medição de verdade tem teste próprio com árvore real:
+    ``tests/platform/evolution/test_promotion_holdout_gate.py``."""
+
+    def evaluate(self, baseline_root, candidate_root):
+        return HoldoutVerdict(accepted=True, reason="dublê de teste: árvore sintética")
 
 
 class TestTrilhasABC(unittest.TestCase):
@@ -158,6 +169,7 @@ class TestTrilhasABC(unittest.TestCase):
             merge_queue=merge_queue,
             worktree_manager=wt_manager,
             promotion_threshold=0.80,
+            holdout_gate=_StubHoldoutGate(),
         )
 
         # 3. Feed repeated successful execution traces (triggering Ouroboros discovery)

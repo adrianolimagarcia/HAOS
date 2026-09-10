@@ -124,7 +124,7 @@ EDITABLE_SURFACES: Tuple[Surface, ...] = (
 READ_ONLY_SURFACES: Tuple[Surface, ...] = (
     Surface(
         ANCHOR_REPO, "evals", False,
-        "os casos de avaliação e o split held-out (evals/holdout_split.py): quem otimiza não edita "
+        "os casos de avaliação e o split held-out (hermes/platform/evals/holdout_split.py): quem otimiza não edita "
         "a régua que o mede.",
     ),
     Surface(

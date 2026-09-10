@@ -1,4 +1,4 @@
-"""Invariantes do split held-in/held-out (``evals/holdout_split.py``).
+"""Invariantes do split held-in/held-out (``hermes/platform/evals/holdout_split.py``).
 
 O contrato é o que torna o held-out útil: a pertença de um caso é função SÓ de
 ``(seed, case_id)`` — logo o split é reproduzível, insensível à ordem da entrada e
@@ -8,7 +8,7 @@ os dois conjuntos têm evidência comparável e nenhum caso regrediu em nenhum d
 
 from __future__ import annotations
 
-from evals.holdout_split import (
+from hermes.platform.evals.holdout_split import (
     HELD_IN,
     HELD_OUT,
     HoldoutSplit,

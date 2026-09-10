@@ -1,5 +1,12 @@
 """Split determinístico held-in/held-out e veredito de aceitação para o loop de auto-melhoria.
 
+CONSUMIDOR (a fiação, não a intenção): ``hermes/platform/evolution/promotion_holdout_gate.py``,
+chamado pelo ciclo em ``ouroboros_lifecycle.simulate_evolution_cycle`` ANTES da ativação —
+roda as suítes nas duas árvores (repo vs worktree do candidato) e a promoção só passa se
+``decide_acceptance`` aceitar. Árvore ausente ou held-out sem evidência ⇒ recusa, nunca
+carimbo. Viver aqui, dentro do harness de evals da plataforma, é o que permite à camada
+``hermes.platform`` consumir o veredito: ela não importa o pacote de topo ``evals.*``.
+
 WHY (o defeito que isto fecha): os gates atuais do HAOS não medem nada — aceitam a
 nota que o próprio chamador informa (``ouroboros_lifecycle.evaluate_proposal``) e, sem
 runner registrado, aprovam a skill com ``spec.eval_score if not None else 1.0``

@@ -32,7 +32,7 @@ def test_manifest_decides_writability_by_declared_surface(tmp_path, monkeypatch)
     # Read-only: a régua, o juiz que decide, o registro do que aconteceu e o
     # modelo que julga. Um otimizador que escreve aqui não precisa melhorar nada.
     read_only = [
-        REPO / "evals" / "holdout_split.py",
+        REPO / "hermes" / "platform" / "evals" / "holdout_split.py",
         REPO / "hermes" / "platform" / "evals" / "runner.py",
         REPO / "hermes" / "platform" / "evolution" / "surface_manifest.py",
         REPO / "hermes" / "platform" / "evolution" / "ouroboros_lifecycle.py",

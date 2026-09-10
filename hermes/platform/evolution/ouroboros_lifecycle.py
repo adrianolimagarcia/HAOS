@@ -16,6 +16,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from hermes.platform.skills.spec import SkillSpec
+from hermes.platform.evolution.promotion_holdout_gate import (
+    HoldoutPromotionGate,
+    HoldoutVerdict,
+    default_holdout_gate,
+    default_repo_root,
+)
 from hermes.platform.evolution.skill_archive import record_promoted_skill
 from hermes.platform.skills.procedural_engine import (
     SkillGenerator,
@@ -130,6 +136,8 @@ class OuroborosLifecycleManager:
         worktree_manager: Optional[GitWorktreeManager] = None,
         promotion_threshold: float = 0.80,
         min_improvement_pct: float = 0.05,
+        holdout_gate: Optional[HoldoutPromotionGate] = None,
+        repo_root: Optional[Path] = None,
     ):
         self._proposals: Dict[str, EvolutionProposal] = {}
         self.skill_registry = skill_registry or SkillRegistry()
@@ -144,6 +152,11 @@ class OuroborosLifecycleManager:
         self.worktree_manager = worktree_manager
         self.promotion_threshold = promotion_threshold
         self.min_improvement_pct = min_improvement_pct
+        # Gate held-out: por padrão o REAL (suítes do fork, política do split do módulo
+        # do split). Não existe "gate nulo" em produção — quem injeta um dublê é o teste
+        # que prova plumbing com árvore falsa, e isso fica explícito no teste.
+        self.holdout_gate = holdout_gate or default_holdout_gate()
+        self.repo_root = Path(repo_root) if repo_root is not None else default_repo_root()
 
     def submit_proposal(self, target: str, changes: Dict[str, Any], rationale: str) -> EvolutionProposal:
         raw = f"{target}:{json.dumps(changes, sort_keys=True)}:{time.time()}"
@@ -403,6 +416,39 @@ class OuroborosLifecycleManager:
                     f"Candidate eval score {score:.2f} failed threshold "
                     f"({self.promotion_threshold:.2f}) or did not achieve min improvement"
                 ),
+            )
+
+        # 6b. Gate held-out: o candidato é medido nas DUAS árvores (repo vs worktree) e a
+        # promoção só passa se não regredir em nenhum caso — inclusive nos que ele não
+        # otimizou. Depois do gate barato de score (não se paga suíte para um candidato
+        # já reprovado) e ANTES da ativação: não se ativa o que não se mediu.
+        #
+        # Baseline = o repo de onde o worktree foi recortado, não "onde este módulo mora":
+        # é a única árvore comparável com o candidato. Em produção as duas coincidem; num
+        # harness de repo temporário, comparar contra o repo real acusaria regressão de
+        # todo candidato — e regressão inventada é ruído, não gate.
+        baseline_tree = getattr(self.worktree_manager, "repo_root", None) or self.repo_root
+        holdout = self.holdout_gate.evaluate(baseline_tree, worktree_path)
+        if not holdout.accepted:
+            proposal.status = "rejected"
+            if self.worktree_manager and worktree_path:
+                try:
+                    self.worktree_manager.remove_worktree(task_id)
+                except Exception:
+                    pass
+            return EvolutionCycleResult(
+                success=False,
+                proposal=proposal,
+                candidate_skill=candidate_spec,
+                stage="holdout_gate",
+                eval_score=score,
+                baseline_score=baseline_score,
+                promoted=False,
+                worktree_path=worktree_path,
+                blast_radius=blast_info,
+                affected_tests=affected_tests,
+                error=f"Held-out gate refused: {holdout.reason}",
+                details=holdout.to_dict(),
             )
 
         # Promover skill no pipeline e registrar

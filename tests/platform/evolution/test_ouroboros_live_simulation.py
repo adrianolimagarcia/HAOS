@@ -18,6 +18,7 @@ from hermes.platform.evolution.ouroboros_lifecycle import (
     RunTrace,
     TraceSpan,
 )
+from hermes.platform.evolution.promotion_holdout_gate import HoldoutVerdict
 from hermes.platform.skills.procedural_engine import (
     SkillGenerator,
     SkillLifecyclePipeline,
@@ -33,6 +34,19 @@ from hermes.platform.capabilities.lsp.unified_intelligence import (
     SymbolNode,
 )
 from hermes.platform.workspaces.merge_queue import MergeQueue, MergeStatus
+
+
+class _StubHoldoutGate:
+    """Dublê do gate held-out para testes de plumbing.
+
+    A árvore do candidato aqui é sintética (repo temporário) ou mockada (worktree do
+    MagicMock), então medir o contrato do fork nela não faz sentido — o gate real a
+    recusaria, corretamente. A medição de verdade tem teste próprio, com árvore real:
+    ``tests/platform/evolution/test_promotion_holdout_gate.py``.
+    """
+
+    def evaluate(self, baseline_root, candidate_root):
+        return HoldoutVerdict(accepted=True, reason="dublê de teste: árvore sintética")
 
 
 class TestOuroborosLiveSimulation(unittest.TestCase):
@@ -103,6 +117,7 @@ class TestOuroborosLiveSimulation(unittest.TestCase):
             merge_queue=self.mock_merge_queue,
             worktree_manager=self.mock_worktree_mgr,
             promotion_threshold=0.80,
+            holdout_gate=_StubHoldoutGate(),
             min_improvement_pct=0.05,
         )
 
