@@ -33,3 +33,9 @@ chroot.files
 chroot.installed_tmp_pkgs
 haos-linux-*.packages
 haos-linux-*.files
+# Sobras de cada `lb build` (visto no git status depois do build de 10/09):
+# o lock do live-build, o carimbo de mtimes do estágio binary e o índice de
+# conteúdo da imagem. Regeneráveis — nenhum deles é fonte.
+.lock
+binary.modified_timestamps
+*.contents
