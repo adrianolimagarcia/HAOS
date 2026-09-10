@@ -1555,7 +1555,9 @@ async function runBlastRadiusAnalysis() {
       ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">índice AST: ${res.indexed_files} arquivos · ${res.indexed_symbols} símbolos · raiz: <span class="mono">${esc(res.scan_root || '')}</span> · ${res.elapsed_ms}ms</div>`
       : "";
     const zeroHint = (res.impacted_files.length === 0 && res.impacted_callers.length === 0)
-      ? `<div style="font-size:0.75rem;color:var(--warn);margin-top:4px;">Nenhum impacto detectado para os arquivos informados. Verifique se o caminho está no repositório indexado (abaixo) ou clique em "Calcular" novamente para re-indexar.</div>`
+      ? (files.length === 0
+          ? `<div style="font-size:0.75rem;color:var(--warn);margin-top:4px;">Nada a analisar: informe um ou mais arquivos modificados (separados por vírgula) relativos à raiz indexada abaixo.</div>`
+          : `<div style="font-size:0.75rem;color:var(--warn);margin-top:4px;">Nenhum impacto detectado para esses arquivos. Confira se o caminho é relativo à raiz indexada abaixo (ex.: <span class="mono">hermes/platform/webui/standalone.py</span>).</div>`)
       : "";
     box.innerHTML = `
       <div style="font-weight:600;color:var(--ok);margin-bottom:6px;">✓ Análise de Blast Radius Concluída</div>
