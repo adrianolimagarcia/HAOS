@@ -52,6 +52,13 @@ SKIP_SYSTEM_DEPS=false
 API_KEY="${A6_API_KEY:-}"
 # Read-only deploy key (private HAOS repo) used by `haos update`; never committed to the repo.
 UPDATE_KEY_SRC="${HAOS_UPDATE_KEY:-}"
+# Extras da venv: o conjunto curado `[all]` do pyproject — o mesmo que o Dockerfile
+# e o scripts/install.sh usam (`[mcp]`, `[homeassistant]`, `[google]`, `[web]`...).
+# Sem eles a instalação sobe sem MCP (servidores ficam "parked") e sem os
+# provedores que o usuário configurou. `--extras none` instala só o core.
+HAOS_EXTRAS="${HAOS_EXTRAS:-all}"
+# Serviços systemd provisionados, para o HAOS voltar sozinho depois de um reboot.
+HAOS_SERVICES="${HAOS_SERVICES:-controlplane,gateway}"
 
 # Argument parsing
 while [[ $# -gt 0 ]]; do
@@ -61,6 +68,10 @@ while [[ $# -gt 0 ]]; do
         --haos-home) HAOS_HOME="$2"; shift 2 ;;
         --api-key) API_KEY="$2"; shift 2 ;;
         --update-key) UPDATE_KEY_SRC="$2"; shift 2 ;;
+        --extras) HAOS_EXTRAS="$2"; shift 2 ;;
+        --no-extras) HAOS_EXTRAS="none"; shift ;;
+        --services) HAOS_SERVICES="$2"; shift 2 ;;
+        --no-services) HAOS_SERVICES="none"; shift ;;
         --skip-system-deps) SKIP_SYSTEM_DEPS=true; shift ;;
         --help|-h)
             echo "HAOS Standalone Installer"
@@ -70,6 +81,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --haos-home <path>    Configuration & data home directory (default: ~/.haos)"
             echo "  --api-key <key>       A6API Key to register in .env"
             echo "  --update-key <path>   Read-only deploy key for private-repo 'haos update'"
+            echo "  --extras <list|none>  Extras pip da venv (default: all = conjunto curado)"
+            echo "  --no-extras           Alias de --extras none (só o core)"
+            echo "  --services <list|none> Serviços systemd (default: controlplane,gateway)"
+            echo "  --no-services         Não provisiona serviço nenhum"
             echo "  --skip-system-deps    Skip apt/pacman/dnf package installation"
             exit 0
             ;;
@@ -213,13 +228,40 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # 5. Create Isolated Virtual Environment
+# Instala o HAOS na venv com os extras pedidos, caindo para o core se o extra não
+# resolver. Mesmo desenho de tiers do scripts/install.sh (extra -> core): uma
+# instalação que perde um transitivo do PyPI não pode ficar sem CLI nenhum.
+install_haos_into_venv() {
+    local spec="."
+    if [ "$HAOS_EXTRAS" != "none" ]; then
+        spec=".[${HAOS_EXTRAS}]"
+    fi
+    if command -v uv >/dev/null 2>&1; then
+        VIRTUAL_ENV="$VENV_DIR" uv pip install -e "$spec" && return 0
+    else
+        "$PYTHON" -m pip install -e "$spec" && return 0
+    fi
+    if [ "$spec" != "." ]; then
+        log_warn "Extras '$HAOS_EXTRAS' não resolveram — instalando apenas o core."
+        if command -v uv >/dev/null 2>&1; then
+            VIRTUAL_ENV="$VENV_DIR" uv pip install -e .
+        else
+            "$PYTHON" -m pip install -e .
+        fi
+    fi
+}
+
 log_step "Configuring isolated virtual environment..."
 VENV_DIR="$INSTALL_DIR/venv"
 if command -v uv >/dev/null 2>&1; then
     uv venv "$VENV_DIR" --python 3.11 2>/dev/null || uv venv "$VENV_DIR"
     PYTHON="$VENV_DIR/bin/python"
-    log_info "Installing HAOS package and dependencies via uv..."
-    VIRTUAL_ENV="$VENV_DIR" uv pip install -e .
+    if [ "$HAOS_EXTRAS" = "none" ]; then
+        log_info "Installing HAOS core (sem extras) via uv..."
+    else
+        log_info "Installing HAOS + extras [$HAOS_EXTRAS] via uv..."
+    fi
+    install_haos_into_venv
     # Optional: Scrapling (Cloudflare-bypass fetch p/ haos-fetch). Desativável com SKIP_FETCH_EXTRA=1.
     if [ "${SKIP_FETCH_EXTRA:-0}" != "1" ]; then
         VIRTUAL_ENV="$VENV_DIR" uv pip install --quiet "scrapling[fetchers]>=0.4.15,<0.5" || log_warn "scrapling opcional não instalado (haos-fetch usará só HTTP)."
@@ -229,7 +271,7 @@ else
     python3 -m venv "$VENV_DIR"
     PYTHON="$VENV_DIR/bin/python"
     "$PYTHON" -m pip install --upgrade pip
-    "$PYTHON" -m pip install -e .
+    install_haos_into_venv
     if [ "${SKIP_FETCH_EXTRA:-0}" != "1" ]; then
         "$PYTHON" -m pip install --quiet "scrapling[fetchers]>=0.4.15,<0.5" || log_warn "scrapling opcional não instalado (haos-fetch usará só HTTP)."
     fi
@@ -538,9 +580,70 @@ else
     log_warn "Installation completed, but '$BIN_DIR/haos --version' returned empty. Check PATH."
 fi
 
-# 9. Auto-Start HAOS Control Plane on Private LAN IP
-log_step "Auto-starting HAOS Control Plane on private LAN..."
-"$BIN_DIR/haos-controlplane" start || true
+# 9. Provision systemd services (sobrevivem a reboot) com nohup como fallback
+log_step "Provisioning HAOS services..."
+# O CLI do gateway usa `--system` ou nada (usuário é o padrão dele); o
+# scripts/haos_services.py pede o escopo explícito nos dois casos, para uma
+# instalação de usuário nunca tentar escrever em /etc/systemd/system.
+SCOPE_FLAG=""
+CONTROLPLANE_SCOPE_FLAG="--user"
+HAS_SYSTEMD=0
+if command -v systemctl >/dev/null 2>&1; then
+    # `is-system-running` sai != 0 em "degraded", então o estado é lido, não testado
+    # pelo exit code (mesma checagem do scripts/haos_services.py).
+    SYSTEMD_STATE="$(systemctl is-system-running 2>/dev/null || true)"
+    case "$SYSTEMD_STATE" in
+        running|degraded|starting|maintenance)
+            HAS_SYSTEMD=1
+            if [ "$(id -u)" -eq 0 ]; then
+                SCOPE_FLAG="--system"
+                CONTROLPLANE_SCOPE_FLAG="--system"
+            fi
+            ;;
+    esac
+fi
+
+if [ "$HAOS_SERVICES" = "none" ]; then
+    log_info "Serviços desativados (--services none): rode 'haos-controlplane start' quando quiser."
+elif [ "$HAS_SYSTEMD" = "1" ]; then
+    if [[ ",$HAOS_SERVICES," == *",controlplane,"* ]]; then
+        if "$PYTHON" "$INSTALL_DIR/scripts/haos_services.py" install \
+            --install-dir "$INSTALL_DIR" --haos-home "$HAOS_HOME" --python "$PYTHON" \
+            "$CONTROLPLANE_SCOPE_FLAG"; then
+            log_ok "Control plane sob systemd (volta sozinho no boot)."
+        else
+            log_warn "systemd recusou a unidade do controlplane — subindo com nohup."
+            "$BIN_DIR/haos-controlplane" start || true
+        fi
+    fi
+    if [[ ",$HAOS_SERVICES," == *",gateway,"* ]]; then
+        # Caminho canônico do repo: hermes_cli.gateway.systemd_install, coberto por
+        # tests/hermes_cli/test_gateway_service.py — a unidade não é reimplementada
+        # aqui. Chamado com o python da venv INSTALADA de propósito: o gerador
+        # deriva o venv do interpretador que o invoca, então chamá-lo de outro
+        # checkout gravaria o caminho daquele checkout na unidade.
+        # --no-start-now: numa máquina recém-instalada ainda não há credencial de
+        # plataforma, e o gateway sairia 78 (config ausente) já no primeiro boot.
+        if "$PYTHON" -m hermes_cli.main gateway install ${SCOPE_FLAG} --no-start-now >/dev/null 2>&1; then
+            if [ "$SCOPE_FLAG" = "--system" ]; then
+                GW_UNIT="/etc/systemd/system/hermes-gateway.service"
+            else
+                GW_UNIT="$HOME/.config/systemd/user/hermes-gateway.service"
+            fi
+            if grep -q "$INSTALL_DIR/venv" "$GW_UNIT" 2>/dev/null; then
+                log_ok "Unidade do gateway instalada apontando para $INSTALL_DIR/venv."
+            else
+                log_warn "Unidade do gateway não aponta para $INSTALL_DIR/venv — confira $GW_UNIT."
+            fi
+            log_info "Rode 'haos setup' e depois 'haos gateway start' para conectar as plataformas."
+        else
+            log_warn "Não foi possível instalar a unidade do gateway (rode 'haos gateway install' depois)."
+        fi
+    fi
+else
+    log_warn "systemd indisponível — subindo o controlplane com nohup (não sobrevive a reboot)."
+    "$BIN_DIR/haos-controlplane" start || true
+fi
 
 LAN_IP=$("$PYTHON" -c "from scripts.serve_controlplane import get_private_lan_ips; ips = get_private_lan_ips(); print(ips[0] if ips else '127.0.0.1')" 2>/dev/null || echo "127.0.0.1")
 
