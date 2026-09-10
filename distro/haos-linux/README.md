@@ -56,6 +56,13 @@ anônimo e funciona sem nenhuma credencial. Nada a fazer além de publicar o rep
 1. **Deploy key read-only** (`haos-update-ro`) é injetada no **momento do build**
    em `/etc/haos/keys/update_ed25519` (`0600`) pelo `build-iso.sh` — a partir de
    `$HAOS_UPDATE_KEY` ou `/root/.haos/keys/update_ed25519` na máquina de build.
+   - **Para criar e registrar a chave: `./scripts/provision_update_key.sh`.** Gera o
+     par ed25519 no caminho padrão, imprime a metade **pública** para colar em
+     `github.com/adrianolimagarcia/HAOS/settings/keys/new` (com "Allow write access"
+     **desmarcado**), confere que o `distro/haos-linux/.gitignore` cobre o destino e
+     que privada/`.pub` são o mesmo par. Recusa substituir uma chave existente sem
+     `--force` — a antiga está embutida em toda ISO já construída, e trocá-la sem
+     revogar no GitHub quebra o `haos update` dos nós que vieram dela.
    - O build valida que o arquivo é a chave **privada** (cabeçalho
      `BEGIN ... PRIVATE KEY`) antes de injetar — apontar a `.pub` por engano é
      detectado e ignorado.

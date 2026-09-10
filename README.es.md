@@ -188,7 +188,7 @@ Inicio rápido para colaboradores — clona y comienza con `setup-hermes.sh`:
 git clone https://github.com/NousResearch/hermes-agent.git
 cd hermes-agent
 ./setup-hermes.sh     # instala uv, crea venv, instala .[all], enlaza ~/.local/bin/hermes
-./hermes              # detecta automáticamente el venv, no necesitas hacer `source` primero
+hermes                # detecta automáticamente el venv, no necesitas hacer `source` primero
 ```
 
 Ruta manual (equivalente a lo anterior):

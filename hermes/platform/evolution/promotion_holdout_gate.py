@@ -18,6 +18,12 @@ fora da stdlib no topo, os seams canônicos importam, a rota exata de modelo sob
 Ou seja: ele recusa um candidato cuja árvore quebra o contrato do fork, e é a única
 suíte real que existe hoje. Suíte nova entra por injeção (``suites=``); é para isso que
 ``EvalSuite`` é dado, e o minerador de falhas já emite casos a partir de falha real.
+
+E o que ele não COBRE: a promoção HUMANA. ``haos skill ...`` (``hermes_cli/haos_cmd.py``)
+chama ``pipeline.run_full_pipeline`` e ativa a skill por decisão do usuário, sem worktree —
+ali baseline e candidato são a mesma árvore, então medir seria vácua por construção (e o
+P5 já registra a linhagem nesse ponto). Este gate guarda o caminho AUTÔNOMO: o ciclo que
+se auto-promove.
 """
 
 from __future__ import annotations

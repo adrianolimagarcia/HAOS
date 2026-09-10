@@ -221,7 +221,7 @@ hermes claw migrate --overwrite  # موجودہ متصادم فائلوں کو �
 git clone https://github.com/NousResearch/hermes-agent.git
 cd hermes-agent
 ./setup-hermes.sh     # uv کو انسٹال کرتا ہے، venv بناتا ہے، .[all] کو انسٹال کرتا ہے، اور ~/.local/bin/hermes کا سیم لنک (symlink) بناتا ہے
-./hermes              # خود بخود venv کی شناخت کرتا ہے، پہلے `source` کرنے کی ضرورت نہیں
+hermes                # خود بخود venv کی شناخت کرتا ہے، پہلے `source` کرنے کی ضرورت نہیں
 ```
 
 </div>
