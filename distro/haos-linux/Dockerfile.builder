@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dosfstools \
     ca-certificates \
     curl \
+    file \
     git \
     rsync \
     && rm -rf /var/lib/apt/lists/*

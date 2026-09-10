@@ -1,3 +1,79 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Live Hook: SQLite 3.53+ com FTS5/RTREE/MATH_FUNCTIONS/DBSTAT_VTAB
+# ==============================================================================
+# Compila e instala o sqlite do cache (build-iso.sh injeta em
+# /usr/local/src/haos-factory; fallback: download das mesmas fontes do
+# scripts/fetch-dependencies.sh). O /usr/local/lib tem precedência no ld.so,
+# então o módulo sqlite3 do Python do sistema passa a usar a 3.53+ com os
+# flags pedidos — sem tocar no pacote Debian (o dpkg continua íntegro).
+#
+# O stub anterior só imprimia "pronto" sem compilar nada.
 set -euo pipefail
-echo "[HAOS Hook] SQLite com FTS5 pronto."
+
+FACTORY="/usr/local/src/haos-factory"
+SRC="${FACTORY}/sqlite-autoconf-3530400.tar.gz"
+
+# DNS: o chroot herda o resolv.conf da imagem (nameserver 127.0.0.1 — o unbound
+# local NÃO roda durante o build), então rede de hook falha com EAI_AGAIN.
+# Se a resolução não funcionar, usa resolvers públicos e restaura o original ao
+# final (o resolv.conf do sistema instalado é gravado pela rede no boot).
+RSV=/etc/resolv.conf
+RSV_BAK=/tmp/resolv.conf.bak
+if ! getent hosts sqlite.org >/dev/null 2>&1; then
+    cp -a "${RSV}" "${RSV_BAK}" 2>/dev/null || true
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "${RSV}"
+fi
+restore_rsv() {
+    if [ -f "${RSV_BAK}" ]; then
+        cp -a "${RSV_BAK}" "${RSV}" 2>/dev/null || true
+        rm -f "${RSV_BAK}"
+    fi
+}
+trap restore_rsv EXIT
+
+if [ ! -f "${SRC}" ]; then
+    echo "[HAOS Hook] SQLite: cache ausente, baixando..."
+    SRC=/tmp/sqlite-autoconf-3530400.tar.gz
+    (curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
+        "https://sqlite.org/2026/sqlite-autoconf-3530400.tar.gz" -o "${SRC}" 2>/dev/null) || \
+    (curl -fsSL --retry 3 --connect-timeout 15 --max-time 120 \
+        "https://sources.buildroot.net/sqlite/sqlite-autoconf-3530400.tar.gz" -o "${SRC}")
+fi
+[ -s "${SRC}" ] || { echo "[HAOS Hook] ERRO: sem fonte do SQLite." >&2; exit 1; }
+
+# Toolchain de build: usa a existente no chroot; instala (e purga) se faltar
+INSTALLED_TOOLS=0
+if ! command -v gcc >/dev/null 2>&1 || ! command -v make >/dev/null 2>&1; then
+    INSTALLED_TOOLS=1
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc make
+fi
+
+WORK="$(mktemp -d)"
+tar -xzf "${SRC}" -C "${WORK}"
+cd "${WORK}/sqlite-autoconf-3530400"
+
+CPPFLAGS="-DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_RTREE \
+-DSQLITE_ENABLE_MATH_FUNCTIONS -DSQLITE_ENABLE_DBSTAT_VTAB \
+-DSQLITE_ENABLE_COLUMN_METADATA -DSQLITE_ENABLE_JSON1" \
+./configure --prefix=/usr/local --disable-static --enable-shared --enable-threadsafe
+make -j"$(nproc)"
+make install
+ldconfig
+
+cd / && rm -rf "${WORK}" /tmp/sqlite-autoconf-3530400.tar.gz 2>/dev/null || true
+
+if [ "${INSTALLED_TOOLS}" -eq 1 ]; then
+    DEBIAN_FRONTEND=noninteractive apt-get purge -y gcc make >/dev/null 2>&1 || true
+    apt-get autoremove -y --purge >/dev/null 2>&1 || true
+fi
+
+# Prova: versão e compile_options com os quatro flags
+NEW_VER="$(/usr/local/bin/sqlite3 :memory: 'select sqlite_version();')"
+[ -n "${NEW_VER}" ] || { echo "[HAOS Hook] ERRO: sqlite não responde." >&2; exit 1; }
+for flag in ENABLE_FTS5 ENABLE_RTREE ENABLE_MATH_FUNCTIONS ENABLE_DBSTAT_VTAB; do
+    /usr/local/bin/sqlite3 :memory: 'pragma compile_options;' | grep -q "${flag}" \
+        || { echo "[HAOS Hook] ERRO: falta ${flag} no sqlite compilado." >&2; exit 1; }
+done
+echo "[HAOS Hook] SQLite ${NEW_VER} com FTS5/RTREE/MATH_FUNCTIONS/DBSTAT_VTAB em /usr/local."

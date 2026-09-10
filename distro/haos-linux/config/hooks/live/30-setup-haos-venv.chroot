@@ -1,3 +1,61 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Live Hook: uv + venv Python 3.13 em /opt/haos/venv
+# ==============================================================================
+# Instala o binário uv (cache injetado pelo build-iso.sh; fallback: release
+# "latest" do GitHub, mesma fonte do scripts/fetch-dependencies.sh) e materializa
+# o venv /opt/haos/venv com o Python 3.13 do próprio sistema (trixie traz
+# 3.13.5) — o haos-setup do primeiro boot roda `uv sync` nele.
+#
+# O stub anterior só imprimia "uv e virtualenv já configurados" sem instalar
+# nada — era a causa direta do gateway 203/EXEC numa instalação nova.
 set -euo pipefail
-echo "[HAOS Hook] uv e virtualenv já configurados."
+
+FACTORY="/usr/local/src/haos-factory"
+
+# DNS: o chroot herda o resolv.conf da imagem (nameserver 127.0.0.1 — o unbound
+# local NÃO roda durante o build), então rede de hook falha com EAI_AGAIN.
+# Se a resolução não funcionar, usa resolvers públicos e restaura o original ao
+# final (o resolv.conf do sistema instalado é gravado pela rede no boot).
+RSV=/etc/resolv.conf
+RSV_BAK=/tmp/resolv.conf.bak
+if ! getent hosts github.com >/dev/null 2>&1; then
+    cp -a "${RSV}" "${RSV_BAK}" 2>/dev/null || true
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "${RSV}"
+fi
+restore_rsv() {
+    if [ -f "${RSV_BAK}" ]; then
+        cp -a "${RSV_BAK}" "${RSV}" 2>/dev/null || true
+        rm -f "${RSV_BAK}"
+    fi
+}
+trap restore_rsv EXIT
+
+if [ ! -x /usr/local/bin/uv ]; then
+    if [ -f "${FACTORY}/uv-x86_64-unknown-linux-gnu.tar.gz" ]; then
+        tar -xzf "${FACTORY}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+            -C /usr/local/bin --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+    else
+        echo "[HAOS Hook] uv: cache ausente, baixando do GitHub..."
+        curl -fsSL --retry 3 \
+            "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz" \
+            -o /tmp/uv.tar.gz
+        tar -xzf /tmp/uv.tar.gz -C /usr/local/bin --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+        rm -f /tmp/uv.tar.gz
+    fi
+    chmod +x /usr/local/bin/uv
+fi
+command -v uv >/dev/null 2>&1 || { echo "[HAOS Hook] ERRO: uv não instalado." >&2; exit 1; }
+
+# venv com o Python 3.13 do sistema (trixie: 3.13.5) — mesma chamada que o
+# haos-setup fará no primeiro boot; se falhar aqui, falharia lá com set -e.
+if [ ! -x /opt/haos/venv/bin/python ]; then
+    uv venv /opt/haos/venv --python 3.13
+fi
+[ -x /opt/haos/venv/bin/python ] || { echo "[HAOS Hook] ERRO: venv não criado." >&2; exit 1; }
+
+# O diretório de fábrica foi consumido por 10/15/20/30 — removê-lo garante que
+# nenhum tarball entre no squashfs. (O trap do build-iso.sh ainda varre o tree.)
+rm -rf "${FACTORY}"
+
+echo "[HAOS Hook] uv $(uv --version) + venv /opt/haos/venv (Python $(/opt/haos/venv/bin/python --version))."

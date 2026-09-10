@@ -1,3 +1,62 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Live Hook: Node.js 26 LTS + npm
+# ==============================================================================
+# Instala Node.js 26 LTS em /usr/local a partir do cache injetado pelo
+# build-iso.sh (/usr/local/src/haos-factory), com fallback para download direto
+# de nodejs.org. O stub anterior só imprimia "já instalado" sem instalar nada.
+#
+# Fonte primária:  config/includes.chroot/usr/local/src/haos-factory/
+#   (build-iso.sh copia cache/*.tar.* para lá antes do build; o hook consome e
+#    o hook 30 remove o diretório — nada vai para a imagem final).
+# Fonte de rede:   https://nodejs.org/dist/latest-v26.x/ (mesma do
+#   scripts/fetch-dependencies.sh, que popula o cache com antecedência).
 set -euo pipefail
-echo "[HAOS Hook] Node.js 26 já instalado."
+
+FACTORY="/usr/local/src/haos-factory"
+NODE_TARBALL=""
+
+# DNS: o chroot herda o resolv.conf da imagem (nameserver 127.0.0.1 — o unbound
+# local NÃO roda durante o build), então rede de hook falha com EAI_AGAIN.
+# Se a resolução não funcionar, usa resolvers públicos e restaura o original ao
+# final (o resolv.conf do sistema instalado é gravado pela rede no boot).
+RSV=/etc/resolv.conf
+RSV_BAK=/tmp/resolv.conf.bak
+if ! getent hosts nodejs.org >/dev/null 2>&1; then
+    cp -a "${RSV}" "${RSV_BAK}" 2>/dev/null || true
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "${RSV}"
+fi
+restore_rsv() {
+    if [ -f "${RSV_BAK}" ]; then
+        cp -a "${RSV_BAK}" "${RSV}" 2>/dev/null || true
+        rm -f "${RSV_BAK}"
+    fi
+}
+trap restore_rsv EXIT
+
+if [ -f "${FACTORY}/node-latest-v26-linux-x64.tar.xz" ]; then
+    NODE_TARBALL="${FACTORY}/node-latest-v26-linux-x64.tar.xz"
+    echo "[HAOS Hook] Node 26: usando tarball injetado do cache."
+elif command -v curl >/dev/null 2>&1; then
+    echo "[HAOS Hook] Node 26: cache ausente, baixando de nodejs.org..."
+    NODE_TARBALL=/tmp/node26.tar.xz
+    NODE_BASE="https://nodejs.org/dist/latest-v26.x"
+    TAR_NAME="$(curl -fsSL --retry 3 "${NODE_BASE}/" 2>/dev/null \
+        | grep -o 'node-v26\.[0-9.]*-linux-x64\.tar\.xz' | head -n1 || true)"
+    if [ -n "${TAR_NAME}" ]; then
+        curl -fsSL --retry 3 "${NODE_BASE}/${TAR_NAME}" -o "${NODE_TARBALL}"
+    fi
+fi
+
+if [ ! -s "${NODE_TARBALL}" ]; then
+    echo "[HAOS Hook] ERRO: sem fonte para o Node 26 (cache nem rede)." >&2
+    exit 1
+fi
+
+tar -xJf "${NODE_TARBALL}" -C /usr/local --strip-components=1
+rm -f "${NODE_TARBALL}" /tmp/node26.tar.xz 2>/dev/null || true
+
+# Provas: binários no lugar e versões reais
+[ -x /usr/local/bin/node ] || { echo "[HAOS Hook] ERRO: node não instalado." >&2; exit 1; }
+[ -x /usr/local/bin/npm ]  || { echo "[HAOS Hook] ERRO: npm não instalado."  >&2; exit 1; }
+echo "[HAOS Hook] Node.js $(node --version) + npm $(npm --version) instalados em /usr/local."

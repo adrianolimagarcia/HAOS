@@ -13,7 +13,9 @@ PURPLE="\033[1;35m"
 BOLD="\033[1m"
 RESET="\033[0m"
 
-clear
+# clear falha sob `set -e` quando TERM é desconhecido (execução headless via
+# SSH/automação — "'unknown': unknown terminal type." abortava o setup).
+clear 2>/dev/null || true
 echo -e "${CYAN}"
 cat << 'EOF'
   _    _          ____   _____   _      _                  
@@ -173,7 +175,12 @@ if command -v uv >/dev/null 2>&1; then
     if [ ! -d "${INSTALL_DIR}/venv" ]; then
         uv venv "${INSTALL_DIR}/venv" --python 3.13
     fi
-    VIRTUAL_ENV="${INSTALL_DIR}/venv" uv sync --frozen --no-dev 2>/dev/null || \
+    # uv em modo projeto IGNORA VIRTUAL_ENV (prefere `.venv` do repo); sem
+    # UV_PROJECT_ENVIRONMENT o sync recriava o venv noutro caminho (ou com um
+    # python-managed 3.12), deixando /opt/haos/venv vazio. Fix: aponta o
+    # projeto explicitamente para o venv assado E fixa o Python 3.13 (o do
+    # sistema) — é isso que os units/gateway executam.
+    UV_PROJECT_ENVIRONMENT="${INSTALL_DIR}/venv" uv sync --frozen --no-dev --python 3.13 2>/dev/null || \
     VIRTUAL_ENV="${INSTALL_DIR}/venv" uv pip install -e . 2>/dev/null || true
 fi
 

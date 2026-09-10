@@ -16,7 +16,6 @@ a6api_provider = ProviderProfile(
     env_vars=("A6API_API_KEY", "A6API_BASE_URL"),
     base_url="https://api.a6api.com/v1",
     auth_type="api_key",
-    default_model="gemini-2.5-flash",
     default_aux_model="gemini-2.5-flash",
 )
 

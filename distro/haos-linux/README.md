@@ -91,21 +91,22 @@ sessões e cache do agente.
    - **ZRAM** com compressão `zstd` configurada em metade da RAM física.
    - `transparent_hugepage=madvise` para evitar travamentos de alocação de memória por IA.
    - Limites de arquivos e processos estendidos (`nofile 1048576`, `nproc 65535`).
-4. **Runtimes de Fábrica:**
-   - Python 3.13 isolado gerenciado com `uv` em `/opt/haos/venv`.
-   - Node.js 26 LTS e npm em `/usr/local`.
-   - SQLite 3.53+ compilado com `FTS5`, `RTREE`, `MATH_FUNCTIONS` e `DBSTAT_VTAB`.
-   - Rust toolchain e daemon `haos-edge` compilado em `/usr/local/bin/haos-edge`.
-   - Playwright Chromium headless em cache pronto para o agente navegar na web.
+4. **Runtimes de Fábrica** (assados na imagem pelos hooks `config/hooks/live/`, consumindo `cache/`):
+    - **Python 3.13** em `/opt/haos/venv`, gerenciado com **uv** (`uv 0.12.x`; venv materializado com o Python 3.13.5 do sistema — as dependências do agente são instaladas pelo `haos-setup` no primeiro boot via `uv sync --frozen --no-dev --python 3.13`).
+    - **Node.js 26 LTS** (v26.8.2) + npm (11.19.1) em `/usr/local` — usados pelos builds web/TUI e pelo gtop.
+    - **SQLite 3.53.4 compilado** com `FTS5`, `RTREE`, `MATH_FUNCTIONS` e `DBSTAT_VTAB` em `/usr/local` (o módulo sqlite3 do Python e o wrapper `haos` o usam por precedência do ld.so/LD_PRELOAD; o pacote Debian `libsqlite3-0` permanece íntegro no dpkg).
+    - **gtop** (monitor de processos no terminal, npm global) e **sudo** (usuário `haos` no grupo `sudo`).
+    - Daemon **`haos-edge`** (Rust) **pré-compilado vendored** em `/usr/local/bin/haos-edge` — a toolchain Rust **não** é assada.
+    - **Playwright Chromium NÃO é assado** (custo de imagem alto): o `doctor` mostra "Playwright Chromium not installed" e as tools `browser_*` ficam ocultas até `cd /opt/haos && npx playwright install --with-deps chromium` (gap documentado, ver "Limitações conhecidas").
 
 ## Estrutura de Pastas
 
 ```
 distro/haos-linux/
-├── cache/                  # Pacotes e binários pesados pré-baixados (Node 26, uv, SQLite)
+├── cache/                  # Binários pesados pré-baixados (Node 26, uv, SQLite) — preservado entre builds (o build usa `lb clean`, nunca `--purge`, senão o cache do host é apagado pelo bind mount)
 ├── config/
-│   ├── hooks/              # Scripts de build do chroot (Node, uv, venv, SQLite, Rust)
-│   ├── includes.chroot/    # Arquivos injetados no sistema (/etc/sysctl.d, systemd, /usr/local/bin)
+│   ├── hooks/              # Scripts de build do chroot (Node, gtop, uv+venv, SQLite, Rust, identidade)
+│   ├── includes.chroot/    # Arquivos injetados no sistema (/etc/sysctl.d, systemd, /usr/local/bin, plugins)
 │   └── package-lists/      # Pacotes Debian instalados no sistema base
 ├── scripts/                # Automações de download e helpers de build
 └── README.md
@@ -231,3 +232,32 @@ upstream), com a proveniência em `UPSTREAM.md` (repo + commit).
   dentro de `/opt/haos/wrapper-antigravity/cache/`, ou seja em diretório de
   código.
 
+
+## Limitações conhecidas (validadas em 10/09/2026)
+
+- **Playwright Chromium não é assado** na imagem (custo alto de build/ISO). No
+  primeiro uso de `browser_*`: `sudo -u haos sh -c 'cd /opt/haos && npx playwright install --with-deps chromium'`.
+  Enquanto ausente, o `haos doctor` lista "Playwright Chromium not installed" e as
+  tools de browser ficam ocultas (esperado).
+- **"Kernel 6.18 LTS" é claim textual** (README/intro, `/etc/issue`, `GRUB_DISTRIBUTOR`):
+  a imagem usa o kernel do Debian trixie (`linux-image-amd64` → 6.12.107). Ou se
+  constrói um kernel 6.18 real ou se corrige o texto — decisão pendente.
+- **Hostname da instalação = `debian`**: o `live-installer` copia o rootfs
+  byte-a-byte e ignora o preseed de hostname (a identidade efetiva é o `node_id`
+  do `haos-setup`, ex. `haos-node-1`).
+- **venv de fábrica vazio**: o `/opt/haos/venv` assado tem só o interpretador
+  3.13; as dependências do agente são instaladas no primeiro boot pelo
+  `haos-setup` (`uv sync --frozen --no-dev --python 3.13`). Não existe "venv de
+  fábrica com tudo instalado".
+- **`unbound.service` falha no boot** → sistema fica `degraded`. O resolver local
+  do HAOS (DNS) precisa de investigação própria.
+- **`haos-gateway`/`haos-mesh` nascem em `failed`/`activating`** até o `haos-setup`
+  preencher o venv e reiniciar os daemons (unidades habilitadas na imagem com
+  ExecStart no venv, que só existe de verdade depois do setup — "ovo e galinha"
+  intencional: o fluxo correto é instalar → `haos-setup`).
+- **`haos-edge`** reinicia em loop (`exit 0` + `Restart=always`) até o wrapper
+  Antigravity ter token (`agy auth login` como `haos` + restart do serviço) — ver
+  seção "Wrapper-antigravity".
+- **CLI `hermes`**: o doctor sugere `~/.local/bin/hermes`; no appliance o entry
+  canônico é o wrapper `/usr/local/bin/haos` (que re-executa como usuário `haos`).
+  Criar o symlink é opcional.

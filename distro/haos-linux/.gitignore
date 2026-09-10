@@ -24,6 +24,9 @@ config/includes.chroot/etc/haos/keys/
 # Installer copy injected at build time (source of truth is repo scripts/install_haos.sh)
 config/includes.chroot/usr/local/sbin/haos-install
 
+# Runtimes pré-baixados (Node/uv/SQLite) injetados no build pelos hooks 10/15/20/30
+config/includes.chroot/usr/local/src/haos-factory/
+
 # Baixados por scripts/fetch-dependencies.sh (cache de build)
 assets/
 

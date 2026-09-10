@@ -1,3 +1,45 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Live Hook: gtop (monitor de processos no terminal, npm global)
+# ==============================================================================
+# gtop é um app Node (ncurses) instalado globalmente via npm. Depende do hook
+# 10 (Node/npm) — a ordem alfabética garante a execução correta.
+# O stub anterior só imprimia "gtop verificado" sem instalar nada.
+#
+# DNS: o chroot pode herdar um resolv.conf inútil (stub do resolved/Docker),
+# o que quebra o npm com EAI_AGAIN. Isso aconteceu de verdade no primeiro build
+# com o hook (log: "npm error getaddrinfo EAI_AGAIN registry.npmjs.org").
+# Garante resolução com resolvers públicos e restaura o original ao final — o
+# resolv.conf do sistema instalado é gravado pela rede no boot, não pela imagem.
 set -euo pipefail
-echo "[HAOS Hook] gtop verificado."
+
+if ! command -v npm >/dev/null 2>&1; then
+    echo "[HAOS Hook] ERRO: npm ausente — hook 10 (node) deve rodar antes." >&2
+    exit 1
+fi
+
+RSV=/etc/resolv.conf
+RSV_BAK=/tmp/resolv.conf.bak
+if ! getent hosts registry.npmjs.org >/dev/null 2>&1; then
+    cp -a "${RSV}" "${RSV_BAK}" 2>/dev/null || true
+    printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "${RSV}"
+fi
+restore_rsv() {
+    if [ -f "${RSV_BAK}" ]; then
+        cp -a "${RSV_BAK}" "${RSV}" 2>/dev/null || true
+        rm -f "${RSV_BAK}"
+    fi
+}
+trap restore_rsv EXIT
+
+echo "[HAOS Hook] Instalando gtop via npm (global)..."
+for attempt in 1 2 3; do
+    if npm install -g gtop --no-audit --no-fund --loglevel=error; then
+        break
+    fi
+    echo "  (tentativa ${attempt} falhou — DNS pode estar lento; nova tentativa)"
+    sleep 5
+done
+
+[ -x /usr/local/bin/gtop ] || { echo "[HAOS Hook] ERRO: gtop não instalado após 3 tentativas." >&2; exit 1; }
+echo "[HAOS Hook] gtop instalado em /usr/local/bin/gtop."

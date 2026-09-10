@@ -12,7 +12,12 @@ Environment="HAOS_HOME=/home/haos/.haos"
 Environment="PYTHONUNBUFFERED=1"
 Environment="PATH=/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=-/etc/haos/mesh.env
-ExecStart=/opt/haos/venv/bin/python -m hermes.platform.network.mesh_node
+# O mesh do repo atual vive em hermes.platform.federation.mesh (o antigo
+# hermes.platform.network.mesh_node foi removido). FederatedMeshNode.start()
+# sobe o listener HTTP/socket na porta 9120 e retorna — por isso o processo
+# bloqueia em signal.pause() para o systemd manter o daemon vivo.
+# Overrides: HAOS_NODE_ID, MESH_HOST, MESH_PORT (via /etc/haos/mesh.env).
+ExecStart=/opt/haos/venv/bin/python -c "import os,signal; from hermes.platform.federation.mesh import FederatedMeshNode; FederatedMeshNode(node_id=os.getenv('HAOS_NODE_ID','haos-node-1'), host=os.getenv('MESH_HOST','127.0.0.1'), port=int(os.getenv('MESH_PORT','9120'))).start(); signal.pause()"
 Restart=always
 RestartSec=5
 LimitNOFILE=65535

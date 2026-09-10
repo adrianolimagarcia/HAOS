@@ -21,6 +21,10 @@ IMAGE_BUILDER="haos-iso-builder:latest"
 # Destinos dentro do perfil live-build (copiados para o chroot da imagem)
 KEY_DEST="config/includes.chroot/etc/haos/keys/update_ed25519"
 INSTALLER_DEST="config/includes.chroot/usr/local/sbin/haos-install"
+# Runtimes pré-baixados (Node 26, uv, SQLite): os hooks 10/15/20/30 consomem
+# este diretório dentro do chroot e o removem ao final (nada vai para a ISO).
+FACTORY_SRC="${SCRIPT_DIR}/cache"
+FACTORY_DEST="config/includes.chroot/usr/local/src/haos-factory"
 
 # 1. Injetar instalador + deploy key read-only (antes do build)
 KEY_SRC="${HAOS_UPDATE_KEY:-/root/.haos/keys/update_ed25519}"
@@ -60,10 +64,26 @@ else
     echo "  ⚠ Instalador não encontrado em ${INSTALLER_SRC}."
 fi
 
+# Runtimes pré-baixados p/ os hooks (offline-friendly). Sem eles, os hooks
+# baixam da rede nas mesmas URLs do fetch-dependencies.sh — este passo existe
+# para tornar o build reprodutível e rápido, não obrigatório.
+if ls "${FACTORY_SRC}"/node-*.tar.xz "${FACTORY_SRC}"/uv-*.tar.gz "${FACTORY_SRC}"/sqlite-*.tar.gz >/dev/null 2>&1; then
+    mkdir -p "${FACTORY_DEST}"
+    install -m 644 "${FACTORY_SRC}"/node-*.tar.xz "${FACTORY_SRC}"/uv-*.tar.gz "${FACTORY_SRC}"/sqlite-*.tar.gz "${FACTORY_DEST}/"
+    echo "  ✓ Runtimes pré-baixados injetados p/ hooks (node/uv/sqlite)."
+else
+    echo "  ⚠ cache/ sem tarballs de runtime — hooks vão baixar da rede"
+    echo "    (para build offline antes rode ./scripts/fetch-dependencies.sh)."
+fi
+
 # Limpeza garantida mesmo se o build falhar (a chave privada NUNCA fica no tree)
 cleanup_injected() {
     rm -f "${KEY_DEST}" "${INSTALLER_DEST}"
     rmdir "$(dirname "${KEY_DEST}")" 2>/dev/null || true
+    # Runtimes de fábrica: remove também a cópia de staging do chroot (a do
+    # includes.chroot o hook 30 remove dentro do build; a do chroot/ fica se o
+    # build falhar no meio).
+    rm -rf "${FACTORY_DEST}" "${SCRIPT_DIR}/chroot/usr/local/src/haos-factory" 2>/dev/null || true
     # O build também deixa cópias da chave na árvore de estágio do live-build
     # (chroot/etc/haos/keys/ e chroot/home/haos/.haos/keys/ — o hook que semeia a
     # cópia do nó). O `rm -f` acima só alcança a cópia injetada em
@@ -72,7 +92,7 @@ cleanup_injected() {
     # `docker build` é este diretório inteiro.
     #
     # A varredura é por NOME DE ARQUIVO: nada de `rm -rf` em diretório de build
-    # (o `lb clean --purge` já apagou `chroot/` através de um bind mount vivo e
+    # (o `lb clean` já apagou `chroot/` através de um bind mount vivo e
     # quase levou o disco junto). A fonte (o cofre) nunca é tocada.
     local _src _found
     _src="$(realpath -m "${KEY_SRC}" 2>/dev/null || printf '%s' "${KEY_SRC}")"
@@ -102,7 +122,12 @@ docker run --rm --privileged \
     bash -c '
         set -euo pipefail
         echo "[-] Limpando builds anteriores..."
-        lb clean --purge || true
+        # NOTA: `lb clean` (sem --purge) remove chroot/ e binary/ mas PRESERVA o
+        # cache — e como /build é o diretório do host via bind mount, `--purge`
+        # apagava o cache/ do host inteiro (tarballs de runtime + caches apt do
+        # live-build), destruindo o "cache offline" e forçando re-download total
+        # a cada build. Para um rebuild do zero: `lb clean --purge` à mão.
+        lb clean || true
 
         echo "[-] Configurando parâmetros da imagem..."
         lb config

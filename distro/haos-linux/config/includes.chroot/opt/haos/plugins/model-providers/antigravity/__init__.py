@@ -19,7 +19,6 @@ antigravity_provider = ProviderProfile(
     env_vars=("ANTIGRAVITY_API_KEY", "ANTIGRAVITY_BASE_URL"),
     base_url=os.getenv("ANTIGRAVITY_BASE_URL", _default_base),
     auth_type="api_key",
-    default_model="gemini-3.7-flash-low",
     default_aux_model="gemini-3.7-flash-low",
     fallback_models=(
         "gemini-3.7-flash-low",

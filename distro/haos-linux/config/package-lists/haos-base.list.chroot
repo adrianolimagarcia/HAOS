@@ -75,6 +75,7 @@ lm-sensors
 # Produtividade em Terminal e Manipulação de Dados
 tmux
 screen
+sudo
 git
 jq
 ripgrep
