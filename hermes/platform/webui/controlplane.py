@@ -77,6 +77,36 @@ def canonical_kanban_db_paths() -> List[str]:
     return out
 
 
+def canonical_state_db_paths() -> List[str]:
+    """Candidate canonical HAOS state.db files, env/HOME-derived.
+
+    Mirrors ``canonical_kanban_db_paths()``: HOME fallbacks only apply when no
+    profile env vars are set, so unit runs (HERMES_HOME = temp dir) never read
+    a real store from another installation.
+    """
+    candidates: List[str] = []
+    for key in ("HAOS_STATE_DB", "STATE_DB"):
+        val = os.environ.get(key)
+        if val:
+            candidates.append(str(Path(val).expanduser()))
+    profile_set = bool(os.environ.get("HAOS_HOME") or os.environ.get("HERMES_HOME"))
+    for key in ("HAOS_HOME", "HERMES_HOME"):
+        base = os.environ.get(key)
+        if base:
+            candidates.append(str(Path(base).expanduser() / "state.db"))
+    if not profile_set:
+        candidates.append(str(Path.home() / ".haos" / "state.db"))
+        candidates.append(str(Path.home() / ".hermes" / "state.db"))
+    # De-duplicate preserving order.
+    seen: set[str] = set()
+    out: List[str] = []
+    for c in candidates:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
 def read_live_board(db_path: str) -> Dict[str, Any]:
     """Read-only aggregation of a kanban DB file.
 
@@ -366,19 +396,13 @@ class ControlPlaneService:
 
         total_tokens = sum(e.payload.get("tokens", 0) for e in events if "tokens" in (e.payload or {}))
 
-        # Se total_tokens for 0 no EventStore (ex: execuções via CLI/subagentes diretos),
-        # consulta a contagem real auditada no state.db (session_model_usage)
+        # Se total_tokens for 0 no EventStore (ex: execuções via CLI/subagentes
+        # diretos), consulta a contagem real auditada no state.db do PERFIL ATIVO
+        # (session_model_usage) — nunca caminhos hardcoded de outro host/store.
         if total_tokens == 0:
             try:
-                state_db_candidates = [
-                    Path(os.environ.get("HAOS_HOME", "")) / "state.db",
-                    Path(os.environ.get("HERMES_HOME", "")) / "state.db",
-                    Path("/run/media/adriano/e681b5ac-a4fb-44d4-aebf-9d6584065787/dsh-projetos/.haos/state.db"),
-                    Path.home() / ".haos" / "state.db",
-                    Path("/root/.hermes/state.db"),
-                ]
-                for sdb in state_db_candidates:
-                    if sdb.is_file():
+                for sdb in canonical_state_db_paths():
+                    if Path(sdb).is_file():
                         conn = sqlite3.connect(str(sdb), timeout=1.0)
                         cur = conn.cursor()
                         row = cur.execute("SELECT sum(input_tokens + output_tokens + reasoning_tokens) FROM session_model_usage;").fetchone()

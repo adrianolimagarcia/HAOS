@@ -147,6 +147,46 @@ class TestAuditRegressions(unittest.TestCase):
         sub_orch = snapshot["children"][0]
         self.assertEqual(len(sub_orch["children"]), 0)
 
+    def test_a08_state_db_candidates_never_escape_active_profile(self):
+        """A08: fallback de tokens consulta só o store do perfil ativo.
+
+        ``canonical_state_db_paths()`` nunca lista state.db fora de
+        HAOS_HOME/HERMES_HOME quando uma env de perfil está setada — um unit
+        run (HERMES_HOME = temp dir) não pode alcançar o store real de outra
+        instalação via caminho hardcoded do host.
+        """
+        import hermes.platform.webui.controlplane as cp_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            profile_home = Path(tmp) / "profile"
+            profile_home.mkdir()
+            old_haos = os.environ.get("HAOS_HOME")
+            old_hermes = os.environ.get("HERMES_HOME")
+            try:
+                os.environ["HERMES_HOME"] = str(profile_home)
+                os.environ.pop("HAOS_HOME", None)
+                for key in ("HAOS_STATE_DB", "STATE_DB"):
+                    os.environ.pop(key, None)
+                candidates = cp_module.canonical_state_db_paths()
+            finally:
+                if old_haos is None:
+                    os.environ.pop("HAOS_HOME", None)
+                else:
+                    os.environ["HAOS_HOME"] = old_haos
+                if old_hermes is None:
+                    os.environ.pop("HERMES_HOME", None)
+                else:
+                    os.environ["HERMES_HOME"] = old_hermes
+
+            # Todos os candidatos vivem sob o perfil ativo; nenhum caminho do
+            # host (home real, /root, absoluto de outra máquina) é alcançável.
+            self.assertTrue(candidates, "espera ao menos o state.db do perfil")
+            for cand in candidates:
+                self.assertTrue(
+                    str(Path(cand)).startswith(str(profile_home)),
+                    f"candidato {cand} escapa do HERMES_HOME ativo",
+                )
+
     def test_a09_client_emits_route_exhausted(self):
         """A09: ExactModelClient emite evento route_exhausted quando rotas falham."""
         events_emitted = []
