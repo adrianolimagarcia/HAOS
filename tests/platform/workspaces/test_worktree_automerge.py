@@ -16,7 +16,16 @@ class TestGitWorktreeAndAutoMerge(unittest.TestCase):
 
     @patch.object(GitWorktreeManager, "_run_git")
     def test_create_worktree(self, mock_run_git):
-        mock_run_git.return_value = "Preparing worktree"
+        # A produção decide entre criar o branch e reatá-lo sondando
+        # ``rev-parse --verify`` e tratando exceção como "não existe". Um mock que
+        # devolve string para TODA chamada faz a sonda parecer bem-sucedida e o
+        # teste passa a medir o caminho de reattach — por isso a sonda levanta aqui.
+        def run_git(*args, **kwargs):
+            if args[:2] == ("rev-parse", "--verify"):
+                raise subprocess.CalledProcessError(1, args)
+            return "Preparing worktree"
+
+        mock_run_git.side_effect = run_git
         worktree_path = self.manager.create_worktree("task-123", base_branch="haos-fork")
 
         self.assertEqual(worktree_path.name, "task-task-123")
@@ -25,11 +34,25 @@ class TestGitWorktreeAndAutoMerge(unittest.TestCase):
         )
 
     @patch.object(GitWorktreeManager, "_run_git")
+    def test_create_worktree_reattaches_an_existing_branch(self, mock_run_git):
+        # Branch já existente: reatar em vez de ``-b`` — é o que permite reusar a
+        # lane de um task que já rodou em vez de morrer no "branch already exists".
+        # Aqui o mock devolve string para TODA chamada, então a sonda
+        # ``rev-parse --verify`` parece bem-sucedida: é exatamente o caminho testado.
+        mock_run_git.return_value = "Preparing worktree"
+        worktree_path = self.manager.create_worktree("task-123", base_branch="haos-fork")
+
+        mock_run_git.assert_called_with(
+            "worktree", "add", str(worktree_path), "haos/task-task-123"
+        )
+
+    @patch.object(GitWorktreeManager, "_run_git")
     def test_get_diff(self, mock_run_git):
         mock_run_git.return_value = "diff --git a/file b/file"
         diff = self.manager.get_diff("task-123", base_branch="haos-fork")
         self.assertIn("diff --git", diff)
-        mock_run_git.assert_called_with("diff", "haos-fork...haos/task-task-123")
+        # ``check=False``: diff contra ref ausente devolve vazio, não levanta.
+        mock_run_git.assert_called_with("diff", "haos-fork...haos/task-task-123", check=False)
 
     @patch.object(AutoMergeGate, "run_tests_in_worktree")
     @patch.object(GitWorktreeManager, "merge_worktree")
