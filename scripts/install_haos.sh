@@ -207,6 +207,10 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     _git_fetch -C "$INSTALL_DIR" fetch origin "$BRANCH" || true
     git -C "$INSTALL_DIR" checkout "$BRANCH" || true
     _git_fetch -C "$INSTALL_DIR" pull origin "$BRANCH" || true
+    # Mesmo invariante do ramo de clone abaixo: passos posteriores (o import de
+    # `scripts.serve_controlplane` no fim, por exemplo) contam com o cwd na raiz
+    # da instalação.
+    cd "$INSTALL_DIR"
 else
     log_info "Cloning $([ "$_USE_SSH" = true ] && echo "$_SSH_REPO" || echo "$REPO_URL") ($BRANCH) into $INSTALL_DIR..."
     if [ "$_USE_SSH" = true ]; then
@@ -232,21 +236,26 @@ fi
 # resolver. Mesmo desenho de tiers do scripts/install.sh (extra -> core): uma
 # instalação que perde um transitivo do PyPI não pode ficar sem CLI nenhum.
 install_haos_into_venv() {
-    local spec="."
+    # Caminho ABSOLUTO de propósito: `.` é resolvido contra o cwd, e no caminho
+    # "checkout já existe" (mais acima) não há `cd "$INSTALL_DIR"` — instalar
+    # `.` ali apontava para o diretório de onde o usuário chamou o instalador
+    # ("does not appear to be a Python project"). Um `haos install` sobre um
+    # checkout existente abortava por isso.
+    local spec="$INSTALL_DIR"
     if [ "$HAOS_EXTRAS" != "none" ]; then
-        spec=".[${HAOS_EXTRAS}]"
+        spec="$INSTALL_DIR[${HAOS_EXTRAS}]"
     fi
     if command -v uv >/dev/null 2>&1; then
         VIRTUAL_ENV="$VENV_DIR" uv pip install -e "$spec" && return 0
     else
         "$PYTHON" -m pip install -e "$spec" && return 0
     fi
-    if [ "$spec" != "." ]; then
+    if [ "$HAOS_EXTRAS" != "none" ]; then
         log_warn "Extras '$HAOS_EXTRAS' não resolveram — instalando apenas o core."
         if command -v uv >/dev/null 2>&1; then
-            VIRTUAL_ENV="$VENV_DIR" uv pip install -e .
+            VIRTUAL_ENV="$VENV_DIR" uv pip install -e "$INSTALL_DIR"
         else
-            "$PYTHON" -m pip install -e .
+            "$PYTHON" -m pip install -e "$INSTALL_DIR"
         fi
     fi
 }
