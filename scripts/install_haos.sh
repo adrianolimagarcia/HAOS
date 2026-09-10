@@ -220,12 +220,19 @@ if command -v uv >/dev/null 2>&1; then
     PYTHON="$VENV_DIR/bin/python"
     log_info "Installing HAOS package and dependencies via uv..."
     VIRTUAL_ENV="$VENV_DIR" uv pip install -e .
+    # Optional: Scrapling (Cloudflare-bypass fetch p/ haos-fetch). Desativável com SKIP_FETCH_EXTRA=1.
+    if [ "${SKIP_FETCH_EXTRA:-0}" != "1" ]; then
+        VIRTUAL_ENV="$VENV_DIR" uv pip install --quiet "scrapling[fetchers]>=0.4.15,<0.5" || log_warn "scrapling opcional não instalado (haos-fetch usará só HTTP)."
+    fi
 else
     log_warn "uv not found, falling back to python3 -m venv..."
     python3 -m venv "$VENV_DIR"
     PYTHON="$VENV_DIR/bin/python"
     "$PYTHON" -m pip install --upgrade pip
     "$PYTHON" -m pip install -e .
+    if [ "${SKIP_FETCH_EXTRA:-0}" != "1" ]; then
+        "$PYTHON" -m pip install --quiet "scrapling[fetchers]>=0.4.15,<0.5" || log_warn "scrapling opcional não instalado (haos-fetch usará só HTTP)."
+    fi
 fi
 
 # 6. Install Global CLI Wrappers
@@ -412,7 +419,19 @@ exec "$PYTHON" "$INSTALL_DIR/scripts/haos_motd.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/haos-motd"
 
-log_ok "Installed wrappers: $BIN_DIR/haos, $BIN_DIR/haos-agent, $BIN_DIR/haos-controlplane, $BIN_DIR/haos-motd"
+# 6a. Cloudflare-bypass fetch wrapper (Scrapling) — haos-fetch <url> [-o out.md]
+cat << EOF > "$BIN_DIR/haos-fetch"
+#!/usr/bin/env bash
+# HAOS Cloudflare/anti-bot bypass fetch via Scrapling (scripts/haos_fetch_cf.py).
+# Uso: haos-fetch <url> [-o out.md|out.html|out.txt] [--strategy http|stealth|auto] [--text]
+export HAOS_HOME="\${HAOS_HOME:-\$HOME/.haos}"
+export HERMES_HOME="\${HAOS_HOME}"
+unset PYTHONPATH PYTHONHOME
+exec "$VENV_DIR/bin/python" "$INSTALL_DIR/scripts/haos_fetch_cf.py" "\$@"
+EOF
+chmod +x "$BIN_DIR/haos-fetch"
+
+log_ok "Installed wrappers: $BIN_DIR/haos, $BIN_DIR/haos-agent, $BIN_DIR/haos-controlplane, $BIN_DIR/haos-motd, $BIN_DIR/haos-fetch"
 
 # 6b. Provision read-only update key (fetch from a PRIVATE HAOS repo via `haos update`)
 # -------------------------------------------------------------------------------
