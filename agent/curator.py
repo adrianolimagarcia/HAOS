@@ -4,7 +4,9 @@ Inactivity-triggered (no cron daemon): when the agent is idle and the last run i
 ``maybe_run_curator()`` auto-transitions lifecycle states from activity timestamps, optionally forks an AIAgent that
 may pin/archive/consolidate/patch skills via skill_manage, and persists scheduler state in ``.curator_state``.
 Invariants: only curator-managed skills are touched; never delete, only archive (recoverable); pinned skills bypass
-all auto-transitions; the fork uses the auxiliary client and never touches the main session's prompt cache."""
+all auto-transitions; the fork uses the auxiliary client and never touches the main session's prompt cache; every
+write is guarded by the surface manifest (``hermes/platform/evolution/surface_manifest.py``), which keeps the
+measuring stick, the judge and the evidence registry read-only to an optimizer."""
 
 from __future__ import annotations
 
@@ -30,6 +32,29 @@ DEFAULT_STALE_AFTER_DAYS, DEFAULT_ARCHIVE_AFTER_DAYS = 14, 30
 # The LLM consolidation fork is opt-in; the deterministic inactivity prune
 # (apply_automatic_transitions) always runs when the curator is enabled.
 DEFAULT_CONSOLIDATE = False
+
+
+# --- Surface manifest (what a scheduled optimizer may edit) ---
+
+def _skills_surface() -> Path:
+    return get_hermes_home() / "skills"
+
+
+def _guard_surface(path: Path, what: str) -> bool:
+    """Guards one write against the surface manifest (``hermes/platform/evolution/surface_manifest.py``):
+    the curator IS a scheduled optimizer, so it only writes where the manifest declares the write to be its
+    output — the measuring stick (``evals/``), the judge and the evidence registry are read-only to it.
+
+    A read-only target is policy, not a crash, so this logs the reason and returns False instead of raising.
+    Function-local import keeps ``agent/`` free of an import-time dependency on the platform package (the
+    core's own guards do the same, e.g. ``tools/file_tools_write_guards.py:125``)."""
+    from hermes.platform.evolution.surface_manifest import classify
+
+    decision = classify(path)
+    if decision.writable:
+        return True
+    logger.warning("curator: refused write to %s (%s) — %s", what, path, decision.reason)
+    return False
 
 
 # --- .curator_state — persistent scheduler + status ---
@@ -173,6 +198,20 @@ def _cron_referenced_skills() -> Set[str]:
         return set()
 
 
+def _sync_archive_status(name: str, status: str) -> None:
+    """Mirror a curator state transition into the skill-variant archive.
+
+    Without this the lineage store keeps offering an archived skill as a parent,
+    and counts a reactivated one as gone. Late import + suppression keep a
+    broken or absent store from ever failing a curation pass: the archive is a
+    record of what happened, not a gate.
+    """
+    with contextlib.suppress(Exception):
+        from hermes.platform.evolution.skill_archive import mark_skill_status
+
+        mark_skill_status(name, status)
+
+
 def _archive_as_curator(_u, name: str) -> bool:
     """Archive via skill_usage with the ledger actor tagged 'curator', so the ledger entry reads as an autonomous transition, not a foreground call."""
     try:
@@ -181,7 +220,10 @@ def _archive_as_curator(_u, name: str) -> bool:
     except Exception:
         tok = reset_ledger_actor = None  # type: ignore[assignment]
     try:
-        return _u.archive_skill(name)[0]
+        archived = _u.archive_skill(name)[0]
+        if archived:
+            _sync_archive_status(name, "archived")
+        return archived
     finally:
         if tok is not None:
             with contextlib.suppress(Exception):
@@ -195,16 +237,26 @@ def apply_automatic_transitions(now: Optional[datetime] = None) -> Dict[str, int
     from tools import skill_usage as _u
 
     now = now or datetime.now(timezone.utc)
+    counts = {"marked_stale": 0, "archived": 0, "reactivated": 0, "checked": 0, "seeded": 0}
+    # Surface guard: this pass mutates the skill library (state, archive, telemetry). With the surface
+    # outside the manifest's editable list, pruning has no legitimate target — leave everything untouched.
+    if not _guard_surface(_skills_surface(), "automatic transitions"):
+        return counts
+
     stale_cutoff = now - timedelta(days=get_stale_after_days())
     archive_cutoff = now - timedelta(days=get_archive_after_days())
     # Cron-referenced skills are in use by definition (usage only bumps when a
     # job fires, so paused/rare jobs would age them out). Treat as pinned.
     protected = _cron_referenced_skills()
-    counts = {"marked_stale": 0, "archived": 0, "reactivated": 0, "checked": 0, "seeded": 0}
 
     def _set(name: str, state: str, key: str) -> None:
         _u.set_state(name, state)
         counts[key] += 1
+        # Reactivation puts the skill back in the lineage pool; ``stale`` has no
+        # archive counterpart (staleness is a curator notion, the archive only
+        # knows active/archived — see skill_archive.STATUS_*).
+        if state == _u.STATE_ACTIVE:
+            _sync_archive_status(name, "active")
 
     for row in _u.curated_report():
         counts["checked"] += 1
@@ -673,7 +725,10 @@ def _rewrite_cron_refs(consolidated: List[Dict[str, Any]], pruned: List[Dict[str
 
 def _write_file(path: Path, label: str, render: Any) -> None:
     """Best-effort write of *render()* (or the JSON dump of a non-callable payload);
-    rendering runs inside the guard so a serialisation error is logged, not raised."""
+    rendering runs inside the guard so a serialisation error is logged, not raised.
+    A target the surface manifest declares read-only is refused before a single byte."""
+    if not _guard_surface(path, label):
+        return
     try:
         path.write_text(render() if callable(render) else json.dumps(render, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     except Exception as e:
@@ -853,6 +908,11 @@ def _consolidation_pass(prefix: str, auto_summary: str, dry_run: bool, before_na
         if "No agent-created skills" in candidate_list:
             final_summary = f"{prefix}{auto_summary}; llm: skipped (no candidates)"
             llm_meta = _llm_meta("skipped (no candidates)")
+        elif not _guard_surface(_skills_surface(), "consolidation pass"):
+            # Surface guard: the fork mutates the library through skill_manage, so with no writable skills
+            # surface it has no legitimate target — skipping beats forking into a write failure per call.
+            final_summary = f"{prefix}{auto_summary}; llm: skipped (skills surface not writable)"
+            llm_meta = _llm_meta("skipped (skills surface not writable)")
         else:
             # With prune-builtins on, bundled skills are candidates too: relax hard rule #1 for them (archive only; hub stays off-limits).
             prompt = f"{CURATOR_REVIEW_PROMPT}{CURATOR_PRUNE_BUILTINS_NOTE if get_prune_builtins() else ''}\n\n{candidate_list}"

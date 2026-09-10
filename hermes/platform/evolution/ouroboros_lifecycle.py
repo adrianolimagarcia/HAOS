@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from hermes.platform.skills.spec import SkillSpec
+from hermes.platform.evolution.skill_archive import record_promoted_skill
 from hermes.platform.skills.procedural_engine import (
     SkillGenerator,
     SkillLifecyclePipeline,
@@ -449,6 +450,12 @@ class OuroborosLifecycleManager:
                 merged=False,
                 details={"dry_run": True},
             )
+
+        # Arquiva a variante promovida (linhagem DGM: seleção de pai não-monotônica).
+        # Só fora do dry_run — dry_run não promove nada — e ANTES do merge: a skill já
+        # foi ativada pelo gate, então uma rejeição de merge adiante não a tira do ar.
+        # Fail-soft na origem: erro de store é logado e nunca derruba a promoção.
+        record_promoted_skill(candidate_spec)
 
         # 7. Enqueue in MergeQueue and execute automated merge if passed
         merge_candidate: Optional[MergeCandidate] = None

@@ -5,8 +5,9 @@ The scripts that produced every number in tracking issue #103563 and the "Indepe
 
 - **`forensics/`** reads a *copy* of a Hermes `state.db` (plus rotated `agent.log*` and git) and
   recomputes the *observed* figures for any run: where the money went, per-call cache behaviour,
-  nested-delegate timeouts, batch-join delivery delay, tool friction, `/goal` loop behaviour, and the
-  post-open rework inventory. It needs no model calls and no network.
+  nested-delegate timeouts, batch-join delivery delay, tool friction, `/goal` loop behaviour, the
+  post-open rework inventory, and the failure patterns worth turning into eval cases. It needs no model
+  calls and no network.
 - **`live_ab/`** and **`review_probes/`** exercise the real code paths of a checkout (real
   `AIAgent`, dispatch, judge, scanner, SDK) against local fake providers to show what each fix
   *does*. `run.py` runs them against one or two checkouts and prints PASS/FAIL side by side.
@@ -41,6 +42,9 @@ $P -m evals.postmortem.forensics.tools      --db state_copy.db
 $P -m evals.postmortem.forensics.goal_loop  --db state_copy.db
 # 6. rework inventory for a large PR (git only)
 $P -m evals.postmortem.forensics.rework     --repo . --base <merge-base> --open <sha-at-open> --head <merged-sha>
+# 7. mine failure patterns -> eval cases (needs no copy: --db defaults to $HERMES_HOME/state.db, opened ro)
+$P -m evals.postmortem.forensics.eval_mining [--db state_copy.db] [--root <session_id>] [--signal stale_context] \
+                                            [--golden cases.golden.json] [--suite cases.suite.json]
 ```
 
 Each writes `postmortem_out/<lane>.json` and prints a summary. `--root` defaults to the top-level
@@ -62,6 +66,44 @@ Hermes recorded (an estimator, not an invoice).
 The two sawtooth figures differ on purpose: `tokens` replays *reconstructed* per-call sizes for all
 93k calls (×0.76); `logcalls` replays *real* per-call sizes for the 24% of calls in the logs (×0.50,
 the peak-concurrency window). The tracking issue quotes the second and says so.
+
+### Mining eval cases (`forensics/eval_mining.py`)
+
+The only lane that does not stop at counting. It mines seven signals out of the recorded trajectory —
+a failing test run nothing answered, a user correction that had to be repeated, an edit built from a
+copy of the file the agent no longer had (`old_string` gone, or a resumed session editing a file it
+never read itself), the same call repeated with the same result, a run of failures retried without ever
+being surfaced, a last turn that admits the work is unfinished and stops, and writes outside the
+session's cwd/repo/task scope — and emits one **candidate eval case per (signal, session)** carrying the
+evidence that produced it: db path, session, message ids, counts and a minimal excerpt. No evidence, no
+case: a candidate has to be auditable, not believable.
+
+Unlike the lanes above, the population is the WHOLE store by default (`--root` narrows it to one run
+tree): a pattern is worth an eval case only when it recurs. Compression-rollover continuations are
+excluded as everywhere else, and the database is opened `mode=ro` — mining never writes to the store.
+
+The same run also emits the two shapes the existing harness already understands, so a mined case is
+runnable rather than a parallel format: `--golden <path>` writes `GoldenTaskSpec`-shaped JSON
+(categories, artifact names, deterministic assertions, a MODELED token budget = the source session's
+spend per model call) for `hermes/platform/evals/golden_tasks.py`, and `--suite <path>` writes an
+`EvalSuite` for `hermes/platform/evals/runner.py`. In process:
+
+```python
+from evals.postmortem.forensics.eval_mining import mine, open_store, to_eval_suite
+from hermes.platform.evals.runner import EvalRunner
+
+cases = mine(open_store())                           # in memory, no file written
+result = EvalRunner().run_suite(to_eval_suite(cases), run_fn)
+```
+
+`EvalSuite`/`GoldenTaskSpec` objects are built with the real classes; nothing is registered in the
+reference `GOLDEN_TASKS` catalog, which stays a human-curated list — a mined case is a proposal until
+someone promotes it.
+
+Illustrative (not a reference figure for the #102117 run): on a small real store (5 sessions / 854
+messages, 2026-09-07) the lane reports 1 candidate — `stale_context`, priority 1, the `patch` whose
+`old_string` no longer matched (db message ids 812/813). The excerpt in `eval_candidates.json` is a
+slice of a real trajectory, so treat that file as private; it is written to `postmortem_out/` only.
 
 ## Live A/B: what each fix does
 
@@ -132,6 +174,8 @@ are in a secret gist linked from #103563 (no trajectories; see "What is NOT here
 ## Provenance
 
 Forensic lanes: five parallel Hermes subagents (2026-09-04), rewritten here to take `--db`/`--root`
-instead of hard-coded paths. `live_ab/`: the primary agent's per-PR A/Bs. `review_probes/`: the
+instead of hard-coded paths. `eval_mining.py`: added 2026-09 for the self-improvement plan's
+trace-diagnosis point — built on `common.Run` (its read-only open, rollover rule, fitted pricing and
+message iterators) with the same `--db/--root/--out` CLI, but it proposes work instead of counting it. `live_ab/`: the primary agent's per-PR A/Bs. `review_probes/`: the
 independent `/review` subagent's probes (2026-09-05), adapted to take paths from the command line;
 their findings and the fixes are in each PR's "Independent review (round 2)" section.
