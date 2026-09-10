@@ -13,22 +13,22 @@ LB_APT_INDICES="false"
 LB_BOOTAPPEND_LIVE="boot=live components quiet splash transparent_hugepage=madvise mitigations=off preempt=full zswap.enabled=0"
 
 # Set boot parameters
-LB_BOOTAPPEND_INSTALL=""
+LB_BOOTAPPEND_INSTALL="preseed/file=/cdrom/install/preseed.cfg"
 
 # Set boot parameters
 LB_BOOTAPPEND_LIVE_FAILSAFE="boot=live components memtest noapic noapm nodma nomce nosmp nosplash vga=788"
 
 # Set BIOS bootloader
-LB_BOOTLOADER_BIOS=""
+LB_BOOTLOADER_BIOS="grub-pc"
 
 # Set EFI bootloader
 LB_BOOTLOADER_EFI="grub-efi"
 
 # Set bootloaders
-LB_BOOTLOADERS="grub-efi"
+LB_BOOTLOADERS="grub-pc grub-efi"
 
 # Set checksums
-LB_CHECKSUMS="sha256"
+LB_CHECKSUMS="sha256 md5"
 
 # Set compression
 LB_COMPRESSION="none"
@@ -50,7 +50,7 @@ LB_ZSYNC="false"
 LB_BUILD_WITH_CHROOT="true"
 
 # Set debian-installer
-LB_DEBIAN_INSTALLER="none"
+LB_DEBIAN_INSTALLER="live"
 
 # Set debian-installer suite
 LB_DEBIAN_INSTALLER_DISTRIBUTION="trixie"

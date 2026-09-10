@@ -1,6 +1,23 @@
 #!/bin/sh
 set -e
 
+# Imagem híbrida: appliance live + instalador de SO (d-i).
+#
+# `--debian-installer live` embute o debian-installer na mesma mídia e faz o
+# d-i instalar o PRÓPRIO rootfs live (udeb `live-installer`) em vez de
+# debootstrap um Debian limpo — é o que preserva as otimizações do appliance
+# (BBRv3, zram, Node 26, uv, SQLite com FTS5, haos-edge) no sistema instalado.
+# A distribuição do d-i é fixada em trixie para não seguir o default de builds
+# diárias. Depois de instalar, o primeiro boot provisiona o HAOS via
+# `haos-setup`; `haos-install` continua sendo o caminho de re-provisionamento.
+#
+# `preseed/file=` é passado à mão de propósito: o append automático do
+# live-build monta `file=/cdrom/install/<preseed>` SEM o prefixo `preseed/`
+# (functions/configuration.sh), o que o d-i ignora em silêncio. Os preseeds
+# vivem em config/preseed/*.cfg (o script installer_preseed os concatena em
+# /install/preseed.cfg na mídia). Ver config/preseed/haos.cfg para a regra de
+# nunca particionar disco pela ISO.
+
 lb config noauto \
     --mode debian \
     --distribution trixie \
@@ -9,10 +26,13 @@ lb config noauto \
     --parent-archive-areas "main non-free non-free-firmware" \
     --image-name "haos-linux-1.0-amd64" \
     --binary-images iso-hybrid \
-    --bootloader grub-efi \
+    --bootloaders "grub-pc grub-efi" \
+    --debian-installer live \
+    --debian-installer-distribution trixie \
     --memtest none \
     --apt-recommends false \
     --apt-indices false \
     --cache true \
     --bootappend-live "boot=live components quiet splash transparent_hugepage=madvise mitigations=off preempt=full zswap.enabled=0" \
+    --bootappend-install "preseed/file=/cdrom/install/preseed.cfg" \
     "${@}"

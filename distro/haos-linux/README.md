@@ -2,6 +2,81 @@
 
 Projeto de construção da distribuição independente **HAOS Linux** baseada no **Debian 13 (Trixie)** com **Kernel Linux 6.18 LTS**.
 
+## Instalação
+
+A ISO é **híbrida**: boota por **BIOS** e por **UEFI**, e traz dois caminhos
+distintos — o modo **live/appliance** e o **instalador de SO** (o
+`debian-installer` do Debian, com frontend de texto e gráfico).
+
+### Menu de boot
+
+| Entrada | O que faz |
+|---|---|
+| `HAOS Linux 1.0 (Live — Kernel tunado: Preempt Full + I/O)` | Boota o sistema **live** com os ajustes de I/O e scheduler. **Não instala nada** — é o appliance rodando da mídia. |
+| `HAOS Linux 1.0 (Modo Live RAM / Appliance)` | Live em RAM (`toram`): depois do boot a mídia pode ser removida. |
+| `HAOS Linux 1.0 (Modo de Recuperação / Failsafe)` | Live mínimo (`single nomodeset`) para resgatar máquina que não sobe. |
+| `Instalar o HAOS Linux no disco ...` → `Instalação (texto)` / `Instalação (gráfica)` | Instalador de SO completo: particiona, formata, copia o sistema e instala o GRUB. |
+| ... → `Instalação automatizada (aplica o preseed)` | Mesmo instalador com `auto=true priority=critical`: dispensa as perguntas não-críticas, mas **o particionamento continua sendo perguntado**. |
+| ... → `Modo de recuperação (rescue)` | d-i em modo rescue, para consertar um sistema já instalado. |
+
+O instalador embarcado é o `live-installer`: ele **copia o rootfs live** para a
+partição escolhida em vez de baixar pacotes do espelho. O sistema instalado é,
+portanto, o mesmo artefato que boota da mídia — mesmos serviços, mesmos ajustes,
+mesma customização de `/etc/default/grub`.
+
+### O instalador não decide onde apagar
+
+O preseed embarcado (`config/preseed/haos.cfg`, que o `installer_preseed` do
+live-build concatena e entrega ao d-i como `/install/preseed.cfg`) **não contém
+nenhuma diretiva de partição** — nem `partman-auto/*`, nem `partman-auto/disk`,
+nem `partman/confirm`. A razão está no cabeçalho do próprio arquivo: a ISO é
+artefato distribuível e a entrada "automatizada" consome preseed **em silêncio**,
+então uma diretiva dessas apagaria disco sem confirmação em qualquer boot da
+mídia. Escolher disco, esquema e **tamanho das partições** é sempre decisão de
+quem instala.
+
+### Instalação automatizada (frota/VM): injete o SEU preseed
+
+Para instalar sem ninguém na frente, o preseed vem de fora da ISO:
+
+- **VM/libvirt** — boot direto no kernel do instalador (o `vmlinuz` e o
+  `initrd.gz` saem da própria ISO, em `/install/`), com o preseed por HTTP:
+
+  ```xml
+  <kernel>/caminho/vmlinuz</kernel>
+  <initrd>/caminho/initrd.gz</initrd>
+  <cmdline>auto=true priority=critical console=ttyS0,115200 preseed/url=http://192.168.122.1:8000/preseed-auto.cfg</cmdline>
+  ```
+
+  Esse preseed **pode e deve** trazer o particionamento (`partman-auto/disk`,
+  `partman-auto/method`, `partman-auto/recipe`, `partman/confirm`) e
+  `d-i debian-installer/exit/poweroff boolean true`, para a máquina desligar ao
+  terminar em vez de reentrar no instalador — com boot direto de kernel, um
+  reboot volta ao mesmo instalador e, com o particionamento preseedado, ele
+  reparticionaria o disco em loop.
+
+- **Boot pela mídia** — na entrada automatizada, tecle `e`, acrescente
+  `preseed/url=http://seu-servidor/preseed.cfg` à linha `linux` e `Ctrl+X`.
+
+Duas armadilhas que já custaram tempo e estão tratadas no preseed embarcado:
+
+- **`ucf/changeprompt`** — a imagem customiza `/etc/default/grub`, então o
+  postinst do grub2 o encontra como conffile modificado e pergunta (template
+  `ucf/changeprompt`, tipo select) o que fazer. É pergunta **crítica**: sem
+  resposta, a instalação automatizada para ali e não anda mais. O preseed
+  embarcado responde "manter a versão local" — é ela que carrega o cmdline de
+  kernel do HAOS. Um preseed de frota que não responda isso trava do mesmo jeito.
+- **`preseed/file=` é passado à mão** no `--bootappend-install` de `auto/config`:
+  o append que o live-build monta sozinho sai sem o prefixo `preseed/` e o d-i o
+  ignora **em silêncio** — a mídia chega a trazer `/install/preseed.cfg`, mas
+  ninguém o lê.
+
+### Requisitos de disco
+
+O rootfs live tem ~2,3 GB descomprimido (a ISO tem 1,6 GB) e o instalador copia o
+sistema descomprimido. Reserve **≥ 20 GB** para haver folga de logs, banco de
+sessões e cache do agente.
+
 ## Otimizações Embarcadas
 
 1. **Rede:**
