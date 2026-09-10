@@ -6,6 +6,10 @@
 # --branch seleciona outra, ex.: haos-standalone).
 # Designed to coexist safely with or without an existing upstream Hermes installation.
 # Sets up isolated virtual environment, dependencies, CLI binaries, and default configs.
+# Provisions systemd services for the controlplane and the gateway so HAOS comes
+# back after a reboot (falling back to nohup when the host has no systemd), and
+# installs the curated `[all]` extras by default — without them the install comes
+# up without MCP servers and without the providers the user configured.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/adrianolimagarcia/HAOS/main/scripts/install_haos.sh | bash
@@ -13,6 +17,9 @@
 # Or with options:
 #   ./scripts/install_haos.sh --branch main --haos-home ~/.haos \
 #       --update-key /path/to/haos-update-key   # read-only deploy key for private-repo `haos update`
+#
+# Core-only install with no services (containers, CI, tests):
+#   ./scripts/install_haos.sh --no-extras --no-services
 # ============================================================================
 
 set -euo pipefail
@@ -633,6 +640,9 @@ elif [ "$HAS_SYSTEMD" = "1" ]; then
         # checkout gravaria o caminho daquele checkout na unidade.
         # --no-start-now: numa máquina recém-instalada ainda não há credencial de
         # plataforma, e o gateway sairia 78 (config ausente) já no primeiro boot.
+        # A expansão de $SCOPE_FLAG é sem aspas de propósito: vazia (escopo de
+        # usuário) ela precisa virar nenhum argumento — array vazio sob `set -u`
+        # quebra no bash 3.2 do macOS, que o projeto suporta.
         if "$PYTHON" -m hermes_cli.main gateway install ${SCOPE_FLAG} --no-start-now >/dev/null 2>&1; then
             if [ "$SCOPE_FLAG" = "--system" ]; then
                 GW_UNIT="/etc/systemd/system/hermes-gateway.service"

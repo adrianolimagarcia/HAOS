@@ -74,6 +74,15 @@ anônimo e funciona sem nenhuma credencial. Nada a fazer além de publicar o rep
 3. **Instalador** (`scripts/install_haos.sh`) é embarcado em
    `/usr/local/sbin/haos-install` para re-provisionamento/manutenção no sistema
    instalado.
+   - Provisiona **serviços systemd** — `haos-controlplane.service` e, pelo
+     caminho canônico do repo (`hermes gateway install`), o
+     `hermes-gateway.service`. Sem eles o controlplane só existia por `nohup` e
+     um reboot levava o HAOS embora. Escopo acompanha quem instala (root →
+     sistema, senão usuário); sem systemd no host, cai para `nohup`.
+   - Instala o conjunto curado de extras (`[all]`) por padrão: sem eles a
+     instalação sobe sem MCP (servidores ficam "parked") e sem os provedores já
+     configurados. `--extras none` e `--services none` desligam; `--no-extras`
+     e `--no-services` são atalhos.
 4. Hook `45-haos-update-credential.chroot` endurece a chave de bootstrap e
    **semeia uma cópia no store do nó** (`/home/haos/.haos/keys/update_ed25519`,
    dono `haos:haos` `0600`) — quem executa `haos update` é o usuário `haos`,
