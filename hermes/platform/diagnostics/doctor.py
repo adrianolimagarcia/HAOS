@@ -112,28 +112,47 @@ class HAOSDoctor:
             )
 
     def check_env_isolation(self) -> CheckResult:
-        """Verifica se HERMES_HOME está alinhado ou se há contaminação cruzada."""
-        hermes_home = os.environ.get("HERMES_HOME")
-        haos_home_str = str(self.haos_home.resolve())
+        """Verifica se o home EFETIVO está alinhado com HAOS_HOME, não só a env var.
 
-        if hermes_home:
-            hh_resolved = str(Path(hermes_home).expanduser().resolve())
-            if hh_resolved != haos_home_str and ".hermes" in hh_resolved:
-                return CheckResult(
-                    name="env_isolation",
-                    status="WARN",
-                    message=(
-                        f"HERMES_HOME ({hh_resolved}) aponta para .hermes em vez de HAOS_HOME ({haos_home_str}). "
-                        "Pode haver leitura de configurações upstream."
-                    ),
-                    details={"HERMES_HOME": hermes_home, "HAOS_HOME": haos_home_str},
-                )
+        Ler apenas ``HERMES_HOME`` aprovaria o caso mais comum de contaminação: o
+        serviço cuja unit não define a variável e cujo processo então resolve para
+        ``~/.hermes`` pelo default do fork. O resolver canônico
+        (``get_process_hermes_home``) honra ``HAOS_HOME`` e o default da plataforma.
+        """
+        from hermes_constants import get_process_hermes_home  # noqa: PLC0415
+
+        haos_home_str = str(self.haos_home.resolve())
+        explicit = (os.environ.get("HERMES_HOME") or "").strip()
+        resolved = str(Path(get_process_hermes_home()).expanduser().resolve())
+
+        details = {
+            "effective_home": resolved,
+            "source": "env" if explicit else "default",
+            "HERMES_HOME": explicit or None,
+            "HAOS_HOME": haos_home_str,
+        }
+
+        if resolved != haos_home_str and ".hermes" in resolved:
+            origem = (
+                f"HERMES_HOME={explicit}"
+                if explicit
+                else "HERMES_HOME não definido — o default resolveu para cá"
+            )
+            return CheckResult(
+                name="env_isolation",
+                status="WARN",
+                message=(
+                    f"Home efetivo ({resolved}) aponta para .hermes em vez de HAOS_HOME "
+                    f"({haos_home_str}) [{origem}]. Pode haver leitura de configurações upstream."
+                ),
+                details=details,
+            )
 
         return CheckResult(
             name="env_isolation",
             status="PASS",
             message="Variáveis de ambiente isoladas ou compatíveis com HAOS_HOME.",
-            details={"HAOS_HOME": haos_home_str, "HERMES_HOME": hermes_home},
+            details=details,
         )
 
     def check_secrets_permissions(self) -> CheckResult:
