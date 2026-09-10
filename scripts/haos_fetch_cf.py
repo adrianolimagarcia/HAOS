@@ -18,9 +18,15 @@ import argparse
 import os
 import re
 import sys
+from html import unescape
 
-_TAG_RE = re.compile(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>|<[^>]+>")
-_WS_RE = re.compile(r"\s+")
+_TAG_RE = re.compile(r"<[^>]+>")
+_DROP_RE = re.compile(r"<(script|style|noscript|svg|template)[\s\S]*?</\1>", re.I)
+_HEAD_OPEN_RE = re.compile(r"<h([1-6])[^>]*>", re.I)
+_BLOCK_CLOSE_RE = re.compile(
+    r"</(p|div|section|article|header|footer|main|aside|blockquote|pre|table|tr|ul|ol|figure|figcaption|dd|dt)>",
+    re.I,
+)
 
 
 def _browsers_path() -> str | None:
@@ -40,8 +46,27 @@ def _decode(body) -> str:
 
 
 def _to_text(html: str) -> str:
-    txt = _TAG_RE.sub(" ", html)
-    return _WS_RE.sub(" ", txt).strip()
+    """HTML → markdown preservando estrutura (títulos, parágrafos, listas).
+
+    Estrutura importa: o chunker hierárquico do RAGFlow divide por cabeçalhos e
+    parágrafos — texto achatado em uma linha vira UM chunk gigante e recupera mal.
+    """
+    s = _DROP_RE.sub(" ", html)
+    s = _HEAD_OPEN_RE.sub(lambda m: "\n\n" + "#" * int(m.group(1)) + " ", s)
+    s = re.sub(r"</h[1-6]>", "\n\n", s, flags=re.I)
+    s = re.sub(r"<li[^>]*>", "\n- ", s, flags=re.I)
+    s = _BLOCK_CLOSE_RE.sub("\n\n", s)
+    s = re.sub(r"<br\s*/?>", "\n", s, flags=re.I)
+    s = unescape(_TAG_RE.sub(" ", s))
+
+    lines: list[str] = []
+    for raw in s.splitlines():
+        line = re.sub(r"[ \t]+", " ", raw).strip()
+        if line:
+            lines.append(line)
+        elif lines and lines[-1] != "":
+            lines.append("")
+    return "\n".join(lines).strip()
 
 
 def fetch(url: str, strategy: str = "auto") -> tuple[str, str]:
