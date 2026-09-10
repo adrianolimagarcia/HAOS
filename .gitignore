@@ -230,3 +230,5 @@ native/fts5_cjk/*.so
 
 # HAOS local execution runtime artifacts
 .haos/
+# Credenciais locais dos MCPs direct (nunca versionar; ver README do WORK)
+/cookies/
