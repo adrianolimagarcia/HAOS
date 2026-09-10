@@ -186,7 +186,7 @@ def display_motd():
     meta_text = f"""
 [bold {CYAN_BRIGHT}]HAOS · Hermes Agentic Operating System[/]
 [bold {WHITE}]Industrial Multi-Agent Distributed Execution Platform[/]
-[dim {GRAY_LIGHT}]Fork Architecture v0.21.1 · PEP-420 Canonical Freeze (2026.9.8)[/]
+[dim {GRAY_LIGHT}]Fork Architecture v0.21.2 · PEP-420 Canonical Freeze (2026.9.10)[/]
 [dim {TEAL}]Tailscale Active: [/][bold {TEAL}]{get_tailscale_ip()}[/]
 """
     header_table.add_row(LOGO_HAOS.strip(), meta_text.strip())

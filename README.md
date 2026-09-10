@@ -4,8 +4,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Release-2026.9.8-blue?style=for-the-badge" alt="Release Date"></a>
-  <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Version-0.21.1-cyan?style=for-the-badge" alt="Version"></a>
+  <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Release-2026.9.10-blue?style=for-the-badge" alt="Release Date"></a>
+  <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Version-0.21.2-cyan?style=for-the-badge" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Architecture-100%25%20Standalone-purple?style=for-the-badge" alt="Standalone"></a>
 </p>
