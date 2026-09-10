@@ -578,7 +578,17 @@ youtube-transcript-api = false
 # and the drift broke installed wheels. Do not add the list back.
 
 [tool.setuptools.packages.find]
-include = ["agent", "agent.*", "tools", "tools.*", "hermes_cli", "hermes_cli.*", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "cron.*", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*"]
+include = [
+    "agent", "agent.*", "tools", "tools.*", "hermes_cli", "hermes_cli.*",
+    "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "cron.*",
+    "acp_adapter", "plugins", "plugins.*", "providers", "providers.*",
+    # ``hermes/`` é namespace package (PEP 420, sem __init__.py — a suíte
+    # pep420 garante isso). Sem esta linha o editable/wheel não expõe
+    # ``hermes.platform`` e um python de venv puro não importa a camada da
+    # plataforma: os comandos HAOS do CLI quebram com ModuleNotFoundError e
+    # as unidades systemd só funcionam com PYTHONPATH=<install dir> na mão.
+    "hermes", "hermes.*",
+]
 
 [tool.setuptools.package-data]
 hermes_cli = ["observability/schemas/*.json", "data/*.json", "local_runtime/*.json"]

@@ -434,3 +434,35 @@ def test_security_pins_present_in_mirrored_lazy_features():
         "pyproject extras — the lazy install path would not enforce the "
         "CVE-patched floor:\n  " + "\n  ".join(problems)
     )
+
+
+def test_namespace_package_hermes_is_in_package_discovery():
+    """``hermes/`` é namespace package e o build só o expõe se o include o listar.
+
+    Observado numa instalação real (``/usr/local/lib/haos-agent``, a venv que o
+    ``install_haos.sh`` cria): com o ambiente limpo, ``from
+    hermes.platform.evolution.promotion_holdout_gate import ...`` levantava
+    ``ModuleNotFoundError: No module named 'hermes'`` — o editable finder mapeava
+    só os pacotes regulares. Os comandos HAOS do CLI importam ``hermes.platform``
+    em tempo de chamada (7 arquivos em ``hermes_cli/``), então quebravam com o
+    python puro da venv; as unidades systemd só funcionavam com
+    ``PYTHONPATH=<install dir>`` na mão, que era o contorno em uso.
+
+    O ``include`` é a lista que o backend usa para descobrir pacotes, então a
+    linha em ``hermes``/``hermes.*`` é a diferença entre a camada da plataforma
+    existir ou não numa instalação. Sem ``__init__.py`` a descoberta regular
+    ignora a árvore — é o que a suíte ``pep420`` preserva de propósito, então a
+    entrada na lista é o único jeito de expor o namespace.
+    """
+    data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    include = data["tool"]["setuptools"]["packages"]["find"]["include"]
+    missing = [pattern for pattern in ("hermes", "hermes.*") if pattern not in include]
+    assert not missing, (
+        f"packages.find.include não cobre {missing}: uma instalação (editable ou "
+        "wheel) deixa de expor hermes.platform e os comandos HAOS do CLI falham "
+        "com ModuleNotFoundError numa venv limpa."
+    )
+    assert not (REPO_ROOT / "hermes" / "__init__.py").exists(), (
+        "hermes/ virou pacote regular: se isso for intencional, a suíte pep420 "
+        "(hermes/platform/evals/suites_platform.py) precisa mudar junto."
+    )

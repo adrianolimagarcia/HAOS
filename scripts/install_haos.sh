@@ -290,7 +290,7 @@ unset PYTHONHOME
 
 # Ultra-fast Rust Edge routing: if haos-edge is available and matches fast commands
 # (doctor is intentionally routed to full Python diagnostics, not the thin edge probe)
-# (`doc search` is intentionally Python-only: haos-edge does plain BM25 while the
+# (\`doc search\` is intentionally Python-only: haos-edge does plain BM25 while the
 #  Python store does RRF fusion of FTS5 BM25 + token/breadcrumb overlap)
 EDGE_SUBCMDS="status team"
 FIRST_ARG="\${1:-}"
