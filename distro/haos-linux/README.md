@@ -126,3 +126,33 @@ de modo que a chave não entra numa camada da imagem nem por um `COPY` futuro.
 Depois de um build, `find distro -name update_ed25519` deve voltar **vazio** — a
 chave existe só em `/root/.haos/keys/` (o cofre) e dentro da ISO.
 
+## Wrapper-antigravity (vendorizado)
+
+O `haos-antigravity.service` roda `server.mjs` de
+`github.com/adrianolimagarcia/wrapper-antigravity` — proxy local que traduz
+`/v1/chat/completions` (OpenAI) para a API do Antigravity/Gemini via OAuth do CLI
+`agy`. O arquivo é **vendorizado** em
+`config/includes.chroot/opt/haos/wrapper-antigravity/` (mais o `README.md`
+upstream), com a proveniência em `UPSTREAM.md` (repo + commit).
+
+- **Atualizar:** `./sync-antigravity-wrapper.sh --apply` e reconstruir a ISO.
+  A comparação é por **hash de conteúdo**, não por data; `--check` só compara
+  (exit 3 quando difere) e `--ref v1.4.0` pina um tag/SHA. O `build-iso.sh`
+  chama `--check` no início e **avisa sem falhar** quando o perfil está atrasado —
+  build offline continua funcionando.
+- **Configuração:** `/etc/haos/antigravity.env` (lido pela unidade, que já traz
+  o layout: `127.0.0.1`, porta `8790`, token e contas do opencode). O arquivo
+  aponta cache/spend/`providers.json` para `/var/lib/haos/antigravity/` — criado
+  pelo hook `05-create-haos-user.chroot`, dono `haos:haos`. Sem isso o wrapper
+  usaria `DATA_DIR` = o próprio diretório do código, e `saveExternalProviders()`
+  grava `providers.json` **sem criar diretório**.
+- **Autenticação é por nó**, não cabe na imagem: `agy auth login` como o usuário
+  `haos` e depois `systemctl restart haos-antigravity`. Sem token o serviço fica
+  **no ar** e recusa toda requisição (journal: `No accounts loaded in pool`), e o
+  `haos-setup` avisa ao escolher o Antigravity como provider.
+- Detalhe do upstream que vale corrigir lá: `cache/embeddings.json`,
+  `cache/embeddings-config.json` e `cache/proxy-settings.json` são derivados de
+  `MODULE_DIR` e **não** têm variável de ambiente — essas configurações persistem
+  dentro de `/opt/haos/wrapper-antigravity/cache/`, ou seja em diretório de
+  código.
+

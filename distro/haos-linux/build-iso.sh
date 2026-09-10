@@ -30,6 +30,14 @@ echo "========================================================"
 echo "  Preparando artefatos embutidos da imagem..."
 echo "========================================================"
 
+# O wrapper-antigravity é vendorizado no perfil (reprodutível), então não
+# acompanha o upstream sozinho. Este aviso não é fatal: build offline continua
+# funcionando, mas uma ISO com o wrapper atrasado avisa em vez de passar
+# silencioso. Atualizar = ./sync-antigravity-wrapper.sh --apply
+if [ -x "${SCRIPT_DIR}/sync-antigravity-wrapper.sh" ]; then
+    "${SCRIPT_DIR}/sync-antigravity-wrapper.sh" --check || true
+fi
+
 if [ -f "${KEY_SRC}" ]; then
     # Só injeta a chave PRIVADA (a .pub é inútil para autenticar o fetch).
     if grep -q -- "-----BEGIN .*PRIVATE KEY-----" "${KEY_SRC}" 2>/dev/null; then

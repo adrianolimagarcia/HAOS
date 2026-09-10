@@ -23,6 +23,11 @@ done
 # Permissões da home e de /opt/haos
 chown -R haos:haos /home/haos 2>/dev/null || true
 mkdir -p /opt/haos /var/lib/haos
+# Estado do wrapper-antigravity (cache/spend/providers.json), apontado por
+# /etc/haos/antigravity.env. Precisa existir já na imagem: o wrapper grava
+# providers.json sem criar o diretório (saveExternalProviders), e um caminho
+# inexistente ali vira exceção em runtime.
+mkdir -p /var/lib/haos/antigravity
 chown -R haos:haos /opt/haos /var/lib/haos 2>/dev/null || true
 
 echo "[HAOS Hook] Usuário 'haos' configurado com sucesso!"

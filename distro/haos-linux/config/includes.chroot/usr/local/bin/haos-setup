@@ -236,6 +236,22 @@ case "${opt_provider}" in
             echo "ANTIGRAVITY_API_KEY=antigravity-local" >> "${ENV_FILE}"
         fi
         echo -e "${GREEN}✓ Antigravity configurado.${RESET}"
+        # O wrapper sobe mesmo sem conta OAuth e só registra no journal
+        # "FATAL: No accounts loaded in pool!" — a requisição falha sem dizer o
+        # que fazer. O login é por usuário (não dá para embutir na imagem), então
+        # este é o único ponto do fluxo que pode avisar. O caminho do token sai
+        # da própria unidade para não divergir dela.
+        TOKEN_FILE="$(grep -oP 'ANTIGRAVITY_TOKEN_FILE=\K\S+' \
+            /etc/systemd/system/haos-antigravity.service 2>/dev/null | tr -d '"' || true)"
+        TOKEN_FILE="${TOKEN_FILE:-/home/haos/.gemini/antigravity-cli/antigravity-oauth-token}"
+        if [ ! -s "${TOKEN_FILE}" ]; then
+            echo -e "${YELLOW}⚠ Atenção: o Antigravity ainda não está autenticado.${RESET}"
+            echo "  O proxy está no ar em 127.0.0.1:8790, mas sem conta OAuth ele recusa"
+            echo "  toda requisição (o journal mostra 'No accounts loaded in pool')."
+            echo -e "  Rode ${BOLD}agy auth login${RESET} como o usuário do serviço (haos) e depois"
+            echo -e "  ${BOLD}sudo systemctl restart haos-antigravity${RESET}."
+            echo "  Token esperado em: ${TOKEN_FILE}"
+        fi
         ;;
     2)
         echo "Configurando A6API como provider principal..."
