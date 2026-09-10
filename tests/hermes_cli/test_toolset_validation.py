@@ -197,3 +197,27 @@ def test_populated_platforms_produce_no_empty_list_warning():
     cfg = {"cli": ["hermes-cli"], "telegram": ["hermes-telegram"]}
     warnings = validate_platform_toolsets(cfg, _is_valid)
     assert warnings == []
+
+
+def test_plugin_platform_preset_is_not_reported_unknown(monkeypatch):
+    """A plugin platform's synthesized preset resolves at runtime, so naming it is not a typo.
+
+    ``hermes-teams`` / ``hermes-google_chat`` never appear in TOOLSETS — the plugin platform
+    registers them through ``toolsets.resolve_toolset()`` — and the validator used to send the
+    operator to "fix" a correct entry whose deletion would strip that platform's tools.
+    """
+    from gateway.platform_registry import platform_registry
+
+    monkeypatch.setattr(platform_registry, "is_registered",
+                        lambda name: name in {"teams", "google_chat"})
+
+    warnings = validate_platform_toolsets(
+        {"teams": ["hermes-teams"], "google_chat": ["hermes-google_chat"]},
+        _is_valid,
+        lambda name, platform: True,
+    )
+    assert warnings == []
+
+    # A name that is neither the platform's preset nor registered anywhere still warns.
+    bogus = validate_platform_toolsets({"teams": ["bogus"]}, _is_valid, lambda name, platform: True)
+    assert any("unknown toolset 'bogus'" in w for w in bogus)

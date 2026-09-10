@@ -37,7 +37,8 @@ def validate_platform_toolsets(
     would have been valid); a non-empty mapping resolving to zero valid toolsets (agent would start with
     no tools); a platform with no valid toolsets, checked per-platform because the global net is
     suppressed once any platform is valid; and non-list platform values, which fall back to the platform
-    default. ``is_valid_toolset`` is injected so this does no registry imports or I/O."""
+    default. A plugin platform's own synthesized preset is not reported — see ``default_valid``.
+    ``is_valid_toolset`` is injected so this does no registry imports or I/O."""
     warnings: List[str] = []
     if not isinstance(platform_toolsets, dict) or not platform_toolsets:
         return warnings
@@ -68,7 +69,11 @@ def validate_platform_toolsets(
         for name in raw:
             if not isinstance(name, str) or not name:
                 continue
-            if not is_valid_toolset(name):
+            # A plugin platform's own preset (`hermes-teams`, `hermes-google_chat`) is absent from
+            # TOOLSETS yet resolves at runtime through toolsets.resolve_toolset(), which is the same
+            # escape hatch `default_valid` applies to the platform default. Without this the operator
+            # is told to fix a correct entry — and deleting it would strip the platform's tools.
+            if not is_valid_toolset(name) and not (default_valid and name == default):
                 hint = f" — did you mean '{default}'?" if default_valid else ""
                 warnings.append(f"platform '{platform}' references unknown toolset '{name}'{hint}")
             elif is_allowed_for_platform(name, str(platform)):

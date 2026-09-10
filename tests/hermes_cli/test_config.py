@@ -17,6 +17,7 @@ from hermes_cli.config import (
     get_compatible_custom_providers,
     _explicit_config_paths,
     _normalize_max_turns_config,
+    _warn_invalid_platform_toolsets,
     is_provider_enabled,
     load_config,
     load_env,
@@ -1935,3 +1936,30 @@ def test_gateway_multiplex_keys_are_recognized_config_keys():
     assert DEFAULT_CONFIG["gateway"]["multiplex_profiles"] is False
     assert _validate_config_key("gateway.multiplex_profiles") == (True, None)
     assert _validate_config_key("gateway.profile_routes") == (True, None)
+
+def test_plugin_toolset_is_not_reported_unknown(monkeypatch):
+    """A toolset that exists only after plugin discovery must not be warned about.
+
+    The a2a client tools register at discovery time, so validating platform_toolsets first
+    reported a correct entry as unknown and sent the operator to "fix" config that was right.
+    """
+    import hermes_cli.plugins as plugins_mod
+    import toolsets as toolsets_mod
+
+    registered = {"a2a": False}
+    monkeypatch.setattr("hermes_cli.config.read_raw_config",
+                        lambda: {"platform_toolsets": {"cli": ["a2a", "terminal"]}})
+    monkeypatch.setattr(toolsets_mod, "validate_toolset",
+                        lambda name: name == "terminal" or registered["a2a"])
+
+    def _discover(force: bool = False) -> None:
+        registered["a2a"] = True
+
+    monkeypatch.setattr(plugins_mod, "discover_plugins", _discover)
+
+    results: dict = {"warnings": []}
+    _warn_invalid_platform_toolsets(results, quiet=False)
+
+    assert registered["a2a"] is True, "a validação precisa descobrir plugins antes de acusar o nome"
+    assert not [w for w in results["warnings"] if "unknown toolset" in w]
+

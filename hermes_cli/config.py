@@ -1411,8 +1411,18 @@ def _warn_invalid_platform_toolsets(results: Dict[str, Any], quiet: bool) -> Non
         from hermes_cli.toolset_validation import validate_platform_toolsets
         from hermes_cli.toolset_scope import toolset_allowed_for_platform
 
-        for w in validate_platform_toolsets(
-                read_raw_config().get("platform_toolsets"), validate_toolset, toolset_allowed_for_platform):
+        section = read_raw_config().get("platform_toolsets")
+        warnings = validate_platform_toolsets(section, validate_toolset, toolset_allowed_for_platform)
+        if any("unknown toolset" in w for w in warnings):
+            # A plugin toolset lives in the registry only after plugin discovery — the a2a client
+            # tools, for one — so validating first reports a correct entry as unknown and sends the
+            # operator to "fix" config that is right. Two passes rather than discovering up front
+            # because this runs on every config load, and a clean config must not pay for that.
+            from hermes_cli.plugins import discover_plugins
+
+            discover_plugins()
+            warnings = validate_platform_toolsets(section, validate_toolset, toolset_allowed_for_platform)
+        for w in warnings:
             results["warnings"].append(w)
             if not quiet:
                 print(f"  ⚠ {w}")
