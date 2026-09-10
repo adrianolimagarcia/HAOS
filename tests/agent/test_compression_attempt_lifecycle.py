@@ -88,9 +88,10 @@ class TestWorkerTeardownOnCeiling:
                 fence.touch_progress()
                 time.sleep(0.01)
             # Cooperative-but-not-instant exit: the unwind after seeing the
-            # poison takes real time (rollback, telemetry). Long enough that
-            # a host WITHOUT the bounded-grace join returns first; far
-            # inside the 5s grace for a host WITH it.
+            # poison takes real time (rollback, telemetry). Long enough that a
+            # host WITHOUT the bounded-grace join returns first, and short
+            # relative to the grace the host actually gets — which is
+            # min(5.0, ceiling), NOT a flat 5s (see the ceiling below).
             time.sleep(0.08)
             worker_done.set()
             return (original, "late")
@@ -102,7 +103,13 @@ class TestWorkerTeardownOnCeiling:
             system_prompt_fallback="fallback",
             # Keep idle expiry out of this total-ceiling test under runner load.
             idle_timeout_seconds=2.0,
-            total_ceiling_seconds=0.2,
+            # The join grace is capped by the ceiling, so a 0.2s ceiling left
+            # only 2.5x room over the 0.08s unwind and a loaded runner (16 files
+            # in parallel) overshot it: the host timed the join out and returned
+            # with the worker still unwinding — a flake, not the teardown bug
+            # this test guards. The worker touches progress every 0.01s, so idle
+            # never fires and only the total ceiling expires: same path.
+            total_ceiling_seconds=0.6,
             fence=fence,
             stall_fallback=False,
         )
