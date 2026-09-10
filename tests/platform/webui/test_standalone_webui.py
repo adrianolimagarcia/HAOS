@@ -17,8 +17,30 @@ from pathlib import Path
 from hermes.platform.webui.settings import (
     apply_to_guard, default_settings, load_settings, reset_settings, save_settings,
 )
-from hermes.platform.webui.standalone import make_standalone_server
+from hermes.platform.webui.standalone import HAOSStandaloneState, make_standalone_server
 from hermes.platform.execution.backpressure import ConcurrencyGuard
+from hermes.platform.capabilities.lsp import unified_intelligence as _lsp
+
+
+def _make_counting_graph(scans, scan_seconds=0.0):
+    """Dublê de CodeSymbolGraph: registra cada indexação em ``scans``.
+
+    ``scan_seconds`` só alarga a janela para os chamadores concorrentes se
+    encontrarem dentro de ``ensure_symbol_index`` — nenhum teste mede tempo.
+    """
+    import time as _time
+
+    class _CountingGraph:
+        def __init__(self):
+            self.file_symbols = {"a.py": ["f"], "b.py": ["g"]}
+
+        def scan_directory(self, root, exclude_dirs=None, max_files=None):
+            scans.append(root)
+            if scan_seconds:
+                _time.sleep(scan_seconds)
+            return 7
+
+    return _CountingGraph
 
 
 class TestEngineSettings(unittest.TestCase):
@@ -387,6 +409,61 @@ class TestSystemFacts(unittest.TestCase):
         self.assertNotIn("sk-", raw)
         # Pelo menos uma home com config resumido (modelos visíveis, sem chave)
         self.assertTrue(any("config" in h and "model" in h["config"] for h in payload["homes"]))
+
+
+class TestSymbolIndexCache(unittest.TestCase):
+    """Contrato de cache do índice AST (Blast Radius).
+
+    A indexação leva ~10s em um repositório grande. Se cada chamador indexasse
+    por conta própria, o primeiro clique do dashboard pagaria esse custo dentro
+    do request e o fetch do navegador abortaria por timeout, e o warm-up do boot
+    seria inútil. Estes testes fixam as duas metades desse contrato com um dublê
+    que conta indexações — sem varrer o disco.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = HAOSStandaloneState(Path(self.tmp.name))
+        self.scans = []
+        self._real_graph = _lsp.CodeSymbolGraph
+        _lsp.CodeSymbolGraph = _make_counting_graph(self.scans)
+
+    def tearDown(self):
+        _lsp.CodeSymbolGraph = self._real_graph
+        self.tmp.cleanup()
+
+    def test_concurrent_callers_share_one_indexation(self):
+        import concurrent.futures
+
+        _lsp.CodeSymbolGraph = _make_counting_graph(self.scans, scan_seconds=0.2)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [pool.submit(self.state.ensure_symbol_index, self.tmp.name)
+                       for _ in range(5)]
+            results = [f.result() for f in futures]
+
+        self.assertEqual(len(self.scans), 1,
+                         "indexou mais de uma vez para a mesma raiz")
+        self.assertTrue(all(r is results[0] for r in results),
+                        "chamadores concorrentes não compartilharam o mesmo índice")
+        self.assertEqual(results[0]["symbols_indexed"], 7)
+        self.assertEqual(results[0]["files_indexed"], 2)
+
+    def test_background_warmup_leaves_index_ready(self):
+        thread = self.state.warm_symbol_index_background(root=self.tmp.name)
+        thread.join(timeout=10)
+        self.assertFalse(thread.is_alive(), "warm-up não terminou")
+
+        self.assertEqual(len(self.scans), 1)
+        idx = self.state.ensure_symbol_index(root=self.tmp.name)
+        self.assertEqual(len(self.scans), 1,
+                         "após o warm-up o caminho sob demanda re-indexou")
+        self.assertIsNotNone(idx["graph"])
+
+    def test_force_reindexes_on_demand(self):
+        self.state.ensure_symbol_index(root=self.tmp.name)
+        self.state.ensure_symbol_index(root=self.tmp.name, force=True)
+        self.assertEqual(len(self.scans), 2, "force=True não re-indexou")
 
 
 class TestStandaloneDefaults(unittest.TestCase):

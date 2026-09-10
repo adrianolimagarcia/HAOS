@@ -117,8 +117,11 @@ class HAOSStandaloneState:
 
         # Cache do índice de símbolos (Blast Radius): construído sob demanda
         # na primeira análise e re-construído quando o usuário pedir "recalcular".
+        # O lock garante uma única indexação: o primeiro chamador paga o custo
+        # (~10s em repo grande) e os concorrentes reutilizam o resultado.
         self._symbol_index: Dict[str, Any] = {"root": None, "graph": None,
                                               "files_indexed": 0, "symbols_indexed": 0}
+        self._symbol_index_lock = threading.Lock()
 
         # No servidor ao vivo (fora da suíte rápida de testes unitários),
         # instala os workers agênticos reais para que tarefas executem o agente real.
@@ -211,14 +214,26 @@ class HAOSStandaloneState:
         Reutilizado entre chamadas de Blast Radius; ``force=True`` re-indexa
         (equivalente ao botão "recalcular" da UI). Retorna o cache com
         estatísticas de indexação para diagnóstico honesto na UI.
+
+        A indexação é serializada por ``_symbol_index_lock``: ela leva ~10s em
+        um repositório grande, então chamadores concorrentes (o warm-up do boot
+        e o primeiro clique do dashboard) aguardam a mesma indexação em vez de
+        pagarem o custo duas vezes.
         """
-        from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph
-        root_p = Path(root) if root else Path.cwd()
-        root_s = str(root_p.resolve())
+        root_s = str((Path(root) if root else Path.cwd()).resolve())
         idx = self._symbol_index
         if not force and idx.get("root") == root_s and idx.get("graph") is not None:
             return idx
 
+        with self._symbol_index_lock:
+            # Outra thread pode ter indexado enquanto este chamador esperava.
+            if not force and idx.get("root") == root_s and idx.get("graph") is not None:
+                return idx
+            return self._build_symbol_index(root_s)
+
+    def _build_symbol_index(self, root_s: str) -> Dict[str, Any]:
+        """Indexa ``root_s`` e publica o resultado no cache (chamado sob o lock)."""
+        from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph
         graph = CodeSymbolGraph()
         excludes = {
             ".git", ".venv", "venv", "__pycache__", ".worktrees", ".haos",
@@ -229,14 +244,33 @@ class HAOSStandaloneState:
             count = graph.scan_directory(root_s, exclude_dirs=excludes, max_files=2500)
         except Exception:
             count = 0
-        idx.update({
+        self._symbol_index.update({
             "root": root_s,
             "graph": graph,
             "files_indexed": len(graph.file_symbols),
             "symbols_indexed": count,
             "built_at": time.time(),
         })
-        return idx
+        return self._symbol_index
+
+    def warm_symbol_index_background(self, root: Optional[str] = None) -> threading.Thread:
+        """Adianta a indexação AST no boot, para o primeiro clique achar cache quente.
+
+        Sem isso o primeiro "Calcular Blast Radius" paga a indexação inteira
+        dentro do próprio request (~10s), o que estoura o timeout do fetch do
+        dashboard. Best-effort: qualquer falha deixa o cache frio e o caminho
+        sob demanda reconstrói — nunca derruba o boot.
+        """
+        def _run() -> None:
+            try:
+                self.ensure_symbol_index(root=root)
+            except Exception:  # noqa: BLE001 - cache frio é degradação, não falha fatal
+                pass
+
+        thread = threading.Thread(
+            target=_run, daemon=True, name="haos-symbol-index-warmup")
+        thread.start()
+        return thread
 
     def analyze_and_submit_proposals(self) -> List[Dict[str, Any]]:
         """Roda o Ouroboros em shadow mode e submete propostas ao ledger."""
@@ -1408,6 +1442,9 @@ def main() -> None:
         host=args.host,
         port=args.port,
     )
+    # Adianta o índice AST: o primeiro Blast Radius do dashboard encontra cache
+    # quente em vez de pagar ~10s de indexação dentro do próprio request.
+    state.warm_symbol_index_background()
     print("=" * 70)
     print("🚀 STARTING HAOS STANDALONE CONTROL PLANE")
     print(f"[*] Bind Host: {args.host}")

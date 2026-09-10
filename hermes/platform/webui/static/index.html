@@ -939,6 +939,13 @@ async function api(path, body, timeoutMs = 8000) {
     try { data = await resp.json(); } catch (_) {}
     if (!resp.ok) throw new Error((data && (data.error || data.detail)) || resp.status);
     return data;
+  } catch (err) {
+    // O AbortError cru do navegador ("signal is aborted without reason") não diz
+    // ao operador nem o tempo nem o endpoint; traduzimos para o que estourou.
+    if (err && err.name === "AbortError") {
+      throw new Error(`tempo limite de ${Math.round(timeoutMs / 1000)}s excedido em ${path} — a operação continua no servidor, tente novamente`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -1536,10 +1543,12 @@ async function runBlastRadiusAnalysis() {
   const raw = (filesInput.value || "").trim();
   const box = $("blastResultBox");
   box.style.display = "block";
-  box.innerHTML = `<span class="muted">Calculando grafo de símbolos e dependências...</span>`;
+  box.innerHTML = `<span class="muted">Calculando grafo de símbolos e dependências... (a primeira indexação AST pode levar alguns segundos)</span>`;
   const files = raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
   try {
-    const res = await api("/api/evolution/blast-radius", { files: files });
+    // Timeout próprio, generoso: o servidor indexa o repo na primeira chamada
+    // (~10s) e o default de 8s do api() abortava a análise antes de responder.
+    const res = await api("/api/evolution/blast-radius", { files: files }, 180000);
     const tests = (res.impacted_tests || []).map((t) => `<li>${esc(t)}</li>`).join("");
     const callers = (res.impacted_callers || []).slice(0, 8).map((c) => `<li>${esc(c)}</li>`).join("");
     const idxInfo = (res.indexed_files > 0)
@@ -1574,7 +1583,8 @@ async function runAutomergeCheck() {
   box.style.display = "block";
   box.innerHTML = `<span class="muted">Executando contrato de automerge e testes de regressão...</span>`;
   try {
-    const res = await api("/api/evolution/automerge", { task_id: taskId });
+    // O gate roda contrato + suítes afetadas no servidor: 8s abortaria sempre.
+    const res = await api("/api/evolution/automerge", { task_id: taskId }, 600000);
     box.innerHTML = `
       <div style="font-weight:600;color:${res.merged ? 'var(--ok)' : 'var(--warn)'};margin-bottom:6px;">
         ${res.merged ? '✓ Automerge Aprovado & Aplicado' : '⚠ Automerge Não Aplicado'}

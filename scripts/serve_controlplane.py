@@ -77,6 +77,11 @@ def main():
     print("=" * 72)
     
     server, state, base_url = make_standalone_server(data_dir=data_dir, host=host, port=port)
+
+    # Adianta o índice AST (Blast Radius) enquanto o operador ainda está abrindo
+    # o dashboard: sem isso o primeiro clique paga ~10s de indexação dentro do
+    # request e o fetch do navegador aborta por timeout. Best-effort e daemon.
+    state.warm_symbol_index_background()
     
     print("\n✅ HAOS Control Plane is online:")
     print(f"   • Localhost: http://127.0.0.1:{port}/chat")
