@@ -16,8 +16,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from hermes_constants import get_hermes_home
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
 from hermes.platform.memory.reconciler import MemoryReconciler
 
@@ -143,6 +141,8 @@ class DreamConsolidator:
     """Orchestrates memory consolidation across recent sessions."""
 
     def __init__(self, hermes_home: Optional[Path] = None):
+        from hermes_constants import get_hermes_home  # function-level: lint A6
+
         self.home = (hermes_home or Path(get_hermes_home())).resolve()
         self.memory_dir = self.home / "memory"
         self.okf_dir = self.memory_dir / "okf"

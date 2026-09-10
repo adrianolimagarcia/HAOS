@@ -10,7 +10,6 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import yaml
 
 
 class OKFDocument:
@@ -76,6 +75,8 @@ class OKFStore:
         if not self.bundle_dir.exists() or not self.bundle_dir.is_dir():
             self._loaded = True
             return
+
+        import yaml  # function-level: o lint A6 de hermes/platform só permite stdlib no topo
 
         for p in self.bundle_dir.rglob("*.md"):
             try:
@@ -163,6 +164,8 @@ class OKFStore:
 
         slug = re.sub(r"[^a-zA-Z0-9_\-]+", "-", title.lower()).strip("-")
         filename = f"{slug}.md"
+        import yaml  # function-level: o lint A6 de hermes/platform só permite stdlib no topo
+
         filepath = target_dir / filename
 
         metadata = {

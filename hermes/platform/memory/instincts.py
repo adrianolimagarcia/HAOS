@@ -19,8 +19,6 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hermes_constants import get_hermes_home
-
 logger = logging.getLogger("hermes.platform.memory.instincts")
 
 CONFIDENCE_PROMOTION_THRESHOLD = 0.8
@@ -67,6 +65,8 @@ class InstinctStore:
     """Persistent storage for project-scoped atomic instincts."""
 
     def __init__(self, root_dir: Optional[Path] = None):
+        from hermes_constants import get_hermes_home  # function-level: lint A6
+
         self.root = root_dir or (get_hermes_home() / "memory" / "instincts")
         self.root.mkdir(parents=True, exist_ok=True)
 
