@@ -109,6 +109,7 @@ distro/haos-linux/
 │   ├── includes.chroot/    # Arquivos injetados no sistema (/etc/sysctl.d, systemd, /usr/local/bin, plugins)
 │   └── package-lists/      # Pacotes Debian instalados no sistema base
 ├── scripts/                # Automações de download e helpers de build
+├── iso-from-vm.sh          # Gera a ISO a partir do rootfs da VM (ciclo principal)
 └── README.md
 ```
 
@@ -233,18 +234,48 @@ upstream), com a proveniência em `UPSTREAM.md` (repo + commit).
   código.
 
 
+## ISO a partir da VM (ciclo de desenvolvimento)
+
+Fluxo principal a partir de 10/09/2026: **valida-se e ajusta-se tudo DENTRO da
+VM de aceitação** (pacotes, hostname, kernel, config) e, no final, a ISO é
+congelada do estado validado da própria VM — sem rebuild de imagem por hooks:
+
+```bash
+./iso-from-vm.sh [IP_DA_VM] [TAG]    # ex.: ./iso-from-vm.sh 192.168.122.130 final
+```
+
+O script:
+1. rsync do rootfs da VM (via SSH + sudo NOPASSWD, um filesystem só) → `chroot/`;
+2. scrub do estado privado/transiente (machine-id, chaves ssh de host, chave de
+   aceitação, estado/DBs do `.haos`, caches apt/log, `.git` do `/opt/haos`);
+   mantém hostname, kernel, venv cheio, chave de update e o wrapper;
+3. `lb binary` (só o estágio binário — os hooks do chroot **não** rodam, pois o
+   rootfs da VM já tem tudo); pré-cria os stagefiles `chroot_hostname`/`chroot_hosts`
+   para o live-build não sobrescrever o hostname com `localhost.localdomain`;
+4. valida o squashfs (hostname, kernels, venv, ausência de chaves) e nomeia a ISO.
+
+Custo de uma ISO nova: ~2 min de rsync + ~5 min de `lb binary` (sem download de
+pacotes; usa o cache).
+
 ## Limitações conhecidas (validadas em 10/09/2026)
 
 - **Playwright Chromium não é assado** na imagem (custo alto de build/ISO). No
   primeiro uso de `browser_*`: `sudo -u haos sh -c 'cd /opt/haos && npx playwright install --with-deps chromium'`.
   Enquanto ausente, o `haos doctor` lista "Playwright Chromium not installed" e as
   tools de browser ficam ocultas (esperado).
-- **"Kernel 6.18 LTS" é claim textual** (README/intro, `/etc/issue`, `GRUB_DISTRIBUTOR`):
-  a imagem usa o kernel do Debian trixie (`linux-image-amd64` → 6.12.107). Ou se
-  constrói um kernel 6.18 real ou se corrige o texto — decisão pendente.
-- **Hostname da instalação = `debian`**: o `live-installer` copia o rootfs
-  byte-a-byte e ignora o preseed de hostname (a identidade efetiva é o `node_id`
-  do `haos-setup`, ex. `haos-node-1`).
+- **"Kernel 6.18 LTS" depende da origem da ISO**: o caminho clássico
+  (`build-iso.sh`) assa o kernel do trixie (`linux-image-amd64` → 6.12.107); a
+  **ISO derivada da VM** (`iso-from-vm.sh`) carrega o kernel REAL instalado na
+  VM — a VM de aceitação roda **6.18.15+deb13** (trixie-backports, LTS até
+  dez/2028), então o claim vira verdadeiro no artefato VM. O texto
+  (`/etc/issue`, `GRUB_DISTRIBUTOR`) já diz "Kernel 6.18 LTS".
+- **Hostname = `haosagent`** (garantido): o instalador (d-i live) ainda
+  renomeia para `debian` no fim da instalação, mas o oneshot
+  `haos-hostname.service` (first boot, stamp em `/etc/haos/.hostname-set`)
+  restaura `haosagent` + `127.0.1.1 haosagent` no `/etc/hosts`. Na ISO
+  derivada da VM, o `/etc/hostname` do squashfs já sai `haosagent` (o
+  `iso-from-vm.sh` pré-cria o stagefile do live-build para ele não
+  sobrescrever com `localhost.localdomain`).
 - **venv de fábrica vazio**: o `/opt/haos/venv` assado tem só o interpretador
   3.13; as dependências do agente são instaladas no primeiro boot pelo
   `haos-setup` (`uv sync --frozen --no-dev --python 3.13`). Não existe "venv de

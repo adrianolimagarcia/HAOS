@@ -1,0 +1,18 @@
+#!/bin/sh
+# haos-hostname-set — garante o hostname 'haosagent' no primeiro boot.
+#
+# O instalador (d-i no modo live) renomeia o host para "debian" ao final da
+# instalação, mesmo quando o /etc/hostname correto está no squashfs. Este
+# oneshot roda UMA vez (stamp em /etc/haos/.hostname-set) e restaura a
+# identidade do appliance; uma troca posterior de hostname pelo operador
+# não é sobrescrita.
+set -e
+
+hostnamectl set-hostname haosagent
+
+if ! grep -q "^127.0.1.1[[:space:]]*haosagent" /etc/hosts; then
+    sed -i "/^127.0.1.1[[:space:]]/d" /etc/hosts
+    echo "127.0.1.1 haosagent" >> /etc/hosts
+fi
+
+touch /etc/haos/.hostname-set

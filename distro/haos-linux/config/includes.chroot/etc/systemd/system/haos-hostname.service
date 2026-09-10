@@ -1,0 +1,12 @@
+[Unit]
+Description=Garante hostname haosagent no HAOS (first boot)
+After=systemd-hostnamed.service
+ConditionPathExists=!/etc/haos/.hostname-set
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/haos-hostname-set
+
+[Install]
+WantedBy=multi-user.target
