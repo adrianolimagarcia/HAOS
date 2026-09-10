@@ -97,7 +97,7 @@ sessões e cache do agente.
     - **SQLite 3.53.4 compilado** com `FTS5`, `RTREE`, `MATH_FUNCTIONS` e `DBSTAT_VTAB` em `/usr/local` (o módulo sqlite3 do Python e o wrapper `haos` o usam por precedência do ld.so/LD_PRELOAD; o pacote Debian `libsqlite3-0` permanece íntegro no dpkg).
     - **gtop** (monitor de processos no terminal, npm global) e **sudo** (usuário `haos` no grupo `sudo`).
     - Daemon **`haos-edge`** (Rust) **pré-compilado vendored** em `/usr/local/bin/haos-edge` — a toolchain Rust **não** é assada.
-    - **Playwright Chromium NÃO é assado** (custo de imagem alto): o `doctor` mostra "Playwright Chromium not installed" e as tools `browser_*` ficam ocultas até `cd /opt/haos && npx playwright install --with-deps chromium` (gap documentado, ver "Limitações conhecidas").
+    - **Playwright Chromium assado** (a partir da ISO derivada da VM): `chromium-1234` + `chromium_headless_shell` + `ffmpeg` (~656 MB) em `/home/haos/.cache/ms-playwright/` — o doctor mostra "✓ Playwright Chromium (browser engine)" e a tool `browser` fica disponível offline. (A ISO do caminho clássico `build-iso.sh` NÃO carrega o binário — só o `iso-from-vm.sh`.)
 
 ## Estrutura de Pastas
 
@@ -259,10 +259,12 @@ pacotes; usa o cache).
 
 ## Limitações conhecidas (validadas em 10/09/2026)
 
-- **Playwright Chromium não é assado** na imagem (custo alto de build/ISO). No
-  primeiro uso de `browser_*`: `sudo -u haos sh -c 'cd /opt/haos && npx playwright install --with-deps chromium'`.
-  Enquanto ausente, o `haos doctor` lista "Playwright Chromium not installed" e as
-  tools de browser ficam ocultas (esperado).
+- **Playwright Chromium assado na ISO derivada da VM** (não na clássica): o
+  `npx playwright install --with-deps chromium` rodado na VM de aceitação fica
+  no snapshot (`~/.cache/ms-playwright`, ~656 MB) — `haos doctor` sai
+  "✓ Playwright Chromium", tool `browser` disponível offline. Na ISO do
+  `build-iso.sh` o binário não está (instalar sob demanda:
+  `sudo -u haos sh -c 'cd /opt/haos && npx playwright install --with-deps chromium'`).
 - **"Kernel 6.18 LTS" depende da origem da ISO**: o caminho clássico
   (`build-iso.sh`) assa o kernel do trixie (`linux-image-amd64` → 6.12.107); a
   **ISO derivada da VM** (`iso-from-vm.sh`) carrega o kernel REAL instalado na

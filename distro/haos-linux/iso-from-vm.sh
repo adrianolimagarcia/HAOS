@@ -43,6 +43,7 @@ else
     --exclude='/tmp/*' --exclude='/var/tmp/*' \
     --exclude='/var/log/*' --exclude='/var/lib/apt/lists/*' --exclude='/var/cache/*' \
     --exclude='/var/lib/dhcp/*' --exclude='/var/lib/NetworkManager/*' \
+    --include='/home/haos/.cache/ms-playwright/' \
     --exclude='/home/haos/.cache/*' --exclude='/root/.cache/*' \
     --exclude='**/.bash_history' --exclude='/opt/haos/.git/*' \
     "${VM_USER}@${VM_IP}:/" "${CHROOT}/"
