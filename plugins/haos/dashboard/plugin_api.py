@@ -607,7 +607,7 @@ if _HAS_FASTAPI and APIRouter is not None:
                 "dispatch",
                 "--prompt", prompt,
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if res.returncode != 0:
                 raise RuntimeError(f"Jules dispatch failed: {res.stderr.strip() or res.stdout.strip()}")
 

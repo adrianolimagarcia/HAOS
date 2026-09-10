@@ -52,7 +52,7 @@ def main():
     # Singleton lock: prevent duplicate instances fighting for the same port/socket
     lock_path = Path(data_dir) / f"controlplane_{port}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = open(lock_path, "a+")
+    lock_file = open(lock_path, "a+", encoding="utf-8")
     try:
         import fcntl
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)

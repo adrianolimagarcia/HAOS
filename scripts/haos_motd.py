@@ -109,7 +109,7 @@ def build_system_table() -> Table:
     distro = "Linux"
     if Path("/etc/os-release").exists():
         try:
-            for line in Path("/etc/os-release").read_text().splitlines():
+            for line in Path("/etc/os-release").read_text(encoding="utf-8", errors="replace").splitlines():
                 if line.startswith("PRETTY_NAME="):
                     distro = line.split("=", 1)[1].strip('"')
                     break
