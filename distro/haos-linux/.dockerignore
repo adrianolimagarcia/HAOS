@@ -1,0 +1,28 @@
+# Contexto do `docker build -f Dockerfile.builder .` é ESTE diretório inteiro.
+# Sem este arquivo, a árvore de estágio do live-build entra no contexto enviado
+# ao daemon — inclusive as cópias da deploy key read-only que o build deixa em
+# chroot/etc/haos/keys/ e chroot/home/haos/.haos/keys/ (o trap do build-iso.sh
+# agora as remove no fim, mas o contexto de uma build nova é montado ANTES, com
+# as sobras da anterior). São centenas de MB por build, à toa.
+#
+# O Dockerfile.builder não faz COPY (monta o perfil por bind mount no
+# `docker run`), então excluir aqui não tira nada que o build precise.
+#
+# Isto vale só para o CONTEXTO da imagem de build. O `lb build` continua vendo o
+# diretório inteiro pelo `-v ${SCRIPT_DIR}:/build` — inclusive
+# config/includes.chroot/etc/haos/keys/update_ed25519, que PRECISA estar na ISO
+# (é a deploy key read-only do Modo B). Não remova estas linhas para "consertar"
+# a chave que falta: ela não falta.
+chroot/
+cache/
+binary/
+config/
+assets/
+binary.modified_timestamps
+*.iso
+*.iso.sha256
+*.files
+*.contents
+*.contents.gz
+*.packages
+.lock

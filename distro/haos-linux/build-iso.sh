@@ -56,6 +56,24 @@ fi
 cleanup_injected() {
     rm -f "${KEY_DEST}" "${INSTALLER_DEST}"
     rmdir "$(dirname "${KEY_DEST}")" 2>/dev/null || true
+    # O build também deixa cópias da chave na árvore de estágio do live-build
+    # (chroot/etc/haos/keys/ e chroot/home/haos/.haos/keys/ — o hook que semeia a
+    # cópia do nó). O `rm -f` acima só alcança a cópia injetada em
+    # config/includes.chroot, então sem esta varredura uma chave PRIVADA ficava
+    # parada em distro/haos-linux/chroot/ depois de cada build — e o contexto do
+    # `docker build` é este diretório inteiro.
+    #
+    # A varredura é por NOME DE ARQUIVO: nada de `rm -rf` em diretório de build
+    # (o `lb clean --purge` já apagou `chroot/` através de um bind mount vivo e
+    # quase levou o disco junto). A fonte (o cofre) nunca é tocada.
+    local _src _found
+    _src="$(realpath -m "${KEY_SRC}" 2>/dev/null || printf '%s' "${KEY_SRC}")"
+    while IFS= read -r _found; do
+        if [ "$(realpath -m "${_found}" 2>/dev/null || printf '%s' "${_found}")" = "${_src}" ]; then
+            continue
+        fi
+        rm -f "${_found}"
+    done < <(find "${SCRIPT_DIR}" -type f -name 'update_ed25519' 2>/dev/null || true)
     echo "  ✓ Artefatos injetados removidos do working tree."
 }
 trap cleanup_injected EXIT
