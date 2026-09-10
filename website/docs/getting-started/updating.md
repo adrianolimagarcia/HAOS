@@ -354,7 +354,7 @@ rm -rf ~/.hermes            # Optional — keep if you plan to reinstall
 If you installed the gateway as a system service, stop and disable it first:
 ```bash
 hermes gateway stop
-# Linux: systemctl --user disable hermes-gateway
+# Linux: systemctl --user disable haos-gateway
 # macOS: launchctl remove ai.hermes.gateway
 ```
 :::

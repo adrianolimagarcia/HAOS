@@ -212,8 +212,8 @@ If two profiles accidentally use the same bot token, the second gateway will be 
 ### Persistent services
 
 ```bash
-coder gateway install         # creates hermes-gateway-coder systemd/launchd service
-assistant gateway install     # creates hermes-gateway-assistant service
+coder gateway install         # creates haos-gateway-coder systemd/launchd service
+assistant gateway install     # creates haos-gateway-assistant service
 ```
 
 Each profile gets its own service name. They run independently.

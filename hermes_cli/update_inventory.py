@@ -299,8 +299,14 @@ def _gateway_service_matches_profile(profile: str, service: object) -> bool:
     """
     name = str(service).removesuffix(".service").rsplit("/", 1)[-1]
     if profile == "default":
-        return name in {"hermes-gateway", "ai.hermes.gateway", "gateway", "gateway-default"}
-    return name in {f"hermes-gateway-{profile}", f"ai.hermes.gateway-{profile}", f"gateway-{profile}"}
+        return name in {
+            "haos-gateway", "hermes-gateway", "ai.haos.gateway", "ai.hermes.gateway",
+            "gateway", "gateway-default",
+        }
+    return name in {
+        f"haos-gateway-{profile}", f"hermes-gateway-{profile}",
+        f"ai.haos.gateway-{profile}", f"ai.hermes.gateway-{profile}", f"gateway-{profile}",
+    }
 
 
 def _gateway_named_in(r: RuntimeRecord, names: set) -> bool:

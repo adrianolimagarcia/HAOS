@@ -32,6 +32,7 @@ if os.name == "posix":
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 from gateway.config import coerce_systemd_watchdog_seconds, load_gateway_config
+from gateway.service_names import GATEWAY_UNIT_BASE, LEGACY_GATEWAY_UNIT_BASES, gateway_unit_globs
 from gateway.status import terminate_pid
 from gateway.restart import (
     DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT,
@@ -136,38 +137,39 @@ def _get_service_pids(all_profiles: bool = False) -> set:
 
     # --- systemd (Linux): user and system scopes ---
     if supports_systemd_services():
-        pattern = "hermes-gateway*" if all_profiles else get_service_name()
+        patterns = gateway_unit_globs() if all_profiles else [get_service_name()]
         for scope_args in [["systemctl", "--user"], ["systemctl"]]:
-            try:
-                # Belt-and-suspenders for the EXCLUDE use case (#74075): a bare ``launchctl list`` prefix
-                # scan also catches ai.hermes.gateway* agents the label derivation can't map (renamed
-                # profiles, other installs sharing this user). Over-inclusion is safe here — these PIDs are
-                # only ever protected from the kill sweep, never targeted. Restart paths use the
-                # label-derived set only.
-                result = subprocess.run(
-                    scope_args
-                    + ["list-units", pattern, "--plain", "--no-legend", "--no-pager"],
-                    timeout=5,
-                    **_CAPTURE_TEXT,
-                )
-                for line in result.stdout.strip().splitlines():
-                    parts = line.split()
-                    if not parts or not parts[0].endswith(".service"):
-                        continue
-                    svc = parts[0]
-                    try:
-                        show = subprocess.run(
-                            scope_args + ["show", svc, "--property=MainPID", "--value"],
-                            timeout=5,
-                            **_CAPTURE_TEXT,
-                        )
-                        pid = int(show.stdout.strip())
-                        if pid > 0:
-                            pids.add(pid)
-                    except (ValueError, subprocess.TimeoutExpired):
-                        pass
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                pass
+            for pattern in patterns:
+                try:
+                    # Belt-and-suspenders for the EXCLUDE use case (#74075): a bare ``launchctl list`` prefix
+                    # scan also catches ai.hermes.gateway* agents the label derivation can't map (renamed
+                    # profiles, other installs sharing this user). Over-inclusion is safe here — these PIDs are
+                    # only ever protected from the kill sweep, never targeted. Restart paths use the
+                    # label-derived set only.
+                    result = subprocess.run(
+                        scope_args
+                        + ["list-units", pattern, "--plain", "--no-legend", "--no-pager"],
+                        timeout=5,
+                        **_CAPTURE_TEXT,
+                    )
+                    for line in result.stdout.strip().splitlines():
+                        parts = line.split()
+                        if not parts or not parts[0].endswith(".service"):
+                            continue
+                        svc = parts[0]
+                        try:
+                            show = subprocess.run(
+                                scope_args + ["show", svc, "--property=MainPID", "--value"],
+                                timeout=5,
+                                **_CAPTURE_TEXT,
+                            )
+                            pid = int(show.stdout.strip())
+                            if pid > 0:
+                                pids.add(pid)
+                        except (ValueError, subprocess.TimeoutExpired):
+                            pass
+                except (FileNotFoundError, subprocess.TimeoutExpired):
+                    pass
 
     # --- launchd (macOS) ---
     if is_macos():
@@ -1956,7 +1958,7 @@ def _windows_gateway_breakaway_state() -> bool | None:
 # Service Configuration
 # =============================================================================
 
-_SERVICE_BASE = "hermes-gateway"
+_SERVICE_BASE = GATEWAY_UNIT_BASE
 SERVICE_DESCRIPTION = "Hermes Agent Gateway - Messaging Platform Integration"
 
 _SYSTEM_UNIT_DIR = Path("/etc/systemd/system")
@@ -2294,7 +2296,12 @@ def has_conflicting_systemd_units() -> bool:
 
 
 # Legacy pre-rename names: explicit allowlist (NOT a glob) so profile and third-party units never match.
-_LEGACY_SERVICE_NAMES: tuple[str, ...] = ("hermes.service",)
+# ``hermes-gateway.service`` is the current unit upstream but a LEGACY one here: after the HAOS rename it
+# is a stale unit that still fights for the bot token, so `gateway migrate-legacy` has to find it.
+_LEGACY_SERVICE_NAMES: tuple[str, ...] = (
+    "hermes.service",
+    *(f"{base}.service" for base in LEGACY_GATEWAY_UNIT_BASES),
+)
 
 # ExecStart markers identifying a unit as running our gateway; a legacy unit is flagged only if one matches.
 _LEGACY_UNIT_EXECSTART_MARKERS: tuple[str, ...] = (
@@ -2316,9 +2323,9 @@ def _find_legacy_hermes_units() -> list[tuple[str, Path, bool]]:
     fight the current unit for the bot token (SIGTERM flap loop). Explicit name allowlist + ExecStart
     marker check so profile/third-party units never match; no mutation.
 
-    Detects unit files installed by older Hermes versions that used a different service name (e.g. When both
-    a legacy unit and the current ``hermes-gateway.service`` are active, they fight over the same bot token
-    — the PR #5646 signal-recovery change turns this into a 30-second SIGTERM flap loop.
+    Detects unit files installed by an older install that used a different service name. When a legacy
+    unit and the current gateway unit are both active they fight over the same bot token — the PR #5646
+    signal-recovery change turns this into a 30-second SIGTERM flap loop.
     """
     results: list[tuple[str, Path, bool]] = []
     for is_system, base in _legacy_unit_search_paths():
@@ -2348,7 +2355,7 @@ def print_legacy_unit_warning() -> None:
     print_warning("Legacy Hermes gateway unit(s) detected from an older install:")
     for name, path, is_system in legacy:
         print_info(f"    {path}  ({_service_scope_label(is_system)} scope)")
-    print_info("  These run alongside the current hermes-gateway service and")
+    print_info(f"  These run alongside the current {_SERVICE_BASE} service and")
     print_info("  cause SIGTERM flap loops — both try to use the same bot token.")
     print_info("  Remove them with:")
     print_info("    hermes gateway migrate-legacy")

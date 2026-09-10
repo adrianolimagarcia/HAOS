@@ -108,8 +108,9 @@ it guards. `plan → snapshot → apply → restart-per-kind → verify → repo
   trigger a tree-clobbering re-download), REFUSES a dirty working tree (`-uall` + a pre-swap TOCTOU
   re-check), and grafts the live `apps/desktop/release/` into the staged swap (the GitHub source
   ZIP has no built desktop app; without the graft the swap deletes it).
-- **Restart-per-kind**: systemd and launchd restarts are FLEET-WIDE (every `hermes-gateway*` unit /
-  `ai.hermes.gateway*` LaunchAgent), drain-first (SIGUSR1), with per-unit/per-label failure
+- **Restart-per-kind**: systemd and launchd restarts are FLEET-WIDE (every gateway unit —
+  `haos-gateway*` plus the pre-rename `hermes-gateway*`, per `gateway/service_names.py` — and
+  `ai.<base>.gateway*` LaunchAgents), drain-first (SIGUSR1), with per-unit/per-label failure
   isolation. Restarting only the invoking profile's service leaves siblings on stale `sys.modules`
   until they crash — the largest dupe-PR cluster in the repo's history came from that bug.
 - **Verify**: gateways stamp `code_sha`/`code_version` into `gateway_state.json` on every

@@ -28,13 +28,13 @@ class GatewayLifecycleBlocked(ValueError):
 # concrete command identifier so it fires only on command-shaped strings, never prose.
 _GATEWAY_LIFECYCLE_PATTERN = re.compile(
     r"(?i)"
-    # Branch A: destructive `hermes gateway` ops. `start` is excluded: starting from inside a
-    # gateway is benign and a job may legitimately start a sibling profile. The lookbehind keeps
-    # `hermes` from being a path component or word tail (`/docs/hermes gateway restart-notes.md`)
+    # Branch A: destructive `hermes gateway` / `haos gateway` ops. `start` is excluded: starting from
+    # inside a gateway is benign and a job may legitimately start a sibling profile. The lookbehind keeps
+    # the CLI name from being a path component or word tail (`/docs/hermes gateway restart-notes.md`)
     # while every real command position (text start, whitespace, `;`/`&`/`|`, `$(`, backtick,
     # U+FFFD) still matches.
     # See #77173.
-    r"(?:(?<![/\w.\-])hermes\s+gateway\s+(?:restart|stop|uninstall)\b)"
+    r"(?:(?<![/\w.\-])(?:hermes|haos)\s+gateway\s+(?:restart|stop|uninstall)\b)"
     # Branch B: launchctl ops anchored on a hermes-gateway label so unrelated hermes services stay
     # unblocked. `submit`/`bootstrap` register a NEW keepalive job wrapping an arbitrary helper (a
     # laundered restart); neutral-label submissions are caught by
@@ -51,13 +51,13 @@ _GATEWAY_LIFECYCLE_PATTERN = re.compile(
     # makes an unload durable across boots. Omitting them left the bypassable approval layer
     # (tools/approval.py, skipped on force=True) as the only cover, while this hard block — documented as
     # "force=True cannot help here" — let them through (#80260).
-    r"|(?:launchctl\s+(?:kickstart|unload|load|stop|restart|submit|bootstrap|bootout|remove|disable)\b[^\n]*\bhermes[.\-]?gateway)"
-    # Branch C: systemctl ops on a hermes-gateway unit.
-    r"|(?:systemctl\s+(?:-\S+\s+)*(?:restart|stop|start)\b[^\n]*\bhermes[.\-]?gateway)"
+    r"|(?:launchctl\s+(?:kickstart|unload|load|stop|restart|submit|bootstrap|bootout|remove|disable)\b[^\n]*\b(?:hermes|haos)[.\-]?gateway)"
+    # Branch C: systemctl ops on a hermes-gateway/haos-gateway unit.
+    r"|(?:systemctl\s+(?:-\S+\s+)*(?:restart|stop|start)\b[^\n]*\b(?:hermes|haos)[.\-]?gateway)"
     # Branch D: pkill/kill of the gateway process, both token orders. Leading \b keeps "skill" from
     # matching as "kill".
-    r"|(?:\bp?kill\b[^\n]*\bhermes\b[^\n]*\bgateway)"
-    r"|(?:\bp?kill\b[^\n]*\bgateway\b[^\n]*\bhermes)"
+    r"|(?:\bp?kill\b[^\n]*\b(?:hermes|haos)\b[^\n]*\bgateway)"
+    r"|(?:\bp?kill\b[^\n]*\bgateway\b[^\n]*\b(?:hermes|haos))"
 )
 
 # Every branch uses `[^\n]*` between verb and label so matches cannot span unrelated lines. A POSIX

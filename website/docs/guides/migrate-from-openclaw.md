@@ -225,7 +225,7 @@ The migration resolves all three formats. For env templates and SecretRef object
 
 4. **Verify API keys** — run `hermes status` to check provider authentication.
 
-5. **Test messaging** — if you migrated platform tokens, restart the gateway: `systemctl --user restart hermes-gateway`
+5. **Test messaging** — if you migrated platform tokens, restart the gateway: `systemctl --user restart haos-gateway`
 
 6. **Check session archives** — review archived advanced settings; idle and daily reset timers are intentionally not imported.
 

@@ -155,7 +155,7 @@ hermes gateway stop
 hermes gateway status
 
 # View live logs
-journalctl --user -u hermes-gateway -f
+journalctl --user -u haos-gateway -f
 
 # Keep running after SSH logout
 sudo loginctl enable-linger $USER
@@ -163,7 +163,7 @@ sudo loginctl enable-linger $USER
 # Linux servers — explicit system-service commands
 sudo hermes gateway start --system
 sudo hermes gateway status --system
-journalctl -u hermes-gateway -f
+journalctl -u haos-gateway -f
 ```
 
 ```bash
@@ -397,7 +397,7 @@ This way, even if someone asks the bot to run something destructive, your host s
 hermes gateway status
 
 # Watch live logs (Linux)
-journalctl --user -u hermes-gateway -f
+journalctl --user -u haos-gateway -f
 
 # Watch live logs (macOS)
 tail -f ~/.hermes/logs/gateway.log
@@ -416,7 +416,7 @@ hermes gateway stop && hermes gateway start
 
 | What | Location |
 |------|----------|
-| Gateway logs | `journalctl --user -u hermes-gateway` (Linux) or `~/.hermes/logs/gateway.log` (macOS) |
+| Gateway logs | `journalctl --user -u haos-gateway` (Linux) or `~/.hermes/logs/gateway.log` (macOS) |
 | Cron job output | `~/.hermes/cron/output/{job_id}/{timestamp}.md` |
 | Cron job definitions | `~/.hermes/cron/jobs.json` |
 | Pairing data | `~/.hermes/pairing/` |

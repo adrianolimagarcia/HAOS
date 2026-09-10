@@ -2098,6 +2098,20 @@ class TestLifecycleGuardLaunchctlParity:
         for cmd in GATEWAY_LIFECYCLE_LAUNCHCTL:
             assert contains_gateway_lifecycle_command(cmd) is True, cmd
 
+    def test_hard_block_covers_the_renamed_invocations(self):
+        """The fork ships ``haos`` and ``haos-gateway``: a block scoped to the old spelling is
+        bypassed by the only CLI and unit name users here actually have."""
+        from cron.lifecycle_guard import contains_gateway_lifecycle_command
+
+        for cmd in (
+            "haos gateway restart",
+            "haos gateway stop",
+            "systemctl --user restart haos-gateway",
+            "sudo systemctl stop haos-gateway-jobs",
+            "pkill -f haos-gateway",
+        ):
+            assert contains_gateway_lifecycle_command(cmd) is True, cmd
+
     def test_bypassable_layer_is_never_stricter(self):
         """One-directional invariant: anything ``detect_dangerous_command``
         flags as gateway lifecycle, the hard block must also catch.

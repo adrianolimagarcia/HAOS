@@ -362,7 +362,12 @@ def test_spawn_detached_gateway_timestamps_stderr(monkeypatch, tmp_path):
     reason="systemd user-linger is Linux-only (drives os.getuid())",
 )
 def test_systemd_install_checks_linger_status(monkeypatch, tmp_path, capsys):
-    unit_path = tmp_path / "systemd" / "user" / "hermes-gateway.service"
+    # Derived, not spelled out: the profile suffix is part of the name, and a literal here would
+    # freeze a name the generator owns — and now collide with the legacy-unit scan.
+    unit_path = tmp_path / "systemd" / "user" / f"{gateway.get_service_name()}.service"
+    # This test is about linger, not the pre-rename unit scan: keep that probe off the real
+    # /etc/systemd/system, where a machine mid-migration has a legacy unit → prompt → stdin read.
+    monkeypatch.setattr(gateway, "has_legacy_hermes_units", lambda: False)
 
     monkeypatch.setattr(gateway, "get_systemd_unit_path", lambda system=False: unit_path)
     # Synthetic unit with a non-temp home: the real generator bakes the

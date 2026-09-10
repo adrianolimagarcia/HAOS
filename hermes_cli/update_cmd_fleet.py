@@ -16,6 +16,7 @@ from pathlib import Path
 
 from hermes_cli.update_cmd_common import _best_effort
 from hermes_cli.update_inventory import _gateway_service_matches_profile
+from gateway.service_names import gateway_unit_globs, is_gateway_unit
 
 # Log-record parity with the origin module.
 logger = logging.getLogger("hermes_cli.update_cmd")
@@ -29,7 +30,11 @@ _FLEET_RESTART_PENDING_NAME = "fleet_restart_pending"
 _FRESH_RESTART_SUPERVISORS = frozenset({"systemd", "launchd", "service", "s6"})
 
 _SYSTEMD_SCOPES = (("user", ["systemctl", "--user"]), ("system", ["systemctl"]))
-_LIST_GATEWAY_UNITS = ["list-units", "hermes-gateway*", "hermes-serve*", "--plain", "--no-legend", "--no-pager"]
+# Both gateway bases: a fleet mid-rename still has legacy units running, and the restart path
+# must reach every profile's unit either way (see gateway/service_names.py).
+_LIST_GATEWAY_UNITS = [
+    "list-units", *gateway_unit_globs(), "hermes-serve*", "--plain", "--no-legend", "--no-pager",
+]
 
 
 def _write_gateway_update_exit_code(ok: bool) -> None:
@@ -423,8 +428,7 @@ def _is_hermes_gateway_unit(unit: str) -> bool:
     return (
         # list-units is already pattern-filtered, but keep the name gate so a stray non-gateway/serve line
         # cannot enter the restart path. See #83595.
-        unit == "hermes-gateway.service"
-        or unit.startswith("hermes-gateway-")
+        is_gateway_unit(unit)
         or unit == "hermes-serve.service"
         or unit.startswith("hermes-serve-")
     )
@@ -455,14 +459,14 @@ def _for_each_systemd_gateway_unit(list_units_stdout: str, *, process_unit, on_u
 def _service_unit_supports_graceful_sigusr1_restart(svc_name: str) -> bool:
     """Whether *svc_name* wires SIGUSR1 to a graceful drain-then-restart.
 
-    Only ``hermes-gateway*`` runs ``gateway/run.py`` (the handler); SIGUSR1 would just
+    Only ``hermes-gateway*``/``haos-gateway*`` runs ``gateway/run.py`` (the handler); SIGUSR1 would just
     kill ``hermes-serve*`` and burn the drain budget, so those go straight to the blunt
     restart. Same exact/hyphenated shape as ``_for_each_systemd_gateway_unit`` so a
     near-prefix unit like ``hermes-gatewayd`` is never signalled.
 
     See #83438.
     """
-    return svc_name == "hermes-gateway" or svc_name.startswith("hermes-gateway-")
+    return is_gateway_unit(svc_name)
 
 
 def _warn_incomplete_gateway_fleet_restart(failed_units: list) -> None:

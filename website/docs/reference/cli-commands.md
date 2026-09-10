@@ -275,6 +275,8 @@ Subcommands:
 | `setup` | Interactive messaging-platform setup. |
 | `migrate` | Move per-profile standalone gateways onto one multiplexed default gateway (`--multiplex`, the default) or roll back from the recorded manifest (`--standalone`). Runs a preflight (duplicate bot tokens, secondary port-binders without a `/p/<profile>/` ingress) and changes nothing when blocked. Flags: `--dry-run`, `-y`/`--yes`. See [Migrating from per-profile gateways](/user-guide/multi-profile-gateways#migrating-from-per-profile-gateways). |
 | `migrate-legacy` | Remove legacy `hermes.service` units left over from pre-rename installs. Profile units (`hermes-gateway-<profile>.service`) and unrelated services are never touched. Flags: `--dry-run`, `-y`/`--yes`. |
+
+| `migrate-legacy` | Remove legacy gateway units left over from pre-rename installs: `hermes.service` and the older default `hermes-gateway.service`. Profile units (`haos-gateway-<profile>.service`) and unrelated services are never touched. Flags: `--dry-run`, `-y`/`--yes`. |
 | `enroll` | Experimental: enroll this gateway with a relay connector and save relay credentials for connector-backed platforms. See [Hermes Relay](/user-guide/messaging/relay). |
 
 Options:
@@ -296,7 +298,7 @@ stopped.
 `hermes gateway enroll` accepts `--token`, `--connector-url`, `--gateway-id`, and `--wake-url`. It exchanges the enrollment token with the connector and writes the resulting `GATEWAY_RELAY_ID`, `GATEWAY_RELAY_SECRET`, `GATEWAY_RELAY_DELIVERY_KEY`, optional `GATEWAY_RELAY_URL`, and (when `--wake-url` is given) `GATEWAY_RELAY_WAKE_URL` values to the active profile's `.env`.
 
 :::tip WSL users
-Use `hermes gateway run` instead of `hermes gateway start` — WSL's systemd support is unreliable. Wrap it in tmux for persistence: `tmux new -s hermes 'hermes gateway run'`. See [WSL FAQ](/reference/faq#wsl-gateway-keeps-disconnecting-or-hermes-gateway-start-fails) for details.
+Use `hermes gateway run` instead of `hermes gateway start` — WSL's systemd support is unreliable. Wrap it in tmux for persistence: `tmux new -s hermes 'hermes gateway run'`. See [WSL FAQ](/reference/faq#wsl-gateway-keeps-disconnecting-or-haos-gateway-start-fails) for details.
 :::
 
 ## `hermes lsp`
@@ -1832,7 +1834,7 @@ Additional behavior:
 - **Local source changes.** For git installs, dirty tracked files and untracked files are auto-stashed before branch checkout or pull (`git stash push --include-untracked`). Interactive terminal updates ask before restoring the stash. Non-interactive updates restore it by default; set `updates.non_interactive_local_changes: discard` only on managed installs where local source edits should be thrown away after a successful pull. If stash restore conflicts or the pull fails, the stash is left in place for manual recovery.
 - **npm lockfile churn.** Before stashing or switching branches, Hermes makes a best-effort cleanup of tracked `package-lock.json` diffs produced by npm install/build steps. Commit or manually stash intentional lockfile edits before running `hermes update`.
 - **Pairing data snapshot.** Even when `--backup` is off, `hermes update` takes a lightweight snapshot of `~/.hermes/pairing/` and the Feishu comment rules before `git pull`. You can roll it back with `hermes backup restore --state pre-update` if a pull rewrites a file you were editing.
-- **Legacy `hermes.service` warning.** If Hermes detects a pre-rename `hermes.service` systemd unit (instead of the current `hermes-gateway.service`), it prints a one-time migration hint so you can avoid flap-loop issues.
+- **Legacy unit warning.** If Hermes detects a pre-rename gateway unit (`hermes.service`, or the older default `hermes-gateway.service`) sitting next to the current `haos-gateway.service`, it prints a migration hint so you can avoid flap-loop issues.
 - **Exit codes.** `0` on success, `1` on pull/install/post-install errors, `2` on unexpected working-tree changes that block `git pull`.
 
 ## Maintenance commands
@@ -1851,3 +1853,4 @@ Additional behavior:
 - [Sessions](../user-guide/sessions.md)
 - [Skills System](../user-guide/features/skills.md)
 - [Skins & Themes](../user-guide/features/skins.md)
+

@@ -2009,20 +2009,26 @@ class TestRemoveLegacyHermesUnits:
     ):
         """Teknium's constraint: profile units (hermes-gateway-coder.service)
         must survive a migration call, even if we somehow include them in the
-        search dir."""
+        search dir.
+
+        The current unit is derived, not spelled out: the rename is what makes the OLD default
+        name migrateable, and hardcoding either one here would hide that."""
         user_dir, _, _ = self._setup(tmp_path, monkeypatch, as_root=True)
         profile_unit = user_dir / "hermes-gateway-coder.service"
         profile_unit.write_text(self._OUR_UNIT_TEXT, encoding="utf-8")
-        default_unit = user_dir / "hermes-gateway.service"
+        default_unit = user_dir / f"{gateway_cli.get_service_name()}.service"
         default_unit.write_text(self._OUR_UNIT_TEXT, encoding="utf-8")
+        legacy_default = user_dir / "hermes-gateway.service"
+        legacy_default.write_text(self._OUR_UNIT_TEXT, encoding="utf-8")
 
         removed, remaining = gateway_cli.remove_legacy_hermes_units(interactive=False)
 
-        assert removed == 0
+        assert removed == 1
         assert remaining == []
-        # Both the profile unit and the current default unit must survive
+        # Profile unit and current default survive; only the pre-rename default is removed.
         assert profile_unit.exists()
         assert default_unit.exists()
+        assert not legacy_default.exists()
 
 
 class TestMigrateLegacyCommand:
@@ -2796,3 +2802,23 @@ class TestUnitAnchoredServiceIdentity:
 
         assert os.environ["HERMES_HOME"] == str(alice_home)  # the sync really ran
         assert gateway_cli.get_service_name() == pre_sync_name
+
+def test_generated_unit_name_is_recognized_by_the_fleet_restart():
+    """The unit the installer writes must be the unit the updater restarts.
+
+    A rename that lands on one side only leaves ``hermes update`` restarting nothing after a pull:
+    the gateway keeps running the previous code and the fleet version check reads it unhealthy.
+    """
+    from gateway.service_names import gateway_unit_globs, is_gateway_unit
+    from hermes_cli import update_cmd_fleet
+
+    name = gateway_cli.get_service_name()
+    assert name.startswith("haos-"), name
+    assert is_gateway_unit(name)
+    assert any(name.startswith(glob.removesuffix("*")) for glob in gateway_unit_globs())
+    assert update_cmd_fleet._is_hermes_gateway_unit(f"{name}.service")
+    assert update_cmd_fleet._service_unit_supports_graceful_sigusr1_restart(name)
+    # A fleet mid-migration: the pre-rename unit stays restartable until it is removed.
+    assert update_cmd_fleet._is_hermes_gateway_unit("hermes-gateway.service")
+    assert update_cmd_fleet._service_unit_supports_graceful_sigusr1_restart("hermes-gateway-jobs")
+

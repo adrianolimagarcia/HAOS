@@ -325,7 +325,7 @@ def _gateway_command_subcommand(command: str | None) -> str | None:
     # Gateway-dedicated entrypoints carry no subcommand to inspect.
     if any(t == "gateway/run.py" or t.endswith("/gateway/run.py") for t in tokens):
         return "run"
-    if any(b in ("hermes-gateway", "hermes-gateway.exe") for b in basenames):
+    if any(b in ("hermes-gateway", "hermes-gateway.exe", "haos-gateway", "haos-gateway.exe") for b in basenames):
         return "run"
     joined = " ".join(tokens)
     if "hermes_cli.main" not in joined and "hermes_cli/main.py" not in joined and not any(

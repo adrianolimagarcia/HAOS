@@ -28,7 +28,7 @@ be online at the same time. Common reasons:
 
 Every profile already gets its own per-platform LaunchAgent
 (`ai.hermes.gateway-<name>.plist`) or systemd user service
-(`hermes-gateway-<name>.service`). This guide adds the patterns for managing
+(`haos-gateway-<name>.service`). This guide adds the patterns for managing
 them collectively.
 
 ## Quick start
@@ -553,7 +553,7 @@ authorization comes from the route, not from the satellite's config.
 
 The CLI ships with single-profile lifecycle commands. To act across every
 profile, wrap them in a shell loop. Put the snippet below in
-`~/.local/bin/hermes-gateways` and `chmod +x` it:
+`~/.local/bin/haos-gateways` and `chmod +x` it:
 
 ```sh
 #!/bin/sh
@@ -563,7 +563,7 @@ set -eu
 profiles="default coder personal-bot research"
 
 usage() {
-  echo "Usage: hermes-gateways {start|stop|restart|status|list}"
+  echo "Usage: haos-gateways {start|stop|restart|status|list}"
 }
 
 run_for_profile() {
@@ -597,11 +597,11 @@ esac
 Then:
 
 ```bash
-hermes-gateways start      # start every configured profile
-hermes-gateways stop       # stop every configured profile
-hermes-gateways restart    # restart all
-hermes-gateways status     # status across all
-hermes-gateways list       # delegates to `hermes gateway list`
+haos-gateways start      # start every configured profile
+haos-gateways stop       # stop every configured profile
+haos-gateways restart    # restart all
+haos-gateways status     # status across all
+haos-gateways list       # delegates to `hermes gateway list`
 ```
 
 :::tip
@@ -635,10 +635,10 @@ never clash:
 | Platform | Path                                                              |
 | -------- | ----------------------------------------------------------------- |
 | macOS    | `~/Library/LaunchAgents/ai.hermes.gateway-<profile>.plist`        |
-| Linux    | `~/.config/systemd/user/hermes-gateway-<profile>.service`         |
+| Linux    | `~/.config/systemd/user/haos-gateway-<profile>.service`         |
 
 The default profile keeps the historical names: `ai.hermes.gateway.plist` /
-`hermes-gateway.service`.
+`haos-gateway.service`.
 
 ## Viewing logs
 
@@ -672,9 +672,9 @@ hermes logs --help              # filters, levels, JSON output
 
 ```bash
 hermes profile list             # profiles + model + gateway state
-hermes-gateways status          # full status across every profile
+haos-gateways status          # full status across every profile
 launchctl list | grep hermes    # macOS — PIDs and labels
-systemctl --user list-units 'hermes-gateway-*'   # Linux — units
+systemctl --user list-units 'haos-gateway-*'   # Linux — units
 ```
 
 ## Editing configuration
@@ -702,7 +702,7 @@ After editing `.env` or `config.yaml`, restart the affected gateway:
 ```bash
 coder gateway restart
 # or, for everything:
-hermes-gateways restart
+haos-gateways restart
 ```
 
 ## Keeping the host awake
@@ -756,7 +756,7 @@ sudo loginctl enable-linger "$USER"
 ```
 
 After enabling lingering, your systemd user units (including
-`hermes-gateway-<profile>.service`) continue running across SSH disconnects
+`haos-gateway-<profile>.service`) continue running across SSH disconnects
 and reboots.
 
 ## Token-conflict safety
@@ -894,7 +894,7 @@ every profile:
 
 ```bash
 hermes update
-hermes-gateways restart
+haos-gateways restart
 ```
 
 Running gateways are restarted by the update itself; on an install that still
@@ -934,7 +934,7 @@ launchctl unload ~/Library/LaunchAgents/ai.hermes.gateway-<profile>.plist
 launchctl load   ~/Library/LaunchAgents/ai.hermes.gateway-<profile>.plist
 
 # Linux
-systemctl --user restart hermes-gateway-<profile>.service
+systemctl --user restart haos-gateway-<profile>.service
 ```
 
 ### Health check
