@@ -96,3 +96,33 @@ anônimo e funciona sem nenhuma credencial. Nada a fazer além de publicar o rep
 > (`.env`, API keys) continuam proibidos dentro do repositório. No modo A isso
 > é irrelevante (o código já é público).
 
+**Decisão: o Modo B é o modo padrão — a chave fica embutida.** É o que faz
+`haos update` funcionar numa instalação nova sem nenhum passo manual, e o que
+mantém o repo privado. O custo aceito é que a ISO vale como credencial
+read-only; o que **não** se aceita é a chave ficar solta fora dela.
+
+**Rotação da chave embutida — a ordem importa:**
+
+1. `./scripts/provision_update_key.sh --force` gera o novo par (a antiga só é
+   substituída com `--force`, justamente para não invalidar ISOs já distribuídas
+   por acidente).
+2. Registre a metade **pública** nova em
+   `github.com/adrianolimagarcia/HAOS/settings/keys/new`, com "Allow write
+   access" **desmarcado**. Deixe a antiga registrada por enquanto.
+3. `./build-iso.sh` — a imagem nova passa a carregar a chave nova.
+4. Distribua/atualize os nós que devem migrar.
+5. **Só então** remova a chave antiga do GitHub.
+
+Enquanto as duas estiverem registradas, nós das ISOs antigas e novas funcionam.
+Revogar antes do passo 4 quebra o `haos update` de toda ISO já distribuída — é o
+único passo irreversível da lista.
+
+Higiene (o build já cuida, mas vale saber o que esperar): a chave privada nunca é
+commitada (`.gitignore` cobre o destino injetado, o `chroot/` de estágio e o
+`binary/`); o `build-iso.sh` apaga a cópia injetada **e** as cópias que o
+`lb build` deixa em `chroot/` (varredura por nome de arquivo no `trap`); e o
+`.dockerignore` mantém o diretório de perfil fora do contexto do `docker build`,
+de modo que a chave não entra numa camada da imagem nem por um `COPY` futuro.
+Depois de um build, `find distro -name update_ed25519` deve voltar **vazio** — a
+chave existe só em `/root/.haos/keys/` (o cofre) e dentro da ISO.
+
