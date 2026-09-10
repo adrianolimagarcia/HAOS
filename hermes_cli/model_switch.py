@@ -497,17 +497,16 @@ def resolve_persist_behavior(
     Order: ``--once`` / ``--session`` -> False; ``--global`` -> True; no default configured yet
     (neither ``model.default`` nor ``model.provider`` — a fresh install's first pick) -> True, so
     the pick does not evaporate into whatever ``*_API_KEY`` is lying around on the next launch;
-    ``--provider`` without a persist flag -> False (exploratory); else
-    ``model.persist_switch_by_default`` (default False). A flat-string ``model`` IS a configured
-    default; an unreadable config -> False.
+    else ``model.persist_switch_by_default`` — HAOS ships it ``true`` in DEFAULT_CONFIG and an
+    absent key also falls back to True, so the last model picked is the one you come back to.
+    A flat-string ``model`` IS a configured default and keeps the legacy session-only rule; an
+    unreadable config -> False.
 
     1. ``--once`` explicitly opts out → ``False`` (next turn only). 2. ``--session`` explicitly opts out →
-    ``False`` (this session only). 3. 4. Applies to every surface (CLI, gateway, Desktop picker) so no
-    client has to hardcode ``--global``. 5. Provider switches are typically exploratory — the user is trying
-    a different backend for this conversation, not reconfiguring the default. 6. Otherwise defer to
-    ``model.persist_switch_by_default`` in ``config.yaml`` (defaults to ``False``: a plain ``/model <name>``
-    affects only the current session). Users who want the old persist-by-default behavior can set the key to
-    ``true``; a one-off ``--global`` always persists. See #86414.
+    ``False`` (this session only). 3. ``--global`` always persists. 4. Applies to every surface (CLI,
+    gateway, Desktop picker) so no client has to hardcode ``--global``. 5. ``explicit_provider`` is NOT an
+    opt-out: the Desktop picker sends ``--provider`` on every pick, so treating a provider switch as
+    exploratory would make those picks vanish on restart. See #86414.
     """
     if is_once or is_session:
         return False

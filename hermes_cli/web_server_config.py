@@ -196,6 +196,10 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "runtime": "agent",
     "session": "general",
     "nous": "agent",
+    # `model.persist_switch_by_default` is the only leaf under the `model` section (the flat
+    # `model` / `model_context_length` fields the page edits are virtual, see
+    # `_config_schema_with_virtual_fields`), so the section would be a one-field orphan tab.
+    "model": "general",
 }
 
 
@@ -230,10 +234,21 @@ def _build_schema_from_config(config: Dict[str, Any], prefix: str = "") -> Dict[
 
 
 def _config_schema_with_virtual_fields() -> Dict[str, Dict[str, Any]]:
-    """DEFAULT_CONFIG schema plus the virtual ``model_context_length`` field, inserted right
-    after ``model`` so it renders adjacent in the frontend."""
+    """DEFAULT_CONFIG schema plus the virtual flat ``model`` / ``model_context_length`` fields,
+    the latter right after ``model`` so it renders adjacent in the frontend.
+
+    The dashboard speaks a FLAT pair — a string ``model`` (stored as ``model.default``) and a
+    numeric ``model_context_length`` (stored as ``model.context_length``);
+    ``_normalize_config_for_web`` / ``_denormalize_config_from_web`` are the two directions of
+    that shape. DEFAULT_CONFIG declares ``model`` as a SECTION instead (it carries
+    ``persist_switch_by_default``), so the walk yields ``model.<leaf>`` only and both flat
+    fields would vanish from the Config page and the desktop's Model section.
+    """
+    walked = _build_schema_from_config(DEFAULT_CONFIG)
+    if "model" not in walked:
+        walked = {"model": dict(_SCHEMA_OVERRIDES["model"]), **walked}
     ordered: Dict[str, Dict[str, Any]] = {}
-    for key, entry in _build_schema_from_config(DEFAULT_CONFIG).items():
+    for key, entry in walked.items():
         ordered[key] = entry
         if key == "model":
             ordered["model_context_length"] = _SCHEMA_OVERRIDES["model_context_length"]

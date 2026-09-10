@@ -213,7 +213,12 @@ def _runtime_target(requested: str | None = None) -> "tuple[str, str]":
     tag = section.get("tag") or binaries.default_tag()
     backend = requested or section.get("backend", "auto")
     if backend == "auto":
-        backend = binaries.select_backend(bootstrap._detect_gpu_vendor())
+        # Nobody pinned a backend, so auto-detection must land on one this platform can actually
+        # install: a Linux NVIDIA host detects CUDA, which has no prebuilt artifact, and the POST
+        # would fail with "use vulkan/cpu" instead of setting the machine up. An explicitly
+        # configured backend keeps that error.
+        backend = binaries.select_installable_backend(
+            binaries.select_backend(bootstrap._detect_gpu_vendor()), tag)
     return tag, backend
 
 

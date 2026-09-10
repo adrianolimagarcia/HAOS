@@ -241,15 +241,18 @@ _BACKEND_CHECKS = {"ssh": _check_ssh_backend, "daytona": _check_daytona_backend,
 @doctor_check()
 def _check_terminal_backend(should_fix: bool, f: Finding) -> None:
     """Docker/SSH/Daytona/Vercel/plugin terminal backends, gated on TERMINAL_ENV."""
-    terminal_env = os.getenv("TERMINAL_ENV", "local")
+    configured_env = (os.getenv("TERMINAL_ENV") or "").strip()
+    terminal_env = configured_env or "local"
     try:
         from hermes_constants import is_container as _is_container
         running_in_container = _is_container()
     except Exception:
         running_in_container = False
-    # In our container docker-in-docker isn't set up, so local is intended: skip the noisy "docker not found"
-    # warning. An explicit TERMINAL_ENV=docker (mounted docker.sock) still gets checked.
-    if running_in_container and terminal_env != "docker":
+    # In our container docker-in-docker isn't set up, so an UNCONFIGURED backend is meant to be
+    # local: skip the noisy "docker not found" warning. An explicitly configured backend is still
+    # checked — silently switching to "local" hides the very misconfiguration the user is asking
+    # about (TERMINAL_ENV=vercel_sandbox inside a container reported as a clean local setup).
+    if running_in_container and not configured_env:
         check_info("Running inside a container — using local terminal backend (docker-in-docker is not configured by default)")
         terminal_env = "local"
     _check_docker_backend(terminal_env, running_in_container, f.issues)

@@ -646,14 +646,15 @@ class CLIModelSwitchMixin:
 
         Supports:
           /model                              — show current model + usage hints
-          /model <name>                       — switch model (this session only)
+          /model <name>                       — switch model (persists; the pick is remembered)
           /model <name> --once                — switch for the next turn only
           /model <name> --session             — switch for this session only (explicit)
           /model <name> --global              — switch and persist to config.yaml
           /model <name> --provider <provider> — switch provider + model
           /model --provider <provider>        — switch to provider, auto-detect model
 
-        Switches are session-scoped unless ``model.persist_switch_by_default`` or ``--global``.
+        Switches persist to ``config.yaml`` unless ``--once`` / ``--session`` is passed or
+        ``model.persist_switch_by_default`` is set to false.
         """
         from cli import _cprint
         from hermes_cli.model_switch import parse_model_switch_args, resolve_persist_behavior

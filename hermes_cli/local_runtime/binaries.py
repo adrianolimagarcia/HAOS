@@ -116,6 +116,33 @@ def select_backend(gpu_vendor: str | None, os_name: str | None = None) -> str:
     return "cpu"
 
 
+# The ladder ``resolve_assets`` promises its callers. A Linux NVIDIA host auto-detects "cuda",
+# which the release has NEVER shipped a prebuilt artifact for, so the first rung with assets is
+# what an unpinned host must install.
+_BACKEND_LADDER: dict[str, tuple[str, ...]] = {
+    "cuda": ("vulkan", "cpu"),
+    "hip": ("vulkan", "cpu"),
+    "vulkan": ("cpu",),
+}
+
+
+def select_installable_backend(preferred: str, tag: str, os_name: str | None = None,
+                               arch: str | None = None) -> str:
+    """First rung of *preferred*'s cuda -> vulkan -> cpu ladder this platform ships assets for.
+
+    Only for a backend nobody asked for (auto-detection): an explicitly configured backend keeps
+    ``resolve_assets``'s honest error instead of silently running on a different engine. Returns
+    *preferred* unchanged when no rung resolves, so the caller's own error path still fires.
+    """
+    for candidate in (preferred, *_BACKEND_LADDER.get(preferred, ())):
+        try:
+            resolve_assets(tag, candidate, os_name=os_name, arch=arch)
+            return candidate
+        except BinaryResolutionError:
+            continue
+    return preferred
+
+
 # Per-OS (human label, {backend: asset-name templates}). Windows CUDA pairs the runtime zip with
 # its cudart zip; ubuntu ships tarballs, win ships zips.
 _ASSET_TEMPLATES = {

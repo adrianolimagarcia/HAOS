@@ -1547,9 +1547,19 @@ class TestGeneratedUnitIncludesLocalBin:
             "_build_user_local_paths",
             lambda home_path, existing: [str(home_path / ".local" / "bin")],
         )
+        # The identity is stubbed, as in every other system-unit test in this file:
+        # generate_systemd_unit(system=True) resolves it from the ambient USER, and
+        # _system_service_identity refuses an auto-detected root (see
+        # TestSystemServiceIdentityRootHandling). Without this the test only passes when
+        # the suite runs as an ordinary user, which is not the environment it must hold in.
+        monkeypatch.setattr(
+            gateway_cli,
+            "_system_service_identity",
+            lambda run_as_user=None: ("alice", "alice", "/home/alice"),
+        )
         unit = gateway_cli.generate_systemd_unit(system=True)
         # System unit uses the resolved home dir from _system_service_identity
-        assert "/.local/bin" in unit
+        assert "/home/alice/.local/bin" in unit
 
 
 class TestSystemServiceIdentityRootHandling:

@@ -1522,8 +1522,8 @@ class CLITuiMixin:
             return True
         if self._model_picker_state:
             try:
-                # Picker selections follow the same session-scoped default as /model <name>
-                # (model.persist_switch_by_default).
+                # Picker selections follow the same persistence policy as /model <name>
+                # (model.persist_switch_by_default, true by default).
                 from hermes_cli.model_switch import resolve_persist_behavior
                 self._handle_model_picker_selection(persist_global=resolve_persist_behavior(False, False))
             except Exception as _exc:

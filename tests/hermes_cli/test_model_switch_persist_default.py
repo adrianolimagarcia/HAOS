@@ -1,12 +1,14 @@
-"""Tests for session-scoped-by-default model switching.
+"""Tests for model-switch persistence.
 
 Covers:
 - ``parse_model_flags`` recognises ``--session`` (and keeps ``--global``).
 - ``resolve_persist_behavior`` applies the config-gated default and the
   ``--session`` / ``--global`` overrides.
-- The default (no flags) is session-only, which is the user-facing fix: a
-  plain ``/model <name>`` affects only the current session unless the user
-  passes ``--global`` or sets ``model.persist_switch_by_default: true``.
+- HAOS persists the pick (the last model used is remembered): ``DEFAULT_CONFIG``
+  ships ``model.persist_switch_by_default: true`` and an absent key defaults to
+  True, so only an explicit ``--once`` / ``--session`` — or a config that sets
+  the key to false — is session-only. This diverges from upstream, where the
+  plain ``/model <name>`` default was session-only.
 """
 
 from unittest.mock import patch
@@ -52,21 +54,34 @@ class TestResolvePersistBehavior:
         with _config({"model": {"persist_switch_by_default": True}}):
             assert resolve_persist_behavior(False, False, explicit_provider="") is True
 
-    def test_first_pick_persists_then_session_only(self):
+    def test_first_pick_persists_then_every_pick_keeps_persisting(self):
         # #90235 / #86414: the ONE policy every surface (CLI, gateway, Desktop
         # picker) defers to. With no default ever configured, the first pick
         # persists (even with --provider, which is how the Desktop picker
         # always sends it) so resolve_provider never falls through to a stray
-        # env key on restart. Once a default exists, a plain pick is
-        # session-only unless --global / persist_switch_by_default.
+        # env key on restart. HAOS keeps persisting from then on: an absent
+        # ``persist_switch_by_default`` defaults to True
+        # (hermes_cli/model_switch.py) and DEFAULT_CONFIG ships it true, so the
+        # model the user last picked is the model they come back to. Only an
+        # explicit opt-out — ``--once`` / ``--session``, or the key set to
+        # false — is session-only.
         with _config({"model": {}}):
             assert resolve_persist_behavior(False, False, explicit_provider="anthropic") is True
         with _config({"model": ""}):
             assert resolve_persist_behavior(False, False) is True
         with _config({"model": {"default": "gpt-5.6", "provider": "openai-codex"}}):
-            assert resolve_persist_behavior(False, False, explicit_provider="openai-api") is False
-            assert resolve_persist_behavior(False, False) is False
+            # --provider is not an opt-out: the Desktop picker sends it on every
+            # pick, so treating it as exploratory would make those picks vanish.
+            assert resolve_persist_behavior(False, False, explicit_provider="openai-api") is True
+            assert resolve_persist_behavior(False, False) is True
             assert resolve_persist_behavior(True, False, explicit_provider="openai-api") is True
+            # Explicit opt-outs still win over the default.
+            assert resolve_persist_behavior(False, True) is False
+            assert resolve_persist_behavior(False, False, is_once=True) is False
+        with _config({"model": {"default": "gpt-5.6", "persist_switch_by_default": False}}):
+            assert resolve_persist_behavior(False, False) is False
+        # Legacy scalar ``model:`` form: a configured default, and (upstream
+        # behavior, unchanged) its pick stays session-only.
         with _config({"model": "gpt-5.6"}):
             assert resolve_persist_behavior(False, False) is False
 
