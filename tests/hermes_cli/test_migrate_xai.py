@@ -186,8 +186,52 @@ class TestIdempotence:
 # Fail-closed on unreadable existing config
 # ---------------------------------------------------------------------------
 
+def _deny_unreadable_reads(monkeypatch, config_path: Path) -> None:
+    """Make reads of ``config_path`` raise the EACCES its file mode already implies.
+
+    ``os.chmod(path, 0o000)`` is how the test expresses "unreadable", but root holds
+    CAP_DAC_OVERRIDE and gets the bytes anyway, so the failure this test provokes never
+    happens on a root-run suite. Re-raise it at the two boundaries ``apply_migration``
+    reads through: ``pathlib.Path.open`` (the ruamel load) and ``builtins.open`` (the
+    ``require_readable_config_before_write`` guard). Same idiom as
+    tests/hermes_cli/test_config.py::_deny_config_reads.
+
+    The denial is conditional on the mode really lacking read bits, so it cannot stand in
+    for a live permission check: drop the ``chmod`` and reads succeed again, which is the
+    "silently clobbered the config" failure this test must still catch.
+    """
+    import builtins
+    import errno
+    import os
+
+    real_builtin_open = builtins.open
+    real_path_open = Path.open
+
+    def still_unreadable() -> bool:
+        try:
+            return not (os.stat(config_path).st_mode & 0o444)
+        except OSError:
+            return False
+
+    def denied() -> PermissionError:
+        return PermissionError(errno.EACCES, "Permission denied", str(config_path))
+
+    def guarded_builtin_open(file, *args, **kwargs):
+        if isinstance(file, (str, os.PathLike)) and Path(file) == config_path and still_unreadable():
+            raise denied()
+        return real_builtin_open(file, *args, **kwargs)
+
+    def guarded_path_open(self, *args, **kwargs):
+        if self == config_path and still_unreadable():
+            raise denied()
+        return real_path_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", guarded_builtin_open)
+    monkeypatch.setattr(Path, "open", guarded_path_open)
+
+
 class TestUnreadableExistingConfig:
-    def test_apply_refuses_to_overwrite_unreadable_config(self, trap_config: Path):
+    def test_apply_refuses_to_overwrite_unreadable_config(self, trap_config: Path, monkeypatch):
         """apply_migration must not clobber an existing config.yaml it can't
         read. It reads the file first (which raises on an unreadable file), and
         the require_readable_config_before_write guard before the write is a
@@ -199,6 +243,13 @@ class TestUnreadableExistingConfig:
         assert issues  # sanity: trap_config has retired refs
         original = trap_config.read_bytes()
 
+        # `chmod 000` is the setup, but root holds CAP_DAC_OVERRIDE and reads the
+        # file anyway, so on a root-run suite the kernel raises nothing and this
+        # test would pass through to a real overwrite. Re-raise the EACCES the
+        # mode already expresses at both read boundaries — see
+        # `_deny_unreadable_reads` for why that cannot mask a live permission
+        # check. Same idiom as tests/hermes_cli/test_config.py::_deny_config_reads.
+        _deny_unreadable_reads(monkeypatch, trap_config)
         os.chmod(trap_config, 0o000)
         try:
             with pytest.raises((PermissionError, RuntimeError, OSError)):

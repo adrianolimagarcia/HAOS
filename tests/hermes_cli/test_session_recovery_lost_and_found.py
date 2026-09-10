@@ -829,7 +829,18 @@ def _rebuild_with_started_at_appended(conn: sqlite3.Connection) -> None:
     conn.executescript("PRAGMA foreign_keys=OFF; PRAGMA legacy_alter_table=ON;")
     conn.execute("CREATE TABLE sessions_new (" + ", ".join(coldef(r) for r in reordered) + ")")
     conn.execute(f"INSERT INTO sessions_new({cols}) SELECT {cols} FROM sessions")
-    conn.executescript("DROP TABLE sessions; ALTER TABLE sessions_new RENAME TO sessions;")
+    # Since 3.25 SQLite re-parses and rewrites every view and trigger on ALTER TABLE ...
+    # RENAME, and the state schema's ``messages_fts_trigram_src`` view plus the
+    # ``messages_fts_trigram_*`` sync triggers all reference ``sessions``: mid-rename the
+    # target name is not resolved yet, so the rebuild dies with "error in view
+    # messages_fts_trigram_src: no such table: main.sessions". legacy_alter_table keeps
+    # the rename a pure sqlite_master edit — which is what this helper simulates (a
+    # physical column reorder, not a schema-graph rewrite).
+    conn.execute("PRAGMA legacy_alter_table=ON")
+    try:
+        conn.executescript("DROP TABLE sessions; ALTER TABLE sessions_new RENAME TO sessions;")
+    finally:
+        conn.execute("PRAGMA legacy_alter_table=OFF")
 
 
 @pytest.mark.skipif(

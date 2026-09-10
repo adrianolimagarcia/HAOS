@@ -127,6 +127,25 @@ def _patch_update_deps(monkeypatch, tmp_path, run_side_effect):
     monkeypatch.setattr(
         hermes_gateway, "find_profile_gateway_processes", lambda *a, **k: []
     )
+    # `_get_service_pids` é lido pelo fase de restart mesmo com
+    # `supports_systemd_services=False` (essa flag decide se unidades são
+    # gerenciadas, não impede a leitura): numa máquina com gateway sob systemd
+    # (esta) a descoberta real devolvia o PID do serviço, o guard de sistema vivo
+    # do conftest bloqueava o `os.kill`, o restart ficava `incomplete` e o update
+    # saía com `sys.exit(1)`. Vazio = a fase é no-op de verdade.
+    monkeypatch.setattr(hermes_gateway, "_get_service_pids", lambda *a, **k: [])
+    monkeypatch.setattr(hermes_gateway, "kill_gateway_processes", lambda *a, **k: None)
+    # Sem isto os patches acima são descartados no meio do update:
+    # ``_purge_stale_hermes_modules`` (update_cmd_maint.py:85-92) remove TODO módulo
+    # Hermes de ``sys.modules``, então o ``from hermes_cli.gateway import
+    # find_gateway_pids`` tardio do fase de restart reimporta um módulo NOVO, sem
+    # patch, e a descoberta real acha o gateway desta máquina (o guard de sistema
+    # vivo do conftest bloqueia o SIGTERM e o update sai com ``sys.exit(1)``).
+    # Num teste com PROJECT_ROOT falso a purga não tem o que purgar — não há
+    # checkout novo — então neutralizá-la é o que mantém o teste hermético.
+    monkeypatch.setattr(
+        hermes_main, "_purge_stale_hermes_modules", lambda *a, **k: None
+    )
 
 
 def test_update_success_when_head_moves(monkeypatch, tmp_path, capsys):

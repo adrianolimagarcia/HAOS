@@ -79,8 +79,11 @@ def _config_summary(home: Path) -> Dict[str, Any]:
     if not cfg.is_file():
         return out
     try:
-        import yaml  # type: ignore[import-not-found]
-        raw = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+        # Diagnóstico do arquivo CRU (o resumo mostra o que está escrito, não o
+        # config efetivo) — por isso o acessor cru canônico, nunca yaml direto.
+        from hermes_cli.config import read_user_config_raw
+
+        raw = read_user_config_raw(cfg)
     except Exception:  # noqa: BLE001
         raw = {}
     if not isinstance(raw, dict):
@@ -171,8 +174,9 @@ def _models_suggestions() -> List[str]:
         if not cfg.is_file():
             continue
         try:
-            import yaml  # type: ignore[import-not-found]
-            raw = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+            from hermes_cli.config import read_user_config_raw
+
+            raw = read_user_config_raw(cfg)
         except Exception:  # noqa: BLE001
             continue
         raw = _mask(raw)  # chaves secretas viram "********" antes da coleta

@@ -1,4 +1,11 @@
-"""Tests for the top-level `./hermes` launcher script."""
+"""Tests for the checkout launcher script (``bin/hermes``).
+
+The HAOS fork replaced the upstream root ``./hermes`` launcher file with the
+``hermes/`` package directory (namespace for ``hermes.platform``), so the
+launcher moved to ``bin/hermes`` — a file and a package directory cannot share
+the name ``hermes``. The contract tested here is unchanged either way: the
+launcher must delegate to ``hermes_cli.main``, never to ``cli.main`` or Fire.
+"""
 
 import runpy
 import sys
@@ -7,8 +14,9 @@ from pathlib import Path
 
 
 def test_launcher_delegates_to_argparse_entrypoint(monkeypatch):
-    """`./hermes` should use `hermes_cli.main`, not the legacy Fire wrapper."""
-    launcher_path = Path(__file__).resolve().parents[2] / "hermes"
+    """The launcher should use `hermes_cli.main`, not the legacy Fire wrapper."""
+    launcher_path = Path(__file__).resolve().parents[2] / "bin" / "hermes"
+    assert launcher_path.is_file(), f"launcher missing at {launcher_path}"
     called = []
 
     fake_main_module = types.ModuleType("hermes_cli.main")
