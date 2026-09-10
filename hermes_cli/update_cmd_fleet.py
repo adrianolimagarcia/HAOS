@@ -1263,24 +1263,17 @@ def _restart_gateway_fleet_after_update(_pre_update_plan, gateway_mode: bool):
 
 
 def _print_legacy_units_warning() -> None:
-    """Legacy hermes.service fights hermes-gateway.service over the bot token; warn on
-    every update until migrated."""
-    from hermes_cli.gateway import (has_legacy_hermes_units, _find_legacy_hermes_units, supports_systemd_services)
+    """Warn about pre-rename gateway units on every update until they are migrated.
+
+    One message, one source: the install path prints the same warning, and a second
+    hand-written copy is how the two drifted out of date with the unit names.
+    """
+    from hermes_cli.gateway import (has_legacy_hermes_units, print_legacy_unit_warning, supports_systemd_services)
     if not (supports_systemd_services() and has_legacy_hermes_units()):
         return
     print()
-    print("⚠ Legacy Hermes gateway unit(s) detected:")
-    for name, path, is_sys in _find_legacy_hermes_units():
-        scope = "system" if is_sys else "user"
-        print(f"    {path}  ({scope} scope)")
+    print_legacy_unit_warning()
     print()
-    print("  These pre-rename units (hermes.service) fight the current")
-    print("  hermes-gateway.service for the bot token and cause SIGTERM")
-    print("  flap loops. Remove them with:")
-    print()
-    print("    hermes gateway migrate-legacy")
-    print()
-    print("  (add `sudo` if any are in system scope)")
 
 
 def _collect_fleet_snapshot(restart, rows_expected: bool) -> list:

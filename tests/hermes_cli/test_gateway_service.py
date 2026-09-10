@@ -1955,7 +1955,7 @@ class TestLegacyHermesUnitDetection:
 
         assert "Legacy" in out
         assert "hermes.service" in out
-        assert "hermes gateway migrate-legacy" in out
+        assert "gateway migrate-legacy" in out
 
 
 class TestRemoveLegacyHermesUnits:

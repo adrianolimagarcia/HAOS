@@ -2358,7 +2358,8 @@ def print_legacy_unit_warning() -> None:
     print_info(f"  These run alongside the current {_SERVICE_BASE} service and")
     print_info("  cause SIGTERM flap loops — both try to use the same bot token.")
     print_info("  Remove them with:")
-    print_info("    hermes gateway migrate-legacy")
+    print_info("    haos gateway migrate-legacy")
+    print_info("  (add `sudo` if any are in system scope)")
 
 
 def remove_legacy_hermes_units(interactive: bool = True, dry_run: bool = False) -> tuple[int, list[Path]]:
