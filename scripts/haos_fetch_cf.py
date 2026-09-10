@@ -95,7 +95,10 @@ def parse_cookies(blob: str) -> dict[str, str]:
     return pairs
 
 
-def load_cookies(path: str | None) -> dict[str, str]:
+def load_cookies(path: str | None = None, url: str | None = None) -> dict[str, str]:
+    """Cookies do arquivo/env. O parâmetro `url` existe como gancho para variantes
+    com credencial embarcada, que SÓ devem devolver cookie para o domínio dono dele
+    (cookie de sessão nunca pode viajar para um host de terceiro)."""
     path = path or os.environ.get("HAOS_FETCH_COOKIES")
     if not path:
         return {}
@@ -182,7 +185,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    html, used = fetch(args.url, args.strategy, load_cookies(args.cookies_file))
+    html, used = fetch(args.url, args.strategy, load_cookies(args.cookies_file, args.url))
 
     sys.stderr.write(f"[haos-fetch] {args.url} → OK via {used} ({len(html)} chars)\n")
 
