@@ -6,6 +6,8 @@ name: HAOS guards
 # 1. Nenhum default de path pode construir ~/.hermes — o home canônico é ~/.haos.
 #    Sites legados intencionais levam `# haos-legacy-path: <motivo>`.
 # 2. O contrato do default de home do fork fica verde (testes de comportamento).
+# 3. Nenhum hint user-facing pode citar `hermes <cmd>` — o CLI é `haos`; use
+#    product_command(). Sites intencionais levam `# haos-brand: <motivo>`.
 
 on:
   push:
@@ -36,6 +38,22 @@ jobs:
 
       - name: Forbid new ~/.hermes path defaults
         run: python scripts/ci/check_legacy_hermes_home.py
+
+  brand-hints-guard:
+    name: Guard de hint user-facing (hermes <cmd>)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+
+      - name: Forbid user-facing hints naming the upstream CLI
+        run: python scripts/ci/check_haos_brand_hints.py
 
   home-contract-tests:
     name: Contrato do home do fork
