@@ -77,7 +77,11 @@ def _get_platform_default_hermes_home() -> Path:
     node_store = _node_store_for_root_operator()
     if node_store is not None:
         return node_store
-    return Path.home() / ".hermes"
+    # Fork HAOS: o default é ~/.haos (não ~/.hermes) para qualquer processo sem
+    # env (cron externo, python cru, unidade systemd genérica) nunca cair no store
+    # órfão ~~/.hermes — a classe de split-brain que produzia bancos invisíveis
+    # em instalações fora da ISO. get_default_hermes_root()/profiles derivam daqui.
+    return Path.home() / ".haos"
 
 
 def sudo_invoker_default_home() -> Path | None:
@@ -249,7 +253,7 @@ def _is_hermes_profiles_root(profiles_dir: Path) -> bool:
     ``profiles/.deleted`` tombstone dir (only ``profile delete`` creates it), or the default root.
     """
     root = profiles_dir.parent
-    if root.name == ".hermes":
+    if root.name in (".hermes", ".haos"):
         return True
     try:
         if (profiles_dir / _DELETED_PROFILES_DIR).is_dir() or any(
@@ -275,7 +279,7 @@ def named_profile_home(path: str | Path) -> Path | None:
         if (candidate.parent.name == "profiles" and not candidate.name.startswith(".")
                 and _is_hermes_profiles_root(candidate.parent)):
             return candidate
-        if candidate.name == ".hermes":  # default home: a coincidental profiles/ ancestor is not a root
+        if candidate.name in (".hermes", ".haos"):  # default home: a coincidental profiles/ ancestor is not a root
             return None
     return None
 

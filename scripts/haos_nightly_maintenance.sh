@@ -18,7 +18,12 @@ set -uo pipefail
 
 # --- caminhos portáteis ------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -n "${HAOS_AGENT_DIR:-}" ] && [ -d "${HAOS_AGENT_DIR}" ]; then
+# Instalação fora da ISO (install_haos.sh) grava o caminho do tree do agente em
+# <home>/scripts/haos_agent_dir; sem ponteiro, cai nas heurísticas abaixo.
+AGENT_PTR="${SCRIPT_DIR}/haos_agent_dir"
+if [ -f "${AGENT_PTR}" ] && [ -d "$(cat "${AGENT_PTR}" 2>/dev/null)" ]; then
+    AGENT_DIR="$(cat "${AGENT_PTR}")"
+elif [ -n "${HAOS_AGENT_DIR:-}" ] && [ -d "${HAOS_AGENT_DIR}" ]; then
     AGENT_DIR="${HAOS_AGENT_DIR}"
 elif [ -d /opt/haos ]; then
     AGENT_DIR="/opt/haos"
@@ -66,8 +71,12 @@ done
 
 # --- 2. memória canônica ----------------------------------------------------
 echo "--> 2. Memória canônica (DeepDoc/RAG + GraphRAG + dream)"
-if [ -n "${PY:-}" ] && [ -f "${AGENT_DIR}/scripts/haos_memory_populate.py" ]; then
-    if "$PY" "${AGENT_DIR}/scripts/haos_memory_populate.py" --home "${HAOS_HOME}"; then
+# Prefere a cópia local (instalação fora da ISO instala o populate junto do
+# nightly em <home>/scripts/), caindo no tree do agente.
+POPULATE="${SCRIPT_DIR}/haos_memory_populate.py"
+[ -f "${POPULATE}" ] || POPULATE="${AGENT_DIR}/scripts/haos_memory_populate.py"
+if [ -n "${PY:-}" ] && [ -f "${POPULATE}" ]; then
+    if "$PY" "${POPULATE}" --home "${HAOS_HOME}"; then
         echo "    ✓ memória canônica atualizada"
     else
         echo "    ✗ falha ao popular a memória canônica"

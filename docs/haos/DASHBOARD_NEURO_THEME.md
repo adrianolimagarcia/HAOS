@@ -10,7 +10,7 @@ tipografia tech Space Grotesk/Inter/JetBrains Mono, bordas suaves).
 
 ```bash
 # 1. Copiar o tema para o diretório de user themes do Hermes
-cp plugins/haos/dashboard-themes/haos-neuro.yaml ~/.hermes/dashboard-themes/
+cp plugins/haos/dashboard-themes/haos-neuro.yaml ~/.haos/dashboard-themes/
 
 # 2. Ativar no config.yaml (chave dashboard.theme)
 #    (ou pela UI: Settings > Appearance > tema "HAOS Neuromorphic")
@@ -39,7 +39,7 @@ O dashboard **recusa** bind não-loopback sem auth provider (por design:
 `should_require_auth`). O caminho suportado (usado nesta máquina):
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.haos/config.yaml
 dashboard:
   theme: haos-neuro
   basic_auth:
@@ -57,5 +57,5 @@ print(hash_password('sua-senha'))"
 
 Depois suba com `--host 0.0.0.0`; o login em `/auth/password-login`
 (provider `basic`) seta cookie e libera `/api/*`. Nesta máquina as
-credenciais ficam em `/root/.hermes/haos/dashboard-access.txt` (600).
+credenciais ficam em `/root/.haos/haos/dashboard-access.txt` (600).
 **Rotacione a senha** trocando `dashboard.basic_auth` e reiniciando o dashboard.

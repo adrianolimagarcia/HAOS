@@ -95,6 +95,11 @@ def build_graphrag_store(home: Path) -> dict:
 
 def run_dream(home: Path) -> dict:
     """Passo 3: consolidação de sessões (memórias reconciliadas + OKF)."""
+    # Install limpo (sem ISO): ainda não há state.db (o gateway cria no 1º run).
+    # Reportar idle em vez de erro para a população inicial não "falhar" à toa.
+    if not (home / "state.db").exists():
+        return {"status": "idle", "reason": "sem state.db (nó ainda sem sessões)"}
+
     from hermes.platform.memory.dream import DreamConsolidator
 
     consolidator = DreamConsolidator(hermes_home=home)

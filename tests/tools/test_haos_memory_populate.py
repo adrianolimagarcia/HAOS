@@ -90,3 +90,16 @@ def test_home_resolve_env_antes_do_default(tmp_path, monkeypatch):
     module = _load_populate_module()
 
     assert module.resolve_home(None) == home.resolve()
+
+
+def test_dream_sem_state_db_e_idle_nao_erro(tmp_path, monkeypatch):
+    """Install limpo (sem ISO): sem state.db o dream reporta idle, não falha."""
+    home = tmp_path / ".haos"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    module = _load_populate_module()
+
+    result = module.run_dream(home)
+
+    assert result["status"] == "idle", result
+    assert not (home / "memory" / "reconciled_memories.db").exists()

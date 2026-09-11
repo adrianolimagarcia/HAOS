@@ -187,10 +187,21 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
     `~/.haos/scripts/` e recria o job se faltar — o cron REJEITA caminho
     absoluto, o script tem de viver sob `<HERMES_HOME>/scripts/`.
   - Pitfall de caminho: `get_process_hermes_home()` = `HERMES_HOME` → `HAOS_HOME`
-    → default `~/.hermes`. Rodar qualquer tool Python SEM esses envs grava num
-    store órfão (aconteceu com `hermes haos doc index`: 4 chunks em
-    `~/.hermes/memory/ragflow.db` enquanto o store do nó ficava vazio). O
-    populador fixa o env resolvido antes de importar o runtime.
+    → default **`~/.haos`** (o fork mudou o default de `~/.hermes` para que um
+    processo SEM env — cron externo, python cru, unidade systemd genérica —
+    nunca grave num store órfão). O populador ainda fixa o env resolvido antes de
+    importar o runtime. `~/.hermes` fica só como origem de MIGRAÇÃO
+    (o `install_haos.sh` herda `.env`/`config.yaml` de lá).
+    Dívida cosmética conhecida: ~400 strings user-facing herdadas do upstream
+    ainda dizem `~/.hermes/...`; o certo é passar por `display_hermes_home()`.
+  - **Instalação fora da ISO (11/09/2026)**: `scripts/install_haos.sh` passou a
+    provisionar a MESMA estrutura canônica que o `haos-storage-init` faz na ISO —
+    dirs (`obsidian_vault/adrs`, `okf`, `memory`, `graphrag`, `scripts`, `cron`),
+    seed do vault + CSV do GraphRAG (de `distro/.../etc/skel/.haos/`), rotina
+    noturna instalada em `$HAOS_HOME/scripts/` com ponteiro `haos_agent_dir`
+    (a venv/o populate vêm do tree do agente) e job cron agendado. A população
+    inicial roda no install (best-effort). Sem isso o nó subia sem memória e sem
+    rotina. O nightly, instalado fora do tree, acha tudo pelo ponteiro.
   - GraphRAG: `GraphRAGAdapter` é só memória; a persistência é o write-through
     `IncrementalGraphRAGUpdater(store=GraphRAGStore(...))`. Sem `store=` o
     `graphrag.db` nunca recebe entidades (o dashboard também não passa `store=`,

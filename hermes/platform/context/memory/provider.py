@@ -38,12 +38,20 @@ class HermesFabricMemoryProvider(MemoryProvider):
         if isinstance(vault_path, str):
             self.vault_path = Path(vault_path)
         else:
-            self.vault_path = vault_path or Path(".hermes/obsidian_vault")
+            # Fork HAOS: resolve o vault pelo home canônico (get_hermes_home),
+            # nunca por ~/.hermes nem por caminho relativo ao cwd — ambos
+            # produziam split-brain (vault invisível) fora da ISO.
+            from hermes_constants import get_hermes_home
+
+            home = Path(get_hermes_home())
+            self.vault_path = vault_path or (home / "obsidian_vault")
         self.obsidian = obsidian_adapter or ObsidianAdapter(self.vault_path)
         self.decisions = decision_store or DecisionStore()
         self.graphrag = graphrag_adapter or GraphRAGAdapter()
         self._session_id: str = ""
-        self._hermes_home: Path = Path.home() / ".hermes"
+        from hermes_constants import get_hermes_home
+
+        self._hermes_home: Path = Path(get_hermes_home())
         self._initialized: bool = False
 
     def is_available(self) -> bool:

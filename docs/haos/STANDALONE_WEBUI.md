@@ -56,9 +56,10 @@ Princípios preservados da plataforma:
   (EventStore real). Nunca fabrica números — vazio é vazio.
 - **Fail-closed:** sem store/DB a UI mostra estado vazio; `evolution/decide`
   exige `approver` (nunca inventa identidade).
-- **Persistência canônica:** DBs file-backed em `data_dir` (default
-  `~/.hermes/haos/`): `kanban.db` (KanbanAdapter canônico + meta HAOS) e
-  `events.db` (EventStore append-only), conectados por um `EventStoreSink`.
+- **Persistência canônica:** DBs file-backed em `data_dir` (resolução:
+  `$HAOS_DATA_DIR` → `$HAOS_HOME` → `~/.haos`): `kanban.db` (KanbanAdapter
+  canônico + meta HAOS) e `events.db` (EventStore append-only), conectados por
+  um `EventStoreSink`.
 
 ## 3. Como rodar
 

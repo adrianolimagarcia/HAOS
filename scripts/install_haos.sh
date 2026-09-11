@@ -586,6 +586,58 @@ EOF
     log_ok "Created initial $HAOS_HOME/config.yaml"
 fi
 
+# 7b. Estrutura canônica de memória (espelha o haos-storage-init da ISO)
+# Instalação fora da ISO precisa nascer com os MESMOS paths de banco/vault do
+# appliance: dirs canônicos, vault semeado, rotina noturna agendada. Sem isso o
+# nó sobe com stores invisíveis (split-brain ~/.hermes) ou sem memória nenhuma.
+log_step "Provisioning canonical memory structure..."
+mkdir -p "$HAOS_HOME"/obsidian_vault/adrs "$HAOS_HOME"/okf \
+         "$HAOS_HOME"/memory "$HAOS_HOME"/graphrag \
+         "$HAOS_HOME"/scripts "$HAOS_HOME"/cron
+
+# Seed do vault + GraphRAG CSV (mesma fonte da ISO: /etc/skel no chroot).
+SEED_DIR="$INSTALL_DIR/distro/haos-linux/config/includes.chroot/etc/skel/.haos"
+if [ -d "$SEED_DIR" ]; then
+    cp -rn "$SEED_DIR/." "$HAOS_HOME/" 2>/dev/null || true
+    log_ok "Vault semeado (index.md + ADR-001 + seed GraphRAG CSV)"
+fi
+
+# Rotina noturna: script mora em <home>/scripts (o cron rejeita caminho
+# absoluto); o ponteiro haos_agent_dir deixa o nightly achar a venv e o
+# populate do tree do agente sem depender de caminho fixo de máquina.
+if [ -f "$INSTALL_DIR/scripts/haos_nightly_maintenance.sh" ]; then
+    install -m 755 "$INSTALL_DIR/scripts/haos_nightly_maintenance.sh" \
+        "$HAOS_HOME/scripts/haos_nightly_maintenance.sh"
+    log_ok "Rotina noturna instalada em $HAOS_HOME/scripts/"
+fi
+if [ -f "$INSTALL_DIR/scripts/haos_memory_populate.py" ]; then
+    install -m 644 "$INSTALL_DIR/scripts/haos_memory_populate.py" \
+        "$HAOS_HOME/scripts/haos_memory_populate.py"
+fi
+printf '%s\n' "$INSTALL_DIR" > "$HAOS_HOME/scripts/haos_agent_dir"
+
+MAINT_NAME="SYSTEM - cron: manutencao noturna"
+if [ -f "$HAOS_HOME/scripts/haos_nightly_maintenance.sh" ] \
+   && ! grep -q "haos_nightly_maintenance.sh" "$HAOS_HOME/cron/jobs.json" 2>/dev/null; then
+    if HAOS_HOME="$HAOS_HOME" "$PYTHON" -m hermes_cli.main cron create "0 3 * * *" \
+        --name "$MAINT_NAME" --no-agent --script haos_nightly_maintenance.sh >/dev/null 2>&1; then
+        log_ok "Rotina noturna agendada: '$MAINT_NAME' (0 3 * * *)"
+    else
+        log_warn "Não foi possível agendar a rotina noturna (rode 'haos cron create 0 3 * * * --name ...' depois)."
+    fi
+fi
+
+# População inicial (best-effort): cria ragflow.db + graphrag.db já no install,
+# para o doc search e o graphrag_query funcionarem desde o primeiro boot.
+if [ -f "$INSTALL_DIR/scripts/haos_memory_populate.py" ]; then
+    if HAOS_HOME="$HAOS_HOME" PYTHONPATH="$INSTALL_DIR" "$PYTHON" \
+        "$INSTALL_DIR/scripts/haos_memory_populate.py" --home "$HAOS_HOME" >/dev/null 2>&1; then
+        log_ok "Memória canônica populada (DeepDoc + GraphRAG + dream)"
+    else
+        log_warn "População inicial da memória falhou (a rotina noturna tenta de novo)."
+    fi
+fi
+
 # 8. Verification
 log_step "Verifying installation..."
 INSTALLED_VER=$("$BIN_DIR/haos" --version 2>/dev/null || true)
