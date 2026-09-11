@@ -59,7 +59,12 @@ rm -f "${CHROOT}/etc/machine-id" "${CHROOT}/var/lib/dbus/machine-id" \
 # chaves ssh do host + chave de aceitação (a instalação gera as suas)
 rm -f "${CHROOT}/etc/ssh/ssh_host_"* \
       "${CHROOT}/home/haos/.ssh/authorized_keys" \
-      "${CHROOT}/home/haos/.ssh/known_hosts" "${CHROOT}/home/haos/.ssh/config"
+      "${CHROOT}/home/haos/.ssh/known_hosts" "${CHROOT}/home/haos/.ssh/config" \
+      "${CHROOT}/home/haos/.ssh/id_"*
+# credenciais de escrita do GitHub (token admin usado só em DEV — nunca na ISO)
+rm -f "${CHROOT}/home/haos/.git-credentials" "${CHROOT}/home/haos/.git-credential-cache" \
+      "${CHROOT}/home/haos/.gitconfig"
+rm -rf "${CHROOT}/home/haos/.config/gh" "${CHROOT}/home/haos/.cache/gh"
 # resolv.conf é reescrito pelo instalador no destino
 rm -f "${CHROOT}/etc/resolv.conf"
 # estado do HAOS — reprovisionado pelo haos-setup no primeiro boot
@@ -70,6 +75,38 @@ rm -rf "${CHROOT}/home/haos/.haos/sessions" "${CHROOT}/home/haos/.haos/logs" \
        "${CHROOT}/home/haos/.haos/memories"
 # cache do wrapper antigravity (sem token de auth; recriado no boot)
 rm -rf "${CHROOT}/var/lib/haos/antigravity/"*
+
+# haos-setup em modo DEV (sync do /opt/haos desativado)? restaura o bloco
+# original NO SNAPSHOT: a VM fica em DEV para sempre, mas a ISO sai com o
+# update de produção (clone/pull do GitHub) funcionando. A transformação é
+# reversível byte-a-byte (validada em round-trip).
+if grep -q "DEV-VM-" "${CHROOT}/usr/local/bin/haos-setup" 2>/dev/null; then
+  echo "  haos-setup: modo DEV detectado — restaurando sync de produção no snapshot..."
+  python3 - "${CHROOT}/usr/local/bin/haos-setup" <<'PY'
+import sys
+p = sys.argv[1]
+out, mode = [], None
+for l in open(p).read().splitlines(keepends=True):
+    if l.startswith('# >>> DEV-VM-NOTICE'):
+        mode = 'notice'; continue
+    if l.startswith('# <<< DEV-VM-NOTICE'):
+        mode = None; continue
+    if l.startswith('# >>> DEV-VM-SYNC-OFF'):
+        mode = 'sync'; continue
+    if l.startswith('# <<< DEV-VM-SYNC-OFF'):
+        mode = None; continue
+    if mode == 'notice':
+        continue
+    if mode == 'sync' and l.strip():
+        out.append(l[2:] if l.startswith('# ') else l)
+    else:
+        out.append(l)
+open(p, 'w').write(''.join(out))
+PY
+  bash -n "${CHROOT}/usr/local/bin/haos-setup" && echo "  ✓ sync restaurado (haos-setup em modo produção no snapshot)"
+else
+  echo "  haos-setup: já em modo produção (sem marcador DEV)"
+fi
 echo "  ✓ scrubbed"
 
 echo "[3/5] lb binary (estágio binário; hooks não rodam)"

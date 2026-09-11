@@ -257,6 +257,22 @@ O script:
 Custo de uma ISO nova: ~2 min de rsync + ~5 min de `lb binary` (sem download de
 pacotes; usa o cache).
 
+### Modo DEV na VM (desenvolvimento direto no appliance)
+
+A VM de aceitação é o checkout de desenvolvimento:
+
+- **Sync do `/opt/haos` desativado**: o `haos-setup` da VM roda com o bloco de
+  clone/`rsync --delete`/pull **comentado** (marcadores `DEV-VM-SYNC-OFF`).
+  Editar código em `/opt/haos` na VM não é mais sobrescrito por re-execuções do
+  setup. Ativar/desativar: comentar/descomentar o bloco entre os marcadores.
+- **Push direto da VM**: token do GitHub em `~/.git-credentials`
+  (`credential.helper store`; o origin push já é HTTPS). Teste de escrita
+  validado (branch temporária push+delete).
+- **A ISO sai SEMPRE em modo produção**: o `iso-from-vm.sh` detecta os
+  marcadores no snapshot, **restaura o bloco de sync byte-a-byte** (round-trip
+  validado) e **escova as credenciais** (`~/.git-credentials`, `~/.config/gh`,
+  chaves privadas `~/.ssh/id_*`) — token admin nunca chega à ISO.
+
 ## Limitações conhecidas (validadas em 10/09/2026)
 
 - **Playwright Chromium assado na ISO derivada da VM** (não na clássica): o
