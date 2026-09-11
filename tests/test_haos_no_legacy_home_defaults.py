@@ -111,15 +111,23 @@ def test_haos_home_vence_o_alias_hermes_home(monkeypatch, tmp_path):
     Com os dois setados e divergentes, os DOIS resolvedores de home têm de responder
     a mesma coisa — era essa divergência que fazia um mesmo processo ler dois stores.
     """
-    from hermes_constants import _get_platform_default_hermes_home, get_process_hermes_home
+    import hermes_constants
+    from hermes_constants import (
+        _get_platform_default_hermes_home,
+        get_default_hermes_root,
+        get_process_hermes_home,
+    )
 
     canonico = tmp_path / ".haos"
     monkeypatch.setenv("HAOS_HOME", str(canonico))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
+    # get_default_hermes_root() é memoizado; sem reset o valor de outro teste vaza.
+    monkeypatch.setattr(hermes_constants, "_default_hermes_root_memo", None, raising=False)
 
     assert get_process_hermes_home() == canonico
     assert _get_platform_default_hermes_home() == canonico
-    assert get_process_hermes_home() == _get_platform_default_hermes_home()
+    assert get_default_hermes_root() == canonico
+    assert get_process_hermes_home() == _get_platform_default_hermes_home() == get_default_hermes_root()
 
 
 def test_alias_hermes_home_sozinho_continua_valendo(monkeypatch, tmp_path):

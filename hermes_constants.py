@@ -223,8 +223,8 @@ def get_process_hermes_home() -> Path:
     return Path(val) if val else _get_platform_default_hermes_home()
 
 
-# get_default_hermes_root() memo keyed on (native home, HERMES_HOME) so it stays
-# fresh when a test or plugin mutates HERMES_HOME; saves ~80us/call at 31+ sites.
+# get_default_hermes_root() memo keyed on (native home, canonical home env) so it stays
+# fresh when a test or plugin mutates HAOS_HOME/HERMES_HOME; saves ~80us/call at 31+ sites.
 _default_hermes_root_memo: "tuple[str, str, Path] | None" = None
 
 
@@ -232,7 +232,10 @@ def get_default_hermes_root() -> Path:
     """Root Hermes dir for profile-level ops: ``<root>`` when ``HERMES_HOME=<root>/profiles/<name>``."""
     global _default_hermes_root_memo
     native_home = _get_platform_default_hermes_home()
-    env_home = os.environ.get("HERMES_HOME", "")
+    # HAOS_HOME é a variável canônica e vence o alias HERMES_HOME — mesma precedência de
+    # get_process_hermes_home()/_get_platform_default_hermes_home(). Ler o alias primeiro fazia
+    # este resolvedor devolver um root diferente dos outros dois no mesmo processo.
+    env_home = os.environ.get("HAOS_HOME", "").strip() or os.environ.get("HERMES_HOME", "").strip()
     memo = _default_hermes_root_memo
     if memo is not None and memo[:2] == (str(native_home), env_home):
         return memo[2]
