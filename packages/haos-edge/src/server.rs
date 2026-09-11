@@ -63,9 +63,9 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
         p
     } else {
         let candidates = [
+            PathBuf::from("/opt/haos/hermes/platform/webui/static"),
             PathBuf::from("hermes/platform/webui/static"),
             PathBuf::from("/usr/local/lib/haos-agent/hermes/platform/webui/static"),
-            PathBuf::from("/run/media/adriano/e681b5ac-a4fb-44d4-aebf-9d6584065787/dsh-projetos/HERMES-TURBO/hermes/platform/webui/static"),
         ];
         candidates
             .into_iter()

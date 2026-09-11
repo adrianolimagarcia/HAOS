@@ -221,6 +221,8 @@ fn cmd_doctor() {
 
 fn delegate_to_python(args: &[String]) {
     let python_bins = [
+        "/opt/haos/venv/bin/haos",
+        "/opt/haos/venv/bin/python",
         "/usr/local/lib/haos-agent/venv/bin/haos",
         "/usr/local/lib/haos-agent/venv/bin/python",
         "python3",
