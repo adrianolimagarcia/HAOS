@@ -51,7 +51,8 @@ class TestGetHermesHome:
                 )
                 assert home == base / "hermes"
             else:
-                assert home == Path.home() / ".hermes"
+                # Fork HAOS: default nativo e ~/.haos (upstream: ~/.hermes).
+                assert home == Path.home() / ".haos"
 
 
 class TestEnsureHermesHome:

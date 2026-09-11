@@ -35,11 +35,16 @@ class TestGetDefaultHermesRoot:
 
     @pytest.mark.linux_only
     def test_no_hermes_home_returns_native(self, tmp_path, monkeypatch):
-        """When HERMES_HOME is not set, returns ~/.hermes."""
+        """Sem HERMES_HOME/HAOS_HOME, devolve o default NATIVO do fork: ~/.haos.
+
+        O upstream devolvia ~/.hermes; o fork HAOS usa ~/.haos para que um processo
+        sem env (cron externo, python cru, unidade systemd) nao caia em store orfao.
+        """
         monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("HAOS_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        assert get_default_hermes_root() == tmp_path / ".hermes"
+        assert get_default_hermes_root() == tmp_path / ".haos"
 
 
 
@@ -170,7 +175,8 @@ class TestRootOperatorUsesNodeStore:
             hermes_constants, "_default_hermes_root_memo", None, raising=False
         )
 
-        assert get_default_hermes_root() == tmp_path / "root" / ".hermes"
+        # Default nativo do fork HAOS (upstream: ~/.hermes).
+        assert get_default_hermes_root() == tmp_path / "root" / ".haos"
 
     @pytest.mark.linux_only
     def test_haos_home_env_still_wins_for_root(self, tmp_path, monkeypatch):

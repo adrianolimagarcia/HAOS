@@ -104,11 +104,14 @@ def sudo_invoker_default_home() -> Path | None:
 
 def is_haos_environment() -> bool:
     """Return True if running under HAOS context (HAOS_HOME is set, or active home is ~/.haos)."""
+    # HAOS_HOME é a variável canônica do fork e é checada ANTES do veto pelo alias: um nó
+    # com HAOS_HOME setado é HAOS mesmo que HERMES_HOME aponte para o store de outro produto
+    # (era assim que o CLI de um fork haos-only se rebrandava para "hermes").
+    if os.environ.get("HAOS_HOME", "").strip():
+        return True
     explicit_hermes = os.environ.get("HERMES_HOME", "").strip()
     if explicit_hermes and not ("haos" in explicit_hermes.lower()):
         return False
-    if "HAOS_HOME" in os.environ and os.environ["HAOS_HOME"].strip():
-        return True
     try:
         home_str = str(get_hermes_home())
         if ".haos" in home_str or "haos" in home_str.lower():
@@ -212,7 +215,11 @@ def get_process_hermes_home() -> Path:
     For process-level assets (theme YAML, dashboard plugin manifests) that must stay visible while a
     request is scoped to another profile (e.g. embedded ``/chat`` under ``--open-profile``).
     """
-    val = os.environ.get("HERMES_HOME", "").strip() or os.environ.get("HAOS_HOME", "").strip()
+    # Fork HAOS: HAOS_HOME é a variável canônica e HERMES_HOME é o alias de compatibilidade,
+    # então HAOS_HOME vence. Com a ordem invertida, um processo com os dois setados respondia
+    # DOIS homes diferentes (este resolvedor vs _get_platform_default_hermes_home), e o
+    # split-brain reaparecia em qualquer nó onde o alias apontasse para outro lugar.
+    val = os.environ.get("HAOS_HOME", "").strip() or os.environ.get("HERMES_HOME", "").strip()
     return Path(val) if val else _get_platform_default_hermes_home()
 
 

@@ -298,7 +298,10 @@ log_step "Installing global CLI wrappers..."
 mkdir -p "$BIN_DIR"
 mkdir -p "$HAOS_HOME"
 
-# Inherit .hermes config and credentials if available
+# Inherit .hermes config and credentials if available.
+# So CONFIGURACAO (.env/config.yaml), nunca ESTADO: ~/.hermes pode ser store de outro
+# produto (ver criterio de migracao em docs/haos/DEV_WORKFLOW_VM.md) e adotar o root
+# errado e falha silenciosa de integridade. Estado se migra a mao, com o gateway parado.
 if [ -d "$HOME/.hermes" ]; then
     if [ ! -e "$HAOS_HOME/.env" ] && [ -f "$HOME/.hermes/.env" ]; then
         ln -sf "$HOME/.hermes/.env" "$HAOS_HOME/.env"

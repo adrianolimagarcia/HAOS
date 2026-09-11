@@ -214,6 +214,44 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
     sobrescreve um store legado real nem aponta para um `HAOS_HOME` temporário.
     É o que cobre o `main_dashboard` (o cliente Desktop escreve em
     `$HOME/.hermes/desktop-ssh` por design, #69551) sem tocar no código dele.
+  - **Precedência dos resolvedores (decisão de 11/09/2026): `HAOS_HOME` vence
+    `HERMES_HOME`.** `HERMES_HOME` é alias de compatibilidade do fork; `HAOS_HOME`
+    é a variável canônica. Antes, `get_process_hermes_home()` lia `HERMES_HOME`
+    primeiro e `_get_platform_default_hermes_home()` lia `HAOS_HOME` primeiro —
+    com os dois setados e divergentes, o MESMO processo respondia dois homes (um
+    deles o store de outro produto) e `is_haos_environment()` derrubava o branding
+    para `hermes`, porque vetava pelo alias antes de olhar `HAOS_HOME`. Agora os
+    dois resolvedores concordam, `is_haos_environment()` checa `HAOS_HOME`
+    primeiro, e um nó que seta só `HERMES_HOME` continua funcionando (os três
+    cenários têm teste). Medição deste host: nenhum processo tinha os dois envs
+    divergentes — a divergência real era ENTRE processos (container da GUI do
+    harness com `HERMES_HOME=/root/.hermes` vs agentes HAOS em `/root/.haos`), o
+    que é configuração de launcher e não se resolve no código.
+  - **Critério de migração de `~/.hermes` (decisão de 11/09/2026: NÃO adotar o
+    root legado).** O fork NÃO faz adoção automática do root `~/.hermes`, mesmo
+    existindo a primitiva para subdiretórios (`_legacy_path_has_content()`, usada
+    em `get_hermes_dir()`). O critério, medido neste host antes de decidir:
+    `~/.hermes` pode ser (a) **store de OUTRO produto**, (b) store legado do
+    upstream, ou (c) lixo. Não há como distinguir com segurança pelo conteúdo, e
+    adotar o root errado é falha silenciosa de integridade — pior que uma mensagem
+    que mente. Evidência deste host: `/root/.hermes` tem 2,1 GB e `state.db` de
+    53 MB **em uso vivo** pelo container da GUI do harness DSH (o `mountinfo` do
+    container monta `/@root/.hermes` em `/root/.hermes`, com
+    `HERMES_API_URL=http://127.0.0.1:8642`), enquanto `/root/.haos` tem 2,2 GB e
+    `state.db` de 32 MB. São dois produtos, dois stores — adoção automática faria
+    o HAOS ler o store do harness.
+    Regras que decorrem do critério:
+    - `~/.haos` é o canônico; `~/.hermes` pertence a quem o criou.
+    - O install herda apenas **configuração** (`.env`, `config.yaml`), nunca
+      estado (`state.db`, `sessions/`, `memory/`, `cron/`, `skills/`).
+    - O atalho `~/.hermes -> ~/.haos` só nasce com `~/.hermes` ausente; se ele
+      existe, é store de alguém e fica intocado.
+    - Adoção só é legítima quando `~/.haos` está **ausente ou vazio** E `~/.hermes`
+      tem dados — e é decisão explícita do operador, não do código:
+      `HAOS_HOME=~/.hermes haos doctor` (para inspecionar) ou migrar com o gateway
+      parado (`systemctl stop haos-gateway haos-mesh`), nunca com os dois
+      populados. Copiar por cima de um `~/.haos` populado mistura históricos de
+      forma irreversível.
   - **Instalação fora da ISO (11/09/2026)**: `scripts/install_haos.sh` passou a
     provisionar a MESMA estrutura canônica que o `haos-storage-init` faz na ISO —
     dirs (`obsidian_vault/adrs`, `okf`, `memory`, `graphrag`, `scripts`, `cron`),

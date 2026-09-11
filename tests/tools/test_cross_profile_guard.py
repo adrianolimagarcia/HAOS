@@ -57,15 +57,25 @@ def fake_hermes(tmp_path, monkeypatch):
 
 
 class TestWriteFileCrossProfileGuard:
-    def test_in_profile_write_allowed(self, fake_hermes):
+    def test_in_profile_write_refused_by_workspace_scope(self, fake_hermes):
+        """Fork HAOS: file tool geral NÃO escreve dentro do Agent Workspace.
+
+        Divergência deliberada do upstream (era `test_in_profile_write_allowed`):
+        `hermes/platform/security/workspace_scope.py` (regras 1-3) mantém edição de
+        código no Project Workspace e reserva o estado do agente (skills, config,
+        memória, sessões) para as vias sancionadas — 'skill_manage', memory tools e
+        'hermes config'. O alvo aqui é o perfil ATIVO, ou seja, dentro do Agent
+        Workspace, então a recusa é o contrato.
+        """
         from tools.file_tools import write_file_tool
         target = fake_hermes["sec_home"] / "skills" / "new-skill" / "SKILL.md"
         target.parent.mkdir(parents=True)
         result_json = write_file_tool(str(target), "in-profile content")
         result = json.loads(result_json)
-        assert not result.get("error"), f"In-profile write should succeed: {result}"
-        assert target.exists()
-        assert target.read_text() == "in-profile content"
+        erro = result.get("error", "")
+        assert "Agent Workspace" in erro, f"recusa esperada; veio: {result}"
+        assert "skill_manage" in erro, "a recusa precisa apontar a via sancionada"
+        assert not target.exists()
 
     def test_cross_profile_write_allowed_guard_retired(self, fake_hermes):
         """Guard RETIRED (maintainer decision): profiles are not isolated —

@@ -103,3 +103,47 @@ def test_seat_belt_do_auth_protege_o_store_real_e_libera_home_temporario(monkeyp
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".haos"))
     with pytest.raises(RuntimeError, match="real user auth store"):
         auth._auth_file_path()
+
+
+def test_haos_home_vence_o_alias_hermes_home(monkeypatch, tmp_path):
+    """HAOS_HOME é a variável canônica; HERMES_HOME é alias de compatibilidade.
+
+    Com os dois setados e divergentes, os DOIS resolvedores de home têm de responder
+    a mesma coisa — era essa divergência que fazia um mesmo processo ler dois stores.
+    """
+    from hermes_constants import _get_platform_default_hermes_home, get_process_hermes_home
+
+    canonico = tmp_path / ".haos"
+    monkeypatch.setenv("HAOS_HOME", str(canonico))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
+
+    assert get_process_hermes_home() == canonico
+    assert _get_platform_default_hermes_home() == canonico
+    assert get_process_hermes_home() == _get_platform_default_hermes_home()
+
+
+def test_alias_hermes_home_sozinho_continua_valendo(monkeypatch, tmp_path):
+    """Nó que só seta o alias (compat com instalação antiga) não pode quebrar."""
+    from hermes_constants import get_process_hermes_home
+
+    monkeypatch.delenv("HAOS_HOME", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "legado"))
+
+    assert get_process_hermes_home() == tmp_path / "legado"
+
+
+def test_branding_haos_sobrevive_ao_alias_hermes_home(monkeypatch):
+    """Fork haos-only não pode se rebrandar para "hermes" por causa do alias.
+
+    Caminhos LITERAIS de propósito: o veto antigo era substring no valor de
+    HERMES_HOME, então um tmp_path que contenha "haos" (o nome deste teste, por
+    exemplo) mascarava o bug e o teste passava verde sobre o código quebrado.
+    """
+    from hermes_constants import is_haos_environment, product_cli_name, product_command
+
+    monkeypatch.setenv("HAOS_HOME", "/opt/no-store/.haos")
+    monkeypatch.setenv("HERMES_HOME", "/opt/no-store/.hermes")
+
+    assert is_haos_environment() is True
+    assert product_cli_name() == "haos"
+    assert product_command("doctor") == "haos doctor"
