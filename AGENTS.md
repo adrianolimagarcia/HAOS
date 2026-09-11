@@ -7,6 +7,11 @@ past that); see the **routing table** at the end and read the area file before e
 
 **Never give up on the right solution.**
 
+> **HAOS fork — leia primeiro:** este repo é o appliance HAOS. Antes de
+> trabalhar no appliance/VM/distro, leia `docs/haos/DEV_WORKFLOW_VM.md` (política
+> DEV na VM, caminhos, pipeline VM→ISO, invariantes de deploy). Builds de imagem
+> vivem em `distro/haos-linux/`.
+
 ## What Hermes Is
 
 Hermes is a personal AI agent that runs the same agent core across a CLI, a messaging
