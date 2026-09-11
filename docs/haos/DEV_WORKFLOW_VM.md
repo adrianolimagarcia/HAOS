@@ -182,7 +182,7 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
     população; resolve o tree do agente (`/opt/haos` ou `$HAOS_AGENT_DIR`) em vez
     de fixar caminho; AST do código é opt-in (`HAOS_MAINTENANCE_AST=1`).
   - Agendado no **cron nativo** do HAOS (`haos cron list`, aba Scheduler da
-    WebUI): job `HAOS manutencao noturna`, `0 3 * * *`, `--no-agent --script`.
+    WebUI): job `SYSTEM - cron: manutencao noturna`, `0 3 * * *`, `--no-agent --script`.
     O `haos-storage-init` (boot, antes do gateway) instala o script em
     `~/.haos/scripts/` e recria o job se faltar — o cron REJEITA caminho
     absoluto, o script tem de viver sob `<HERMES_HOME>/scripts/`.

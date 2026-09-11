@@ -99,7 +99,7 @@ sessões e cache do agente.
     - Daemon **`haos-edge`** (Rust) **pré-compilado vendored** em `/usr/local/bin/haos-edge` — a toolchain Rust **não** é assada. O binário é o **servidor do WebUI** (`haos-edge server`, unit `haos-edge.service` em `127.0.0.1:8788`: terminal PTY, tasks, SPA) **com autenticação do operador** (senha PBKDF2 em `/var/lib/haos/edge/webui.passwd`, sessão por cookie HttpOnly com "salvar login" de 30 dias; sem senha definida o WebUI fica inacessível — fail-closed). Definir a senha no nó: `HAOS_DATA_DIR=/var/lib/haos/edge haos-edge admin set-password`. O mesmo binário também é CLI (`status`, `team`, `doc`, `doctor`). Detalhes: `docs/haos/STANDALONE_WEBUI.md` §3.1.
     - **Playwright Chromium assado** (a partir da ISO derivada da VM): `chromium-1234` + `chromium_headless_shell` + `ffmpeg` (~656 MB) em `/home/haos/.cache/ms-playwright/` — o doctor mostra "✓ Playwright Chromium (browser engine)" e a tool `browser` fica disponível offline. (A ISO do caminho clássico `build-iso.sh` NÃO carrega o binário — só o `iso-from-vm.sh`.)
 5. **Rotina periódica de memória** (agendada no cron nativo, sem LLM):
-   - Job **`HAOS manutencao noturna`** (`0 3 * * *`, `--no-agent --script`) visível em
+   - Job **`SYSTEM - cron: manutencao noturna`** (`0 3 * * *`, `--no-agent --script`) visível em
      `haos cron list` e na aba Scheduler do WebUI. O `haos-storage-init` (boot,
      antes do `haos-gateway`, que é quem faz o tick) instala
      `~/.haos/scripts/haos_nightly_maintenance.sh` e recria o job se faltar —

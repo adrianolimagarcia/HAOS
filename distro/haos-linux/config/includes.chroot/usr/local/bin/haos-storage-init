@@ -64,7 +64,7 @@ fi
 # ------------------------------------------------------------------------------
 MAINT_SRC="/opt/haos/scripts/haos_nightly_maintenance.sh"
 MAINT_DIR="/home/haos/.haos/scripts"
-MAINT_JOB_NAME="HAOS manutencao noturna"
+MAINT_JOB_NAME="SYSTEM - cron: manutencao noturna"
 if [ -f "${MAINT_SRC}" ]; then
     install -d -o haos -g haos -m 755 "${MAINT_DIR}"
     install -o haos -g haos -m 755 "${MAINT_SRC}" "${MAINT_DIR}/haos_nightly_maintenance.sh"
