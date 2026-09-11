@@ -1,12 +1,13 @@
 """Oneshot (-z) mode: send a prompt, get the final content block, exit.
 
-Toolsets = explicit --toolsets, else the user's "cli" toolsets from `hermes tools`. Rules /
+Toolsets = explicit --toolsets, else the user's "cli" toolsets from `haos tools`. Rules /
 memory / AGENTS.md / preloaded skills = same as a normal chat turn. Approvals are auto-bypassed
-(HERMES_YOLO_MODE=1). Model/provider mirror `hermes chat`: both optional; only --model → auto-detect
+(HERMES_YOLO_MODE=1). Model/provider mirror `haos chat`: both optional; only --model → auto-detect
 the provider; only --provider → error (ambiguous).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import logging
@@ -60,8 +61,8 @@ def _build_preloaded_skills_prompt(skills: object = None) -> str | None:
         if not loaded_skills:
             raise ValueError(f"Unknown skill(s): {missing_display}")
         logging.warning(
-            "Unknown skill(s) requested, skipping: %s. Continuing with: %s. "
-            "List available skills with `hermes skills list`.",
+            "Unknown skill(s) requested, skipping: %s. Continuing with: %s. " +
+            "List available skills with `" + product_command("skills") + " list`.",
             missing_display,
             ", ".join(loaded_skills),
         )

@@ -1,6 +1,7 @@
 """``hermes login`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from typing import Callable
 
@@ -18,14 +19,14 @@ def build_login_parser(subparsers, *, cmd_login: Callable) -> None:
     """
     login_parser = subparsers.add_parser(
         "login",
-        description="Deprecated. Use `hermes auth` to manage credentials, "
-            "`hermes model` to select a provider, or `hermes setup` for full setup.")
+        description="Deprecated. Use `" + product_command("auth") + "` to manage credentials, " +
+            "`" + product_command("model") + "` to select a provider, or `" + product_command("setup") + "` for full setup.")
     # No ``choices=`` on purpose — the handler is a deprecation notice that
     # ignores the value, and a restrictive list would reject providers the user
     # legitimately wants (e.g. ``anthropic``) with an argparse error before the
     # friendly redirect message is ever printed.
     login_parser.add_argument(
-        "--provider", default=None, help="(deprecated) Provider name; ignored — see `hermes model`")
+        "--provider", default=None, help="(deprecated) Provider name; ignored — see `" + product_command("model") + "`")
     login_parser.add_argument("--portal-url", help="Portal base URL (default: production portal)")
     login_parser.add_argument(
         "--inference-url", help="Inference API base URL (default: production inference API)")

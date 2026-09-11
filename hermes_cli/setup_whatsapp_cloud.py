@@ -6,6 +6,7 @@ Intentionally does NOT smoke-test the webhook: the gateway and the tunnel both r
 processes the user starts AFTER this wizard exits, so any in-wizard probe would fail."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 from hermes_cli.cli_output import line_input
 
 import re
@@ -337,7 +338,7 @@ def run_whatsapp_cloud_setup() -> int:
         "         cloudflared tunnel --url http://localhost:8090",
         "       Note the printed https://<random>.trycloudflare.com URL.", "",
         "    3. Start the Hermes gateway in another terminal:",
-        "         hermes gateway", "",
+        "         " + product_command("gateway"), "",
         "    4. Verify your local config is reachable. From a third",
         "       terminal, with the tunnel URL substituted:", "",
         "         curl 'https://YOUR-TUNNEL.trycloudflare.com/whatsapp/webhook?\\",

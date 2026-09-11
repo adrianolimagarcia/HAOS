@@ -1,7 +1,8 @@
-"""cua-driver installer, lock hygiene and pip-install helper for `hermes tools` /
-`hermes computer-use install`."""
+"""cua-driver installer, lock hygiene and pip-install helper for `haos tools` /
+`haos computer-use install`."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import logging
@@ -46,7 +47,7 @@ _CUA_INSTALL_PS1_URL = (
 _CUA_INSTALL_SH_URL = (
     "https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh")
 _CUA_MANUAL_README = "https://github.com/trycua/cua/blob/main/libs/cua-driver/README.md"
-_UPGRADE_CMD = "hermes computer-use install --upgrade"
+_UPGRADE_CMD = product_command("computer-use") + " install --upgrade"
 
 
 def _run_text(cmd: list, *, timeout, capture_output: bool = True,
@@ -210,7 +211,7 @@ def _confirmed_update_check(driver_cmd: str, require_confirmed_update: bool) -> 
     """Ask the installed driver whether a newer release exists; returns ``(proceed, pin_version)``.
     ``proceed=False`` = stop with success (already latest, or indeterminate under
     ``require_confirmed_update``). An old driver (no check-update verb) or offline check yields
-    None: `hermes update` then keeps the installed version — an indeterminate check must never
+    None: `haos update` then keeps the installed version — an indeterminate check must never
     cost a multi-minute silent reinstall on every update — while explicit `install --upgrade`
     falls through."""
     try:
@@ -246,7 +247,7 @@ def _report_repair_or_upgrade(ok: bool, *, repair_existing: bool, binary, before
         if not repaired.get("ready"):
             return _fail("    cua-driver was reinstalled, but its runtime contract is still "
                          f"unusable: {repaired.get('reason') or 'unknown error'}.",
-                         "    Run: hermes computer-use doctor")
+                         "    Run: " + product_command("computer-use") + " doctor")
     if ok and before:
         after = _cua_driver_version(binary)
         if after and after != before:
@@ -682,7 +683,7 @@ def _installer_popen_kwargs(is_windows: bool, verbose: bool, env: dict) -> dict:
     """Popen kwargs for the upstream installer.
     POSIX: own process group so a timeout kill takes out the whole `curl | bash` pipeline (and the
     exec'd _install-rust.sh), not just the outer shell — surviving grandchildren would keep
-    holding the install lock and wedge every later run. Non-verbose (`hermes update` refresh):
+    holding the install lock and wedge every later run. Non-verbose (`haos update` refresh):
     capture the chatty "Next steps" wall and log it so a failure stays debuggable; verbose
     interactive installs stream live."""
     kwargs: dict = {"shell": False, "env": env}
@@ -699,7 +700,7 @@ def _installer_popen_kwargs(is_windows: bool, verbose: bool, env: dict) -> dict:
 
 def _record_installer_output(out: str, returncode: int) -> None:
     """Keep a captured (non-verbose) installer transcript without echoing it to the terminal.
-    During `hermes update`, sys.stdout is the mirroring _UpdateOutputStream whose `_log` handle is
+    During `haos update`, sys.stdout is the mirroring _UpdateOutputStream whose `_log` handle is
     ~/.hermes/logs/update.log — write straight to it so the full output is kept (success AND
     failure)."""
     _update_log = getattr(sys.stdout, "_log", None)

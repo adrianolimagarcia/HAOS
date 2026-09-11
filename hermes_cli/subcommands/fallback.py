@@ -1,6 +1,7 @@
-"""``hermes fallback`` subcommand parser."""
+"""``haos fallback`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 
 def build_fallback_parser(subparsers) -> None:
@@ -18,7 +19,7 @@ def build_fallback_parser(subparsers) -> None:
         "list", aliases=["ls"], help="Show the current fallback chain (default when no subcommand)")
     fallback_subparsers.add_parser(
         "add",
-        help="Pick a provider + model (same picker as `hermes model`) and append to the chain")
+        help="Pick a provider + model (same picker as `" + product_command("model") + "`) and append to the chain")
     fallback_subparsers.add_parser(
         "remove", aliases=["rm"], help="Pick an entry to delete from the chain")
     fallback_subparsers.add_parser("clear", help="Remove all fallback entries")

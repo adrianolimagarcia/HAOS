@@ -3,6 +3,7 @@
 Extracted from ``hermes_cli.web_server``; helpers/state that tests monkeypatch on
 ``web_server`` stay there and are late-bound (cycle-safe).
 """
+from hermes_constants import product_command
 
 import asyncio
 import contextlib
@@ -126,7 +127,7 @@ def _durable_completed_update_action_id(lines: List[str]) -> Optional[str]:
     last_start = last_completed = -1
     completed_action_id: Optional[str] = None
     for index, line in enumerate(lines):
-        if line.startswith("=== hermes update started "):
+        if line.startswith("=== " + product_command("update") + " started "):
             last_start = index
         match = _UPDATE_ACTION_COMPLETED_RE.fullmatch(line.strip())
         if match:
@@ -137,7 +138,7 @@ def _durable_completed_update_action_id(lines: List[str]) -> Optional[str]:
 
 @router.post("/api/gateway/restart")
 async def restart_gateway(profile: Optional[str] = None):
-    """Kick off a ``hermes gateway restart`` in the background."""
+    """Kick off a ``haos gateway restart`` in the background."""
     with http_failure("Failed to spawn gateway restart", 500, "Failed to restart gateway"):
         proc, _reused = _spawn_gateway_restart(profile)
     return {"ok": True, "pid": proc.pid, "name": "gateway-restart"}
@@ -217,7 +218,7 @@ def _update_refused(error: str, message: str, update_command: str) -> Dict[str, 
 
 @router.post("/api/hermes/update")
 async def update_hermes():
-    """Kick off ``hermes update`` in the background."""
+    """Kick off ``haos update`` in the background."""
     if _dashboard_local_update_managed_externally():
         message = _MANAGED_EXTERNALLY_MESSAGE + " The built-in local updater is disabled here."
         return _update_refused("dashboard_update_managed_externally", message, "managed outside dashboard")
@@ -243,7 +244,7 @@ async def update_hermes():
         return response
 
     action_id = secrets.token_hex(16)
-    with http_failure("Failed to spawn hermes update", 500, "Failed to start update"):
+    with http_failure("Failed to spawn " + product_command("update"), 500, "Failed to start update"):
         proc = _spawn_hermes_action(["update"], "hermes-update", env_overrides={"HERMES_ACTION_ID": action_id})
     return {"ok": True, "pid": proc.pid, "name": "hermes-update", "action_id": action_id}
 
@@ -384,10 +385,10 @@ def _read_latest_receipt() -> Optional[Dict[str, Any]]:
 
 
 def _latest_update_receipt_summary() -> Optional[Dict[str, Any]]:
-    """Compact summary of the latest receipt (written by EVERY ``hermes update`` run,
+    """Compact summary of the latest receipt (written by EVERY ``haos update`` run,
     incl. refused/failed), or None; never raises. Steps/skips stay in the full endpoint.
 
-    Phase-1 bullet 3 (#91277): the receipt (written by EVERY ``hermes update`` run since #91283, including
+    Phase-1 bullet 3 (#91277): the receipt (written by EVERY ``haos update`` run since #91283, including
     refused and failed ones, with a ``latest.json`` pointer) is the durable success signal the Desktop and
     dashboard should read instead of inferring outcomes from liveness probes across the update's stop/start
     gap (#81193, #87359).
@@ -418,5 +419,5 @@ async def get_update_receipt():
     """
     receipt = _read_latest_receipt()
     if not receipt:
-        raise HTTPException(status_code=404, detail="No update receipt found (no `hermes update` run recorded).")
+        raise HTTPException(status_code=404, detail="No update receipt found (no `" + product_command("update") + "` run recorded).")
     return {"receipt": receipt, "summary": _latest_update_receipt_summary()}

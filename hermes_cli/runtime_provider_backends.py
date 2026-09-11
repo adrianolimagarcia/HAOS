@@ -11,7 +11,7 @@ import re
 from typing import Any, Dict, Optional
 
 from agent.secret_scope import get_secret_str
-from hermes_constants import OPENROUTER_BASE_URL
+from hermes_constants import OPENROUTER_BASE_URL, product_command
 from utils import base_url_host_matches
 
 
@@ -53,11 +53,11 @@ def _azure_foundry_api_key(rp, explicit_api_key: str) -> str:
     api_key = api_key or get_secret_str("AZURE_FOUNDRY_API_KEY", "").strip()
     if not api_key:
         raise rp.AuthError(
-            "Azure Foundry requires an API key. Set AZURE_FOUNDRY_API_KEY in "
-            "~/.hermes/.env or run 'hermes model' to configure. To use "
-            "keyless Microsoft Entra ID auth instead, set "
-            "model.auth_mode: entra_id in config.yaml (or pick "
-            "'Microsoft Entra ID' in 'hermes model')."
+            "Azure Foundry requires an API key. Set AZURE_FOUNDRY_API_KEY in " +
+            "~/.hermes/.env or run '" + product_command("model") + "' to configure. To use " +
+            "keyless Microsoft Entra ID auth instead, set " +
+            "model.auth_mode: entra_id in config.yaml (or pick " +
+            "'Microsoft Entra ID' in '" + product_command("model") + "')."
         )
     return api_key
 
@@ -85,7 +85,7 @@ def _resolve_azure_foundry_runtime(*, requested_provider: str, model_cfg: Dict[s
     base_url = explicit_base_url_clean or cfg_base_url or env_base_url
     if not base_url:
         raise rp.AuthError(
-            "Azure Foundry requires a base URL. Set it via 'hermes model' or "
+            "Azure Foundry requires a base URL. Set it via '" + product_command("model") + "' or " +
             "the AZURE_FOUNDRY_BASE_URL environment variable."
         )
     if cfg_api_mode == "anthropic_messages":

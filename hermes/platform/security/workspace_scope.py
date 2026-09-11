@@ -9,13 +9,14 @@ Rules:
 2. Direct writes into the Agent Workspace (~/.hermes) are blocked by default so that
    ordinary code editing cannot corrupt or tamper with agent configuration, credentials,
    memories, or session history.
-3. Dedicated agent tools ('skill_manage', HAOS memory tools, 'hermes config') are the
+3. Dedicated agent tools ('skill_manage', HAOS memory tools, 'haos config') are the
    sanctioned entry points to mutate the Agent Workspace.
 4. If the user intentionally runs the agent from inside the Agent Workspace (developing
    within ~/.hermes), the boundary relaxes so the user is not locked out.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import os
 from dataclasses import dataclass
@@ -54,9 +55,9 @@ class WorkspaceScope:
         if self.is_inside_agent_workspace(target_path):
             return False, (
                 f"Refusing to write to Agent Workspace: {target_path}\n"
-                "General file tools are scoped to the Project Workspace and cannot modify "
-                "~/.hermes state. Use dedicated tools ('skill_manage', HAOS memory tools, "
-                "or 'hermes config') to manage agent configuration or state."
+                "General file tools are scoped to the Project Workspace and cannot modify " +
+                "~/.hermes state. Use dedicated tools ('skill_manage', HAOS memory tools, " +
+                "or '" + product_command("config") + "') to manage agent configuration or state."
             )
         return True, None
 

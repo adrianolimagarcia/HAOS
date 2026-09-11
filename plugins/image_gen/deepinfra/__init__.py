@@ -5,6 +5,7 @@ Selection: ``DEEPINFRA_IMAGE_MODEL`` → ``image_gen.deepinfra.model`` → first
 when all are absent ``generate()`` errors rather than guessing."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -99,8 +100,8 @@ class DeepInfraImageGenProvider(StaticImageGenProvider):
         api_key = (get_secret("DEEPINFRA_API_KEY", "") or "").strip()
         if not api_key:
             return fail(
-                "DEEPINFRA_API_KEY not set. Run `hermes tools` → Image "
-                "Generation → DeepInfra to configure, or `hermes setup` "
+                "DEEPINFRA_API_KEY not set. Run `" + product_command("tools") + "` → Image " +
+                "Generation → DeepInfra to configure, or `" + product_command("setup") + "` " +
                 "to add the key.",
                 "auth_required")
         di_cfg = load_image_gen_config("deepinfra")

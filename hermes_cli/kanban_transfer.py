@@ -1,6 +1,6 @@
 """Kanban board export / import — move a whole board between machines.
 
-Backs ``hermes kanban export|import``, the ``/boards/{slug}/export`` and
+Backs ``haos kanban export|import``, the ``/boards/{slug}/export`` and
 ``/boards/import`` REST endpoints, and the desktop board switcher. Archive
 layout (``<slug>.tar.gz``, one top-level dir named for the source slug):
 ``manifest.json`` (format/version/provenance/counts), ``board.json`` (display

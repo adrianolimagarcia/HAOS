@@ -1,6 +1,6 @@
 """Session-backed MCP OAuth flows for the gateway (mcp.servers.oauth.*): ``start`` spawns a
 worker and returns ``{session_id, auth_url, flow}``; ``poll`` reports ``{status}`` until tokens
-land. Reuses ``hermes mcp login``'s probe under ``force_interactive_oauth`` plus
+land. Reuses ``haos mcp login``'s probe under ``force_interactive_oauth`` plus
 ``DashboardOAuthFlow``; the only new piece is a loopback listener feeding ``deliver_callback``.
 Remote backends host the listener (``client_redirect_uri``) and relay via
 ``deliver_callback_flow``."""

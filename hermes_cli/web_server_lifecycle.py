@@ -1,5 +1,6 @@
 """Serve-process lifecycle: parent death watchdog, port-conflict preflight, READY announcement, browser open, trusted proxies.
 """
+from hermes_constants import product_command
 
 import asyncio
 import logging
@@ -423,8 +424,8 @@ def _report_port_in_use(host: str, port: int) -> None:
     _write_machine_sentinel_line(_PORT_IN_USE_SENTINEL.format(port=port))
     print(
         f"  Port {port} on {host} is already in use — likely another "
-        "'hermes serve' / 'hermes dashboard' backend or the Hermes gateway. "
-        "Stop the other process, or pass --port <other> "
+        "'" + product_command("serve") + "' / '" + product_command("dashboard") + "' backend or the Hermes gateway. " +
+        "Stop the other process, or pass --port <other> " +
         "(--port 0 picks a free ephemeral port).",
         flush=True,
     )

@@ -7,6 +7,7 @@ poll_interval, cli_path, credentials_file, allowed_users, reply_in_thread, react
 or the matching ``BUZZ_*`` env vars (env overrides config). The only secret is
 BUZZ_PRIVATE_KEY (nsec or hex): it reaches the CLI via the subprocess env and is never logged.
 """
+from hermes_constants import product_command
 
 import asyncio
 import contextlib
@@ -1896,7 +1897,7 @@ async def _standalone_send(
 
 
 def interactive_setup() -> None:
-    """Interactive ``hermes gateway setup`` flow (lazy CLI imports keep the plugin importable elsewhere)."""
+    """Interactive ``haos gateway setup`` flow (lazy CLI imports keep the plugin importable elsewhere)."""
     from hermes_cli.setup import (
         prompt, prompt_yes_no, save_env_value, get_env_value, print_header, print_info, print_warning, print_success,
     )
@@ -1939,7 +1940,7 @@ def interactive_setup() -> None:
         save_env_value("BUZZ_ALLOWED_USERS", allowed.replace(" ", "") if allowed else "")
     print()
     print_success("Buzz configuration saved to ~/.hermes/.env")
-    print_info("Restart the gateway for changes to take effect: hermes gateway restart")
+    print_info("Restart the gateway for changes to take effect: " + product_command("gateway") + " restart")
 
 
 def register(ctx):

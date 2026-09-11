@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from gateway.whatsapp_identity import expand_whatsapp_aliases, normalize_whatsapp_identifier
-from hermes_constants import get_default_hermes_root, get_hermes_dir, get_hermes_home
+from hermes_constants import get_default_hermes_root, get_hermes_dir, get_hermes_home, product_command
 from utils import atomic_json_write
 
 logger = logging.getLogger(__name__)
@@ -265,10 +265,10 @@ def _load_json_file(path: Path) -> dict:
             owner_info = "<stat failed>"
         euid = os.geteuid() if hasattr(os, "geteuid") else "n/a"  # no geteuid on Windows
         logger.warning(
-            "Pairing file %s exists but is not readable as uid=%s (%s; %s). "
-            "If you ran `docker exec <container> hermes pairing approve ...` as root, "
-            "re-run with `docker exec -u hermes <container> ...` and "
-            "chown the existing file to the hermes user, or restart the "
+            "Pairing file %s exists but is not readable as uid=%s (%s; %s). " +
+            "If you ran `docker exec <container> " + product_command("pairing") + " approve ...` as root, " +
+            "re-run with `docker exec -u hermes <container> ...` and " +
+            "chown the existing file to the hermes user, or restart the " +
             "container so the entrypoint can fix ownership.",
             path, euid, owner_info, e,
         )

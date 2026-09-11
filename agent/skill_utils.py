@@ -292,7 +292,7 @@ def get_disabled_skill_names(platform: str | None = None) -> Set[str]:
 
 def parse_config_string_list(value) -> List[str]:
     """Normalize a config value that may hold a JSON-array string into a list.
-    ``hermes config set`` stores lists as quoted JSON/Python-literal strings;
+    ``haos config set`` stores lists as quoted JSON/Python-literal strings;
     treating one as a single name would silently filter nothing. A scalar
     string still means one name.
 

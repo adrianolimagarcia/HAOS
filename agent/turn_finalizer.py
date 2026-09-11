@@ -5,6 +5,7 @@ assembly, steer drain, memory/skill review. Synchronous, single return. ``logger
 imported lazily from ``agent.conversation_loop`` (no cycle, same logger name)."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -572,8 +573,8 @@ def finalize_turn(
     # the machine-readable cause 'session_persistence_failed:<locked|compression|...>'.
     if failed and str(_turn_exit_reason) == "session_persistence_failed":
         result["error"] = final_response or (
-            "session storage could not be written — check the state database "
-            "health (`hermes doctor`), then send your message again"
+            "session storage could not be written — check the state database " +
+            "health (`" + product_command("doctor") + "`), then send your message again"
         )
         _cause = getattr(agent, "_last_persistence_error_cause", None)
         result["failure_reason"] = "session_persistence_failed:" + (_cause or "unknown")

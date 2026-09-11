@@ -1,4 +1,4 @@
-"""Post-``hermes update`` dependency sync: venv preflight, editable reinstall, lazy refresh,
+"""Post-``haos update`` dependency sync: venv preflight, editable reinstall, lazy refresh,
 npm/Desktop rebuilds, self-lock deferral. Names are re-imported by ``update_cmd`` (so
 ``hermes_cli.update_cmd.<name>`` resolves/monkeypatches); origin helpers are imported lazily."""
 
@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
-from hermes_constants import venv_python_path
+from hermes_constants import venv_python_path, product_command
 
 # Log-record parity with the origin module.
 logger = logging.getLogger("hermes_cli.update_cmd")
@@ -182,7 +182,7 @@ def _capture_active_lazy_features() -> list[str]:
 
 
 def _capture_active_tool_dependencies() -> list[str]:
-    """Snapshot Python dependencies installed explicitly through ``hermes tools``."""
+    """Snapshot Python dependencies installed explicitly through ``haos tools``."""
     try:
         from hermes_cli import tools_config
         return tools_config.active_restorable_python_tool_dependencies()
@@ -208,7 +208,7 @@ def _module_importable_in(target_python, module_name: str, env) -> bool:
 def _restore_active_tool_dependencies(
     dependencies: list[str], install_cmd_prefix: list[str], *, env: dict[str, str] | None = None
 ) -> None:
-    """Restore allowlisted ``hermes tools`` dependencies (from a pre-rebuild probe) into a rebuilt
+    """Restore allowlisted ``haos tools`` dependencies (from a pre-rebuild probe) into a rebuilt
     venv. Never raises: a failed optional tool must not block the update, but must be reported."""
     from hermes_cli.update_cmd import _m
     if not dependencies:
@@ -319,7 +319,7 @@ def _refresh_active_lazy_features(
         print(f"  ⚠ {feature} failed to refresh: {_clip(status.split(': ', 1)[-1])}")
 
     if install_cmd_prefix is None:
-        print("  ⚠ Lazy refresh failed; rerun `hermes update` once resolved.")
+        print("  ⚠ Lazy refresh failed; rerun `" + product_command("update") + "` once resolved.")
         return False
 
     # Import-based recovery: metadata-only verifiers miss dist-info intact but import files
@@ -331,7 +331,7 @@ def _refresh_active_lazy_features(
         return True
     if status == "healthy":
         print("  Lazy backend(s) keep their previous version; probed packages look intact.")
-        print("  Rerun `hermes update` once the upstream issue is resolved.")
+        print("  Rerun `" + product_command("update") + "` once the upstream issue is resolved.")
         return True
     if status == "indeterminate":
         print("  ⚠ Leaving `.lazy-refresh-incomplete` until import probes can confirm health.")
@@ -519,7 +519,7 @@ def _repair_node_deps_on_current_checkout(
     node_failures = _update_node_dependencies()
     if node_failures:
         print(f"  ⚠ Node.js refresh failed for: {', '.join(node_failures)}")
-        print("    Fix npm and re-run `hermes update`.")
+        print("    Fix npm and re-run `" + product_command("update") + "`.")
         print_completion("⚠ Checkout is current, but Node.js dependencies could not be repaired.")
         return False
     # Pair with the web build like every other call site; it staleness-checks internally.
@@ -568,7 +568,7 @@ def _update_node_dependencies() -> list[str]:
             print("→ Updating Node.js dependencies...")
             print("  ⚠ Skipped: only a Windows npm is reachable from this WSL shell.")
             print("    Install Node.js inside the WSL distro (nvm, or your distro's")
-            print("    package manager), then re-run `hermes update`.")
+            print("    package manager), then re-run `" + product_command("update") + "`.")
             has_workspace = any(
                 (_m().PROJECT_ROOT / ws / "package.json").exists() for ws in ("ui-tui", "web"))
             return ["ui-tui, web workspaces"] if has_workspace else []
@@ -622,7 +622,7 @@ def _update_node_dependencies() -> list[str]:
     print()
     print("  ⚠ Node.js dependency refresh did not complete cleanly; the")
     print("    installation may be in a mixed state (updated code, stale Node")
-    print("    deps). Fix npm and re-run `hermes update`.")
+    print("    deps). Fix npm and re-run `" + product_command("update") + "`.")
     return ["ui-tui, web workspaces"]
 
 
@@ -879,7 +879,7 @@ def _venv_foreign_owned_paths(venv_root, limit: int = 5) -> list:
     ``[]`` on Windows and as root; ``[]`` on any surprise — must NEVER raise or add latency.
 
     See #83529.
-    A later normal ``hermes update`` then dies mid-mutation inside ``uv pip install -e .`` ("Permission
+    A later normal ``haos update`` then dies mid-mutation inside ``uv pip install -e .`` ("Permission
     denied (os error 13)") with ``venv/bin/hermes`` already deleted — the CLI is bricked. Same philosophy as
     the contended-venv gate (#87331): a venv we cannot safely mutate is never mutated at all.
     """
@@ -953,7 +953,7 @@ def _refuse_update_if_venv_foreign_owned(project_root) -> None:
         print(f"    - {p} (owner uid {uid})")
     print("\n  Fix ownership, then re-run the update:")
     print(f"    sudo chown -R $(id -un): {project_root}")
-    print("    hermes update")
+    print("    " + product_command("update"))
     print("\n  Nothing in the venv was modified.")
     sys.exit(1)
 
@@ -1048,5 +1048,5 @@ def _sync_python_dependencies_after_pull(
         print()
         print(f"  ⚠ {failing_module} still fails to import after updating:")
         print(f"      {import_error}")
-        print("    Run `hermes update` again — if it persists, reinstall:")
+        print("    Run `" + product_command("update") + "` again — if it persists, reinstall:")
         print("    https://hermes-agent.nousresearch.com")

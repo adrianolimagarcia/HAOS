@@ -9,6 +9,7 @@ idle (two input streams on one device is unreliable cross-platform).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -394,7 +395,7 @@ def check_wake_word_requirements(cfg: Optional[Dict[str, Any]] = None) -> Dict[s
          lambda: "The wake word needs the tflite runtime on this Mac: pip install ai-edge-litert"),
         (deps_ok and not audio_ok and capture_mode == "local",
          lambda: "Microphone capture needs sounddevice + numpy and a working audio device."),
-        (bool(missing), lambda: (f"Wake word needs {missing} configured — run `hermes tools` "
+        (bool(missing), lambda: (f"Wake word needs {missing} configured — run `{product_command('tools')}` "
                                  f"(Voice section) or see the voice-mode docs.")),
     )
     hint = next((make() for cond, make in ladder if cond), "")

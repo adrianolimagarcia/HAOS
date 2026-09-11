@@ -31,7 +31,7 @@ def lightpanda_engine_status() -> Tuple[bool, str]:
 
     ``(False, "")`` when the engine isn't lightpanda; else the reason names the setting shadowing
     it or the driver running it. Mirrors ``_should_inject_engine`` / ``_resolve_backend_cdp``
-    precedence with config-only gates (no network I/O) for ``/browser status`` / ``hermes doctor``.
+    precedence with config-only gates (no network I/O) for ``/browser status`` / ``haos doctor``.
     """
     _bt = _origin()
     if not _using_lightpanda_engine():

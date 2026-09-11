@@ -1,6 +1,7 @@
-"""CLI handlers for ``hermes secrets bitwarden ...``."""
+"""CLI handlers for ``haos secrets bitwarden ...``."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import io
@@ -181,10 +182,10 @@ def cmd_setup(args: argparse.Namespace) -> int:
             console.print(
                 f"  [red]Non-interactive mode (no TTY) requires all setup flags.[/red]\n"
                 f"  Missing: {', '.join(missing)}\n\n"
-                "  Usage:\n"
-                "    hermes secrets bitwarden setup \\\n"
-                "      --access-token '0.xxx' \\\n"
-                "      --server-url 'https://vault.bitwarden.com' \\\n"
+                "  Usage:\n" +
+                "    " + product_command("secrets") + " bitwarden setup \\\n" +
+                "      --access-token '0.xxx' \\\n" +
+                "      --server-url 'https://vault.bitwarden.com' \\\n" +
                 "      --project-id 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'")
             return 1
     cfg = load_config()
@@ -227,9 +228,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
     console.print()
     console.print("[green]✓ Bitwarden Secrets Manager is enabled.[/green]  "
                   "Secrets will be pulled at the start of every Hermes process.")
-    console.print("  Status:  [cyan]hermes secrets bitwarden status[/cyan]\n"
-                  "  Refresh: [cyan]hermes secrets bitwarden sync[/cyan]\n"
-                  "  Disable: [cyan]hermes secrets bitwarden disable[/cyan]")
+    console.print("  Status:  [cyan]" + product_command("secrets") + " bitwarden status[/cyan]\n" +
+                  "  Refresh: [cyan]" + product_command("secrets") + " bitwarden sync[/cyan]\n" +
+                  "  Disable: [cyan]" + product_command("secrets") + " bitwarden disable[/cyan]")
     return 0
 
 
@@ -272,7 +273,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     for message in validation_messages:
         console.print(message)
     if not enabled:
-        console.print("\n  Run [cyan]hermes secrets bitwarden setup[/cyan] to enable.")
+        console.print("\n  Run [cyan]" + product_command("secrets") + " bitwarden setup[/cyan] to enable.")
         return 0
     if not token:
         console.print(f"\n  [yellow]Enabled but {token_env} is not set — Hermes will skip BSM "
@@ -313,8 +314,8 @@ def cmd_token(args: argparse.Namespace) -> int:
         if project_id and projects and project_id not in {p["id"] for p in projects}:
             console.print(
                 f"[yellow]Warning: configured project {project_id} is not visible "
-                "to this machine account.  Grant it access in the Bitwarden web "
-                "app or re-run `hermes secrets bitwarden setup` to pick a different project.[/yellow]")
+                "to this machine account.  Grant it access in the Bitwarden web " +
+                "app or re-run `" + product_command("secrets") + " bitwarden setup` to pick a different project.[/yellow]")
         return True
 
     return rotate_token(
@@ -329,8 +330,8 @@ def cmd_token(args: argparse.Namespace) -> int:
         verify=verify,
         save=save_env_value, env_path=get_env_path, clear_caches=bw.clear_caches,
         disabled_note=None if bw_cfg.get("enabled") else (
-            "[yellow]Note: the Bitwarden integration is currently disabled — "
-            "run `hermes secrets bitwarden setup` (or set "
+            "[yellow]Note: the Bitwarden integration is currently disabled — " +
+            "run `" + product_command("secrets") + " bitwarden setup` (or set " +
             "secrets.bitwarden.enabled: true) to turn it on.[/yellow]"
         ))
 
@@ -432,10 +433,10 @@ def _token_validation_status(
 # (substring of the lowercased bws error, follow-up hint) — first match wins.
 _PROJECT_LIST_HINTS = (
     (("invalid_client", "400 bad request"),
-     "  [yellow]'invalid_client' from the US identity endpoint usually "
-     "means the token is for a different Bitwarden region.  Re-run "
-     "[cyan]hermes secrets bitwarden setup[/cyan] and pick EU or "
-     "self-hosted at the region prompt, or set [cyan]secrets.bitwarden."
+     "  [yellow]'invalid_client' from the US identity endpoint usually " +
+     "means the token is for a different Bitwarden region.  Re-run " +
+     "[cyan]" + product_command("secrets") + " bitwarden setup[/cyan] and pick EU or " +
+     "self-hosted at the region prompt, or set [cyan]secrets.bitwarden." +
      "server_url[/cyan] in config.yaml.[/yellow]"),
     (("authorization", "invalid"),
      "  [yellow]This usually means the access token is wrong or revoked. "

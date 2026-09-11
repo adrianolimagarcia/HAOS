@@ -1,6 +1,7 @@
-"""``hermes claw`` subcommand parser."""
+"""``haos claw`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from typing import Callable
 
@@ -36,9 +37,9 @@ def build_claw_parser(subparsers, *, cmd_claw: Callable) -> None:
         "Required even under --preset full.")
     claw_migrate.add_argument(
         "--no-backup", action="store_true",
-        help="Skip the pre-migration zip snapshot of ~/.hermes/ (by default a "
-        "single restore-point archive is written to ~/.hermes/backups/ "
-        "before apply; restorable with 'hermes import').")
+        help="Skip the pre-migration zip snapshot of ~/.hermes/ (by default a " +
+        "single restore-point archive is written to ~/.hermes/backups/ " +
+        "before apply; restorable with '" + product_command("import") + "').")
     claw_migrate.add_argument(
         "--workspace-target", help="Absolute path to copy workspace instructions into")
     claw_migrate.add_argument(

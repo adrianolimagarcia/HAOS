@@ -5,6 +5,7 @@ Platforms, Tools. Section bodies live in sibling setup_* modules and are re-expo
 resolve shared prompt/config helpers lazily through this module so test patches on
 ``hermes_cli.setup.<name>`` keep working.
 """
+from hermes_constants import product_command
 
 import importlib.util
 import logging
@@ -86,11 +87,11 @@ def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
         print_info(reason)
     _info("The interactive wizard cannot be used here.", None,
           "Configure Hermes using environment variables or config commands:",
-          "  hermes config set model.provider custom",
-          "  hermes config set model.base_url http://localhost:8080/v1",
-          "  hermes config set model.default your-model-name", None,
+          "  " + product_command("config") + " set model.provider custom",
+          "  " + product_command("config") + " set model.base_url http://localhost:8080/v1",
+          "  " + product_command("config") + " set model.default your-model-name", None,
           "Or set OPENROUTER_API_KEY / OPENAI_API_KEY in your environment.",
-          "Run 'hermes setup' in an interactive terminal to use the full wizard.", None)
+          "Run '" + product_command("setup") + "' in an interactive terminal to use the full wizard.", None)
 
 
 def _sanitize_pasted_input(value: str) -> str:
@@ -241,7 +242,7 @@ def run_setup_action_with_navigation(
     label: str, action: Callable[[], None], *, cancelled_message: str = "Setup cancelled."
 ) -> None:
     """Run a setup-style menu flow with Escape and nested Left navigation — for commands such as
-    ``hermes model`` that use the wizard's pickers outside ``run_setup_wizard``."""
+    ``haos model`` that use the wizard's pickers outside ``run_setup_wizard``."""
     with _setup_navigation_scope():
         try:
             _run_setup_steps([(label, action)])
@@ -333,7 +334,7 @@ def _prompt_api_key(var: dict):
     if var.get("url"):
         print_info(f"  Get your key at: {var['url']}")
     print()
-    _prompt_and_save_env_var(var, "  ✓ Saved", "  Skipped (configure later with 'hermes setup')")
+    _prompt_and_save_env_var(var, "  ✓ Saved", "  Skipped (configure later with '" + product_command("setup") + "')")
 
 
 def _prompt_and_save_env_var(var: dict, saved_msg: str, skipped_msg: str) -> None:
@@ -366,7 +367,7 @@ def _print_banner(*lines: str) -> None:
 
 
 def setup_model_provider(config: dict, *, quick: bool = False):
-    """Configure the inference provider and default model via the ``hermes model`` flow (one code
+    """Configure the inference provider and default model via the ``haos model`` flow (one code
     path — any provider added there is available here). *quick* is accepted for the first-time
     quick setup caller; rotation, vision and TTS keep safe defaults either way."""
     from hermes_cli.config import load_config, save_config
@@ -381,7 +382,7 @@ def setup_model_provider(config: dict, *, quick: bool = False):
     except Exception as exc:
         logger.debug("select_provider_and_model error during setup: %s", exc)
         print_warning(f"Provider setup encountered an error: {exc}")
-        print_info("You can try again later with: hermes model")
+        print_info("You can try again later with: " + product_command("model"))
 
     # Re-sync from disk in place: cmd_model saved via its own load/save cycle and the wizard's
     # final save_config(config) must not clobber it with stale values. Rotation, vision and TTS
@@ -406,7 +407,8 @@ def _apply_default_agent_settings(config: dict):
     save_config(config)
     print_success("Applied recommended defaults:")
     _info("  Max iterations: 150", "  Tool progress: all", "  Compression threshold: 0.50",
-          "  Run `hermes setup agent` later to customize.")
+          "  Session reset: never (use /reset or compression)",
+          "  Run `" + product_command("setup") + " agent` later to customize.")
 
 
 def _prompt_number(label: str, current, cast=int):
@@ -483,7 +485,7 @@ def setup_agent_settings(config: dict):
 
 
 def setup_tools(config: dict, first_install: bool = False):
-    """`hermes setup tools` == `hermes tools`: platform selection → toolset toggles → provider keys.
+    """`haos setup tools` == `haos tools`: platform selection → toolset toggles → provider keys.
     ``first_install`` selects the simplified flow (no platform menu, prompts for all missing keys)."""
     from hermes_cli.tools_config import tools_command
     tools_command(first_install=first_install, config=config)
@@ -581,7 +583,7 @@ def run_setup_wizard(args):
 
 
 def _run_setup_section(config: dict, section: str) -> None:
-    """``hermes setup <section>``: run one SETUP_SECTIONS entry under the banner."""
+    """``haos setup <section>``: run one SETUP_SECTIONS entry under the banner."""
     entry = next(((label, func) for key, label, func in SETUP_SECTIONS if key == section), None)
     if entry is None:
         print_error(f"Unknown setup section: {section}")
@@ -600,7 +602,7 @@ def _run_full_setup(config: dict, hermes_home, *, is_existing: bool, migration_r
     print_header("Configuration Location")
     _info(f"Config file:  {get_config_path()}", f"Secrets file: {get_env_path()}",
           f"Data folder:  {hermes_home}", f"Install dir:  {PROJECT_ROOT}", None,
-          "You can edit these files directly or use 'hermes config edit'")
+          "You can edit these files directly or use '" + product_command("config") + " edit'")
     if migration_ran:
         _info(None, "Settings were imported from OpenClaw.",
               "Each section below will show what was imported — press Enter to keep,",
@@ -643,7 +645,7 @@ _FIRST_TIME_MODES = (
 
 def _run_setup_wizard_impl(args):
     """Run the interactive setup wizard: full/quick (auto-detected), ``--portal``, or one
-    ``hermes setup <section>`` from SETUP_SECTIONS."""
+    ``haos setup <section>`` from SETUP_SECTIONS."""
     from hermes_cli.config import is_managed, managed_error
     if is_managed():
         managed_error("run setup wizard")
@@ -695,7 +697,7 @@ def _run_setup_wizard_impl(args):
         print_success("You already have Hermes configured.")
         _info("Running the full wizard — each prompt shows your current value.",
               "Press Enter to keep it, or type a new value to change it.", "",
-              "Tip: jump straight to a section with 'hermes setup model|terminal|",
+              "Tip: jump straight to a section with '" + product_command("setup") + " model|terminal|",
               "     gateway|tools|agent', or fill only missing items with --quick.")
     else:
         # First-time setup (--reconfigure / --quick are meaningless here; fall through)

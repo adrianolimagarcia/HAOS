@@ -752,7 +752,9 @@ class TestNoProductionCodeMutatesTheAliasCacheInPlace:
         import pathlib
 
         repo = pathlib.Path(__file__).resolve().parents[2]
-        skip = {".git", "node_modules", "tests", "build", "dist", ".venv"}
+        # "chroot" e a copia de build da ISO (distro/haos-linux/chroot/opt/haos):
+        # artefato nao rastreado, regenerado a cada build, nao e fonte deste checkout.
+        skip = {".git", "node_modules", "tests", "build", "dist", ".venv", "chroot"}
         for path in repo.rglob("*.py"):
             if any(part in skip for part in path.parts):
                 continue

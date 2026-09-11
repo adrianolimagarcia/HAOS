@@ -4,7 +4,7 @@ SQLite next to the executions ledger (same connection/pragma pattern as ``cron/e
 Caps are a documented contract: ``MAX_VALUE_BYTES`` (16 KB per value, UTF-8) and
 ``MAX_JOB_TOTAL_BYTES`` (64 KB per job, key+value). Oversized writes raise ``ValueError`` and leave
 the store untouched — the notepad is prompt-injected each run. Write path is the CLI
-(``hermes cron notepad <job_id> set ...``) via the terminal tool; no model tool is added.
+(``haos cron notepad <job_id> set ...``) via the terminal tool; no model tool is added.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_time import now as _hermes_now
 
 # Optional test override. Production resolves the path at transaction time so multiplexed profile
@@ -160,7 +160,7 @@ def render_notepad_section(job_id: str) -> str:
         "## Job notepad (persistent across runs)\n"
         "This durable scratchpad survives between scheduled runs of this "
         "job. Update it via the CLI, e.g.:\n"
-        f"`hermes cron notepad {job_id} set <key> <value>` "
-        f"(also: get/delete/list; `hermes cron notepad {job_id} delete "
+        f"`{product_command('cron')} notepad {job_id} set <key> <value>` "
+        f"(also: get/delete/list; `{product_command('cron')} notepad {job_id} delete "
         "<key>` removes an entry).\n\n" + "\n".join(lines) + "\n\n"
     )

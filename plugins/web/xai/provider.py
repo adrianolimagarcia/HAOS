@@ -2,10 +2,11 @@
 Responses API (https://docs.x.ai/developers/tools/web-search); Grok is asked for structured JSON
 so rows match every other Hermes web provider. Config: ``web.backend: "xai"``; optional ``web.xai``:
 ``model`` (default grok-build-0.1), ``allowed_domains`` / ``excluded_domains`` (max 5, mutually
-exclusive), ``timeout`` (default 90s). Auth: Grok OAuth via ``hermes auth``, else XAI_API_KEY.
+exclusive), ``timeout`` (default 90s). Auth: Grok OAuth via ``haos auth``, else XAI_API_KEY.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import logging
@@ -60,7 +61,7 @@ class XAIWebSearchProvider(BaseWebSearchProvider):
     def is_available(self) -> bool:
         """Cheap probe (env var OR auth-store tokens). Deliberately NOT
         ``resolve_xai_http_credentials``: must never refresh tokens or take the
-        auth-store lock, since this runs on every ``hermes tools`` repaint."""
+        auth-store lock, since this runs on every ``haos tools`` repaint."""
         return has_xai_credentials()
 
     def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
@@ -74,7 +75,7 @@ class XAIWebSearchProvider(BaseWebSearchProvider):
         api_key = str(creds.get("api_key") or "").strip()
         base_url = str(creds.get("base_url") or "https://api.x.ai/v1").strip().rstrip("/")
         if not api_key:
-            return _fail("No xAI credentials found. Run `hermes auth` to sign in with xAI Grok OAuth, or set XAI_API_KEY.")
+            return _fail("No xAI credentials found. Run `" + product_command("auth") + "` to sign in with xAI Grok OAuth, or set XAI_API_KEY.")
         # Same clamp range as web_search_tool so explicit limits aren't downgraded.
         limit = max(1, min(_coerce(int, limit, 5), 100))
         cfg = _load_xai_web_config()

@@ -382,7 +382,7 @@ def _(rid, params: dict) -> dict:
 
 
 def _describe_toolsets(cfg):
-    """``(toolsets, pinned_set)`` as the `hermes tools` checklist presents them (the raw registry
+    """``(toolsets, pinned_set)`` as the `haos tools` checklist presents them (the raw registry
     leaks platform composites and reports everything enabled without a pin)."""
     from hermes_cli.tools_config import (
         _get_effective_configurable_toolsets, _get_platform_tools, _toolset_allowed_for_platform)

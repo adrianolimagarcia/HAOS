@@ -1,4 +1,4 @@
-"""``hermes gateway enroll`` — enroll a self-hosted gateway with a relay connector.
+"""``haos gateway enroll`` — enroll a self-hosted gateway with a relay connector.
 
 Managed/hosted installs do NOT self-enroll: the orchestrator mints the secret and stamps it into the
 container env, so this refuses to run under ``is_managed()`` (mirrors ``dashboard register``).
@@ -6,6 +6,7 @@ EXPERIMENTAL: the relay auth scheme may change without a deprecation cycle.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import os
@@ -81,8 +82,8 @@ def _post_enroll(
             pass
         if exc.code == 401:
             message = (
-                "Connector rejected the caller identity (401). Your Nous Portal "
-                "token could not be verified — try `hermes auth add nous` and retry."
+                "Connector rejected the caller identity (401). Your Nous Portal " +
+                "token could not be verified — try `" + product_command("auth") + " add nous` and retry."
             )
         elif exc.code == 403:
             message = detail or "Enrollment token invalid, expired, already used, or tenant mismatch (403)."
@@ -114,7 +115,7 @@ def cmd_gateway_enroll(args) -> None:
     # to write there anyway.
     if is_managed():
         _fail(
-            "✗ `hermes gateway enroll` is not available in a managed/hosted install.\n"
+            "✗ `" + product_command("gateway") + " enroll` is not available in a managed/hosted install.\n" +
             "  The relay gateway secret is provisioned by the hosting platform."
         )
 
@@ -147,7 +148,7 @@ def cmd_gateway_enroll(args) -> None:
         if getattr(exc, "relogin_required", False):
             _fail(
                 "✗ You're not logged into Nous Portal.",
-                "  Run `hermes setup` (or `hermes auth add nous`) first, then retry.",
+                "  Run `" + product_command("setup") + "` (or `" + product_command("auth") + " add nous`) first, then retry.",
             )
         _fail(f"✗ Could not resolve a Nous Portal access token: {exc}")
     except Exception as exc:

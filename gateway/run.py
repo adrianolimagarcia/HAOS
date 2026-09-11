@@ -1552,7 +1552,7 @@ _ensure_ssl_certs()
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hermes_constants import get_hermes_home, get_hermes_home_override
+from hermes_constants import get_hermes_home, get_hermes_home_override, product_command
 _hermes_home = get_hermes_home()
 
 # Load ~/.hermes/.env first: user-managed env files must override stale shell exports on restart.
@@ -2038,8 +2038,8 @@ if _config_path.exists():
             f"  Warning: config.yaml → env bridge failed: {type(_bridge_err).__name__}: {_bridge_err}",
             file=sys.stderr)
         print(
-            "  Gateway will fall back to .env values, which may not match "
-            "your current config.yaml. Run `hermes doctor` to investigate.",
+            "  Gateway will fall back to .env values, which may not match " +
+            "your current config.yaml. Run `" + product_command("doctor") + "` to investigate.",
             file=sys.stderr)
 
 # IPv4 preference must apply before any HTTP clients are created.
@@ -2738,7 +2738,7 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 if slug == normalized and declared_name in disabled:
                     return (
                         f"The **{command_name}** skill is installed but disabled.\n"
-                        f"Enable it with: `hermes skills config`")
+                        f"Enable it with: `{product_command('skills')} config`")
 
         # Check optional skills (shipped with repo but not installed)
         from hermes_constants import get_optional_skills_dir
@@ -2756,7 +2756,7 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 install_path = f"official/{'/'.join(rel.parts)}"
                 return (
                     f"The **{command_name}** skill is available but not installed.\n"
-                    f"Install it with: `hermes skills install {install_path}`")
+                    f"Install it with: `{product_command('skills')} install {install_path}`")
     except Exception:
         pass
     return None
@@ -4358,11 +4358,11 @@ def _run_planned_stop_watcher(
     stop_event: threading.Event, runner, loop: asyncio.AbstractEventLoop, shutdown_handler, *,
     poll_interval: float = 0.5) -> None:
     """Poll for the planned-stop marker and trigger graceful shutdown (Windows lacks
-    ``add_signal_handler``, so ``hermes gateway stop`` would never drain). Runs everywhere; on POSIX
+    ``add_signal_handler``, so ``haos gateway stop`` would never drain). Runs everywhere; on POSIX
     the signal handler consumes the marker first and ``_running``/``_draining`` guard re-triggers.
 
     On Windows, ``asyncio.add_signal_handler`` raises NotImplementedError for SIGTERM/SIGINT, so the
-    standard signal-driven shutdown path never runs when ``hermes gateway stop`` signals the gateway. The
+    standard signal-driven shutdown path never runs when ``haos gateway stop`` signals the gateway. The
     consequence is that the drain loop is skipped — in-flight agent sessions are killed mid-turn and
     ``resume_pending`` is never set, so the next gateway boot has no idea those sessions need to be
     auto-resumed (issue #33778, v0.13.0 session-resume feature broken on native Windows).
@@ -4807,14 +4807,14 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
     if not replace:
         hermes_home = str(get_hermes_home())
         logger.error(
-            "Another gateway instance is already running (PID %d, HERMES_HOME=%s). "
-            "Use 'hermes gateway restart' to replace it, or 'hermes gateway stop' first.",
+            "Another gateway instance is already running (PID %d, HERMES_HOME=%s). " +
+            "Use '" + product_command("gateway") + " restart' to replace it, or '" + product_command("gateway") + " stop' first.",
             existing_pid, hermes_home)
         print(
             f"\n❌ Gateway already running (PID {existing_pid}).\n"
-            f"   Use 'hermes gateway restart' to replace it,\n"
-            f"   or 'hermes gateway stop' to kill it first.\n"
-            f"   Or use 'hermes gateway run --replace' to auto-replace.\n")
+            f"   Use '{product_command('gateway')} restart' to replace it,\n"
+            f"   or '{product_command('gateway')} stop' to kill it first.\n"
+            f"   Or use '{product_command('gateway')} run --replace' to auto-replace.\n")
         return False
 
     # Never signal a process not provably ours (a poisoned PID record → cross-profile restart loop).
@@ -5122,12 +5122,12 @@ def _start_gateway_start_cron_and_housekeeping(runner):
             _has_api_server = True  # never let the tell break startup
         if not _has_api_server:
             logger.warning(
-                "Cron provider '%s' is active but the api_server adapter is "
-                "NOT running in this gateway — scheduled fires arrive over "
-                "loopback HTTP and will all fail (jobs only run when "
-                "triggered manually). Most common cause: API_SERVER_KEY is "
-                "missing from this gateway process's environment. Restart "
-                "the gateway through its supervisor (`hermes gateway "
+                "Cron provider '%s' is active but the api_server adapter is " +
+                "NOT running in this gateway — scheduled fires arrive over " +
+                "loopback HTTP and will all fail (jobs only run when " +
+                "triggered manually). Most common cause: API_SERVER_KEY is " +
+                "missing from this gateway process's environment. Restart " +
+                "the gateway through its supervisor (`" + product_command("gateway") + " " +
                 "restart`) so the profile env loads.",
                 getattr(cron_provider, "name", "external"))
 

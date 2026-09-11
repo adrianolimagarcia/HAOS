@@ -727,7 +727,7 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
     @staticmethod
     def _write_update_response(answer: str, operator: str = "") -> None:
         """Atomically (tmp + rename) write the update-prompt answer to
-        ``.update_response``, polled by the detached ``hermes update --gateway`` watcher."""
+        ``.update_response``, polled by the detached ``haos update --gateway`` watcher."""
         try:
             from hermes_constants import get_hermes_home
             response_path = get_hermes_home() / ".update_response"

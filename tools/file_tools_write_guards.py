@@ -7,6 +7,7 @@ deny), ``_check_binary_document_write``, ``_check_protected_instruction_write``
 (ALWAYS ask), ``_check_approval_required_write`` (normal gate),
 ``_check_cross_profile_path`` (sandbox-mirror lost-work), ``_is_internal_file_tool_content``.
 """
+from hermes_constants import product_command
 
 import fnmatch
 import os
@@ -119,8 +120,8 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
     if hermes_config and hermes_config in candidates:
         return (
             f"Refusing to write to Hermes config file: {filepath}\n"
-            "Agent cannot modify security-sensitive configuration. "
-            "Edit ~/.hermes/config.yaml directly or use 'hermes config' instead.")
+            "Agent cannot modify security-sensitive configuration. " +
+            "Edit ~/.hermes/config.yaml directly or use '" + product_command("config") + "' instead.")
     # HAOS WorkspaceScope: General code editing tools must not mutate the Agent
     # Workspace (~/.hermes). Dedicated tools (skill_manage, HAOS memory, config)
     # manage agent-internal state.
@@ -135,7 +136,7 @@ def _check_agent_workspace_scope(filepath: str, task_id: str = "default") -> str
 
     General file tools (write_file/patch) are scoped to the Project Workspace.
     Mutating ~/.hermes requires dedicated tools ('skill_manage', HAOS memory tools,
-    or 'hermes config').
+    or 'haos config').
     """
     try:
         from hermes_cli.config import load_config, cfg_get

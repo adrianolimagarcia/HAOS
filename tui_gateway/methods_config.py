@@ -342,7 +342,7 @@ def _safe_client_label(label: str) -> str:
 @method("diagnostics.share_nous")
 def _(rid, params: dict) -> dict:
     """Upload a redacted debug bundle to Nous-internal diagnostics storage — same collection +
-    force-redaction pipeline as ``hermes debug share --nous``; redaction is NOT client-controllable
+    force-redaction pipeline as ``haos debug share --nous``; redaction is NOT client-controllable
     and consent lives with the CALLER (privacy notice first). Structured ``ok``/``error`` envelope so
     upload failures render inline. Optional: ``error_context`` (-> ``error-context.txt``),
     ``extra_files`` ({label -> text}), ``log_lines`` (default 200); all force-redacted."""

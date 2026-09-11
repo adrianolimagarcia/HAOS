@@ -2,6 +2,7 @@
 checks its launch path depends on. Config/policy helpers are looked up lazily through the facade."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import logging
@@ -73,7 +74,7 @@ def _embedded_daemon_spawn_command(driver_cmd: str, serve_args: List[str], *, pl
         return [driver_cmd, *serve_args]
     resolved_app = app_path or _resolve_cua_driver_app_path(driver_cmd)
     if not resolved_app:
-        raise RuntimeError("CuaDriver.app is required for private computer-use sessions on macOS. Run `hermes computer-use install` to restore it.")
+        raise RuntimeError("CuaDriver.app is required for private computer-use sessions on macOS. Run `" + product_command("computer-use") + " install` to restore it.")
     _validate_cua_driver_app_signature(resolved_app)
     return ["/usr/bin/open", "-n", "-g", "-a", resolved_app, "--args", *serve_args]
 

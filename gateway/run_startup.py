@@ -6,6 +6,7 @@ so ``patch("gateway.run.X")`` keeps intercepting them at call time.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import asyncio
 import dataclasses
@@ -795,7 +796,7 @@ class GatewayStartupMixin:
             _adv_msg = gateway_log_message(detect_compromised())
             if _adv_msg:
                 logger.warning("%s", _adv_msg)
-                logger.warning("Run `hermes doctor` on the gateway host for full remediation steps.")
+                logger.warning("Run `" + product_command("doctor") + "` on the gateway host for full remediation steps.")
 
     def _start_log_systemd_timing_alignment(self) -> None:
         """Warn when systemd's TimeoutStopSec does not cover the drain window (a unit file from before
@@ -808,9 +809,9 @@ class GatewayStartupMixin:
             )
             if _alignment is not None and _alignment.get("mismatch"):
                 logger.warning(
-                    "Stale systemd unit detected: %s has TimeoutStopSec=%.0fs but drain_timeout=%.0fs "
-                    "cron_drain_timeout=%.0fs (expected >=%.0fs). systemd may SIGKILL the gateway "
-                    "mid-drain. Run `hermes gateway install --force` to regenerate the unit, or shorten "
+                    "Stale systemd unit detected: %s has TimeoutStopSec=%.0fs but drain_timeout=%.0fs " +
+                    "cron_drain_timeout=%.0fs (expected >=%.0fs). systemd may SIGKILL the gateway " +
+                    "mid-drain. Run `" + product_command("gateway") + " install --force` to regenerate the unit, or shorten " +
                     "agent.restart_drain_timeout / agent.cron_drain_timeout.",
                     _alignment.get("unit", "(unknown)"), _alignment["timeout_stop_sec"],
                     _alignment["drain_timeout"],

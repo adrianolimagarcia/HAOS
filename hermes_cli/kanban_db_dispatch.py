@@ -2142,7 +2142,7 @@ def _worker_argv(task: Task, profile_arg: str, hermes_home: Optional[str]) -> li
 def _open_worker_log(task: Task, board: Optional[str]):
     """Append-mode per-task log (a re-run on unblock appends, never overwrites),
     rotated first. Anchored at the board root (not the shared kanban root) so
-    `hermes kanban log` reads its own file and boards sharing task ids don't
+    `haos kanban log` reads its own file and boards sharing task ids don't
     collide."""
     log_dir = _kb.worker_logs_dir(board=board)
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -2345,7 +2345,7 @@ def run_daemon(
     Calls :func:`dispatch_once` every ``interval`` seconds; exits cleanly on
     SIGINT / SIGTERM so it is systemd-friendly. ``stop_event`` and ``on_tick``
     are test hooks. Each tick resolves ``kanban.max_in_progress`` exactly like
-    the gateway dispatcher and ``hermes kanban dispatch`` — the standalone
+    the gateway dispatcher and ``haos kanban dispatch`` — the standalone
     daemon must not be the one uncapped entry point.
     """
     import threading

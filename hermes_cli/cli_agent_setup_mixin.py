@@ -3,6 +3,7 @@ per-turn agent config, first-use build, resume preload + recap. ``cli.py`` helpe
 imported lazily inside each method (import cycle)."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import sys
 
@@ -12,7 +13,7 @@ from utils import base_url_host_matches
 
 
 def _single_query_clarify_callback(question: str, choices=None, multi_select=False) -> str:
-    """Headless clarify answer for ``hermes chat -q``.
+    """Headless clarify answer for ``haos chat -q``.
 
     A -q turn never builds the prompt_toolkit app, so the interactive clarify modal
     can never be painted or answered — the CLI callback would poll until
@@ -345,7 +346,7 @@ class CLIAgentSetupMixin:
 
     def _offer_first_run_setup(self) -> bool:
         """Offer the provider picker when no provider is configured at all (interactive
-        startup, TTY). Runs the same flow as ``hermes model`` so onboarding has a single
+        startup, TTY). Runs the same flow as ``haos model`` so onboarding has a single
         source of truth. True when a provider was configured."""
         from cli import _cprint, logger
         _cprint("")
@@ -358,19 +359,19 @@ class CLIAgentSetupMixin:
             print()
             answer = "n"
         if answer in {"n", "no"}:
-            _cprint("  Skipped. Run 'hermes model' or 'hermes setup' any time.")
+            _cprint("  Skipped. Run '" + product_command("model") + "' or '" + product_command("setup") + "' any time.")
             return False
         try:
             from hermes_cli.main import select_provider_and_model
             select_provider_and_model()
         except (KeyboardInterrupt, EOFError, SystemExit):
             print()
-            _cprint("  Setup cancelled. Run 'hermes model' any time.")
+            _cprint("  Setup cancelled. Run '" + product_command("model") + "' any time.")
             return False
         except Exception as exc:
             logger.debug("first-run provider setup failed: %s", exc)
             _cprint(f"  ⚠️  Provider setup failed: {exc}")
-            _cprint("  Run 'hermes model' to try again.")
+            _cprint("  Run '" + product_command("model") + "' to try again.")
             return False
 
         # Re-sync CLI state from what the picker persisted so the next turn uses it without a restart.
@@ -389,7 +390,7 @@ class CLIAgentSetupMixin:
         if self._runtime_credentials_ready():
             _cprint("  ✓ Provider configured — you're ready to chat.")
             return True
-        _cprint("  Provider setup didn't complete. Run 'hermes model' to retry.")
+        _cprint("  Provider setup didn't complete. Run '" + product_command("model") + "' to retry.")
         return False
 
     def _resolve_turn_agent_config(self, user_message: str) -> dict:
@@ -449,7 +450,7 @@ class CLIAgentSetupMixin:
             else:
                 ChatConsole().print(rich)
         if not session_meta:
-            hint = "Use a session ID from a previous CLI run (hermes sessions list)."
+            hint = "Use a session ID from a previous CLI run (" + product_command("sessions") + " list)."
             if _quiet_mode:
                 print(f"Session not found: {self.session_id}", file=sys.stderr)
                 print(hint, file=sys.stderr)
@@ -644,7 +645,7 @@ class CLIAgentSetupMixin:
         session_meta = self._session_db.get_session(self.session_id)
         if not session_meta:
             self._console_print(f"[bold red]Session not found: {self.session_id}[/]")
-            self._console_print("[dim]Use a session ID from a previous CLI run (hermes sessions list).[/]")
+            self._console_print("[dim]Use a session ID from a previous CLI run (" + product_command("sessions") + " list).[/]")
             return False
         session_meta = self._follow_compression_chain(
             session_meta,

@@ -1,4 +1,4 @@
-"""Per-provider model-selection wizard flows for ``hermes setup`` / ``hermes model``.
+"""Per-provider model-selection wizard flows for ``haos setup`` / ``haos model``.
 
 main / config / auth / models helpers are imported lazily inside bodies: avoids the main.py import
 cycle and lets tests patch ``hermes_cli.config.load_config`` etc. at call time. The shared skeleton
@@ -7,6 +7,7 @@ own ``model_setup_flows_*`` modules.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import argparse
@@ -108,7 +109,7 @@ def _model_flow_moa(config, current_model=""):
     moa = normalize_moa_config(config.get("moa") if isinstance(config, dict) else {})
     presets = moa.get("presets") or {}
     if not presets:
-        print("No MoA presets configured. Run `hermes moa configure <name>` first.")
+        print("No MoA presets configured. Run `" + product_command("moa") + " configure <name>` first.")
         return
 
     names = list(presets.keys())

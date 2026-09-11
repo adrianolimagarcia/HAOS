@@ -1,5 +1,5 @@
 """Configuration management for Hermes Agent: config.yaml / .env loading, saving,
-validation, migration, and the ``hermes config`` command."""
+validation, migration, and the ``haos config`` command."""
 
 import copy
 import difflib
@@ -29,7 +29,7 @@ from hermes_cli import managed_scope
 from hermes_cli.default_soul import DEFAULT_SOUL_MD, is_legacy_template_soul
 from hermes_cli.secret_prompt import masked_secret_prompt
 # Re-export from hermes_constants — canonical definition lives there.
-from hermes_constants import get_hermes_home, get_process_hermes_home  # noqa: F401
+from hermes_constants import get_hermes_home, get_process_hermes_home, product_command  # noqa: F401
 from utils import atomic_replace, atomic_yaml_write, fast_safe_load
 
 logger = logging.getLogger(__name__)
@@ -57,8 +57,8 @@ _PARSE_FAILURE_FALLBACK_MSG = {
         "Loading the LAST KNOWN GOOD copy from backups/config/ instead — edits to config.yaml "
         "since that copy are being IGNORED until the YAML is fixed."),
     "refuse-write": (
-        "REFUSING to write config.yaml so the existing file is preserved. "
-        "Fix the YAML (hermes config edit) and retry.")}
+        "REFUSING to write config.yaml so the existing file is preserved. " +
+        "Fix the YAML (" + product_command("config") + " edit) and retry.")}
 _PARSE_FAILURE_DEFAULTS_MSG = (
     "Falling back to default config — every user override (auxiliary providers, fallback chain, "
     "model settings) is being IGNORED. Fix the YAML and restart.")
@@ -90,7 +90,7 @@ def _warn_config_parse_failure(
         msg += f" A copy of the corrupted file was saved to {backup_path}."
     logger.warning(msg)
     try:
-        sys.stderr.write(f"⚠️  hermes config: {msg}\n")
+        sys.stderr.write(f"⚠️  {product_command('config')}: {msg}\n")
         sys.stderr.flush()
     except Exception:
         pass
@@ -307,7 +307,7 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
     ``$HERMES_HOME/.install_method`` -> managed marker -> /nix/store path -> .git dir -> unknown.
     The stamp lives next to the code because HERMES_HOME is shared data: a container and a host
     install can bind-mount the same home, so a home-scoped ``docker`` stamp would make the host
-    ``hermes update`` refuse to run. A legacy ``docker`` value is therefore ignored unless we are
+    ``haos update`` refuse to run. A legacy ``docker`` value is therefore ignored unless we are
     really inside a container, and being in a container alone never implies 'docker'.
 
     The supported installs self-identify via the code-scoped stamp: - the curl installer
@@ -374,7 +374,7 @@ def recommended_update_command_for_method(method: str) -> str:
     """Return the update command or guidance for a given install method."""
     if is_nix_install_method(method):
         return _NIX_UPDATE_MSG
-    return _UPDATE_COMMAND_BY_METHOD.get(method, "hermes update")
+    return _UPDATE_COMMAND_BY_METHOD.get(method, product_command("update"))
 
 
 def recommended_update_command() -> str:
@@ -389,7 +389,7 @@ def recommended_update_command() -> str:
 # forks. The published image excludes ``.git``, so the git update path can never succeed there
 # and the generic "reinstall via install.sh" fallback would install a NEW host-side Hermes.
 _DOCKER_UPDATE_MESSAGE = """\
-✗ ``hermes update`` doesn't apply inside the Docker container.
+✗ ``""" + product_command("update") + """`` doesn't apply inside the Docker container.
 
 Hermes Agent runs as a published image (nousresearch/hermes-agent), not a
 git checkout — the container has no working tree to pull into.  Update by
@@ -416,7 +416,7 @@ Notes:
 
 
 def format_docker_update_message() -> str:
-    """Return the user-facing message for ``hermes update`` inside Docker."""
+    """Return the user-facing message for ``haos update`` inside Docker."""
     return _DOCKER_UPDATE_MESSAGE
 
 
@@ -702,7 +702,7 @@ def _split_key_path(key: str) -> list[str]:
     """Split a dotted config-key path, honoring backslash-escaped dots (``a\\.b`` -> ``a.b``).
     Backslashes before any other character are preserved verbatim.
 
-    ``hermes config set`` uses ``.`` as the nesting separator, so a key that itself contains a literal dot
+    ``haos config set`` uses ``.`` as the nesting separator, so a key that itself contains a literal dot
     (e.g. provider names like ``qwen3.5-397b-wafer``) was silently split into bogus nested segments
     (#84064).
     """
@@ -920,7 +920,7 @@ _ENV_CONFIG_KEYS = frozenset({
 
 
 def _is_env_config_key(key: str) -> bool:
-    """Return whether `hermes config set` routes this key to .env."""
+    """Return whether `haos config set` routes this key to .env."""
     if "." in key:
         return False
     key_upper = key.upper()
@@ -1179,7 +1179,7 @@ def _validate_web_backends(config: Dict[str, Any], issues: List[ConfigIssue]) ->
             _issue(issues, "warning",
                    f"web.{_key} is set to '{_val}', but {note} — "
                    "web_search/web_extract will fail until it is changed",
-                   "Run 'hermes tools' and pick a different Web Search & Extract provider")
+                   "Run '" + product_command("tools") + "' and pick a different Web Search & Extract provider")
 
 
 def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["ConfigIssue"]:
@@ -1188,9 +1188,8 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
     if config is None:
         try:
             config = load_config()
-        except Exception as exc:
-            from hermes_cli.config_home import config_load_issue
-            return [config_load_issue(exc)]
+        except Exception:
+            return [ConfigIssue("error", "Could not load config.yaml", "Run '" + product_command("setup") + "' to create a valid config")]
 
     issues: List[ConfigIssue] = []
     _validate_voice(config, issues)
@@ -1328,7 +1327,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
         msg = support_floor_message()
         results["warnings"].append(msg)
         # stderr so it is visible even on quiet startup paths.
-        sys.stderr.write(f"⚠ hermes config: {msg}\n")
+        sys.stderr.write(f"⚠ {product_command('config')}: {msg}\n")
         if not quiet:
             print(f"  ⚠ {msg}")
     else:
@@ -1437,7 +1436,7 @@ def _offer_list(heading: str, items: List[str], question: str) -> bool:
         print(f"    • {item}")
     print()
     if not _ask_yes_no(question):
-        print("  Set later with: hermes config set <key> <value>")
+        print("  Set later with: " + product_command("config") + " set <key> <value>")
         return False
     print()
     return True
@@ -1747,7 +1746,7 @@ def _normalize_root_model_keys(config: Dict[str, Any]) -> Dict[str, Any]:
     sees a nested dict, and the id is canonicalized to ``default``.
 
     Also aliases ``api_base`` → ``base_url`` (issue #8919). ``api_base`` is the intuitive name OpenAI-SDK /
-    LiteLLM users reach for, and ``hermes config set`` blindly accepts any dotted key — so
+    LiteLLM users reach for, and ``haos config set`` blindly accepts any dotted key — so
     ``model.api_base`` got written, confirmed, and then silently ignored by the runtime resolver (which
     reads only ``model.base_url``), causing requests to fall back to OpenRouter. We migrate the alias to the
     canonical key (fallback-only — never override an explicit ``base_url``) and drop the alias so it can't
@@ -1756,7 +1755,7 @@ def _normalize_root_model_keys(config: Dict[str, Any]) -> Dict[str, Any]:
     ~14 other readers select the chat model via ``model.default``; ``model.model`` was already aliased
     inline at some sites but ``model.name`` was not, so a custom-provider config like ``model: {name: <id>,
     provider: <custom>}`` resolved to an empty model and the API request went out with ``model=`` (HTTP 400
-    from OpenAI-compatible backends) — while display paths (``hermes status``/``dump``) read ``name`` and
+    from OpenAI-compatible backends) — while display paths (``haos status``/``dump``) read ``name`` and
     *showed* the model, making the failure silent. Normalizing here (the single load/save chokepoint) means
     every reader, present and future, sees a populated ``default`` and the stale alias is migrated out of
     config.yaml on the next save. Precedence: ``default`` > ``model`` > ``name`` (never overrides an
@@ -2278,8 +2277,8 @@ _FALLBACK_COMMENT = """
 #
 # Supported providers:
 #   openrouter   (OPENROUTER_API_KEY)  — routes to any model
-#   openai-codex (OAuth — hermes auth) — OpenAI Codex
-#   nous         (OAuth — hermes auth) — Nous Portal
+#   openai-codex (OAuth — """ + product_command("auth") + """) — OpenAI Codex
+#   nous         (OAuth — """ + product_command("auth") + """) — Nous Portal
 #   zai          (ZAI_API_KEY)         — Z.AI / GLM
 #   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
 #   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
@@ -2793,7 +2792,7 @@ def _show_model_section(config: Dict[str, Any]) -> None:
         env_ghost = None
     if env_ghost is not None and str(env_ghost).strip() != str(cfg_max_turns).strip():
         print(color(f"                ⚠ .env has stale HERMES_MAX_ITERATIONS={env_ghost} "
-                    f"(run 'hermes doctor --fix' to remove)", Colors.YELLOW))
+                    f"(run '{product_command('doctor')} --fix' to remove)", Colors.YELLOW))
 
 
 def _show_display_section(config: Dict[str, Any]) -> None:
@@ -2940,9 +2939,9 @@ def show_config():
 
     print()
     print(color("─" * 60, Colors.DIM))
-    print(color("  hermes config edit     # Edit config file", Colors.DIM))
-    print(color("  hermes config set <key> <value>", Colors.DIM))
-    print(color("  hermes setup           # Run setup wizard", Colors.DIM))
+    print(color("  " + product_command("config") + " edit     # Edit config file", Colors.DIM))
+    print(color("  " + product_command("config") + " set <key> <value>", Colors.DIM))
+    print(color("  " + product_command("setup") + "           # Run setup wizard", Colors.DIM))
     print()
 
 
@@ -2992,6 +2991,15 @@ def _cron_section(config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
             return None
     cron_config = config.get("cron") if isinstance(config, dict) else None
     return cron_config if isinstance(cron_config, dict) else None
+
+
+def cron_model_drift_guard_enabled(config: Optional[Dict[str, Any]] = None) -> bool:
+    """Whether cron must fail closed on unpinned inference drift.
+    Only the literal YAML boolean ``false`` disables this spend-safety guard; missing, malformed,
+    or non-boolean values stay fail-closed. With *config* omitted the merged config is loaded so
+    CLI warnings honor the same user/managed setting as the scheduler."""
+    cron_config = _cron_section(config)
+    return cron_config is None or cron_config.get("model_drift_guard", True) is not False
 
 
 _CRON_MODEL_IMPACT_JOB_LIMIT = 50
@@ -3131,10 +3139,11 @@ def warn_unpinned_cron_jobs_after_model_config_change(
 
     noun, verb = ("job", "keeps") if affected == 1 else ("jobs", "keep")
     print(
-        f"ℹ️  {affected} unpinned cron {noun} {verb} running on the {axis} it was created under "
-        f"(its {axis}_snapshot), not the new global {axis}. To move it, pin it with "
-        "`hermes cron edit <job_id> --provider <provider> --model <model>` or set a fleet default "
-        "with `hermes config set cron.model <model>`.")
+        f"⚠️  {affected} enabled unpinned cron {noun} {verb} stored "
+        f"{axis}_snapshot values that differ from the new global {axis}. "
+        "They will fail closed on their next run instead of silently using the changed " +
+        "model/provider. Inspect with `" + product_command("cron") + " list`, then pin the intended values with " +
+        "`" + product_command("cron") + " edit <job_id> --provider <provider> --model <model>`.")
 
 
 def _default_value_for_key(dotted_key: str):
@@ -3283,7 +3292,7 @@ _SCALAR_WORDS = {
 
 
 def _coerce_config_set_value(key: str, value: str) -> Any:
-    """Auto-coerce a ``hermes config set`` string to bool/None/int/float/list/dict.
+    """Auto-coerce a ``haos config set`` string to bool/None/int/float/list/dict.
     String-typed settings (per ``DEFAULT_CONFIG``) are preserved verbatim so enum members such as
     ``approvals.mode="off"`` never become booleans. List/mapping literals are parsed so
     isinstance-gated readers see real structures; the trigger is conservative."""
@@ -3322,7 +3331,7 @@ def _redirect_platform_display_key(key: str) -> tuple[str, Optional[str]]:
     Only known display settings (``OVERRIDEABLE_KEYS``) are redirected. Returns ``(key, note)``;
     the gateway import is guarded so the CLI works where the gateway package is unavailable.
 
-    Before #71047 a write such as ``hermes config set platforms.telegram.streaming false`` landed on a key
+    Before #71047 a write such as ``haos config set platforms.telegram.streaming false`` landed on a key
     the gateway never reads: ``config get`` echoed the new value back while the runtime kept the old
     ``display.platforms`` one — a silent no-op that looks like a duplicated key to the user.
     """
@@ -3379,9 +3388,9 @@ def _guard_section_overwrite(key: str, value: Any, user_config: Dict[str, Any], 
             err.append(f"  ... and {len(sub) - 8} more")
     err += [
         "  Use a dotted path to set a specific leaf key:",
-        f"    hermes config set {key}.<sub-key> <value>",
+        f"    {product_command('config')} set {key}.<sub-key> <value>",
         "  Or use --force to replace the entire section:",
-        f"    hermes config set --force {key} {value!r}"]
+        f"    {product_command('config')} set --force {key} {value!r}"]
     print("\n".join(err), file=sys.stderr)
     sys.exit(1)
 
@@ -3583,17 +3592,17 @@ def _run_write_command(fn, *args) -> None:
         _exit_invalid(f"✗ {exc}")
 
 
-_USAGE_GET = ("Usage: hermes config get <key> [--json]", [
-    "hermes config get model", "hermes config get terminal.backend",
-    "hermes config get skills.config --json"], None)
-_USAGE_SET = ("Usage: hermes config set [--force] <key> <value>", [
-    "hermes config set model anthropic/claude-sonnet-4", "hermes config set terminal.backend docker",
-    "hermes config set OPENROUTER_API_KEY sk-or-..."], [
+_USAGE_GET = ("Usage: " + product_command("config") + " get <key> [--json]", [
+    product_command("config") + " get model", product_command("config") + " get terminal.backend",
+    product_command("config") + " get skills.config --json"], None)
+_USAGE_SET = ("Usage: " + product_command("config") + " set [--force] <key> <value>", [
+    product_command("config") + " set model anthropic/claude-sonnet-4", product_command("config") + " set terminal.backend docker",
+    product_command("config") + " set OPENROUTER_API_KEY sk-or-..."], [
     "", "  --force: skip the unknown-key notice for unrecognized keys,",
     "           and allow a scalar to replace a whole mapping section"])
-_USAGE_UNSET = ("Usage: hermes config unset <key>", [
-    "hermes config unset model", "hermes config unset terminal.backend",
-    "hermes config unset OPENROUTER_API_KEY"], None)
+_USAGE_UNSET = ("Usage: " + product_command("config") + " unset <key>", [
+    product_command("config") + " unset model", product_command("config") + " unset terminal.backend",
+    product_command("config") + " unset OPENROUTER_API_KEY"], None)
 
 
 def _cmd_config_get(args):
@@ -3693,7 +3702,7 @@ def _cmd_config_check(args):
     if missing_config:
         print()
         print(color(f"  {len(missing_config)} new config option(s) available", Colors.YELLOW))
-        print("    Run 'hermes config migrate' to add them")
+        print("    Run '" + product_command("config") + " migrate' to add them")
 
     print()
 
@@ -3711,15 +3720,15 @@ _CONFIG_SUBCOMMANDS = {
     "check": _cmd_config_check}
 
 _CONFIG_USAGE = """Available commands:
-  hermes config           Show current configuration
-  hermes config edit      Open config in editor
-  hermes config get <key>          Print a resolved config value
-  hermes config set <key> <value>   Set a config value
-  hermes config unset <key>        Remove a config value
-  hermes config check     Check for missing/outdated config
-  hermes config migrate   Update config with new options
-  hermes config path      Show config file path
-  hermes config env-path  Show .env file path"""
+  """ + product_command("config") + """           Show current configuration
+  """ + product_command("config") + """ edit      Open config in editor
+  """ + product_command("config") + """ get <key>          Print a resolved config value
+  """ + product_command("config") + """ set <key> <value>   Set a config value
+  """ + product_command("config") + """ unset <key>        Remove a config value
+  """ + product_command("config") + """ check     Check for missing/outdated config
+  """ + product_command("config") + """ migrate   Update config with new options
+  """ + product_command("config") + """ path      Show config file path
+  """ + product_command("config") + """ env-path  Show .env file path"""
 
 
 def config_command(args):
@@ -3784,7 +3793,7 @@ def _platform_plugin_manifests():
 
 def _inject_platform_plugin_env_vars() -> None:
     """Populate OPTIONAL_ENV_VARS from bundled platform plugin manifests so Teams / IRC / Google
-    Chat etc. are configurable in ``hermes config`` UI without the core knowing they exist.
+    Chat etc. are configurable in ``haos config`` UI without the core knowing they exist.
 
     ``requires_env`` / ``optional_env`` entries are a bare name or a dict with ``name`` plus
     optional ``description``/``url``/``password``/``prompt``/``category``. Failures are swallowed

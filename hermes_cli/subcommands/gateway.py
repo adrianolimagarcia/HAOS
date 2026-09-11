@@ -1,6 +1,7 @@
-"""``hermes gateway`` and ``hermes proxy`` subcommand parsers."""
+"""``haos gateway`` and ``haos proxy`` subcommand parsers."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 from typing import Callable
@@ -146,12 +147,12 @@ def build_gateway_parser(
     # delivery key, written to .env. See website/docs/developer-guide/relay-connector-contract.md. EXPERIMENTAL.
     gateway_enroll = gateway_subparsers.add_parser("enroll",
         help="Enroll this gateway with a relay connector (writes relay auth creds to .env)",
-        description="Redeem a single-use enrollment token with a relay connector. "
-            "Authenticates as your Nous Portal account (the connector derives the "
-            "authoritative tenant from it), mints this gateway's per-gateway secret "
-            "and per-tenant delivery key, and writes GATEWAY_RELAY_ID / "
-            "GATEWAY_RELAY_SECRET / GATEWAY_RELAY_DELIVERY_KEY into ~/.hermes/.env. "
-            "Requires being logged in (hermes setup). Not available in managed installs.")
+        description="Redeem a single-use enrollment token with a relay connector. " +
+            "Authenticates as your Nous Portal account (the connector derives the " +
+            "authoritative tenant from it), mints this gateway's per-gateway secret " +
+            "and per-tenant delivery key, and writes GATEWAY_RELAY_ID / " +
+            "GATEWAY_RELAY_SECRET / GATEWAY_RELAY_DELIVERY_KEY into ~/.hermes/.env. " +
+            "Requires being logged in (" + product_command("setup") + "). Not available in managed installs.")
     gateway_enroll.add_argument("--token", default=None,
         help="The single-use enrollment token from the connector (delivered with "
             "your gateway config). Also settable via GATEWAY_RELAY_ENROLL_TOKEN.")
@@ -183,7 +184,7 @@ def build_gateway_parser(
 
     proxy_start = proxy_subparsers.add_parser("start", help="Run the proxy in the foreground")
     proxy_start.add_argument("--provider", default="nous",
-        help="Upstream provider: nous or xai (default: nous). See `hermes proxy providers`.")
+        help="Upstream provider: nous or xai (default: nous). See `" + product_command("proxy") + " providers`.")
     proxy_start.add_argument("--host", default=None,
         help="Bind address (default: 127.0.0.1). Use 0.0.0.0 to expose on LAN.")
     proxy_start.add_argument("--port", type=int, default=None, help="Bind port (default: 8645)")

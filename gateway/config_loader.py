@@ -1,7 +1,7 @@
 """config.yaml / gateway.json → ``GatewayConfig.from_dict`` schema (the ``load_gateway_config`` phases).
 
 Precedence for top-level keys: key-presence at the TOP LEVEL of config.yaml wins; the nested
-``gateway.<key>`` form (what ``hermes config set gateway.<key>`` produces) is consulted only when the
+``gateway.<key>`` form (what ``haos config set gateway.<key>`` produces) is consulted only when the
 top-level key is absent — not merely falsy/mistyped — so a present-but-empty top-level value is never
 silently replaced by the nested one. Both overwrite whatever legacy gateway.json set.
 """

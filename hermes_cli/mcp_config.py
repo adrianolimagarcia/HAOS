@@ -1,4 +1,4 @@
-"""MCP Server Management CLI — ``hermes mcp`` subcommand."""
+"""MCP Server Management CLI — ``haos mcp`` subcommand."""
 
 import asyncio
 import logging
@@ -16,7 +16,7 @@ from hermes_cli.config import (
     get_hermes_home,  # noqa: F401 — used by test mocks
 )
 from hermes_cli.colors import Colors, color
-from hermes_constants import display_hermes_home
+from hermes_constants import display_hermes_home, product_command
 from hermes_cli.mcp_security import validate_mcp_server_entry
 from tools.mcp_tool_config import _ENV_VAR_PATTERN
 from tools.mcp_tool_common import _env_ref_name
@@ -612,9 +612,9 @@ def cmd_mcp_add(args):
     if not url and not command:
         _error("Must specify --url <endpoint>, --command <cmd>, or --preset <name>")
         _info("Examples:")
-        _info('  hermes mcp add ink --url "https://mcp.ml.ink/mcp"')
-        _info('  hermes mcp add github --command npx --args @modelcontextprotocol/server-github')
-        _info('  hermes mcp add myserver --preset mypreset')
+        _info('  ' + product_command("mcp") + ' add ink --url "https://mcp.ml.ink/mcp"')
+        _info('  ' + product_command("mcp") + ' add github --command npx --args @modelcontextprotocol/server-github')
+        _info('  ' + product_command("mcp") + ' add myserver --preset mypreset')
         return
 
     if name in _get_mcp_servers() and not _confirm(
@@ -649,7 +649,7 @@ def cmd_mcp_add(args):
             server_config["enabled"] = False
             if _save_mcp_server(name, server_config):
                 _success(f"Saved '{name}' to config (disabled)")
-                _info("Fix the issue, then: hermes mcp test " + name)
+                _info("Fix the issue, then: " + product_command("mcp") + " test " + name)
         return
 
     if not tools:
@@ -698,8 +698,8 @@ def cmd_mcp_list(args=None):
         _info("No MCP servers configured.")
         print()
         _info("Add one with:")
-        _info('  hermes mcp add <name> --url <endpoint>')
-        _info('  hermes mcp add <name> --command <cmd> --args <args...>')
+        _info('  ' + product_command("mcp") + ' add <name> --url <endpoint>')
+        _info('  ' + product_command("mcp") + ' add <name> --command <cmd> --args <args...>')
         print()
         return
 
@@ -789,7 +789,7 @@ def _reauth_oauth_server(name: str, server_config: dict, *, flow: str | None = N
         return False
     if server_config.get("auth") != "oauth":
         _error(f"Server '{name}' is not configured for OAuth (auth={server_config.get('auth')})")
-        _info("Use `hermes mcp remove` + `hermes mcp add` to reconfigure auth.")
+        _info("Use `" + product_command("mcp") + " remove` + `" + product_command("mcp") + " add` to reconfigure auth.")
         return False
 
     oauth_cfg = server_config.get("oauth") or {}
@@ -846,7 +846,7 @@ def _reauth_oauth_server(name: str, server_config: dict, *, flow: str | None = N
             ):
                 print(color(f"    {line}", Colors.DIM))
             print()
-            _info("Then re-run `hermes mcp login " + name + "`.")
+            _info("Then re-run `" + product_command("mcp") + " login " + name + "`.")
             return False
         if tools:
             _success(f"Authenticated — {len(tools)} tool(s) available")
@@ -898,7 +898,7 @@ def cmd_mcp_reauth(args):
         return
     if not name:
         _error("Specify a server name, or use --all to re-auth every OAuth server.")
-        _info("Usage: hermes mcp reauth <name>   |   hermes mcp reauth --all")
+        _info("Usage: " + product_command("mcp") + " reauth <name>   |   " + product_command("mcp") + " reauth --all")
         return
     cfg = _lookup_server(name, servers)
     if cfg is not None:
@@ -942,7 +942,7 @@ def cmd_mcp_configure(args):
     """Reconfigure which tools are enabled for an existing MCP server."""
     import sys as _sys
     if not _sys.stdin.isatty():
-        print("Error: 'hermes mcp configure' requires an interactive terminal.", file=_sys.stderr)
+        print("Error: '" + product_command("mcp") + " configure' requires an interactive terminal.", file=_sys.stderr)
         _sys.exit(1)
     name = args.name
     cfg = _lookup_server(name, _get_mcp_servers(), "Available")
@@ -1015,24 +1015,24 @@ def cmd_mcp_configure(args):
 
 
 _MCP_USAGE = (
-    "hermes mcp                                    Open the catalog picker (default)",
-    "hermes mcp catalog                            List Nous-approved MCPs",
-    "hermes mcp install <name>                     Install a catalog MCP",
-    "hermes mcp serve                              Run as MCP server",
-    "hermes mcp add <name> --url <endpoint>        Add a custom MCP server",
-    "hermes mcp add <name> --command <cmd>         Add a stdio server",
-    "hermes mcp add <name> --preset <preset>       Add from a known preset",
-    "hermes mcp remove <name>                      Remove a server",
-    "hermes mcp list                               List configured servers",
-    "hermes mcp test <name>                        Test connection",
-    "hermes mcp configure <name>                   Toggle tools",
-    "hermes mcp login <name>                       Re-authenticate OAuth",
-    "hermes mcp reauth <name> | --all              Re-auth one or all OAuth servers",
+    product_command("mcp") + "                                    Open the catalog picker (default)",
+    product_command("mcp") + " catalog                            List Nous-approved MCPs",
+    product_command("mcp") + " install <name>                     Install a catalog MCP",
+    product_command("mcp") + " serve                              Run as MCP server",
+    product_command("mcp") + " add <name> --url <endpoint>        Add a custom MCP server",
+    product_command("mcp") + " add <name> --command <cmd>         Add a stdio server",
+    product_command("mcp") + " add <name> --preset <preset>       Add from a known preset",
+    product_command("mcp") + " remove <name>                      Remove a server",
+    product_command("mcp") + " list                               List configured servers",
+    product_command("mcp") + " test <name>                        Test connection",
+    product_command("mcp") + " configure <name>                   Toggle tools",
+    product_command("mcp") + " login <name>                       Re-authenticate OAuth",
+    product_command("mcp") + " reauth <name> | --all              Re-auth one or all OAuth servers",
 )
 
 
 def mcp_command(args):
-    """Main dispatcher for ``hermes mcp`` subcommands."""
+    """Main dispatcher for ``haos mcp`` subcommands."""
     action = getattr(args, "mcp_action", None)
     if action == "serve":
         from mcp_serve import run_mcp_server

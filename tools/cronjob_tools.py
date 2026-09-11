@@ -359,7 +359,7 @@ def _latest_job_output_excerpt(job_id: str, max_chars: int = 2000) -> Optional[s
 
 def _reap_stale_executions(job_name: str) -> None:
     """Reap execution rows left 'claimed'/'running' by a provably-dead owner (e.g. a prior
-    one-shot `hermes cron run` that died mid-run). The ticker does this at startup; one-shot
+    one-shot `haos cron run` that died mid-run). The ticker does this at startup; one-shot
     invocations have no such moment, so a stale claim would block every later manual run.
     Best-effort self-heal: must not block dispatch."""
     try:

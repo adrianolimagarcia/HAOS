@@ -1,6 +1,7 @@
 """Delegation config knobs (delegation.* keys) and child credential/provider resolution."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -344,7 +345,7 @@ def _runtime_provider_credentials(v: dict, explicit_request_overrides) -> dict:
     if not api_key:
         raise ValueError(
             f"Delegation provider '{configured_provider}' resolved but has no API key. "
-            f"Set the appropriate environment variable or run 'hermes auth'."
+            f"Set the appropriate environment variable or run '{product_command('auth')}'."
         )
     # A pinned ACP transport command must exist — refuse the spawn loudly rather than letting the child
     # silently fall back to another transport (#80450).

@@ -969,7 +969,7 @@ class DockerEnvironment(BaseEnvironment):
         """``(container_id, state)`` of an existing container labeled for this task/profile/
         egress posture, or ``None`` on miss or any failure. The egress posture is a label
         FILTER for every posture, "off" included: a container built with egress on must not be
-        reused after ``hermes egress disable`` (baked-in proxy env and CA mounts), and every
+        reused after ``haos egress disable`` (baked-in proxy env and CA mounts), and every
         container this class creates carries the label. The ``{{.Label "key"}}`` template
         function is Docker-only — podman ps exits 125 on it — so the probe never uses it (#99213)."""
         filters = [

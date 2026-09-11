@@ -25,7 +25,7 @@ from typing import Any, List, NoReturn, Optional, Tuple
 
 from packaging.requirements import Requirement
 
-from hermes_constants import display_hermes_home, get_hermes_home
+from hermes_constants import display_hermes_home, get_hermes_home, product_command
 from utils import atomic_write_text
 
 # Pinned legacy logger name so operator log filters keep matching (see adapter.py).
@@ -122,8 +122,8 @@ def load_user_credentials(email: Optional[str] = None) -> Optional[Any]:
         from google.auth.transport.requests import Request
     except ImportError:
         logger.warning(
-            "[google_chat_user_oauth] google-auth not installed; user-OAuth "
-            "attachment delivery is disabled. Run `hermes setup` to install Google Chat support."
+            "[google_chat_user_oauth] google-auth not installed; user-OAuth " +
+            "attachment delivery is disabled. Run `" + product_command("setup") + "` to install Google Chat support."
         )
         return None
     try:
@@ -249,7 +249,7 @@ def install_deps() -> bool:
         return True
     except Exception as exc:
         print(f"ERROR: Failed to install dependencies: {exc}")
-        print("Run `hermes setup` to repair the managed installation, then retry.")
+        print("Run `" + product_command("setup") + "` to repair the managed installation, then retry.")
         return False
 
 

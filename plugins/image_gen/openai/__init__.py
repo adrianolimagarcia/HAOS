@@ -3,6 +3,7 @@ base64 output → image cache. Selection: ``OPENAI_IMAGE_MODEL`` → ``image_gen
 ``image_gen.model`` → :data:`DEFAULT_MODEL`."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import io
 import logging
@@ -108,8 +109,8 @@ class OpenAIImageGenProvider(StaticImageGenProvider):
         api_key = get_secret("OPENAI_API_KEY")
         if not api_key:
             return error_factory("openai", aspect)(
-                "OPENAI_API_KEY not set. Run `hermes tools` → Image "
-                "Generation → OpenAI to configure, or `hermes setup` "
+                "OPENAI_API_KEY not set. Run `" + product_command("tools") + "` → Image " +
+                "Generation → OpenAI to configure, or `" + product_command("setup") + "` " +
                 "to add the key.",
                 "auth_required")
 

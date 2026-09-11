@@ -3,6 +3,7 @@
 Extracted from ``hermes_cli.web_server``; helpers/state that tests monkeypatch on
 ``web_server`` stay there and are late-bound (cycle-safe).
 """
+from hermes_constants import product_command
 
 import asyncio
 import contextlib
@@ -547,7 +548,7 @@ def _oauth_provider_disconnect_hint(provider: Dict[str, Any], status: Dict[str, 
 def _build_oauth_catalog() -> list[Dict[str, Any]]:
     """Accounts-tab provider list: ``_OAUTH_PROVIDER_CATALOG`` cards first (curated
     order, win on metadata), then every other accounts-tab ``provider_catalog()`` entry
-    in ``hermes model`` order, so plugin-added OAuth/external providers appear automatically."""
+    in ``haos model`` order, so plugin-added OAuth/external providers appear automatically."""
     rows: list[Dict[str, Any]] = []
     seen: set[str] = set()
     for entry in _OAUTH_PROVIDER_CATALOG:
@@ -562,7 +563,7 @@ def _build_oauth_catalog() -> list[Dict[str, Any]]:
             seen.add(d.slug)
             rows.append({
                 "id": d.slug, "name": d.label, "flow": "external",
-                "cli_command": f"hermes auth add {d.slug}", "docs_url": d.signup_url or "", "status_fn": None,
+                "cli_command": f"{product_command('auth')} add {d.slug}", "docs_url": d.signup_url or "", "status_fn": None,
             })
     except Exception:
         pass

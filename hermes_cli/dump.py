@@ -9,7 +9,7 @@ from pathlib import Path
 
 from hermes_cli.config import get_hermes_home, get_env_path, get_project_root, load_config
 from hermes_cli.env_loader import load_hermes_dotenv
-from hermes_constants import display_hermes_home
+from hermes_constants import display_hermes_home, product_command
 from agent.skill_utils import is_excluded_skill_path
 
 
@@ -17,7 +17,7 @@ def _dotenv_key_names() -> set[str]:
     """Env-var names assigned a non-empty value in ~/.hermes/.env — what the managed backends (launchd /
     systemd / desktop ``serve``) load, as opposed to the shell exports ``os.getenv`` reflects here.
 
-    ``hermes debug share`` runs in a terminal, so ``os.getenv`` reflects the shell's environment, which can
+    ``haos debug share`` runs in a terminal, so ``os.getenv`` reflects the shell's environment, which can
     include exported keys the managed backend never sees. Comparing against this set lets the dump flag that
     mismatch (the exact trap behind #48504-style "no web_search" reports: key exported in the shell, absent
     from .env, invisible to the launchd backend).
@@ -247,7 +247,7 @@ def run_dump(args):
     toolsets = config.get("toolsets", ["hermes-cli"])
     platforms = [name for name, env in _PLATFORM_ENV_VARS.items() if os.getenv(env)]
     lines = [
-        "--- hermes dump ---",
+        "--- " + product_command("dump") + " ---",
         f"version:          {_version_line(project_root)}",
         f"os:               {platform.system()} {platform.release()} {platform.machine()}",
         f"python:           {sys.version.split()[0]}",

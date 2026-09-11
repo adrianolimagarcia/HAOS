@@ -3,6 +3,7 @@
 Helpers defined in ``hermes_cli.main_dashboard`` / ``hermes_cli.main_install_repair`` are imported at
 call time so imports stay one-way (both of those modules import this one lazily).
 """
+from hermes_constants import product_command
 
 import contextlib
 import os
@@ -74,11 +75,11 @@ def _scan_dashboard_processes(*, exclude_pids: set[int] | None = None) -> list[t
     """``(pid, cmdline)`` of running ``dashboard``/``serve`` processes; empty on any scan error.
 
     A forgotten dashboard keeps the old Python backend against the new JS bundle after
-    ``hermes update`` (every API call 401s). *exclude_pids* (Desktop's HERMES_DESKTOP_CHILD_PID
+    ``haos update`` (every API call 401s). *exclude_pids* (Desktop's HERMES_DESKTOP_CHILD_PID
     backends) are never returned.
 
     *exclude_pids* is an optional set of PIDs that must never be returned. This is used by the Hermes
-    Desktop Electron app to protect its own backend child process: when the desktop spawns ``hermes serve``
+    Desktop Electron app to protect its own backend child process: when the desktop spawns ``haos serve``
     as a backend and triggers an auto-update, the update must not kill the backend that the desktop itself
     manages. The desktop sets the environment variable ``HERMES_DESKTOP_CHILD_PID`` on the spawned backend
     process; ``_kill_stale_dashboard_processes`` reads it and passes it here. (#37532)
@@ -138,7 +139,7 @@ def _profile_flag_value(argv: list[str]) -> str | None:
 
 def _is_ephemeral_port_zero_backend(argv: list[str]) -> bool:
     """True for Desktop-style ``serve|dashboard --port 0`` backends — replaying them after
-    ``hermes update`` multiplies listening backends because ``--port 0`` binds a fresh port.
+    ``haos update`` multiplies listening backends because ``--port 0`` binds a fresh port.
 
     See #78821.
     """
@@ -214,7 +215,7 @@ def _filter_dashboard_respawn_candidates(
     (``HERMES_DESKTOP_CHILD_PID``) owns their lifecycle. These are also the PPID-1 orphans that previously
     multiplied across updates because ``--port 0`` always binds a fresh free port. 2. A foreign install's
     backend is owned by that install's supervisor/user. 3. 4. See #78821, #94030.
-    Intentionally does **not** blanket-skip every PPID-1 process: a prior ``hermes update`` respawn detaches
+    Intentionally does **not** blanket-skip every PPID-1 process: a prior ``haos update`` respawn detaches
     with ``start_new_session=True``, so fixed-port manual backends are reparented to init and must still be
     eligible for the next update's #40449 restart.
     """
@@ -312,7 +313,7 @@ def _kill_stale_dashboard_processes(
     reason: str = "the running backend no longer matches the updated frontend", *,
     restart_managed: bool = False, already_restarted_units: "set[str] | None" = None,
 ) -> dict[str, list]:
-    """Kill running ``hermes dashboard`` / ``hermes serve`` processes (update end, ``--stop``).
+    """Kill running ``haos dashboard`` / ``haos serve`` processes (update end, ``--stop``).
 
     With ``restart_managed`` (update only) systemd-owned PIDs get their unit restarted after the
     kill (systemd treats our SIGTERM as a clean stop, so ``Restart=on-failure`` never fires) and
@@ -322,7 +323,7 @@ def _kill_stale_dashboard_processes(
     Manually-started dashboards are not auto-restarted because we don't know the original launch args
     (--host, --port, --insecure, --tui, --no-open). See #68934.
     *already_restarted_units* names units (no ``.service`` suffix) the caller already restarted directly —
-    e.g. ``hermes update``'s systemd fleet-restart loop, which restarts ``hermes-serve*`` units before this
+    e.g. ``haos update``'s systemd fleet-restart loop, which restarts ``hermes-serve*`` units before this
     function runs. Without excluding them, a Serve-only install's freshly restarted process is found again
     here and restarted a second time for no benefit (review on #83595).
     """
@@ -376,7 +377,7 @@ def _kill_stale_dashboard_processes(
     else:
         unrecovered = list(killed)
         if killed:
-            print("  Restart the dashboard when you're ready:\n    hermes dashboard --port <port>")
+            print("  Restart the dashboard when you're ready:\n    " + product_command("dashboard") + " --port <port>")
     return {"matched": list(pids), "killed": list(killed), "failed": list(failed),
             "unrecovered": list(unrecovered)}
 
@@ -417,7 +418,7 @@ def _restart_killed_backends(
     if failed_cmds:
         unrecovered.extend(p for p in killed if pid_cmdline.get(p) in failed_cmds)
     if failed_restarts or unrecovered:
-        print("  Restart anything not auto-restarted when you're ready:\n    hermes dashboard --port <port>")
+        print("  Restart anything not auto-restarted when you're ready:\n    " + product_command("dashboard") + " --port <port>")
     return unrecovered
 
 
@@ -487,7 +488,7 @@ def _detect_concurrent_hermes_instances(
 
 
 def _is_desktop_local_serve_cmdline(command: str) -> bool:
-    """True for the Desktop-local shape ``hermes serve [--isolated] --host 127.0.0.1 --port 0``.
+    """True for the Desktop-local shape ``haos serve [--isolated] --host 127.0.0.1 --port 0``.
 
     Long-lived headless serves (``--host <tailscale-ip> --port 9119``) must never match —
     those are operator-managed remote backends that legitimately run with ppid 1.
@@ -608,9 +609,9 @@ def _process_age_seconds(pid: int) -> float:
 
 
 def _reap_orphaned_desktop_local_serves(
-    *, reason: str = "orphaned desktop-local hermes serve", signal_term=None, signal_kill=None,
+    *, reason: str = "orphaned desktop-local " + product_command("serve"), signal_term=None, signal_kill=None,
     sleep_fn=None, lock_owned_pids_fn=None, process_age_seconds_fn=None) -> dict[str, list]:
-    """Kill leftover Desktop-local ``hermes serve`` backends with no parent. Never raises.
+    """Kill leftover Desktop-local ``haos serve`` backends with no parent. Never raises.
 
     When Electron dies uncleanly its ``serve --host 127.0.0.1 --port 0`` children are
     reparented to pid 1 with their MCP trees alive; each Desktop boot then stacks a fresh

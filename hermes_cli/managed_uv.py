@@ -24,7 +24,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Optional
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_cli.sqlite_runtime import (
     SQLiteRuntimeInfo, isolated_interpreter_env, probe_sqlite_runtime)
 
@@ -138,8 +138,8 @@ def _report_runtime_repair_failure(repair: RuntimeRepairResult) -> None:
     if repair.backup_venv is None:
         print("  ℹ Managed Python runtime was not replaced; "
               f"the existing venv is unchanged ({repair.detail}).")
-        print("    Sessions stay protected meanwhile: Hermes keeps databases "
-              "out of WAL mode on this SQLite build. The next `hermes update` "
+        print("    Sessions stay protected meanwhile: Hermes keeps databases " +
+              "out of WAL mode on this SQLite build. The next `" + product_command("update") + "` " +
               "will retry.")
         return
     print(f"  ✗ Managed Python runtime cutover needs manual recovery: {repair.detail}")
@@ -234,7 +234,7 @@ def _uv_self_update_stamp() -> Path:
 def _uv_self_update_is_fresh(now: float | None = None) -> bool:
     """True when ``uv self update`` ran recently enough to skip.
 
-    uv releases roughly weekly while many users run ``hermes update`` daily; a blocking network
+    uv releases roughly weekly while many users run ``haos update`` daily; a blocking network
     self-update on every run is waste and, offline, an unbounded hang risk.
     """
     try:
@@ -729,7 +729,7 @@ def _windows_runtime_self_lock(live: Path) -> tuple[bool, str]:
     """Detect the one holder the generic scan is blind to: THIS process.
 
     ``_detect_venv_python_processes`` excludes the calling process and its ancestors on purpose
-    (``hermes update`` itself runs from the venv python), which is correct for the dependency-sync
+    (``haos update`` itself runs from the venv python), which is correct for the dependency-sync
     path where only a *loaded* ``.pyd`` image blocks the rewrite and a fresh child dodges it.
 
     For the whole-venv park rename that exemption is fatal: Windows keeps the image of any executable a
@@ -871,7 +871,7 @@ def _repair_windows_preflight(
         for line in (
             f"  ⚠ SQLite runtime repair deferred: {self_detail}.",
             # See #93032.
-            "    Retrying `hermes update` from inside this venv cannot help: "
+            "    Retrying `" + product_command("update") + "` from inside this venv cannot help: " +
             "the mapped executable is released only when this process exits.",
             "    To complete the repair, run the updater from an interpreter "
             "that lives outside this venv, e.g.:",

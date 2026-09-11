@@ -1,4 +1,4 @@
-"""``hermes security`` subcommand parser."""
+"""``haos security`` subcommand parser."""
 
 from __future__ import annotations
 

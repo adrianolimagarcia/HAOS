@@ -2,6 +2,7 @@
 """xAI-specific Imagine video edit and extend tools."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 from typing import Any, Dict, Optional
@@ -100,8 +101,8 @@ def _run_xai_video_tool(args: Dict[str, Any], op: str, run, **extra: Any) -> str
         return json.dumps({
             "success": False,
             "error": (
-                "xAI video edit/extend tools require `video_gen.provider` to be "
-                "configured as `xai` via `hermes tools` -> Video Generation."
+                "xAI video edit/extend tools require `video_gen.provider` to be " +
+                "configured as `xai` via `" + product_command("tools") + "` -> Video Generation."
             ),
             "error_type": "provider_not_configured",
             "provider": "xai",

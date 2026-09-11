@@ -364,7 +364,7 @@ def _installed_version(spec: str) -> Optional[str]:
 
 
 def _is_satisfied(spec: str) -> bool:
-    """Present AND inside the spec's version range, so ``hermes update`` propagates pin bumps to
+    """Present AND inside the spec's version range, so ``haos update`` propagates pin bumps to
     installed backends. Unparseable specs/versions or a missing ``packaging`` count as satisfied — err
     toward "don't churn"."""
     installed = _installed_version(spec)
@@ -670,12 +670,12 @@ def install_specs(specs: list[str] | tuple[str, ...], *, timeout: int = 300) -> 
 
 def active_features() -> list[str]:
     """Features whose ANCHOR package (first spec) is present at any version — shared helpers like
-    asyncpg are deliberately not proof a backend was enabled. Drives ``hermes update``."""
+    asyncpg are deliberately not proof a backend was enabled. Drives ``haos update``."""
     return [f for f, specs in LAZY_DEPS.items() if specs and _is_present(specs[0])]
 
 
 def refresh_active_features(*, prompt: bool = False) -> dict[str, str]:
-    """Re-run ``ensure`` for every active feature (``hermes update``); returns
+    """Re-run ``ensure`` for every active feature (``haos update``); returns
     ``{feature: "current" | "refreshed" | "failed: <reason>" | "skipped: <reason>"}``. Never raises."""
     return _refresh_features(active_features(), prompt=prompt, restoring=False)
 

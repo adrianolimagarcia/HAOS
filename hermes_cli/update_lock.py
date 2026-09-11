@@ -78,7 +78,7 @@ def _handoff_pid() -> int | None:
 def _is_ancestor_pid(pid: int) -> bool:
     """True when ``pid`` is a live ancestor of this process.
 
-    The orchestrating updater spawns ``hermes update`` as a (grand)child, so a live marker
+    The orchestrating updater spawns ``haos update`` as a (grand)child, so a live marker
     owned by an ancestor can only be the claim we already run under — an unrelated concurrent
     updater is never in our parent chain. Never our own pid; any failure is "not an ancestor".
     """

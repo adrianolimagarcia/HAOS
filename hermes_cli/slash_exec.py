@@ -6,6 +6,7 @@ tests/hermes_cli/test_commands_execute.py).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -78,8 +79,8 @@ def _exec_bundles(ctx: CommandContext) -> CommandReply:
     bundles_dir = str(_bundles_dir())
     if not bundles:
         return CommandReply(
-            "No skill bundles installed.\n"
-            "Create one with: hermes bundles create <name> --skill <s1> --skill <s2>\n"
+            "No skill bundles installed.\n" +
+            "Create one with: " + product_command("bundles") + " create <name> --skill <s1> --skill <s2>\n"
             f"Directory: {bundles_dir}",
             data={"bundles": [], "dir": bundles_dir})
     lines = [f"Skill Bundles ({len(bundles)} installed):"]

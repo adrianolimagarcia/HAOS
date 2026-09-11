@@ -1,4 +1,4 @@
-"""Interactive ``hermes memory setup`` wizard for the OpenViking provider.
+"""Interactive ``haos memory setup`` wizard for the OpenViking provider.
 
 Pure UI flow: prompts, menus, and persistence of the chosen connection (Hermes
 ``.env`` only, or mirrored to an ``ovcli.conf.<name>`` profile that Hermes then

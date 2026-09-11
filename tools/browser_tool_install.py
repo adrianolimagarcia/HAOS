@@ -110,7 +110,7 @@ def _find_agent_browser(*, validate: bool = True) -> str:
     """Find the agent-browser CLI: PATH, Homebrew/managed dirs, local node_modules/.bin, npx fallback, lazy install.
 
     A bare ``shutil.which`` hit is NOT trusted: agent-browser's npm postinstall re-points a global symlink at our
-    local node_modules binary, which vanishes on the next ``hermes update`` and leaves a dangling link ``which``
+    local node_modules binary, which vanishes on the next ``haos update`` and leaves a dangling link ``which``
     still reports (exec fails with 127). Candidates are validated with ``agent_browser_runnable`` before caching
     so a dead one falls through. ``validate=False`` (schema-time check_fn) only tests presence and never caches.
     Raises FileNotFoundError when agent-browser is not installed.
@@ -159,7 +159,7 @@ def _find_agent_browser(*, validate: bool = True) -> str:
 
 
 def warm_agent_browser_npx_cache(timeout: float = 60.0) -> bool:
-    """Best-effort pre-fetch of the agent-browser npm package via npx (``hermes update`` / ``doctor --fix``).
+    """Best-effort pre-fetch of the agent-browser npm package via npx (``haos update`` / ``doctor --fix``).
 
     Runs with the credential-scrubbed env every other agent-browser spawn uses (registry-fetched npm code must
     never see the operator keyring), in its own process group, and tree-kills on timeout so a surviving
@@ -168,7 +168,7 @@ def warm_agent_browser_npx_cache(timeout: float = 60.0) -> bool:
     agent-browser is no longer a root package.json dependency (#43564) — it resolves lazily via ``npx
     agent-browser`` instead, which keeps it out of the npm workspace install graph entirely (nothing to
     prune it anymore) but means the first real invocation in a session would otherwise pay npx's
-    registry-lookup/fetch cost. Calling this during ``hermes update`` (or ``hermes doctor --fix``) warms
+    registry-lookup/fetch cost. Calling this during ``haos update`` (or ``haos doctor --fix``) warms
     npx's own cache ahead of time, restoring the "available before any session starts" property
     agent-browser had while it was an eager root dependency — without re-entangling it with the workspace
     graph.

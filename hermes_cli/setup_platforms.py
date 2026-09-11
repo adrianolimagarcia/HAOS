@@ -1,6 +1,7 @@
-"""Messaging-platform setup wizards (Telegram, BlueBubbles, webhooks) and the ``hermes setup
+"""Messaging-platform setup wizards (Telegram, BlueBubbles, webhooks) and the ``haos setup
 gateway`` flow. setup.py re-exports the public names, and tests monkeypatch prompt/print/env
 helpers on hermes_cli.setup, so those are imported lazily per function."""
+from hermes_constants import product_command
 
 import contextlib
 import logging
@@ -249,8 +250,8 @@ def _setup_webhooks():
           "   https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/#configuring-routes",
           None,
           # Printed twice upstream; kept verbatim for output parity.
-          "   Open config in your editor:  hermes config edit",
-          "   Open config in your editor:  hermes config edit")
+          "   Open config in your editor:  " + product_command("config") + " edit",
+          "   Open config in your editor:  " + product_command("config") + " edit")
 
 
 # (platform label, credential env var, home-channel env vars — any one satisfies)
@@ -280,7 +281,7 @@ def _warn_missing_home_channels() -> None:
     _info("   Without a home channel, cron jobs and cross-platform",
           "   messages can't be delivered to those platforms.",
           "   Set one later with /set-home in your chat, or:",
-          *(f"     hermes config set {plat.upper()}_HOME_CHANNEL <channel_id>" for plat in missing_home))
+          *(f"     {product_command('config')} set {plat.upper()}_HOME_CHANNEL <channel_id>" for plat in missing_home))
 
 
 def _restart_running_gateway(any_messaging: bool, supports_systemd: bool) -> None:
@@ -333,7 +334,7 @@ def setup_gateway(config: dict):
     pre_selected = [i for i, status in enumerate(statuses) if status == "configured"]
     selected = prompt_checklist("Select platforms to configure:", items, pre_selected)
     if not selected:
-        print_info("No platforms selected. Run 'hermes setup gateway' later to configure.")
+        print_info("No platforms selected. Run '" + product_command("setup") + " gateway' later to configure.")
     for idx in selected or ():
         _configure_platform(platforms[idx])
 

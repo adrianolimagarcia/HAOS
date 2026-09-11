@@ -9,6 +9,7 @@ up to 16 references) — see :func:`_select_surface`.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import base64
 import json
@@ -757,7 +758,7 @@ class OpenRouterCompatImageProvider(ImageGenProvider):
         if not api_key or not base_url:
             return fail(
                 f"No {self._display} credentials found. "
-                f"Configure {self._display} in `hermes tools` → Image Generation.",
+                f"Configure {self._display} in `{product_command('tools')}` → Image Generation.",
                 "missing_api_key")
 
         model_chain = self._resolve_model_chain(kwargs.get("model"))

@@ -9,7 +9,7 @@ bot's canonical "Bot Chat" session on a Bot-Mode-managed install (same gate as
 ``tools/bot_mode_probe.py``; never in the registry or any toolset), and dispatch
 re-checks that gate so a forged call returns a structured error. Transports:
 local → ``hermes -p <name> chat --in ~ -c "Bot Chat" --create-if-missing -Q
---query-file <tmp>``; peer → ``hermes peer dm <peer>[/<name>] < <tmp>``; both via
+--query-file <tmp>``; peer → ``haos peer dm <peer>[/<name>] < <tmp>``; both via
 ``terminal_tool(background=True, notify_on_complete=True)``.
 """
 

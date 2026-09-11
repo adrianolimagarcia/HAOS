@@ -10,6 +10,7 @@ material is fingerprinted, never stored).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -220,7 +221,7 @@ def apply_onepassword_secrets(
     override_existing: bool = True, cache_ttl_seconds: float = 300, home_path: Optional[Path] = None,
 ) -> FetchResult:
     """Resolve configured ``op://`` references and set them on ``os.environ``
-    (``hermes secrets onepassword sync --apply``). Never raises. Refs already
+    (``haos secrets onepassword sync --apply``). Never raises. Refs already
     satisfied by the env (when ``override_existing`` is false) and the token var
     are skipped *before* fetching, so ``op`` never runs for a discarded value."""
     result = FetchResult()
@@ -278,7 +279,7 @@ class OnePasswordSource(SecretSource):
     # override_existing defaults True: an explicit VAR→op:// binding is the
     # strongest user intent; a stale .env line must not silently defeat it.
     override_existing_default = True
-    _AUTH_HINT = ("Run `hermes secrets onepassword token` to paste a fresh service-account token "
+    _AUTH_HINT = ("Run `" + product_command("secrets") + " onepassword token` to paste a fresh service-account token " +
                   "({token_env}), or `op signin` for an interactive session.")
     remediation_hints = {ErrorKind.AUTH_FAILED: _AUTH_HINT, ErrorKind.AUTH_EXPIRED: _AUTH_HINT,
                          ErrorKind.BINARY_MISSING: _MISSING_BINARY_HINT}

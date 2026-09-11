@@ -10,13 +10,14 @@ tells plugin authors and users about that:
 * :func:`removal_in_effect` — True once today >= the removal date (or the layer is already gone).
 * :func:`warn_once` — the per-name runtime warning emitted by the PLUGIN-COMPAT ``__getattr__`` blocks.
 
-Surfaces that read from here: the CLI banner, ``hermes plugins compat``, ``hermes doctor``, the post-update
+Surfaces that read from here: the CLI banner, ``haos plugins compat``, ``haos doctor``, the post-update
 notices, the TUI/Desktop ``plugins.compat_report`` RPC, and ``PluginManager`` (which skips a hitting plugin
 after the date unless ``plugins.allow_deprecated_imports: true``).
 
 This module is part of the compat layer and is removed with it.
 """
 from __future__ import annotations
+from hermes_constants import product_command
 
 import ast
 import datetime as _dt
@@ -277,7 +278,7 @@ def disable_reason(manifest, *, today: Optional[_dt.date] = None) -> Optional[st
     hits = plugin_hits(manifest)
     if not hits:
         return None
-    return (f"uses {len(hits)} import path(s) removed on {COMPAT_REMOVAL}; run `hermes plugins compat` "
+    return (f"uses {len(hits)} import path(s) removed on {COMPAT_REMOVAL}; run `{product_command('plugins')} compat` "
             f"for the list, update the plugin, or set plugins.{ALLOW_KEY}: true to force-load")
 
 
@@ -290,15 +291,15 @@ def summary_lines(report: Dict[str, List[Hit]], *, today: Optional[_dt.date] = N
     if removal_in_effect(today) and allow_deprecated_imports():
         head = (f"{n} plugin{'s' if n != 1 else ''} force-loaded via plugins.{ALLOW_KEY}: they import paths "
                 f"removed on {COMPAT_REMOVAL}: {names}")
-        tail = "Update the plugin(s); the old paths no longer exist. Details: hermes plugins compat"
+        tail = "Update the plugin(s); the old paths no longer exist. Details: " + product_command("plugins") + " compat"
     elif removal_in_effect(today):
         head = (f"{n} plugin{'s' if n != 1 else ''} DISABLED: they import paths removed on {COMPAT_REMOVAL}: {names}")
-        tail = f"Update the plugin(s) or set plugins.{ALLOW_KEY}: true to force-load. Details: hermes plugins compat"
+        tail = f"Update the plugin(s) or set plugins.{ALLOW_KEY}: true to force-load. Details: {product_command('plugins')} compat"
     else:
         d = days_until_removal(today)
         head = (f"{n} plugin{'s' if n != 1 else ''} use{'s' if n == 1 else ''} import paths that stop working on "
                 f"{COMPAT_REMOVAL} ({d} day{'s' if d != 1 else ''}): {names}")
-        tail = "Check for plugin updates or notify the author before then. Details: hermes plugins compat"
+        tail = "Check for plugin updates or notify the author before then. Details: " + product_command("plugins") + " compat"
     return [head, tail]
 
 
@@ -318,7 +319,7 @@ def warn_once(facade: str, name: str, target_module: str, target_name: str) -> N
         return
     _seen.add(key)
     new = f"{target_module}.{target_name}" if target_name != name else f"{target_module}.{name}"
-    msg = (f"hermes plugin compat: `{facade}.{name}` moved to `{new}`. The old path is kept only for external "
+    msg = (f"{product_command('plugin')} compat: `{facade}.{name}` moved to `{new}`. The old path is kept only for external "
            f"plugins and is removed on {COMPAT_REMOVAL}; update your import.")
     _log.warning(msg)
     warnings.warn(msg, HermesPluginCompatWarning, stacklevel=3)

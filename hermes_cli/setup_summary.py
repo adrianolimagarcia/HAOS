@@ -1,5 +1,6 @@
 """Setup-completion summary (tool availability + "Setup Complete!" banner). setup.py names are
 resolved through the module object so test patches on ``hermes_cli.setup.<name>`` take effect."""
+from hermes_constants import product_command
 
 import logging
 from tools import tool_backend_helpers
@@ -14,14 +15,14 @@ _TTS_SUMMARY_ROWS = {
     "openai": ("OpenAI", ("VOICE_TOOLS_OPENAI_KEY", "OPENAI_API_KEY")),
     "minimax": ("MiniMax", ("MINIMAX_API_KEY",)), "mistral": ("Mistral Voxtral", ("MISTRAL_API_KEY",)),
     "gemini": ("Google Gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
-    "neutts": ("NeuTTS", "neutts", "run 'hermes setup tts'"),
-    "kittentts": ("KittenTTS", "kittentts", "run 'hermes setup tts'")}
+    "neutts": ("NeuTTS", "neutts", "run '" + product_command("setup") + " tts'"),
+    "kittentts": ("KittenTTS", "kittentts", "run '" + product_command("setup") + " tts'")}
 _TTS_SUMMARY_DEFAULT = ("Edge TTS", ())
 _STT_SUMMARY_ROWS = {
     "openai": ("OpenAI", ("VOICE_TOOLS_OPENAI_KEY", "OPENAI_API_KEY")), "groq": ("Groq Whisper", ("GROQ_API_KEY",)),
     "elevenlabs": ("ElevenLabs Scribe", ("ELEVENLABS_API_KEY",)), "xai": ("xAI", ()),
     "deepinfra": ("DeepInfra", ("DEEPINFRA_API_KEY",))}
-_STT_SUMMARY_DEFAULT = ("Local Whisper", "faster_whisper", "run 'hermes tools' → Speech-to-Text")
+_STT_SUMMARY_DEFAULT = ("Local Whisper", "faster_whisper", "run '" + product_command("tools") + "' → Speech-to-Text")
 
 # Browser "missing" hint keyed by the configured provider; anything else gets the generic hint.
 _BROWSER_MISSING_HINTS = {
@@ -39,15 +40,15 @@ _DONE_BANNER = (
     "└─────────────────────────────────────────────────────────┘")
 # (command, description) rows; the description carries its own alignment padding.
 _EDIT_WIZARD_ROWS = (
-    ("hermes setup", "          Re-run the full wizard"), ("hermes setup model", "    Change model/provider"),
-    ("hermes setup terminal", " Change terminal backend"), ("hermes setup gateway", "  Configure messaging"),
-    ("hermes setup tools", "    Configure tool providers"))
+    (product_command("setup"), "          Re-run the full wizard"), (product_command("setup") + " model", "    Change model/provider"),
+    (product_command("setup") + " terminal", " Change terminal backend"), (product_command("setup") + " gateway", "  Configure messaging"),
+    (product_command("setup") + " tools", "    Configure tool providers"))
 _EDIT_CONFIG_ROWS = (
-    ("hermes config", "         View current settings"), ("hermes config edit", "    Open config in your editor"),
-    ("hermes config set <key> <value>", ""))
+    (product_command("config"), "         View current settings"), (product_command("config") + " edit", "    Open config in your editor"),
+    (product_command("config") + " set <key> <value>", ""))
 _READY_ROWS = (
-    ("hermes", "              Start chatting"), ("hermes gateway", "      Start messaging gateway"),
-    ("hermes doctor", "       Check for issues"))
+    ("hermes", "              Start chatting"), (product_command("gateway"), "      Start messaging gateway"),
+    (product_command("doctor"), "       Check for issues"))
 
 
 def _voice_provider_status(kind: str, provider: str, rows: dict, default: tuple) -> tuple:
@@ -94,7 +95,7 @@ def _vision_row(config, feats):
         ok = bool(get_available_vision_backends())
     except Exception:
         ok = False
-    return ("Vision (image analysis)", ok, None if ok else "run 'hermes setup' to configure")
+    return ("Vision (image analysis)", ok, None if ok else "run '" + product_command("setup") + "' to configure")
 
 
 def _managed_or_provider_row(feature, name: str, managed_label: str, missing_hint: str):
@@ -161,7 +162,7 @@ def _modal_row(config, feats):
     if _setup.cfg_get(config, "terminal", "backend") == "modal":
         if feats.modal.direct_override:
             return ("Modal Execution (direct Modal)", True, None)
-        return ("Modal Execution", False, "run 'hermes setup terminal'")
+        return ("Modal Execution", False, "run '" + product_command("setup") + " terminal'")
     if tool_backend_helpers.managed_nous_tools_enabled() and feats.nous_auth_present:
         return ("Modal Execution (optional via Nous subscription)", True, None)
     return None
@@ -222,8 +223,8 @@ def _print_setup_summary(config: dict, hermes_home):
         print()
         _setup.print_warning("No inference provider is configured — Hermes cannot chat yet.")
         _setup._info("  Finish this one step with either of:",
-              "    hermes model            (pick any provider/model)",
-              "    hermes setup --portal   (Nous Portal OAuth, no API key)")
+              "    " + product_command("model") + "            (pick any provider/model)",
+              "    " + product_command("setup") + " --portal   (Nous Portal OAuth, no API key)")
 
     print()
     _setup.print_header("Tool Availability Summary")
@@ -243,7 +244,7 @@ def _print_setup_summary(config: dict, hermes_home):
     print()
 
     if available_count < len(tool_status):
-        _setup.print_warning("Some tools are disabled. Run 'hermes setup tools' to configure them,")
+        _setup.print_warning("Some tools are disabled. Run '" + product_command("setup") + " tools' to configure them,")
         _setup.print_warning(f"or edit {_dhh()}/.env directly to add the missing API keys.")
         print()
 

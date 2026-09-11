@@ -5,6 +5,7 @@ exception-swallowing so a failure inside receipts can never break an update.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import logging
@@ -52,7 +53,7 @@ def _str_records(entries: Any, keys: tuple[str, ...], *, pid: bool = False) -> l
 
 
 class UpdateReceipt:
-    """Collects the observable facts of one ``hermes update`` run."""
+    """Collects the observable facts of one ``haos update`` run."""
 
     def __init__(self) -> None:
         self.data: dict[str, Any] = {
@@ -190,7 +191,7 @@ def finalize_update_receipt(outcome: str, fleet: list | None = None, stop_reason
 def finalize_pending_update_receipt(exit_code: Optional[int] = None, stop_reason: str = "") -> Optional[Path]:
     """Command-boundary safety net: persist a still-open receipt, if any. Never raises.
 
-    ``hermes update`` has many early ``sys.exit`` paths (preflight refusals, venv-holder refusal,
+    ``haos update`` has many early ``sys.exit`` paths (preflight refusals, venv-holder refusal,
     fetch failure) predating the inner finalize calls; finalizing here means refused/failed runs —
     where a receipt matters most — leave a record. Exit 0/None → ``success``, exit 2 → ``refused``
     (preflight convention), else → ``failed``.
@@ -369,6 +370,6 @@ def print_fleet_version_matrix(fleet: list[dict[str, Any]]) -> bool:
             print("  ⚠ Stale gateways keep serving pre-update code until restarted:")
         if any_down:
             print("  ⚠ Down gateways stopped serving messaging entirely — restart them:")
-        print("      hermes gateway restart                # active profile")
+        print("      " + product_command("gateway") + " restart                # active profile")
         print("      hermes -p <profile> gateway restart   # named profile")
     return any_stale or any_down

@@ -1,4 +1,4 @@
-"""``hermes egress`` subcommand parser."""
+"""``haos egress`` subcommand parser."""
 
 from __future__ import annotations
 

@@ -1231,7 +1231,7 @@ def _register_linux_desktop_entry() -> None:
     """Install the XDG desktop entry for Hermes Desktop (Linux only, best-effort).
 
     ``Exec`` and ``Icon`` are absolute so the entry works outside a login shell.
-    ``hermes uninstall --gui`` removes it.
+    ``haos uninstall --gui`` removes it.
     """
     from hermes_cli.main import PROJECT_ROOT
     try:

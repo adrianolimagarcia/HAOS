@@ -7,6 +7,7 @@ path containing one) → ``DEFAULT_MODEL``. Auth via ``FAL_KEY`` or the managed 
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import threading
@@ -238,7 +239,7 @@ def _submit_fal_video_request(endpoint: str, arguments: Dict[str, Any]):
                     f"Nous Subscription gateway rejected endpoint '{endpoint}' (HTTP {status}): {billing}") from exc
             raise ValueError(f"Nous Subscription gateway rejected endpoint '{endpoint}' (HTTP {status}). This model may not yet be enabled "
                              f"on the Nous Portal's FAL proxy. Either:\n  • Set FAL_KEY in your environment to use FAL.ai directly, or\n"
-                             f"  • Pick a different model via `hermes tools` → Video Generation.") from exc
+                             f"  • Pick a different model via `{product_command('tools')}` → Video Generation.") from exc
         raise
 
 
@@ -266,10 +267,10 @@ def _upscale_video(video_url: str, source_request_id: Optional[str] = None) -> O
     return url
 
 
-_NO_BACKEND_MSG = ("No FAL backend available. Either set FAL_KEY (run `hermes tools` → Video Generation → FAL to configure) "
-                   "or sign in to Nous (`hermes setup`) for managed gateway access.")
+_NO_BACKEND_MSG = ("No FAL backend available. Either set FAL_KEY (run `" + product_command("tools") + "` → Video Generation → FAL to configure) " +
+                   "or sign in to Nous (`" + product_command("setup") + "`) for managed gateway access.")
 _MODALITY_MISSING_MSG = {
-    "image": "FAL family {fid} has no image-to-video endpoint. Pick a family with image-to-video support via `hermes tools` → Video Generation.",
+    "image": "FAL family {fid} has no image-to-video endpoint. Pick a family with image-to-video support via `" + product_command("tools") + "` → Video Generation.",
     "text": "FAL family {fid} has no text-to-video endpoint. Pass an image_url to use its image-to-video endpoint, or pick a different family.",
 }
 

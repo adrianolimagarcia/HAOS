@@ -5,7 +5,7 @@ Fase 3 ``--mcp``: register the wiki as a *local server* on the HAOS
 (namespaced ``codebase-wiki_*``) and the kernel/gateway can delegate to them —
 no new core tool, no external MCP host, fully offline. The dispatcher reads
 ``<out_dir>/graph.json`` through the pure ``query`` layer on every call, so the
-index stays the single source of truth and re-running ``hermes codebase-wiki``
+index stays the single source of truth and re-running ``haos codebase-wiki``
 immediately refreshes what the tools answer.
 
 Registration is idempotent per aggregator instance; ``register_wiki_server``
@@ -13,6 +13,7 @@ returns the federated tool names that were added.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from pathlib import Path
 from typing import Any, Dict, List
@@ -98,7 +99,7 @@ async def wiki_dispatcher(
     try:
         payload = query.load_graph_json(graph_path)
     except FileNotFoundError as exc:
-        return _error_result(f"Mapa indisponível: {exc} — rode `hermes codebase-wiki` primeiro.")
+        return _error_result(f"Mapa indisponível: {exc} — rode `{product_command('codebase-wiki')}` primeiro.")
     args = arguments or {}
     if tool_name == "wiki_status":
         return _text_result(str(query.summarize(payload)))

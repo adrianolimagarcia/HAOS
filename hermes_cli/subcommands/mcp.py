@@ -1,6 +1,7 @@
-"""``hermes mcp`` subcommand parser."""
+"""``haos mcp`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 from typing import Callable
@@ -12,10 +13,10 @@ def build_mcp_parser(subparsers, *, cmd_mcp: Callable) -> None:
     """Attach the ``mcp`` subcommand to ``subparsers``."""
     mcp_parser = subparsers.add_parser(
         "mcp", help="Manage MCP servers and run Hermes as an MCP server",
-        description="Manage MCP server connections and run Hermes as an MCP server.\n\n"
-            "MCP servers provide additional tools via the Model Context Protocol.\n"
-            "Use 'hermes mcp add' to connect to a new server, or\n"
-            "'hermes mcp serve' to expose Hermes conversations over MCP.")
+        description="Manage MCP server connections and run Hermes as an MCP server.\n\n" +
+            "MCP servers provide additional tools via the Model Context Protocol.\n" +
+            "Use '" + product_command("mcp") + " add' to connect to a new server, or\n" +
+            "'" + product_command("mcp") + " serve' to expose Hermes conversations over MCP.")
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_action")
 
     mcp_serve_p = mcp_sub.add_parser(
@@ -69,10 +70,10 @@ def build_mcp_parser(subparsers, *, cmd_mcp: Callable) -> None:
 
     # Catalog (Nous-approved MCPs shipped with the repo)
     mcp_sub.add_parser(
-        "picker", help="Interactive catalog picker (also the default for `hermes mcp`)")
+        "picker", help="Interactive catalog picker (also the default for `" + product_command("mcp") + "`)")
     mcp_sub.add_parser("catalog", help="List Nous-approved MCPs available for one-click install")
     mcp_install_p = mcp_sub.add_parser(
-        "install", help="Install a catalog MCP by name (e.g. `hermes mcp install n8n`)")
+        "install", help="Install a catalog MCP by name (e.g. `" + product_command("mcp") + " install n8n`)")
     mcp_install_p.add_argument("identifier", help="Catalog entry name (or `official/<name>`)")
 
     add_accept_hooks_flag(mcp_parser)

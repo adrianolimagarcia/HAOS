@@ -1,5 +1,6 @@
 """Cron job argument normalization, validation and result shaping (re-exported by
 tools/cronjob_tools.py)."""
+from hermes_constants import product_command
 
 import logging
 from typing import Any, Dict, List, Optional, Union
@@ -202,8 +203,8 @@ def _validate_bot_chat_deliver(deliver: Optional[str]) -> Optional[str]:
         if not profile_exists(canon):
             return (
                 f"bot-chat delivery profile '{profile_arg}' not found on this "
-                "gateway's machine. Bot Chat delivery is machine-local — use a "
-                "profile that exists here (hermes profile list), or omit the "
+                "gateway's machine. Bot Chat delivery is machine-local — use a " +
+                "profile that exists here (" + product_command("profile") + " list), or omit the " +
                 "name (deliver='bot-chat') for the job's own profile.")
     return None
 
@@ -413,8 +414,8 @@ def _gateway_liveness_notice(plural: bool = False) -> dict:
             "gateway_running": False,
             "warning": (
                 f"The Hermes gateway is not running — {subject} "
-                "but will NOT fire until the gateway is started "
-                "(hermes gateway install / hermes gateway start). "
+                "but will NOT fire until the gateway is started " +
+                "(" + product_command("gateway") + " install / " + product_command("gateway") + " start). " +
                 "Tell the user the task is scheduled but not active yet."),
         }
     return {"gateway_running": None if _gw is None else True}

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from hermes_constants import OPENROUTER_BASE_URL
+from hermes_constants import OPENROUTER_BASE_URL, product_command
 from hermes_cli.config import load_env
 from agent.secret_scope import get_secret as _get_secret
 from agent.retry_utils import reset_delay_from_message
@@ -471,7 +471,7 @@ def custom_provider_pool_key_candidates(
 ) -> List[str]:
     """Return pool keys to try for a custom endpoint.
 
-    ``hermes auth add <key>`` stores ``providers.<key>`` credentials under the
+    ``haos auth add <key>`` stores ``providers.<key>`` credentials under the
     durable config slug; older rows and legacy ``custom_providers:`` entries
     live under ``custom:<display-name>``. Try the slug first, then the legacy
     namespace, so a populated pool is not skipped in favour of the
@@ -1190,7 +1190,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     def _sync_entry_from_auth_store(self, entry: PooledCredential) -> PooledCredential:
         """Sync a Codex / xAI device_code entry from auth.json ``providers.<id>.tokens``.
 
-        A fresh ``hermes model`` / ``hermes auth`` login writes new tokens
+        A fresh ``haos model`` / ``haos auth`` login writes new tokens
         under ``_auth_store_lock`` while the pool entry may sit frozen behind
         a ``last_error_reset_at`` hours in the future; without this sync every
         request fails with "no available entries" despite fresh credentials on
@@ -1782,7 +1782,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     def _resync_stale_entry(self, entry: PooledCredential) -> PooledCredential:
         """Re-read an exhausted/DEAD singleton-seeded entry from its token authority.
 
-        The user may have re-authed (``hermes model`` / ``hermes auth``, the
+        The user may have re-authed (``haos model`` / ``haos auth``, the
         Claude Code CLI, another profile) leaving fresh tokens on disk while
         the pool entry is frozen behind ``last_error_reset_at``.
         """
@@ -1831,8 +1831,8 @@ class CredentialPool(CredentialPoolAdminMixin):
                     dead_at = entry.last_status_at or 0
                     if dead_at and now - dead_at > DEAD_MANUAL_PRUNE_TTL_SECONDS:
                         logger.warning(
-                            "credential pool: pruning DEAD manual entry %s "
-                            "(reason=%s, age=%.1fh) — re-add via `hermes auth add %s`",
+                            "credential pool: pruning DEAD manual entry %s " +
+                            "(reason=%s, age=%.1fh) — re-add via `" + product_command("auth") + " add %s`",
                             entry.label or entry.id[:8],
                             entry.last_error_reason or "unknown",
                             (now - dead_at) / 3600.0,
@@ -2256,7 +2256,7 @@ class _Seeder:
         self.is_suppressed = _is_source_suppressed_fn()
 
     def upsert(self, source: str, payload: Dict[str, Any]) -> bool:
-        """Upsert unless suppressed (``hermes auth remove`` must stay stable across loads)."""
+        """Upsert unless suppressed (``haos auth remove`` must stay stable across loads)."""
         if self.is_suppressed(self.provider, source):
             return False
         self.active_sources.add(source)
@@ -2452,7 +2452,7 @@ def _seed_tokens_singleton(seed: _Seeder, auth_store: Dict[str, Any]) -> None:
     Hermes owns its own Codex auth state and does NOT auto-import
     ~/.codex/auth.json: refresh tokens are single-use, so sharing them with
     Codex CLI / VS Code causes refresh_token_reused races. Adoption is an
-    explicit one-time prompt via `hermes auth openai-codex`.
+    explicit one-time prompt via `haos auth openai-codex`.
     """
     state = _load_provider_state(auth_store, seed.provider)
     tokens = state.get("tokens") if isinstance(state, dict) else None
@@ -2531,9 +2531,9 @@ def _warn_env_ingestion_once(provider: str, env_var: str) -> None:
         return
     _ENV_INGESTION_WARNED.add(provider)
     logger.warning(
-        "Ingested %s from environment into the %s credential pool — this "
-        "enables %s spend. Remove the key or run "
-        "hermes auth remove %s <n> to suppress.",
+        "Ingested %s from environment into the %s credential pool — this " +
+        "enables %s spend. Remove the key or run " +
+        product_command("auth") + " remove %s <n> to suppress.",
         env_var,
         provider,
         "OpenRouter" if provider == "openrouter" else provider,

@@ -35,11 +35,12 @@ from typing import Any, Callable, List, Optional, Protocol
 # `hermes update`) otherwise fail with ModuleNotFoundError for hermes_time et al.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from cron.env_settings import cron_env_setting
 from hermes_cli._subprocess_compat import windows_hide_flags
 from hermes_cli.config import (
-    load_config, load_config_readonly, resolve_cron_model_drift_defaults)
+    cron_model_drift_axes, cron_model_drift_guard_enabled, load_config, load_config_readonly,
+    resolve_cron_model_drift_defaults)
 from hermes_cli.fallback_config import get_fallback_chain
 from hermes_time import now as _hermes_now
 from agent.interrupt_compat import request_hard_interrupt
@@ -109,7 +110,7 @@ def _fallback_chain_phrase() -> str:
     if chain:
         return "Fallback chain was exhausted or unavailable."
     return (
-        "No fallback chain configured — add one with `hermes fallback add`, "
+        "No fallback chain configured — add one with `" + product_command("fallback") + " add`, " +
         "or set a cron fleet default via `cron.model` + `cron.model_provider` in config.yaml."
     )
 
@@ -138,7 +139,7 @@ def _failure_streak_nudge(job: dict) -> str:
     job_ref = job.get("name") or job.get("id") or "this job"
     return (
         f"\nThis job has failed {streak} runs in a row — worth a review. "
-        f"Fix its prompt/config, or pause it with `hermes cron pause {job_ref}` "
+        f"Fix its prompt/config, or pause it with `{product_command('cron')} pause {job_ref}` "
         "(resume/remove also available) to stop the noise."
     )
 
@@ -160,7 +161,7 @@ class CronTickYielded(RuntimeError):
     Raised by ``tick()`` BEFORE the tick lock when boot fingerprint ≠ disk, this process does NOT
     own the runtime lock and a fresh process holds it — the stale process must stay out of the
     dispatch race (contention would starve the fresh ticker). Skew ``None`` never yields (fail
-    open). Raised, not returned, so ``record_ticker_error`` sees it and ``hermes cron status``
+    open). Raised, not returned, so ``record_ticker_error`` sees it and ``haos cron status``
     isn't green.
     """
 
@@ -219,6 +220,24 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     job_name = job.get("name") or job.get("id") or "cron job"
     text = (error or "unknown error").strip()
     lower = text.lower()
+
+    if "skipped to prevent unintended spend: global inference config drifted" in lower:
+        if "finite one-shot job is consumed" in lower:
+            remediation = (
+                "This finite one-shot is consumed; create a new one-shot job at "
+                "a future time with an explicit provider and model."
+            )
+        else:
+            job_id = job.get("id") or "<job_id>"
+            remediation = (
+                "On the host running Hermes, pin it explicitly: "
+                f"`{product_command('cron')} edit {job_id} --provider <provider> "
+                "--model <model>`."
+            )
+        return (
+            f"⚠️ Cron '{job_name}' skipped before inference to prevent "
+            f"unintended spend. {remediation}"
+        )
 
     # no_agent jobs never reach a model, so provider errors are structurally impossible for them.
     # Gate on job MODE before substring matching, or a script's own wording ("timed out", "429")
@@ -320,7 +339,7 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
             message += (
                 f" Likely cause: the gateway is running stale code (booted "
                 f"on {boot_rev}, disk is at {disk_rev}) — run "
-                "`hermes gateway restart` to fix it."
+                "`" + product_command("gateway") + " restart` to fix it."
             )
 
     return message
@@ -1014,7 +1033,7 @@ def _interpreter_shutting_down(exc: Optional[BaseException] = None) -> bool:
     futures/asyncio refuse new work, so delivery attempts only pollute errors.log — callers skip
     with a warning. ``exc`` lets an already-raised scheduling error count as a shutdown signal.
 
-    A cron tick can fire while the gateway is tearing down — SIGTERM from ``hermes update`` / ``hermes
+    A cron tick can fire while the gateway is tearing down — SIGTERM from ``haos update`` / ``hermes
     gateway stop`` / systemd restart, or an OOM-kill. Once finalization starts, ``concurrent.futures``
     refuses new work with ``RuntimeError: cannot schedule new futures after interpreter shutdown`` and
     asyncio's default executor is gone, so *any* attempt to schedule delivery (live-adapter,
@@ -1372,7 +1391,8 @@ def _snapshot_pin(job: dict, axis: str, current: str, job_id: str) -> str:
 def _load_cron_job_config(job: dict, job_id: str, job_name: str) -> _CronJobConfig:
     """Load config.yaml and resolve the run's model: per-job override > cron.model (fleet default) >
     creation snapshot > HERMES_MODEL > config ``model:``. Re-read every tick (no cache) so
-    ``hermes cron edit --model`` applies next tick."""
+    ``haos cron edit --model`` applies next tick. An axis resolved from cron.model/model_provider is
+    explicit (no drift guard)."""
     model = job.get("model") or cron_env_setting("HERMES_MODEL") or ""
     _cron_default_provider = ""
     _cfg: dict = {}
@@ -1408,8 +1428,8 @@ def _load_cron_job_config(job: dict, job_id: str, job_name: str) -> _CronJobConf
             f"HERMES_MODEL={cron_env_setting('HERMES_MODEL')!r}, "
             "config.yaml model.default missing or empty). "
             f"Set a per-job model via "
-            f"`hermes cron edit {job_id} --model <name>` or set a "
-            "default with `hermes model <name>`."
+            f"`{product_command('cron')} edit {job_id} --model <name>` or set a "
+            "default with `" + product_command("model") + " <name>`."
         )
 
     with contextlib.suppress(Exception):
@@ -1561,6 +1581,76 @@ def _resolve_job_runtime(job: dict, job_id: str, jc: _CronJobConfig) -> tuple[di
             except Exception as fb_exc:
                 logger.debug("Job '%s': fallback %s failed: %s", job_id, fb_provider, fb_exc)
         raise RuntimeError(format_runtime_provider_error(resolve_exc)) from resolve_exc
+
+
+def _check_model_drift(
+    job: dict, job_id: str, cfg: dict, runtime: dict,
+    primary_provider_for_drift: Optional[str], primary_model_for_drift: str,
+) -> None:
+    """Fail-closed provider/model drift guard; raises RuntimeError (with drift marker) on drift.
+    An unpinned job follows the global default, which may have switched to a paid provider/model:
+    each unpinned axis whose creation snapshot (job["<axis>_snapshot"]) now resolves differently
+    skips the run and alerts to pin. No snapshot, pinned axes, or the cron.model fleet default
+    never count as drift."""
+    if not cron_model_drift_guard_enabled(cfg):
+        return
+    _current_provider = str(
+        primary_provider_for_drift or runtime.get("provider") or ""
+    ).strip().lower()
+    _current_model = str(primary_model_for_drift or "").strip().lower()
+    _drift: list[str] = []
+    for _axis in cron_model_drift_axes(
+        job, current_provider=_current_provider, current_model=_current_model, config=cfg):
+        _snapshot = str(job.get(f"{_axis}_snapshot") or "").strip().lower()
+        _current = _current_provider if _axis == "provider" else _current_model
+        _drift.append(f"{_axis} '{_snapshot}' -> '{_current}'")
+    if not _drift:
+        return
+    _changes = "; ".join(_drift)
+    # A finite one-shot is consumed by this attempt, so "edit the job" is a dead end for it.
+    # Lifecycle-aware remediation (#72056, @sashmatash): a finite one-shot is consumed by this attempted
+    # dispatch — telling an operator to edit a spent job is a dead end. Recurring and repeatable jobs get
+    # the pin command instead.
+    _repeat = job.get("repeat") if isinstance(job.get("repeat"), dict) else {}
+    _finite_oneshot = (
+        isinstance(job.get("schedule"), dict)
+        and job["schedule"].get("kind") == "once"
+        and _repeat.get("times") == 1
+    )
+    if _finite_oneshot:
+        _remediation = (
+            "This finite one-shot job is consumed by this attempted run; "
+            "create a new one-shot job at a future time with an explicit provider and model."
+        )
+    else:
+        _remediation = (
+            "To run on the new config, on the host running Hermes pin it explicitly: "
+            f"`{product_command('cron')} edit {job_id} --provider <provider> "
+            "--model <model>` (or pin the original values to keep them)."
+        )
+    logger.warning(
+        "Job '%s': SKIPPED — global inference config drifted since "
+        "creation (%s) and this job is unpinned. Skipped to prevent unintended spend. %s",
+        job_id, _changes, _remediation)
+    # Alert-once via drift_alerted bit (silent marker suppresses delivery); a successful run
+    # clears it and re-arms the alert.
+    # Alert-once (#73506 shape): persist the drift_alerted bit so only the FIRST drifted tick delivers;
+    # run_one_job suppresses delivery on the silent marker. mark_job_run clears the bit when a run succeeds
+    # (drift healed), re-arming the alert.
+    _drift_already_alerted = False
+    with contextlib.suppress(Exception):
+        from cron.jobs import mark_drift_alerted
+
+        _drift_already_alerted = mark_drift_alerted(job_id)
+    _drift_marker = DRIFT_SKIP_SILENT_MARKER if _drift_already_alerted else DRIFT_SKIP_MARKER
+    raise RuntimeError(
+        f"{_drift_marker} Skipped to prevent unintended spend: global "
+        f"inference config drifted since this job was created "
+        f"({_changes}), and this job is unpinned. No inference call "
+        f"was made. {_remediation} "
+        f"This alert is sent once; the job stays skipped until the "
+        f"config is pinned or restored. See #44585."
+    )
 
 
 def _load_credential_pool(runtime: dict, job_id: str):
@@ -2155,7 +2245,11 @@ def _resolve_cron_agent_setup(job: dict, job_id: str, job_name: str, jc) -> _Cro
     if setup.blocked is not None:
         return setup
 
+    # Drift guard (spend protection): the requested model is setup.model BEFORE the runtime
+    # resolution overwrites it; provider falls back to the resolved runtime's provider.
+    _creation_model_for_drift = setup.model
     setup.runtime, setup.model = _resolve_job_runtime(job, job_id, jc)
+    _check_model_drift(job, job_id, _cfg, setup.runtime, None, _creation_model_for_drift)
     setup.reasoning_config = _resolve_job_reasoning_config(
         job, _cfg if isinstance(_cfg, dict) else {}, str(setup.model)
     )
@@ -2560,9 +2654,11 @@ def _compose_run_delivery(
     silent_alert, incident_acked, failure_incident_id)``; ``silent_alert``: an alert-once marker
     says the operator was already told, deliver nothing."""
     err = str(error) if error else ""
-    # Failed jobs always deliver, except blocked-config runs, which alert exactly ONCE.
+    # Failed jobs always deliver, except blocked-config / drift-skip runs, which alert exactly ONCE.
     blocked_config_silent = BLOCKED_CONFIG_SILENT_MARKER in err
     blocked_config = blocked_config_silent or BLOCKED_CONFIG_MARKER in err
+    drift_skip_silent = DRIFT_SKIP_SILENT_MARKER in err
+    drift_skip = drift_skip_silent or DRIFT_SKIP_MARKER in err
     incident_acked = False
     failure_incident_id = None
     if blocked_config and not success:
@@ -2582,13 +2678,20 @@ def _compose_run_delivery(
         incident_acked, failure_incident_id = _upsert_incident_for_failure(
             job, error or "", output_file=output_file
         )
-        if incident_acked:
+        if incident_acked and not drift_skip:
             deliver_content = ""
         else:
             deliver_content = (
                 _summarize_cron_failure_for_delivery(job, error) + _failure_streak_nudge(job)
             )
-    return deliver_content, blocked_config, blocked_config_silent, incident_acked, failure_incident_id
+        if drift_skip:
+            # Deliver the guard's message intact (summarizer truncation would eat the remediation
+            # command). NOT gated on incident ack: acks silence failure pings, not drift alerts.
+            _drift_text = re.sub(r"\[drift_skip[^\]]*\]\s*", "", err).strip()
+            deliver_content = f"⚠️ Cron '{job.get('name') or job['id']}' skipped: {_drift_text}"
+    return (
+        deliver_content, blocked_config, blocked_config_silent or drift_skip_silent,
+        incident_acked, failure_incident_id)
 
 
 class _FireClaimLostDuringSideEffect(Exception):
@@ -3841,7 +3944,8 @@ from cron.scheduler_prompt import (  # noqa: E402
     _block_and_pause_job, _build_job_prompt, _guard_job_credential_exfil, _parse_wake_gate,
 )
 from cron.scheduler_preflight import (  # noqa: E402
-    BLOCKED_CONFIG_MARKER, BLOCKED_CONFIG_SILENT_MARKER, _cron_preflight_enabled,
+    BLOCKED_CONFIG_MARKER, BLOCKED_CONFIG_SILENT_MARKER, DRIFT_SKIP_MARKER,
+    DRIFT_SKIP_SILENT_MARKER, _cron_preflight_enabled,
     _is_transient_provider_resolve_error, _preflight_job_config,
 )
 

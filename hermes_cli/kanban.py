@@ -1,10 +1,11 @@
-"""``hermes kanban …`` — dispatch (``kanban_command``), task-verb handlers, ``run_slash`` for ``/kanban``.
+"""``haos kanban …`` — dispatch (``kanban_command``), task-verb handlers, ``run_slash`` for ``/kanban``.
 DB work lives in ``kanban_db``; siblings: ``kanban_parser`` (argparse, re-exported ``build_parser``),
 ``kanban_output`` (text/--json), ``kanban_boards`` (``boards …``), ``kanban_ops`` (dispatch/daemon/
 tail/watch/gc/repair).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import contextlib
@@ -122,29 +123,29 @@ def _check_dispatcher_presence(hermes_home: Optional[Path] = None) -> tuple[bool
     if pid and bool(_kanban_config().get("dispatch_in_gateway", True)):
         return (True, f"gateway pid={pid}, dispatch enabled")
     if pid:
-        return (False, "Gateway is running but kanban.dispatch_in_gateway=false in "
-                "config.yaml — the task will sit in 'ready' until you flip it "
-                "back on and restart the gateway, OR run the legacy "
-                "standalone daemon (`hermes kanban daemon --force`).")
-    return (False, "No gateway is running — the task will sit in 'ready' until you "
-            "start it. Run:\n    hermes gateway start\n"
-            "The gateway hosts an embedded dispatcher (tick interval 60s by "
-            "default); your task will be picked up on the next tick after "
+        return (False, "Gateway is running but kanban.dispatch_in_gateway=false in " +
+                "config.yaml — the task will sit in 'ready' until you flip it " +
+                "back on and restart the gateway, OR run the legacy " +
+                "standalone daemon (`" + product_command("kanban") + " daemon --force`).")
+    return (False, "No gateway is running — the task will sit in 'ready' until you " +
+            "start it. Run:\n    " + product_command("gateway") + " start\n" +
+            "The gateway hosts an embedded dispatcher (tick interval 60s by " +
+            "default); your task will be picked up on the next tick after " +
             "the gateway comes up.")
 
 
 # --- Command dispatch ---
 
 def kanban_command(args: argparse.Namespace) -> int:
-    """Entry point from ``hermes kanban …``; returns a shell-style exit code."""
+    """Entry point from ``haos kanban …``; returns a shell-style exit code."""
     action = getattr(args, "kanban_action", None)
     if not action:
         parser = getattr(args, "_kanban_parser", None)
         if parser is not None:
             parser.print_help()
         else:
-            print("usage: hermes kanban <action> [options]\n"
-                  "Run 'hermes kanban --help' for the full list of actions.", file=sys.stderr)
+            print("usage: " + product_command("kanban") + " <action> [options]\n" +
+                  "Run '" + product_command("kanban") + " --help' for the full list of actions.", file=sys.stderr)
         return 0
 
     # Fast-fail for UX only; the durable trust boundary is in kanban_db, since children can
@@ -172,7 +173,7 @@ def kanban_command(args: argparse.Namespace) -> int:
         # create an empty board.
         if normed != kb.DEFAULT_BOARD and not kb.board_exists(normed):
             return _err(f"kanban: board {normed!r} does not exist. "
-                        f"Create it with `hermes kanban boards create {normed}`.")
+                        f"Create it with `{product_command('kanban')} boards create {normed}`.")
         board_scope = kb.scoped_current_board(normed)
 
     with board_scope:
@@ -309,10 +310,10 @@ def _cmd_init(args: argparse.Namespace) -> int:
         print("No profiles found under ~/.hermes/profiles/.\n"
               "Create one with `hermes -p <name> setup` before assigning tasks.")
     print(
-        "\nNext step: start the gateway so ready tasks actually get picked up.\n"
-        "  hermes gateway start\n\n"
-        "The gateway hosts an embedded dispatcher that ticks every 60 seconds\n"
-        "by default (config: kanban.dispatch_interval_seconds). Without a\n"
+        "\nNext step: start the gateway so ready tasks actually get picked up.\n" +
+        "  " + product_command("gateway") + " start\n\n" +
+        "The gateway hosts an embedded dispatcher that ticks every 60 seconds\n" +
+        "by default (config: kanban.dispatch_interval_seconds). Without a\n" +
         "running gateway, tasks stay in 'ready' forever."
     )
     return 0
@@ -445,7 +446,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
     if len(all_boards) > 1:
         other_count = len(all_boards) - 1
         print(f"Board: {kb.get_current_board()} ({other_count} other board{'s' if other_count != 1 else ''} — "
-              f"`hermes kanban boards list`)\n")
+              f"`{product_command('kanban')} boards list`)\n")
     if not tasks:
         print("(no matching tasks)")
         return 0

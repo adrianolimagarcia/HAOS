@@ -6,6 +6,7 @@ so ``patch("gateway.run.X")`` keeps intercepting them at call time.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import asyncio
 import dataclasses
@@ -689,8 +690,8 @@ class GatewayShutdownMixin:
             platform.value, platform_state="paused", error_code=None, error_message=info["pause_reason"],
         )
         logger.warning(
-            "%s paused after %d consecutive failures (%s) — fix the underlying issue then run `/platform "
-            "resume %s` to retry, or `hermes gateway restart` to restart the gateway.",
+            "%s paused after %d consecutive failures (%s) — fix the underlying issue then run `/platform " +
+            "resume %s` to retry, or `" + product_command("gateway") + " restart` to restart the gateway.",
             platform.value, info.get("attempts", 0), info["pause_reason"], platform.value,
         )
 

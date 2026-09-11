@@ -1,6 +1,7 @@
-"""``hermes cron`` subcommand parser."""
+"""``haos cron`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from typing import Callable
 
@@ -31,9 +32,9 @@ def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
             "platform:chat_id, or bot-chat[:profile] (inject output into a "
             "local profile's canonical Bot Chat as a message the bot responds to)")
     cron_create.add_argument("--failure-deliver", dest="failure_deliver",
-        help="Override target for FAILURE notices only (same grammar as "
-            "--deliver). 'local' suppresses failure notices entirely; run "
-            "state stays visible in `hermes cron list`. Omit = failures "
+        help="Override target for FAILURE notices only (same grammar as " +
+            "--deliver). 'local' suppresses failure notices entirely; run " +
+            "state stays visible in `" + product_command("cron") + " list`. Omit = failures " +
             "follow --deliver.")
     cron_create.add_argument("--repeat", type=int, help="Optional repeat count")
     cron_create.add_argument("--skill", dest="skills", action="append",
@@ -119,7 +120,7 @@ def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
     cron_edit.add_argument("--no-continuity", dest="continuity", action="store_const", const=False,
         help=("Turn off run-to-run continuity (other context_from job refs are preserved)."))
     cron_edit.add_argument("--monitor-script", dest="monitor_script",
-        help="Set/replace the monitor source script (see `hermes cron create "
+        help="Set/replace the monitor source script (see `" + product_command("cron") + " create " +
             "--monitor-script`). Pass empty string to clear.")
     cron_edit.add_argument("--monitor-url", dest="monitor_url",
         help=("Set/replace the monitor source URL. Pass empty string to clear."))

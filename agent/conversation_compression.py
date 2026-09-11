@@ -9,6 +9,7 @@ one pass per session at a time (durable lock) but sessions run concurrently, so 
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import concurrent.futures
 import contextlib
@@ -1815,8 +1816,8 @@ def check_compression_model_feasibility(agent: Any) -> None:
                 )
             else:
                 msg = (
-                    "⚠ No auxiliary LLM provider configured — context compression will drop middle turns without a summary. "
-                    "Run `hermes setup` or set OPENROUTER_API_KEY."
+                    "⚠ No auxiliary LLM provider configured — context compression will drop middle turns without a summary. " +
+                    "Run `" + product_command("setup") + "` or set OPENROUTER_API_KEY."
                 )
             agent._compression_warning = msg
             agent._emit_status(msg)
@@ -2494,8 +2495,8 @@ def _acquire_compression_lease(
             if getattr(agent, "_last_compression_lock_error_sid", None) != _lock_sid:
                 agent._last_compression_lock_error_sid = _lock_sid
                 logger.warning(
-                    "compression lock subsystem unavailable for session=%s — proceeding without lock. This usually means a stale "
-                    "in-memory module after an update; restart the process (or `hermes update`) to resync.",
+                    "compression lock subsystem unavailable for session=%s — proceeding without lock. This usually means a stale " +
+                    "in-memory module after an update; restart the process (or `" + product_command("update") + "`) to resync.",
                     _lock_sid,
                 )
             _lock_acquired = True  # acquired-but-unlocked compatibility path

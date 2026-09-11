@@ -7,6 +7,7 @@ the known-fragile core packages, using the pins from pyproject.toml).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import importlib
 import os
@@ -318,7 +319,7 @@ def _run_installer(tool: str, cmd: list[str], root: Path, env: dict | None = Non
 def _run_repair_install(specs: list[str], project_root: Path) -> bool:
     """``uv pip`` (or stdlib ``pip``) force-reinstall of the given specs. Never raises.
 
-    Streams nothing to stdout (``hermes acp`` speaks JSON-RPC on stdout). uv is preferred when the
+    Streams nothing to stdout (``haos acp`` speaks JSON-RPC on stdout). uv is preferred when the
     base interpreter is externally managed; without uv, pip runs with the PEP 668 override.
     """
     externally_managed = _base_interpreter_is_externally_managed()
@@ -353,7 +354,7 @@ def recover_if_needed(project_root: Path | None = None, argv: list[str] | None =
     """Repair wiped core packages so ``hermes_cli.main`` can import at all.
 
     Fast path (no marker present) is two ``lstat`` calls. Only acts when a recovery marker from a
-    prior ``hermes update`` exists AND an import probe confirms a core package is actually broken.
+    prior ``haos update`` exists AND an import probe confirms a core package is actually broken.
     Never raises: on any failure the import of main.py proceeds and surfaces the real error.
     """
     global _UPDATE_RETRY_RECOVERED
@@ -457,7 +458,7 @@ def _complete_pending_core_install(root: Path, core_marker: Path) -> bool:
     Never raises: any failure leaves the marker for the post-import path and returns ``False``.
     Returns ``True`` only after the install succeeds.
 
-    ``recover_if_needed`` invokes this when ``.update-incomplete`` exists — a prior ``hermes update`` (or
+    ``recover_if_needed`` invokes this when ``.update-incomplete`` exists — a prior ``haos update`` (or
     the self-lock preflight, #83569) left the dependency sync deliberately unfinished. Completing it here
     matters on Windows: the deferral exists precisely because the process that wrote the marker had a native
     venv extension mapped; this process, running before ``hermes_cli.main``'s third-party imports, maps
@@ -476,8 +477,8 @@ def _complete_pending_core_install(root: Path, core_marker: Path) -> bool:
         if not _claim_recovery_lock(root):
             return False
         try:
-            print("⚠ A previous `hermes update` was interrupted mid-install — "
-                  "finishing dependency installation now (before any native "
+            print("⚠ A previous `" + product_command("update") + "` was interrupted mid-install — " +
+                  "finishing dependency installation now (before any native " +
                   "extensions load)...", file=sys.stderr)
             ir.run_core_install(root)
         except Exception as exc:

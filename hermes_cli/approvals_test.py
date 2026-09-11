@@ -1,4 +1,4 @@
-"""``hermes approvals test`` — dry-run approval verdict for a command.
+"""``haos approvals test`` — dry-run approval verdict for a command.
 
 Answers "what would the approval system do with this command?" WITHOUT running it, prompting anyone,
 or persisting anything. It composes the REAL runtime evaluators from ``tools.approval`` in the same
@@ -11,6 +11,7 @@ rules (fire before yolo/off), 5. yolo / ``approvals.mode: off`` bypass, 6. perma
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 
@@ -130,13 +131,13 @@ def _render_text(verdict: dict) -> None:
 
 
 def approvals_test_command(args) -> int:
-    """Handle ``hermes approvals test <command...>``. Returns the exit code."""
+    """Handle ``haos approvals test <command...>``. Returns the exit code."""
     words = list(getattr(args, "command_words", None) or [])
     # argparse REMAINDER keeps a leading "--" separator; it is not part of the command.
     if words and words[0] == "--":
         words = words[1:]
     if not words:
-        print("usage: hermes approvals test [--env-type TYPE] [--json] -- <command...>")
+        print("usage: " + product_command("approvals") + " test [--env-type TYPE] [--json] -- <command...>")
         return EXIT_USAGE
 
     verdict = evaluate_command(" ".join(words), env_type=getattr(args, "env_type", None) or "local")

@@ -8,6 +8,7 @@ Environment variables:
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import asyncio
 import json
@@ -692,7 +693,7 @@ def interactive_setup() -> None:
         save_env_value("MATTERMOST_HOME_CHANNEL", home_channel)
     elif remove_env_value("MATTERMOST_HOME_CHANNEL"):
         print_info("Home channel cleared.")
-    print_info("   Open config in your editor:  hermes config edit")
+    print_info("   Open config in your editor:  " + product_command("config") + " edit")
 
 
 # --- YAML → env config bridge (apply_yaml_config_fn) ---

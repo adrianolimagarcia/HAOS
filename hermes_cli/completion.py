@@ -2,6 +2,7 @@
 completion scripts never go stale; no extra dependencies."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 from typing import Any
@@ -69,7 +70,7 @@ def generate_bash(parser: argparse.ArgumentParser) -> str:
     cases_str = "\n".join(cases)
     return f"""# Hermes Agent bash completion
 # Add to ~/.bashrc:
-#   eval "$(hermes completion bash)"
+#   eval "$({product_command('completion')} bash)"
 
 _hermes_profiles() {{
     local profiles_dir="$HOME/.hermes/profiles"
@@ -155,7 +156,7 @@ def generate_zsh(parser: argparse.ArgumentParser) -> str:
     return f"""#compdef hermes
 # Hermes Agent zsh completion
 # Add to ~/.zshrc:
-#   eval "$(hermes completion zsh)"
+#   eval "$({product_command('completion')} zsh)"
 
 _hermes_profiles() {{
     local -a profiles
@@ -203,7 +204,7 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
     lines: list[str] = [
         "# Hermes Agent fish completion",
         "# Add to your config:",
-        "#   hermes completion fish | source",
+        "#   " + product_command("completion") + " fish | source",
         "",
         "# Helper: list available profiles",
         "function __hermes_profiles",

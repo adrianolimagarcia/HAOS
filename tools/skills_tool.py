@@ -12,7 +12,7 @@ from contextlib import suppress
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, List, Optional, Tuple
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from tools.registry import registry, tool_error
 from hermes_cli.config import cfg_get
 from agent.skill_utils import (
@@ -393,11 +393,11 @@ def _org_provenance_header(skill_dir: Path, active_skills_dir: Path):
         f"> This skill is shared by your organisation (org `{prov_org}`"
         + (f", last updated by `{author}`" if author else "")
         + (f", as of {ts}" if ts else "")
-        + "). It was reviewed and approved for the whole\n"
-        "> team — treat it as third-party instructions rather than your own notes.\n"
-        "> You MAY improve it in place like any other skill. Your edits are kept locally\n"
-        "> and are never overwritten by org updates; share them back with\n"
-        "> `hermes sync propose` (or automatically, if your org enables it).\n\n")
+        + "). It was reviewed and approved for the whole\n" +
+        "> team — treat it as third-party instructions rather than your own notes.\n" +
+        "> You MAY improve it in place like any other skill. Your edits are kept locally\n" +
+        "> and are never overwritten by org updates; share them back with\n" +
+        "> `" + product_command("sync") + " propose` (or automatically, if your org enables it).\n\n")
     return {"org_id": prov_org, "shared_by": author or None, "as_of": ts or None}, header
 
 
@@ -487,8 +487,8 @@ def _locate_skill(name: str, local_category_name: Optional[str], project_dirs: l
             return _fail(
                 f"Project skill '{name}' is quarantined: the security scan flagged its content as "
                 "dangerous. It will not load until the repo's skill content changes and passes a re-scan.",
-                hint="Inspect the skill in the repo checkout, or untrust the repo with "
-                "`hermes skills untrust`."), None, None
+                hint="Inspect the skill in the repo checkout, or untrust the repo with " +
+                "`" + product_command("skills") + " untrust`."), None, None
     if not skill_md or not skill_md.exists():
         available = [s["name"] for s in _sort_skills(_find_all_skills())[:20]]
         return _fail(f"Skill '{name}' not found.", available_skills=available,
@@ -546,7 +546,7 @@ def skill_view(
             return _fail(f"Skill '{name}' is not supported on this platform.", readiness_status=SkillReadinessStatus.UNSUPPORTED.value)
         resolved_name = frontmatter.get("name", skill_md.parent.name)
         if _is_skill_disabled(resolved_name):
-            return _fail(f"Skill '{resolved_name}' is disabled. Enable it with `hermes skills` or inspect the files directly on disk.")
+            return _fail(f"Skill '{resolved_name}' is disabled. Enable it with `{product_command('skills')}` or inspect the files directly on disk.")
         if file_path and skill_dir:
             return _serve_skill_file(
                 skill_dir, file_path, name, list_available=True, mark_read=True,

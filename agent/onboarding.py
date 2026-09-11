@@ -6,6 +6,7 @@ dependency-free so both the CLI and gateway can import it.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 from pathlib import Path
@@ -88,10 +89,10 @@ def tool_progress_hint_cli() -> str:
 def openclaw_residue_hint_cli() -> str:
     """Banner shown the first time Hermes finds ``~/.openclaw/``: migrate first, cleanup (which breaks OpenClaw) after."""
     return (
-        "A legacy OpenClaw directory was detected at ~/.openclaw/.\n"
-        "To port your config, memory, and skills over to Hermes, run `hermes claw migrate`.\n"
-        "If you've already migrated and want to archive the old directory, run `hermes claw cleanup` "
-        "(renames it to ~/.openclaw.pre-migration — OpenClaw will stop working after this).\n"
+        "A legacy OpenClaw directory was detected at ~/.openclaw/.\n" +
+        "To port your config, memory, and skills over to Hermes, run `" + product_command("claw") + " migrate`.\n" +
+        "If you've already migrated and want to archive the old directory, run `" + product_command("claw") + " cleanup` " +
+        "(renames it to ~/.openclaw.pre-migration — OpenClaw will stop working after this).\n" +
         "This tip only shows once."
     )
 

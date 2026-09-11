@@ -6,6 +6,7 @@ attribution. ``cua-driver doctor --json`` is the universal signal; ``computer_us
 detail into one payload for the desktop card, the ``permissions`` CLI and ``/api/tools/computer-use/status``."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import os
@@ -98,7 +99,7 @@ def request_permissions_grant(driver_cmd: Optional[str] = None) -> int:
     from tools.computer_use.cua_backend_driver import resolve_cua_driver_cmd
     binary = resolve_cua_driver_cmd(driver_cmd)
     if not binary:
-        print("cua-driver: not installed. Run: hermes computer-use install")
+        print("cua-driver: not installed. Run: " + product_command("computer-use") + " install")
         return 2
     print("Requesting Accessibility + Screen Recording for CuaDriver.\n"
           "macOS will show a dialog attributed to CuaDriver (com.trycua.driver) — approve it, then return here.")

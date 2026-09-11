@@ -1,6 +1,7 @@
 """Nous Portal upstream adapter."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import threading
@@ -70,7 +71,7 @@ class NousPortalAdapter(UpstreamAdapter):
         with self._lock:
             state = self._read_state()
             if state is None:
-                raise RuntimeError("Not logged into Nous Portal. Run `hermes auth add nous` first.")
+                raise RuntimeError("Not logged into Nous Portal. Run `" + product_command("auth") + " add nous` first.")
             try:
                 refreshed = resolve_nous_runtime_credentials(
                     force_refresh=force_refresh, stale_access_token=stale_access_token or None
@@ -83,8 +84,8 @@ class NousPortalAdapter(UpstreamAdapter):
             runtime_key = refreshed.get("api_key")
             if not runtime_key:
                 raise RuntimeError(
-                    "Nous Portal refresh did not return a usable inference JWT. "
-                    "Try `hermes auth add nous` to re-authenticate."
+                    "Nous Portal refresh did not return a usable inference JWT. " +
+                    "Try `" + product_command("auth") + " add nous` to re-authenticate."
                 )
             # The returned base_url already honors the NOUS_INFERENCE_BASE_URL override (documented
             # dev/staging hatch); validating it against the prod allowlist would reject a legit

@@ -19,7 +19,7 @@ from agent.credential_pool import (
     load_pool)
 import hermes_cli.auth as auth_mod
 from hermes_cli.auth import PROVIDER_REGISTRY
-from hermes_constants import OPENROUTER_BASE_URL
+from hermes_constants import OPENROUTER_BASE_URL, product_command
 from hermes_cli.secret_prompt import masked_secret_prompt
 
 
@@ -199,7 +199,7 @@ def _qwen_oauth_login(args) -> dict:
 
 @dataclass(frozen=True)
 class _OAuthAddSpec:
-    """Per-provider parameters for the generic ``hermes auth add <provider> --type oauth`` path."""
+    """Per-provider parameters for the generic ``haos auth add <provider> --type oauth`` path."""
 
     login: Callable[[Any], dict]
     token: Callable[[dict], str]
@@ -273,7 +273,7 @@ def _ask(prompt: str, reader: Callable[[str], str] | None = None) -> str | None:
 
 
 def _add_nous_oauth_credential(args, provider: str) -> PooledCredential:
-    """``hermes auth add nous --type oauth``: shared-credential import, else device-code login."""
+    """``haos auth add nous --type oauth``: shared-credential import, else device-code login."""
     custom_label = (getattr(args, "label", None) or "").strip() or None
     timeout = getattr(args, "timeout", None) or 15.0
 
@@ -380,7 +380,7 @@ def _add_credential(args, provider: str, pool, requested_type: str) -> PooledCre
 
     spec = _OAUTH_ADD_SPECS.get(provider)
     if spec is None:
-        raise SystemExit(f"`hermes auth add {provider}` is not implemented for auth type {requested_type} yet.")
+        raise SystemExit(f"`{product_command('auth')} add {provider}` is not implemented for auth type {requested_type} yet.")
 
     creds = spec.login(args)
     token = spec.token(creds)
@@ -589,7 +589,7 @@ def auth_refresh_command(args) -> None:
 def auth_status_command(args) -> None:
     provider = _normalize_provider(getattr(args, "provider", "") or "")
     if not provider:
-        raise SystemExit("Provider is required. Example: `hermes auth status spotify`.")
+        raise SystemExit("Provider is required. Example: `" + product_command("auth") + " status spotify`.")
     if provider in auth_mod.SINGLE_USE_REFRESH_POOL_PROVIDERS:
         load_pool(provider)  # runs the forked-grant heal first so the report reflects the consolidated grant
     status = auth_mod.get_auth_status(provider)
@@ -683,7 +683,7 @@ def _print_azure_entra_status() -> None:
 
 
 def _interactive_auth() -> None:
-    """Interactive credential pool management when `hermes auth` is called bare."""
+    """Interactive credential pool management when `haos auth` is called bare."""
     print("Credential Pool Status")
     print("=" * 50)
     auth_list_command(SimpleNamespace(provider=None))

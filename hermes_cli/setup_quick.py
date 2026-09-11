@@ -1,6 +1,7 @@
-"""Streamlined setup flows: the Nous Portal one-shot (`hermes portal`), first-time quick setup,
+"""Streamlined setup flows: the Nous Portal one-shot (`haos portal`), first-time quick setup,
 Blank Slate setup and the `--quick` missing-items pass. Names from setup.py are imported lazily
 per function so test patches on ``hermes_cli.setup`` take effect."""
+from hermes_constants import product_command
 
 import contextlib
 import logging
@@ -20,8 +21,8 @@ def _blank_slate_done(config: dict, hermes_home, tools_line: str, *extra: str, i
     from hermes_cli.setup import _info, _print_setup_summary, print_success
     print()
     print_success("Blank Slate setup complete — minimal agent ready.")
-    _info(*([intro] if intro else []), tools_line, "  Seed skills:         hermes skills opt-in --sync",
-          "  Add MCP servers:     hermes mcp add", *extra, "  Tune agent settings: hermes setup agent", None)
+    _info(*([intro] if intro else []), tools_line, "  Seed skills:         " + product_command("skills") + " opt-in --sync",
+          "  Add MCP servers:     " + product_command("mcp") + " add", *extra, "  Tune agent settings: " + product_command("setup") + " agent", None)
     _print_setup_summary(config, hermes_home)
 
 
@@ -37,7 +38,7 @@ def _reload_config_into(config: dict, *, dict_only: bool = False) -> None:
 
 def _run_nous_flow(config: dict, *, context: str, cancel_exc: tuple, cancel_lines: tuple, print_error) -> bool:
     """Run ``_model_flow_nous`` (login, model pick, provider switch, Tool Gateway opt-in) — the
-    single source of truth shared with ``hermes model``. False when cancelled or failed (the
+    single source of truth shared with ``haos model``. False when cancelled or failed (the
     message is already printed)."""
     from hermes_cli.setup import _info
     try:
@@ -55,7 +56,7 @@ def _run_nous_flow(config: dict, *, context: str, cancel_exc: tuple, cancel_line
 
 
 def _run_portal_one_shot(config: dict) -> None:
-    """One-shot Nous Portal setup (``hermes setup --portal`` / ``hermes portal``)."""
+    """One-shot Nous Portal setup (``haos setup --portal`` / ``haos portal``)."""
     from hermes_cli.setup import _info, _print_banner, print_error, print_info, print_success
     _print_banner("│     ☤ Hermes Setup — Nous Portal (one-shot)             │")
     _info(None, "  One subscription, 300+ models, plus the Tool Gateway:",
@@ -66,10 +67,10 @@ def _run_portal_one_shot(config: dict) -> None:
     def _on_error(exc: Exception) -> None:
         print()
         print_error(f"  Nous Portal setup encountered an error: {exc}")
-        print_info("  You can retry later with `hermes portal`.")
+        print_info("  You can retry later with `" + product_command("portal") + "`.")
 
-    if not _run_nous_flow(config, context="`hermes portal`", cancel_exc=(KeyboardInterrupt, EOFError, SystemExit),
-                          cancel_lines=(None, "  Setup cancelled.", "  You can retry later with `hermes portal`."),
+    if not _run_nous_flow(config, context="`" + product_command("portal") + "`", cancel_exc=(KeyboardInterrupt, EOFError, SystemExit),
+                          cancel_lines=(None, "  Setup cancelled.", "  You can retry later with `" + product_command("portal") + "`."),
                           print_error=_on_error):
         return
 
@@ -78,7 +79,7 @@ def _run_portal_one_shot(config: dict) -> None:
         _reload_config_into(config, dict_only=True)
     print()
     print_success("Portal setup complete.")
-    _info("  Run `hermes portal info` to inspect routing.", "  Run `hermes` to start chatting.")
+    _info("  Run `" + product_command("portal") + " info` to inspect routing.", "  Run `hermes` to start chatting.")
 
 
 def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
@@ -96,7 +97,7 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
 
     def _on_error(exc: Exception) -> None:
         print_warning(f"Nous Portal setup encountered an error: {exc}")
-        print_info("You can try again later with: hermes model")
+        print_info("You can try again later with: " + product_command("model"))
 
     _run_nous_flow(config, context="quick setup", cancel_exc=(KeyboardInterrupt, EOFError),
                    cancel_lines=(None, "Nous Portal setup cancelled."), print_error=_on_error)
@@ -111,7 +112,7 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
     # Step 4: Offer messaging gateway setup
     print()
     gateway_choice = prompt_choice("Connect a messaging platform? (Telegram, Discord, etc.)", [
-        "Set up messaging now (recommended)", "Skip — set up later with 'hermes setup gateway'",
+        "Set up messaging now (recommended)", "Skip — set up later with '" + product_command("setup") + " gateway'",
     ], 0)
     if gateway_choice == 0:
         setup_gateway(config)
@@ -123,9 +124,9 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
         ensure_gateway_service(context="setup")
     print()
     print_success("Setup complete! You're ready to go.")
-    _info(None, "  Configure all settings:    hermes setup")
+    _info(None, "  Configure all settings:    " + product_command("setup"))
     if gateway_choice != 0:
-        print_info("  Connect Telegram/Discord:  hermes setup gateway")
+        print_info("  Connect Telegram/Discord:  " + product_command("setup") + " gateway")
     _print_macos_fda_tip()
     print()
     _print_setup_summary(config, hermes_home)
@@ -186,7 +187,7 @@ def _blank_slate_minimal_toolsets(config: dict):
 
 
 def _blank_slate_minimize_config(config: dict):
-    """Turn OFF every optional config feature; all opt back in via ``hermes setup agent``."""
+    """Turn OFF every optional config feature; all opt back in via ``haos setup agent``."""
     config.setdefault("agent", {})["max_turns"] = 90
     config.setdefault("compression", {})["enabled"] = False
     mem = config.setdefault("memory", {})
@@ -261,7 +262,7 @@ def _run_blank_slate_setup(config: dict, hermes_home, is_existing: bool):
     # Blank Slate means no bundled skills; record the opt-out so future `hermes update` runs
     # don't re-inject them.
     _set_bundled_skills_opt_out(True, "skill opt-out")
-    _blank_slate_done(config, hermes_home, "  Enable tools:        hermes tools", "  Enable plugins:      hermes plugins",
+    _blank_slate_done(config, hermes_home, "  Enable tools:        " + product_command("tools"), "  Enable plugins:      " + product_command("plugins"),
                       intro="Enable anything later, on demand:")
 
 
@@ -282,8 +283,8 @@ def _blank_slate_walkthrough(config: dict, hermes_home):
     def _opted_out(_result) -> None:
         _info("No skills seeded (except the essential `hermes-agent`",
               "skill). A .no-bundled-skills marker keeps future",
-              "`hermes update` runs from re-injecting them. Opt back in any",
-              "time with `hermes skills opt-in --sync`.")
+              "`" + product_command("update") + "` runs from re-injecting them. Opt back in any",
+              "time with `" + product_command("skills") + " opt-in --sync`.")
 
     # Seeding first clears any stale opt-out marker; declining sets it (essential skills still seed).
     _set_bundled_skills_opt_out(
@@ -304,16 +305,16 @@ def _blank_slate_walkthrough(config: dict, hermes_home):
             logger.debug("blank-slate tools_command error: %s", exc)
             print_warning(f"Tool selector encountered an error: {exc}")
     else:
-        print_info("Keeping the minimal toolset. Add tools later with `hermes tools`.")
+        print_info("Keeping the minimal toolset. Add tools later with `" + product_command("tools") + "`.")
 
     # Built-in plugins and MCP servers (off unless chosen)
     for header, question, yes_msg, no_msg in (
         ("Plugins", "Review and enable built-in plugins now?",
-         "Manage plugins with `hermes plugins list` / `hermes plugins install`.",
-         "No plugins enabled. Add later with `hermes plugins`."),
+         "Manage plugins with `" + product_command("plugins") + " list` / `" + product_command("plugins") + " install`.",
+         "No plugins enabled. Add later with `" + product_command("plugins") + "`."),
         ("MCP Servers", "Add an MCP server now?",
-         "Add servers with `hermes mcp add <name> --url ... | --command ...`.",
-         "No MCP servers configured. Add later with `hermes mcp add`."),
+         "Add servers with `" + product_command("mcp") + " add <name> --url ... | --command ...`.",
+         "No MCP servers configured. Add later with `" + product_command("mcp") + " add`."),
     ):
         print_header(header, gap=True)
         print_info(yes_msg if prompt_yes_no(question, default=False) else no_msg)
@@ -323,7 +324,7 @@ def _blank_slate_walkthrough(config: dict, hermes_home):
     if prompt_yes_no("Connect a messaging platform (Telegram, Discord, …)?", default=False):
         setup_gateway(config)
     save_config(config)
-    _blank_slate_done(config, hermes_home, "  Enable more tools:   hermes tools")
+    _blank_slate_done(config, hermes_home, "  Enable more tools:   " + product_command("tools"))
 
 
 def _run_quick_setup(config: dict, hermes_home):
@@ -343,7 +344,7 @@ def _run_quick_setup(config: dict, hermes_home):
     current_ver, latest_ver = check_config_version()
     if not (missing_required or missing_optional or missing_config or current_ver < latest_ver):
         print_success("Everything is configured! Nothing to do.")
-        _info(None, "Run 'hermes setup' and choose 'Full Setup' to reconfigure,",
+        _info(None, "Run '" + product_command("setup") + "' and choose 'Full Setup' to reconfigure,",
               "or pick a specific section from the menu.")
         return
     if missing_required:
@@ -369,7 +370,7 @@ def _run_quick_setup(config: dict, hermes_home):
     if missing_messaging:  # checklist, then prompt for each selected platform's vars
         print_header("Messaging Platforms", gap=True)
         _info("Connect Hermes to messaging apps to chat from anywhere.",
-              "You can configure these later with 'hermes setup gateway'.")
+              "You can configure these later with '" + product_command("setup") + " gateway'.")
         # Group by platform in first-seen order; vars matching no platform are dropped.
         grouped: dict[str, list] = {}
         emojis = {}

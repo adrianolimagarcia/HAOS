@@ -414,7 +414,7 @@ def _prefer_refreshable_claude_code_token(env_token: str, creds: Optional[Dict[s
 
 def _resolve_anthropic_pool_token(*, skip_borrowed: bool = False) -> Optional[str]:
     """First available Anthropic OAuth token from credential_pool, read-only: enumerates with ``clear_expired=False,
-    refresh=False`` (never ``select()``) so diagnostic call sites (account_usage, ``hermes models``) never mutate
+    refresh=False`` (never ``select()``) so diagnostic call sites (account_usage, ``haos models``) never mutate
     auth.json or hit the network; refresh-on-expiry belongs to the API call path's pool recovery."""
     try:
         from agent.credential_pool import AUTH_TYPE_OAUTH, load_pool

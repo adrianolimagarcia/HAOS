@@ -2,7 +2,7 @@
 """Hard A/B evaluation for core-toolset changes: baseline vs fixes.
 
 Runs a battery of error-inducing tasks (each derived from a waste class
-measured in the production session DB) through `hermes chat` twice — once per
+measured in the production session DB) through `haos chat` twice — once per
 arm — and scores every run from its NeMo Relay ATOF trace plus wall clock:
 
   - llm_calls (turns), tool_calls, tool_errors, retry_after_error

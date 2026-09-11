@@ -2,6 +2,7 @@
 ``model.options``/``model.save_key`` RPC handlers, and the interactive picker."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from contextvars import copy_context
 from dataclasses import dataclass, replace
@@ -428,7 +429,7 @@ def _append_unconfigured_rows(
             warning = (
                 f"Configured provider missing usable credentials; paste {key_env} to reactivate. {tail}"
                 if auth_type == "api_key" and key_env
-                else f"Configured provider is not authenticated; run `hermes model` to reactivate. {tail}"
+else "Configured provider is not authenticated; run `" + product_command("model") + "` to reactivate. " + tail
             )
             extras.append(_canonical_row(
                 entry, cur, models=[saved_model] if saved_model else [], total_models=1 if saved_model else 0,
@@ -559,7 +560,7 @@ def _apply_picker_hints(rows: list[dict]) -> None:
         row["auth_type"] = auth_type
         row["key_env"] = key_env
         row["warning"] = (f"paste {key_env} to activate" if auth_type == "api_key" and key_env
-                          else f"run `hermes model` to configure ({auth_type})")
+                          else f"run `{product_command('model')}` to configure ({auth_type})")
 
 
 def _reorder_canonical(rows: list[dict]) -> list[dict]:

@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, Optional
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from utils import atomic_json_write
 
 logger = logging.getLogger("cli")
@@ -795,8 +795,8 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
     preserved_stale, kept_branches = _reap_prune_verdicts(repo_root, verdicts, now - (7 * 24 * 3600))
 
     if preserved_stale:
-        logger.warning("Preserving %d worktree(s) older than 7 days with unmerged work "
-                       "(run `hermes worktree prune` to review and reclaim): %s",
+        logger.warning("Preserving %d worktree(s) older than 7 days with unmerged work " +
+                       "(run `" + product_command("worktree") + " prune` to review and reclaim): %s",
                        len(preserved_stale), ", ".join(sorted(preserved_stale)))
 
     _prune_orphaned_branches(repo_root, protect=kept_branches)
@@ -808,8 +808,8 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
         count, size_mb = worktrees_summary(repo_root)
         if count >= 10 or (size_mb or 0) >= 5120:
             size_txt = f"{size_mb / 1024:.1f}GB" if size_mb else "unknown size"
-            logger.warning(".worktrees/ holds %d tree(s) (%s) — run `hermes worktree list` "
-                           "to audit and `hermes worktree prune` to reclaim safely.", count, size_txt)
+            logger.warning(".worktrees/ holds %d tree(s) (%s) — run `" + product_command("worktree") + " list` " +
+                           "to audit and `" + product_command("worktree") + " prune` to reclaim safely.", count, size_txt)
     except Exception:
         pass
 

@@ -14,6 +14,7 @@ hooks with defaults do NOT bump it; required-signature changes do.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import os
 import re
@@ -124,10 +125,10 @@ class FetchResult:
 
 
 _GENERIC_REMEDIATION = {
-    ErrorKind.NOT_CONFIGURED: "Run `hermes secrets {name} setup` to finish configuration.",
-    ErrorKind.BINARY_MISSING: "Run `hermes secrets {name} setup` to install the helper CLI.",
-    ErrorKind.AUTH_FAILED: "Credentials rejected — run `hermes secrets {name} setup` to re-authenticate.",
-    ErrorKind.AUTH_EXPIRED: "Credentials expired — run `hermes secrets {name} setup` to re-authenticate.",
+    ErrorKind.NOT_CONFIGURED: "Run `" + product_command("secrets") + " {name} setup` to finish configuration.",
+    ErrorKind.BINARY_MISSING: "Run `" + product_command("secrets") + " {name} setup` to install the helper CLI.",
+    ErrorKind.AUTH_FAILED: "Credentials rejected — run `" + product_command("secrets") + " {name} setup` to re-authenticate.",
+    ErrorKind.AUTH_EXPIRED: "Credentials expired — run `" + product_command("secrets") + " {name} setup` to re-authenticate.",
     ErrorKind.NETWORK: "Network problem reaching the secrets backend — check connectivity and retry.",
     ErrorKind.TIMEOUT: "Backend was slow — raise secrets.{name}.timeout_seconds if this recurs.",
 }

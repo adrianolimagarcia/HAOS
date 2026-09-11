@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, List, Optional
 from agent.memory_provider import MemoryProvider, RecallStatus, spawn_context_thread
 from agent.secret_scope import get_secret
 from hermes_cli.config import cfg_get
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_time import now as _hermes_now
 from tools.registry import tool_error
 from utils import read_json_or_empty
@@ -779,10 +779,10 @@ class HindsightMemoryProvider(MemoryProvider):
         # retries forever, reloading embedding models (~958MB RAM, ~33% CPU)
         # with no user-visible error.
         if hasattr(os, "geteuid") and os.geteuid() == 0:
-            msg = ("Hindsight local_embedded mode cannot run as root "
-                   "(PostgreSQL initdb refuses root). Skipping the embedded "
-                   "memory daemon. Run Hermes as a non-root user, or switch "
-                   "to cloud / local_external mode via 'hermes memory setup'.")
+            msg = ("Hindsight local_embedded mode cannot run as root " +
+                   "(PostgreSQL initdb refuses root). Skipping the embedded " +
+                   "memory daemon. Run Hermes as a non-root user, or switch " +
+                   "to cloud / local_external mode via '" + product_command("memory") + " setup'.")
             logger.warning(msg)
             # Also print: otherwise the user would only see Hermes get sluggish.
             with contextlib.suppress(Exception):

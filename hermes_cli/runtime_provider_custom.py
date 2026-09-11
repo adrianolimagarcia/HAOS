@@ -6,6 +6,7 @@ the origin module AT CALL TIME via :func:`_rp` so ``monkeypatch.setattr(runtime_
 keeps working for moved bodies."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -171,9 +172,9 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
     if found:
         return found
     if isinstance(config.get("custom_providers"), dict):
-        logger.warning("custom_providers in config.yaml is a dict, not a list. "
-                       "Each entry must be prefixed with '-' in YAML. "
-                       "Run 'hermes doctor' for details.")
+        logger.warning("custom_providers in config.yaml is a dict, not a list. " +
+                       "Each entry must be prefixed with '-' in YAML. " +
+                       "Run '" + product_command("doctor") + "' for details.")
         return None
     custom_providers = rp.get_compatible_custom_providers(config)
     return _match_legacy_custom_provider(requested_norm, custom_providers) if custom_providers else None

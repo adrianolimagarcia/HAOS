@@ -5,6 +5,7 @@ Split out of ``hermes_cli/auth.py``; origin helpers are imported lazily per func
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import base64
@@ -283,7 +284,7 @@ def _minimax_fresh_state() -> Dict[str, Any]:
     state = get_provider_auth_state("minimax-oauth")
     if not state or not state.get("access_token"):
         raise _minimax_err(
-            "Not logged into MiniMax OAuth. Run `hermes model` and select MiniMax (OAuth).", "not_logged_in", relogin=True,
+            "Not logged into MiniMax OAuth. Run `" + product_command("model") + "` and select MiniMax (OAuth).", "not_logged_in", relogin=True,
         )
     try:
         return _refresh_minimax_oauth_state(state)
@@ -311,7 +312,7 @@ def resolve_minimax_oauth_runtime_credentials(
     *, min_token_ttl_seconds: int = MINIMAX_OAUTH_REFRESH_SKEW_SECONDS,
     as_token_provider: bool = False,
 ) -> Dict[str, Any]:
-    """Return {provider, api_key, base_url, source}; string ``api_key`` by default (``hermes status`` contract)."""
+    """Return {provider, api_key, base_url, source}; string ``api_key`` by default (``haos status`` contract)."""
     state = _minimax_fresh_state()
     return {
         "provider": "minimax-oauth",

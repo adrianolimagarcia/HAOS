@@ -303,7 +303,12 @@ class TestSkillSyncIsOneCommand:
 
     def test_sync_usage_lists_propose(self):
         main_src = self._src("hermes_cli", "main_platform_setup.py")
-        usage_start = main_src.index("usage: hermes sync ")
+        # Fork HAOS: o nome do CLI e resolvido em runtime, entao o literal
+        # "usage: hermes sync " da lugar a '"usage: " + product_command("sync")'.
+        if "usage: hermes sync " in main_src:
+            usage_start = main_src.index("usage: hermes sync ")
+        else:
+            usage_start = main_src.index('"usage: " + product_command("sync")')
         usage_block = main_src[usage_start : usage_start + 1400]
         assert "propose" in usage_block, (
             "`hermes sync` usage must list the propose verb."

@@ -1,6 +1,7 @@
-"""Implementation of the ``hermes bundles`` CLI subcommand."""
+"""Implementation of the ``haos bundles`` CLI subcommand."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import sys
 from typing import List
@@ -30,7 +31,7 @@ def _cmd_list(args) -> None:
     if not bundles:
         c.print(
             f"[dim]No bundles installed yet. Create one with:\n"
-            f"  hermes bundles create <name> --skill skill1 --skill skill2[/]\n"
+            f"  {product_command('bundles')} create <name> --skill skill1 --skill skill2[/]\n"
             f"Bundles directory: [bold]{_bundles_dir()}[/]")
         return
 
@@ -130,7 +131,7 @@ def _cmd_reload(args) -> None:
 
 
 def register_cli(subparser) -> None:
-    """Build the ``hermes bundles`` argparse tree (called from hermes_cli/main.py, which owns the
+    """Build the ``haos bundles`` argparse tree (called from hermes_cli/main.py, which owns the
     top-level subparser)."""
     subs = subparser.add_subparsers(dest="bundles_action")
 
@@ -153,7 +154,7 @@ def register_cli(subparser) -> None:
         help="Skill name to include (repeat for multiple)")
     p_create.add_argument(
         "--description", "-d", default="",
-        help="Human-readable description shown in /help and `hermes bundles list`")
+        help="Human-readable description shown in /help and `" + product_command("bundles") + " list`")
     p_create.add_argument(
         "--instruction", "-i", default="",
         help="Extra guidance prepended to the loaded skill content")
@@ -174,6 +175,6 @@ def register_cli(subparser) -> None:
 
 
 def bundles_command(args) -> None:
-    """Dispatch ``hermes bundles <subcommand>`` to the right handler."""
+    """Dispatch ``haos bundles <subcommand>`` to the right handler."""
     handler = getattr(args, "_bundles_handler", None) or _cmd_list  # no subcommand → list
     handler(args)

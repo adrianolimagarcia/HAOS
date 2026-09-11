@@ -1,6 +1,7 @@
-"""Credential sections of `hermes status`, run through ``status._SECTIONS`` with its shared context.
+"""Credential sections of `haos status`, run through ``status._SECTIONS`` with its shared context.
 Origin helpers (``_row``, ``_first_env_value``, ...) are resolved through the ``hermes_cli.status``
 module object so tests that monkeypatch that module keep working."""
+from hermes_constants import product_command
 
 from datetime import datetime, timezone
 
@@ -63,16 +64,16 @@ _FILE_REFRESH_ROWS = (
 
 _OAUTH_BLOCKS = (
     # (row name, auth getter, login hint, detail rows)
-    ("OpenAI Codex", "get_codex_auth_status", "hermes model", _FILE_REFRESH_ROWS),
+    ("OpenAI Codex", "get_codex_auth_status", product_command("model"), _FILE_REFRESH_ROWS),
     ("Qwen OAuth", "get_qwen_auth_status", "qwen auth qwen-oauth", (
         ("Auth file:", "auth_file", None, None),
         ("Access exp:", "expires_at_ms", _qwen_expiry, None),
         ("Error:", "error", None, False))),
-    ("MiniMax OAuth", "get_minimax_oauth_auth_status", "hermes auth add minimax-oauth", (
+    ("MiniMax OAuth", "get_minimax_oauth_auth_status", product_command("auth") + " add minimax-oauth", (
         ("Region:", "region", None, True),
         ("Access exp:", "expires_at", None, None),
         ("Error:", "error", None, False))),
-    ("xAI OAuth", "get_xai_oauth_auth_status", "hermes auth add xai-oauth", _FILE_REFRESH_ROWS))
+    ("xAI OAuth", "get_xai_oauth_auth_status", product_command("auth") + " add xai-oauth", _FILE_REFRESH_ROWS))
 
 _APIKEY_PROVIDERS = {
     "Z.AI / GLM": ("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"), "Kimi / Moonshot": ("KIMI_API_KEY",),
@@ -138,7 +139,7 @@ def _render_auth_providers(ctx):
     nous_error = nous_status.get("error")
     _status._row("Nous Portal", logged_in,
          "logged in" if logged_in else "not logged in (Nous inference key configured)" if inference
-         else "not logged in (run: hermes portal)")
+         else "not logged in (run: " + product_command("portal") + ")")
     portal_url = nous_status.get("portal_base_url") or "(unknown)"
     inference_url = nous_status.get("inference_base_url") or (info.inference_base_url if info else None)
     for label, value, show in (
@@ -182,7 +183,7 @@ def _render_apikey_providers(ctx):
     _status._section("API-Key Providers")
     for pname, env_vars in _APIKEY_PROVIDERS.items():
         configured = bool(_status._first_env_value(env_vars))
-        _status._row(pname, configured, "configured" if configured else "not configured (run: hermes model)", 16, " ")
+        _status._row(pname, configured, "configured" if configured else "not configured (run: " + product_command("model") + ")", 16, " ")
 
     # LM Studio reachability: probe only when it is the active provider so users with foreign
     # configs see no noise. Auth rejection vs. a silent empty list is the common support case.

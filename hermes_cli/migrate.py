@@ -1,9 +1,10 @@
-"""CLI handlers for ``hermes migrate ...``.
+"""CLI handlers for ``haos migrate ...``.
 
-Currently exposes only ``hermes migrate xai`` — diagnoses and (with --apply) rewrites references to
+Currently exposes only ``haos migrate xai`` — diagnoses and (with --apply) rewrites references to
 xAI models retired on May 15, 2026.
 """
 from __future__ import annotations
+from hermes_constants import product_command
 
 import sys
 from pathlib import Path
@@ -14,11 +15,11 @@ from hermes_cli.config import load_config
 
 
 def cmd_migrate(args: Any) -> int:
-    """Dispatcher for ``hermes migrate <subtype>``."""
+    """Dispatcher for ``haos migrate <subtype>``."""
     if getattr(args, "migrate_type", None) == "xai":
         return cmd_migrate_xai(args)
 
-    print("usage: hermes migrate xai [--apply] [--no-backup]", file=sys.stderr)
+    print("usage: " + product_command("migrate") + " xai [--apply] [--no-backup]", file=sys.stderr)
     return 2
 
 
@@ -57,7 +58,7 @@ def cmd_migrate_xai(args: Any) -> int:
     if not apply:
         print(color("Dry-run mode — no changes written.", Colors.DIM))
         print(color(
-            "Re-run with `hermes migrate xai --apply` to rewrite "
+            "Re-run with `" + product_command("migrate") + " xai --apply` to rewrite "
             f"{config_path} in-place (backup created automatically).",
             Colors.DIM))
         return 0
@@ -80,7 +81,7 @@ def cmd_migrate_xai(args: Any) -> int:
         f"  {color('✓', Colors.GREEN)} Updated {len(result.issues_resolved)} "
         f"slot(s) in {result.file_path}")
     print()
-    print(color("Run `hermes doctor` to confirm no retired xAI models remain.", Colors.DIM))
+    print(color("Run `" + product_command("doctor") + "` to confirm no retired xAI models remain.", Colors.DIM))
     return 0
 
 

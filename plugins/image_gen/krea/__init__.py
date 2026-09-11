@@ -8,6 +8,7 @@ of our IDs) → :data:`DEFAULT_MODEL`. Docs: https://docs.krea.ai/developers/kre
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import time
@@ -345,8 +346,8 @@ def _submit_job(
                 hint = (
                     "Krea's shared-key concurrency cap was hit — retry shortly." if status == 429 else
                     f"Model '{model_id}' may not be enabled/priced on the Nous Portal's Krea gateway. "
-                    "Set KREA_API_KEY to use Krea directly, or pick a different model via "
-                    "`hermes tools` → Image Generation.")
+                    "Set KREA_API_KEY to use Krea directly, or pick a different model via " +
+                    "`" + product_command("tools") + "` → Image Generation.")
                 return None, fail(
                     f"Nous Subscription Krea gateway rejected '{model_id}' "
                     f"(HTTP {status}): {err_msg}. {hint}",
@@ -435,11 +436,11 @@ class KreaImageGenProvider(StaticImageGenProvider):
             auth_token = get_secret("KREA_API_KEY")
             if not auth_token:
                 return error_factory("krea", aspect)(
-                    "KREA_API_KEY not set. Run `hermes tools` → Image "
-                    "Generation → Krea to configure, get a key at "
-                    "https://www.krea.ai/settings/api-tokens, or sign in to "
-                    "a Nous account with the managed Krea gateway enabled "
-                    "(`hermes setup`).",
+                    "KREA_API_KEY not set. Run `" + product_command("tools") + "` → Image " +
+                    "Generation → Krea to configure, get a key at " +
+                    "https://www.krea.ai/settings/api-tokens, or sign in to " +
+                    "a Nous account with the managed Krea gateway enabled " +
+                    "(`" + product_command("setup") + "`).",
                     "auth_required")
 
         model_id, meta = _resolve_model(kwargs.get("model"))

@@ -5,6 +5,7 @@ the helpers/handlers via ``from cli import ...`` — cli.py imports this module 
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import atexit
@@ -868,7 +869,7 @@ class CLICommandsMixin:
         try:
             result = export_profile(name, output or str(get_profile_export_path(name)))
             _pr(f"  ✓ Exported '{name}' to {result}",
-                "  Share it: the other user runs /import or `hermes profile import <archive>`.")
+                "  Share it: the other user runs /import or `" + product_command("profile") + " import <archive>`.")
         except (ValueError, FileNotFoundError, OSError) as e:
             print(f"  Error: {e}")
 
@@ -1051,7 +1052,7 @@ class CLICommandsMixin:
             _cp(_dim_line(f'Now type your prompt (or use --image in single-query mode): {_remainder}'))
         elif _is_termux_environment():
             example = _termux_example_image_path(image_path.name)
-            tip = f'Tip: type your next message, or run hermes chat -q --image {example} "What do you see?"'
+            tip = f'Tip: type your next message, or run {product_command("chat")} -q --image {example} "What do you see?"'
             _cp(_dim_line(tip))
 
     # ---- /tools, /profile -----------------------------------------------------------------
@@ -1255,7 +1256,7 @@ class CLICommandsMixin:
         except Exception:
             pass
         return self._handoff_keep(
-            "  Timed out waiting for the gateway. Is `hermes gateway` running?",
+            "  Timed out waiting for the gateway. Is `" + product_command("gateway") + "` running?",
             "  Your CLI session is intact.")
 
     # ---- /resume, /sessions, /branch ------------------------------------------------------
@@ -1277,7 +1278,7 @@ class CLICommandsMixin:
                 # _list_recent_sessions(limit=10). See #34584.
                 self._pending_resume_sessions = self._list_recent_sessions(limit=10)
                 return
-            return _cp("  Tip:   Use /history or `hermes sessions list` to find sessions.")
+            return _cp("  Tip:   Use /history or `" + product_command("sessions") + " list` to find sessions.")
         # Any explicit /resume <target> supersedes a previously-armed bare numbered prompt.
         self._pending_resume_sessions = None
         if not self._session_db:
@@ -1339,7 +1340,7 @@ class CLICommandsMixin:
         session_meta = self._session_db.get_session(target_id)
         if not session_meta:
             return _cp(f"  Session not found: {target}",
-                       "  Use /sessions or `hermes sessions list` to see available sessions.")
+                       "  Use /sessions or `" + product_command("sessions") + " list` to see available sessions.")
         try:
             # If the target is the empty head of a compression chain, redirect to the descendant that
             # actually holds the transcript. See #15000.
@@ -1803,7 +1804,7 @@ class CLICommandsMixin:
             self._pending_agent_seed = seed
 
     def _handle_curator_command(self, cmd: str):
-        """Handle /curator — delegates to hermes_cli.curator so the CLI and the `hermes curator`
+        """Handle /curator — delegates to hermes_cli.curator so the CLI and the `haos curator`
         subcommand share the same handler set."""
         tokens = shlex.split(cmd)[1:] if cmd else []
         try:
@@ -2097,7 +2098,7 @@ class CLICommandsMixin:
 
     # ---- /bundles, /browser ---------------------------------------------------------------
     def _handle_bundles_command(self, cmd: str) -> None:
-        """In-session ``/bundles`` — show installed skill bundles (``hermes bundles list`` rendered
+        """In-session ``/bundles`` — show installed skill bundles (``haos bundles list`` rendered
         inside the running CLI). Bundles are loaded via ``/<bundle-name>``."""
         from cli import ChatConsole, _BOLD, _RST, _accent_hex
         from hermes_cli.slash_exec import CommandContext, execute_command
@@ -2107,7 +2108,7 @@ class CLICommandsMixin:
         bundles = reply.data["bundles"]
         if not bundles:
             return _cp("  No skill bundles installed.",
-                       _dim_line('Create one with: hermes bundles create <name> --skill <s1> --skill <s2>'),
+                       _dim_line('Create one with: ' + product_command("bundles") + ' create <name> --skill <s1> --skill <s2>'),
                        _dim_line(f"Directory: {reply.data['dir']}"))
         _cp(f"\n  ▣ {_BOLD}Skill Bundles{_RST} ({len(bundles)} installed):")
         for info in bundles:
@@ -2118,7 +2119,7 @@ class CLICommandsMixin:
                 f"[dim]-[/] {_escape(desc)} [dim]({skill_count} skills)[/]")
             for s in info.get("skills", []):
                 ChatConsole().print(f"        [dim]· {_escape(s)}[/]")
-        _cp("\n" + _dim_line("Invoke a bundle with /<slug>. Manage with `hermes bundles`."))
+        _cp("\n" + _dim_line("Invoke a bundle with /<slug>. Manage with `" + product_command("bundles") + "`."))
 
     def _handle_browser_command(self, cmd: str):
         """Handle /browser connect|disconnect|status|use — manage the live Chromium-family CDP connection."""
@@ -2153,7 +2154,7 @@ class CLICommandsMixin:
     def _handle_heartbeat_command(self, cmd: str) -> None:
         """Dispatch /heartbeat: set / status / pause / resume / clear. ``/heartbeat every 10m <prompt>``
         sets the session's one recurring instruction, injected as a normal user turn when due.
-        Session-scoped and in-process — use `hermes cron` for durable schedules."""
+        Session-scoped and in-process — use `haos cron` for durable schedules."""
         from hermes_cli.heartbeat import format_interval
         arg = _command_arg(cmd)
         lower = arg.lower()
@@ -2203,9 +2204,9 @@ class CLICommandsMixin:
             return
         self._start_heartbeat_watchdog()
         _cp(f"  ♥ Heartbeat set (every {format_interval(state.interval_seconds)}): {state.prompt}",
-            _dim_line("Fires as a normal turn whenever the session is idle and the interval has "
-                      "elapsed. /heartbeat pause | resume | clear to manage; lives only while this "
-                      "Hermes process runs — use `hermes cron` for durable schedules."))
+            _dim_line("Fires as a normal turn whenever the session is idle and the interval has " +
+                      "elapsed. /heartbeat pause | resume | clear to manage; lives only while this " +
+                      "Hermes process runs — use `" + product_command("cron") + "` for durable schedules."))
 
     def _handle_refine_command(self, cmd: str) -> None:
         """Dispatch /refine — run the memory/skill review fork on demand (same machinery as the
@@ -2646,7 +2647,7 @@ class CLICommandsMixin:
             lines=200, expire=7, local=local, nous="nous" in words and not local, yes=True))
 
     def _handle_update_command(self) -> bool:
-        """Handle /update — exit the session and relaunch as ``hermes update``. Returns True when
+        """Handle /update — exit the session and relaunch as ``haos update``. Returns True when
         confirmed (the caller exits the app; the relaunch runs on the main thread after
         prompt_toolkit restores terminal modes), False when cancelled."""
         from hermes_cli.config import is_managed, format_managed_message
@@ -2657,8 +2658,8 @@ class CLICommandsMixin:
         choices = [("once", "Update Now", "exit the current session and update Hermes Agent"),
                    ("cancel", "Cancel", "keep the current session")]
         raw = self._prompt_text_input_modal(
-            title="☤  Update Hermes Agent",
-            detail="This will exit the current session and run `hermes update`.", choices=choices)
+title="⚕  Update Hermes Agent",
+            detail="This will exit the current session and run `" + product_command("update") + "`.", choices=choices)
         if raw is None or self._normalize_slash_confirm_choice(raw, choices) != "once":
             print("  🟡 /update cancelled.")
             return False

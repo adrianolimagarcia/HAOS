@@ -2,10 +2,11 @@
 
 One read-only pass answering, BEFORE any mutation: which Hermes runtimes run on this machine, how
 each is deployed, which ones this update touches, and how each restarts. Every collector is a
-side-effect-free probe, so ``hermes update --plan`` is safe on a live fleet.
+side-effect-free probe, so ``haos update --plan`` is safe on a live fleet.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 from contextlib import contextmanager, suppress
@@ -36,7 +37,7 @@ class UpdatePlan:
 
     install_method: str = "unknown"       # git | docker | nix | apt | ...
     updatable_in_place: bool = True
-    update_mechanism: str = "hermes update"
+    update_mechanism: str = product_command("update")
     expected_sha: Optional[str] = None    # current checkout HEAD (pre-pull)
     expected_version: Optional[str] = None
     profiles: list = field(default_factory=list)
@@ -98,7 +99,7 @@ def _restart_mechanism(supervisor: str, profile: str) -> str:
 def describe_restart_mechanism(mechanism: str, profile: str) -> str:
     """Human-readable description of a restart mechanism id."""
     return _MECHANISM_DESCRIPTIONS.get(mechanism) or (
-        f"hermes -p {profile} gateway restart" if profile != "default" else "hermes gateway restart"
+        f"hermes -p {profile} gateway restart" if profile != "default" else product_command("gateway") + " restart"
     )
 
 
@@ -206,7 +207,7 @@ def _collect_gateway_runtimes(plan: UpdatePlan, profile_homes: list, seen: set[i
 
 def _collect_ledger_runtimes(plan: UpdatePlan, seen: set[int]) -> None:
     """Serve/dashboard backends from the spawn ledger — runtimes the gateway collectors can never see
-    (a manual `hermes serve --host <ip>` for a remote Desktop, a long-lived `hermes dashboard`).
+    (a manual `haos serve --host <ip>` for a remote Desktop, a long-lived `haos dashboard`).
     ledger_entries() live-verifies (pid, create_time) so PID reuse never fabricates a row. Desktop-
     supervised backends (spawner still alive) restart via the Desktop's own respawn, not ours."""
     with _probe("Serve/dashboard ledger inventory"):
@@ -388,13 +389,13 @@ def report_unaccounted_runtimes(outcomes: list[dict[str, Any]]) -> bool:
         print(f"    ✗ {o['kind']} [{o['profile']}] pid {o['pid']} — planned mechanism: {o['mechanism']}")
     print("    Restart them manually, then verify:")
     if any(o.get("kind") not in _SERVE_KINDS for o in missed):
-        print("      hermes gateway restart                # active profile")
+        print("      " + product_command("gateway") + " restart                # active profile")
         print("      hermes -p <profile> gateway restart   # named profile")
     if any(o.get("kind") in _SERVE_KINDS for o in missed):
         # A serve/dashboard is not reachable by any `gateway restart` command: name the process, not the wrong verb.
         # See #100479.
         print("      systemctl --user restart hermes-serve.service   # unit-managed serve")
-        print("      relaunch `hermes serve` / `hermes dashboard` / the Desktop app")
+        print("      relaunch `" + product_command("serve") + "` / `" + product_command("dashboard") + "` / the Desktop app")
     return True
 
 

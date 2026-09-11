@@ -2,6 +2,7 @@
 Mixin on ``HermesCLI``; cli.py symbols are imported lazily inside methods (import cycle)."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -238,10 +239,10 @@ class CLILoopsMixin:
             bundled_count = len(entries) - len(user_entries)
             if not user_entries:
                 print("No user plugins installed.")
-                print("  Install one: hermes plugins install owner/repo")
+                print("  Install one: " + product_command("plugins") + " install owner/repo")
                 print(f"  Or drop a plugin directory into {display_hermes_home()}/plugins/")
                 if bundled_count:
-                    print(f"  ({bundled_count} bundled plugins available — see: hermes plugins list)")
+                    print(f"  ({bundled_count} bundled plugins available — see: {product_command('plugins')} list)")
                 return
             try:  # loaded-plugin details (tools/hooks/commands counts, errors) by name
                 from hermes_cli.plugins import get_plugin_manager
@@ -260,8 +261,8 @@ class CLILoopsMixin:
                 error = f" — {info['error']}" if info.get("error") else ""
                 print(f"  {glyph} {name}{ver}{label}{detail}{error}")
             if bundled_count:
-                print(f"  (+{bundled_count} bundled — see: hermes plugins list)")
-            print("  Enable/disable: hermes plugins enable/disable <name>")
+                print(f"  (+{bundled_count} bundled — see: {product_command('plugins')} list)")
+            print("  Enable/disable: " + product_command("plugins") + " enable/disable <name>")
         except Exception as e:
             print(f"Plugin system error: {e}")
 

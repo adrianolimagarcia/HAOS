@@ -1,6 +1,7 @@
-"""Post-setup install hooks and installed-state predicates for `hermes tools` provider rows."""
+"""Post-setup install hooks and installed-state predicates for `haos tools` provider rows."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -250,7 +251,7 @@ def _post_setup_spotify() -> None:
         from hermes_cli.auth import login_spotify_command
     except Exception as exc:
         _print_warning(f"    Could not load Spotify auth: {exc}")
-        _info_lines("Run manually: hermes auth spotify")
+        _info_lines("Run manually: " + product_command("auth") + " spotify")
         return
     _print_info("    Starting Spotify login...")
     try:
@@ -260,10 +261,10 @@ def _post_setup_spotify() -> None:
     except SystemExit as exc:
         # User aborted the wizard or OAuth failed — don't fail the toolset enable.
         _print_warning(f"    Spotify login did not complete: {exc}")
-        _info_lines("Run later: hermes auth spotify")
+        _info_lines("Run later: " + product_command("auth") + " spotify")
     except Exception as exc:
         _print_warning(f"    Spotify login failed: {exc}")
-        _info_lines("Run manually: hermes auth spotify")
+        _info_lines("Run manually: " + product_command("auth") + " spotify")
 
 
 def _post_setup_langfuse() -> None:
@@ -288,8 +289,8 @@ def _post_setup_langfuse() -> None:
             _print_success("    Plugin observability/langfuse enabled")
     except Exception as exc:
         _print_warning(f"    Could not enable plugin automatically: {exc}")
-        _info_lines("Run manually: hermes plugins enable observability/langfuse")
-    _info_lines("Restart Hermes for tracing to take effect.", "Verify: hermes plugins list")
+        _info_lines("Run manually: " + product_command("plugins") + " enable observability/langfuse")
+    _info_lines("Restart Hermes for tracing to take effect.", "Verify: " + product_command("plugins") + " list")
 
 
 def _post_setup_xai_grok() -> None:
@@ -315,26 +316,26 @@ def _post_setup_xai_grok() -> None:
         from hermes_cli.config import save_env_value
     except Exception as exc:
         _print_warning(f"    Could not load setup helpers: {exc}")
-        _info_lines("Run later: hermes auth add xai-oauth   (or set XAI_API_KEY)")
+        _info_lines("Run later: " + product_command("auth") + " add xai-oauth   (or set XAI_API_KEY)")
         return
 
     idx = prompt_choice(
         "    How do you want xAI to authenticate?", default=0,
         choices=["Sign in with xAI Grok OAuth (SuperGrok / Premium+) — browser login",
                  "Paste an xAI API key (console.x.ai)",
-                 "Skip — configure later via `hermes auth add xai-oauth`"])
+                 "Skip — configure later via `" + product_command("auth") + " add xai-oauth`"])
     if idx == 0:
         if _run_xai_oauth_login_from_setup():
             _print_success("    Logged in — xAI will use these OAuth credentials")
         else:
-            _print_warning("    xAI Grok OAuth login did not complete. Run later: hermes auth add xai-oauth")
+            _print_warning("    xAI Grok OAuth login did not complete. Run later: " + product_command("auth") + " add xai-oauth")
     elif idx == 1:
         api_key = _setup_prompt("    xAI API key", password=True)
         if api_key:
             save_env_value("XAI_API_KEY", api_key)
             _print_success("    XAI_API_KEY saved")
         else:
-            _print_warning("    No API key provided. Run later: hermes auth add xai-oauth")
+            _print_warning("    No API key provided. Run later: " + product_command("auth") + " add xai-oauth")
     else:
         _print_info("    xAI will remain inactive until credentials are configured.")
 
@@ -380,11 +381,11 @@ def valid_post_setup_keys() -> Set[str]:
 
 
 def run_post_setup_command(args) -> int:
-    """``hermes tools post-setup <key>`` — non-interactive runner the dashboard spawns so the GUI can drive
+    """``haos tools post-setup <key>`` — non-interactive runner the dashboard spawns so the GUI can drive
     backend setup without re-implementing install logic. Exit code: 0 ok, 2 unknown key."""
     key = getattr(args, "post_setup_key", None)
     if not key:
-        _print_error("Usage: hermes tools post-setup <key>")
+        _print_error("Usage: " + product_command("tools") + " post-setup <key>")
         return 2
     valid = valid_post_setup_keys()
     if key not in valid:
@@ -436,7 +437,7 @@ _RESTORABLE_PYTHON_TOOL_DEPENDENCIES: dict[str, tuple[str, tuple[str, ...]]] = {
 
 
 def active_restorable_python_tool_dependencies() -> list[str]:
-    """Return ``hermes tools`` Python dependencies present in this runtime."""
+    """Return ``haos tools`` Python dependencies present in this runtime."""
     return [
         name for name, (module_name, _install_args) in _RESTORABLE_PYTHON_TOOL_DEPENDENCIES.items()
         if _module_installed(module_name)]

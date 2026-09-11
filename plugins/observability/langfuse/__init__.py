@@ -7,6 +7,7 @@ metadata (sizes/ids/usage only) | sanitized (default: secret redaction +
 truncation) | full (truncated raw content). See README.md.
 """
 from __future__ import annotations
+from hermes_constants import product_command
 
 import atexit
 import contextlib
@@ -242,8 +243,8 @@ def _build_client() -> Optional[Langfuse]:
     """Construct the SDK client from env, or None (with one warning) when it can't be."""
     if Langfuse is None:
         logger.warning(
-            "Langfuse plugin is enabled but the langfuse SDK is unavailable; "
-            "tracing is disabled. Run `hermes tools` and configure Langfuse "
+            "Langfuse plugin is enabled but the langfuse SDK is unavailable; " +
+            "tracing is disabled. Run `" + product_command("tools") + "` and configure Langfuse " +
             "Observability to reinstall it."
         )
         return None

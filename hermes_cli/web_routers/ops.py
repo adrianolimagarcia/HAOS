@@ -391,7 +391,7 @@ async def remove_credential_pool_entry(provider: str, index: int):
     Removal must be sticky: ``load_pool()`` re-seeds entries from their backing
     source (.env var, OAuth file, custom-provider config) on every call, so
     deleting only the row silently reverts on the next refresh. Dispatch through
-    the same RemovalStep registry as ``hermes auth remove``: each source cleans
+    the same RemovalStep registry as ``haos auth remove``: each source cleans
     its external state and suppresses ``(provider, source)`` so seeders skip it.
     Manual entries have no step — nothing external, and they aren't re-seeded.
 

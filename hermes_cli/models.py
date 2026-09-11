@@ -714,7 +714,7 @@ def _provider_has_credentials(pid: str) -> bool:
 
 def list_available_providers() -> list[dict[str, str]]:
     """``{id, label, aliases, authenticated}`` for every provider usable with ``provider:model``,
-    derived from :data:`CANONICAL_PROVIDERS` (shared with ``hermes model`` and ``/model``)."""
+    derived from :data:`CANONICAL_PROVIDERS` (shared with ``haos model`` and ``/model``)."""
     aliases_for: dict[str, list[str]] = {}
     for alias, canonical in _PROVIDER_ALIASES.items():
         aliases_for.setdefault(canonical, []).append(alias)
@@ -1734,7 +1734,7 @@ def cached_provider_model_ids(
 
 def clear_provider_models_cache(provider: Optional[str] = None) -> None:
     """Drop one provider's cache entry, or wipe the whole cache (``provider=None``). Used by
-    ``/model --refresh`` and ``hermes model --refresh``."""
+    ``/model --refresh`` and ``haos model --refresh``."""
     try:
         # Native Ollama tags are keyed by root URL, not provider slug — a targeted refresh can't
         # identify the root from the name alone, so clear this small in-process cache every time.

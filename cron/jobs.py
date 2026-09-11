@@ -27,7 +27,7 @@ except ImportError:  # pragma: no cover - non-Windows
     msvcrt = None
 from datetime import datetime, timedelta
 from pathlib import Path
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from cron.env_settings import cron_env_setting
 from typing import Optional, Dict, List, Any, Callable, Set, Tuple, Union, Collection
 
@@ -1141,7 +1141,7 @@ def record_ticker_heartbeat(success: bool = False) -> None:
     "alive but failing" from "firing"; scoped per profile store.
 
     The ticker calls this once per loop iteration. ``success=True`` additionally bumps the *last successful
-    tick* marker. We track two distinct signals so `hermes cron status` can tell a thread that is merely
+    tick* marker. We track two distinct signals so `haos cron status` can tell a thread that is merely
     *alive and looping* (heartbeat fresh, success stale) from one that is actually *firing jobs* (both
     fresh) — a ticker stuck failing every tick would otherwise keep the plain heartbeat fresh and falsely
     report healthy (#32612, #32895).
@@ -1167,7 +1167,7 @@ def get_ticker_heartbeat_age() -> Optional[float]:
     not "dead").
 
     Resolution uses ``_current_cron_store()`` so the heartbeat is correctly scoped to the active profile —
-    critical under multiplex_profiles where ``hermes cron status`` must report per-profile liveness
+    critical under multiplex_profiles where ``haos cron status`` must report per-profile liveness
     (#69377).
     """
     return _epoch_file_age("ticker_heartbeat")
@@ -1177,7 +1177,7 @@ def get_ticker_success_age() -> Optional[float]:
     """Seconds since the ticker last completed a tick WITHOUT raising, or None.
 
     Resolution uses ``_current_cron_store()`` so the heartbeat is correctly scoped to the active profile —
-    critical under multiplex_profiles where ``hermes cron status`` must report per-profile liveness
+    critical under multiplex_profiles where ``haos cron status`` must report per-profile liveness
     (#69377).
     """
     return _epoch_file_age("ticker_last_success")
@@ -2120,7 +2120,7 @@ def trigger_job(job_id: str, extra_prompt: Optional[str] = None) -> Optional[Dic
         name = job.get("name", job_id)
         raise ValueError(
             f"Cannot run: job '{name}' is {job.get('state')} (terminal). "
-            f"Create a new occurrence with 'hermes cron resume {name} "
+            f"Create a new occurrence with '{product_command('cron')} resume {name} "
             "--run-now' or '--at <ISO-8601>'.")
     manual_run_at = _hermes_now().isoformat()
     return update_job(job["id"], {
@@ -2266,6 +2266,11 @@ def clear_preflight_alerted(job_id: str) -> None:
     _set_alert_flag(job_id, "preflight_alerted", False)
 
 
+def mark_drift_alerted(job_id: str) -> bool:
+    """Mark the job as drift-alerted; return True if it already was (#44585 drift-guard skip)."""
+    return _set_alert_flag(job_id, "drift_alerted", True)
+
+
 def note_fire_forward_failure(job_id: str, detail: str) -> bool:
     """Durably record (as ``last_fire_error``) that a scheduled fire could not be handed to the
     runner — written by the dashboard fire webhook when the loopback forward fails. Without it
@@ -2297,6 +2302,7 @@ def _record_run_outcome(
         # Healthy run: drop the alert-once dedup markers so a FUTURE break re-alerts, and clear
         # the forward-failure stamp so it only describes CURRENT auto-fire health.
         job.pop("preflight_alerted", None)
+        job.pop("drift_alerted", None)
         job.pop("last_fire_error", None)
         job["failure_streak"] = 0
     else:
@@ -3045,10 +3051,10 @@ def _oneshot_dispatch_limit_reached(job: Dict[str, Any], scan: _DueScan) -> bool
         # A record with last_run_at completed a real run and was re-armed without a budget reset
         # (old build or hand edit) — not the dead-tick case; warn so the removal leaves a trace.
         logger.warning(
-            "Job '%s': one-shot dispatch limit reached (%d/%d) on a record that already completed "
-            "a run (last_run_at=%s) — removing it WITHOUT firing. This record was re-armed "
-            "without a budget reset (pre-#93615 store or hand edit); re-run it with "
-            "'hermes cron resume <job> --run-now' (#93524).",
+            "Job '%s': one-shot dispatch limit reached (%d/%d) on a record that already completed " +
+            "a run (last_run_at=%s) — removing it WITHOUT firing. This record was re-armed " +
+            "without a budget reset (pre-#93615 store or hand edit); re-run it with " +
+            "'" + product_command("cron") + " resume <job> --run-now' (#93524).",
             name, completed, times, job.get("last_run_at"))
     else:
         logger.info(

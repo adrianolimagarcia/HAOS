@@ -5,6 +5,7 @@ inside each function so ``hermes_cli.auth.<name>`` patches still intercept (and 
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import base64
 import hashlib
@@ -278,11 +279,11 @@ def _nous_device_auth_timeout_message(portal_base_url: str) -> str:
     """
     portal = (portal_base_url or DEFAULT_NOUS_PORTAL_URL).rstrip("/")
     return (
-        "Timed out waiting for device authorization.\n"
-        "  Portal sign-in is required before the device code can be approved.\n"
-        "  If the browser showed a CAPTCHA / 'You did not pass CAPTCHA' error,\n"
-        "  finish signing in at the Portal in a normal browser tab, then retry:\n"
-        "    hermes portal\n"
+        "Timed out waiting for device authorization.\n" +
+        "  Portal sign-in is required before the device code can be approved.\n" +
+        "  If the browser showed a CAPTCHA / 'You did not pass CAPTCHA' error,\n" +
+        "  finish signing in at the Portal in a normal browser tab, then retry:\n" +
+        "    " + product_command("portal") + "\n"
         f"  Portal login: {portal}/login")
 
 

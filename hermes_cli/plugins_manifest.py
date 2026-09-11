@@ -4,6 +4,7 @@ Split out of :mod:`hermes_cli.plugins`; validation warns and never fails a load.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import hashlib
 import importlib.metadata
@@ -221,9 +222,9 @@ def resolve_plugin_load_order(manifests: Mapping[str, "PluginManifest"]) -> List
             resolved = dep_id if dep_id in manifests else by_name.get(dep_id)
             if resolved is None:
                 logger.warning(
-                    "Plugin %s requires plugin '%s' which is not enabled/"
-                    "installed; loading anyway (probe availability at runtime "
-                    "via ctx.has_plugin). Run `hermes plugins enable %s` if it is installed.",
+                    "Plugin %s requires plugin '%s' which is not enabled/" +
+                    "installed; loading anyway (probe availability at runtime " +
+                    "via ctx.has_plugin). Run `" + product_command("plugins") + " enable %s` if it is installed.",
                     k, dep_id, dep_id,
                 )
             elif resolved == k:

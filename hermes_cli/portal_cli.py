@@ -1,5 +1,6 @@
-"""``hermes portal`` — the human-readable entry point for Nous Portal."""
+"""``haos portal`` — the human-readable entry point for Nous Portal."""
 from __future__ import annotations
+from hermes_constants import product_command
 
 import sys
 import webbrowser
@@ -62,7 +63,7 @@ def _cmd_status(args) -> int:
     else:
         print(f"  Auth:    {color('not logged in', Colors.YELLOW)}")
         print(f"  Sign up: {SUBSCRIPTION_URL}")
-        print("  Login:   hermes portal")
+        print("  Login:   " + product_command("portal"))
 
     # Provider selection (independent of auth)
     model_cfg = config.get("model") if isinstance(config.get("model"), dict) else {}
@@ -70,7 +71,7 @@ def _cmd_status(args) -> int:
     if provider == "nous":
         print(f"  Model:   {color('✓ using Nous as inference provider', Colors.GREEN)}")
     elif provider:
-        print(f"  Model:   currently {provider} (switch with `hermes model`)")
+        print(f"  Model:   currently {provider} (switch with `{product_command('model')}`)")
 
     _heading("Tool Gateway")
     try:
@@ -115,7 +116,7 @@ def _cmd_tools(args) -> int:
 
     _heading("Tool Gateway catalog")
     if not features.nous_auth_present:
-        print(color("  Not logged into Nous Portal — sign in with `hermes portal`.", Colors.YELLOW))
+        print(color("  Not logged into Nous Portal — sign in with `" + product_command("portal") + "`.", Colors.YELLOW))
         print()
 
     label_width = max(len(label) for _, label, _ in _CATALOG)
@@ -133,7 +134,7 @@ def _cmd_tools(args) -> int:
 def _cmd_login(args) -> int:
     """One-shot Nous Portal onboarding (login + model + provider + tools).
 
-    Reuses the exact wiring behind ``hermes setup --portal`` so the commands stay in lockstep.
+    Reuses the exact wiring behind ``haos setup --portal`` so the commands stay in lockstep.
     """
     from hermes_cli.setup import _run_portal_one_shot
 
@@ -161,26 +162,26 @@ _SUBCOMMANDS = {
 
 
 def portal_command(args) -> int:
-    """Top-level dispatch for `hermes portal <subcommand>`."""
+    """Top-level dispatch for `haos portal <subcommand>`."""
     sub = getattr(args, "portal_command", None)
     handler = _SUBCOMMANDS.get(sub)
     if handler is not None:
         return handler(args)
     print(f"Unknown portal subcommand: {sub}", file=sys.stderr)
-    print("Run `hermes portal -h` for usage.", file=sys.stderr)
+    print("Run `" + product_command("portal") + " -h` for usage.", file=sys.stderr)
     return 1
 
 
 def add_parser(subparsers) -> None:
-    """Register `hermes portal` on the given argparse subparsers object."""
+    """Register `haos portal` on the given argparse subparsers object."""
     portal_parser = subparsers.add_parser(
         "portal",
         help="Set up Nous Portal (login, model pick, Tool Gateway); see also `portal info`",
         description=(
-            "Run `hermes portal` with no subcommand to log in to Nous Portal "
-            "and set it up — pick a model, set Nous as your provider, and offer "
-            "the Tool Gateway (the human-readable alias for `hermes auth add "
-            "nous --type oauth`, identical to `hermes setup --portal`). "
+            "Run `" + product_command("portal") + "` with no subcommand to log in to Nous Portal " +
+            "and set it up — pick a model, set Nous as your provider, and offer " +
+            "the Tool Gateway (the human-readable alias for `" + product_command("auth") + " add " +
+            "nous --type oauth`, identical to `" + product_command("setup") + " --portal`). " +
             "Subcommands: login (default), info, open, tools."
         ),
     )

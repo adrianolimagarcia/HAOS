@@ -1,6 +1,7 @@
-"""``hermes verify`` — detect a project's run recipe and smoke-test it."""
+"""``haos verify`` — detect a project's run recipe and smoke-test it."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import os
@@ -97,7 +98,7 @@ def _record_evidence(root: Path, recipe, result, *, partial: bool) -> None:
             root=root,
             session_id=os.environ.get("HERMES_SESSION_ID"),
             ok=result.ok,
-            command="hermes verify",
+            command=product_command("verify"),
             scope="targeted" if partial else "full",
             output="\n".join(tails),
         )

@@ -143,7 +143,7 @@ CHECKPOINT_FILE = "scan_checkpoint.json"
 
 def _data_dir() -> Path:
     """Durable data root (``<hermes home>/plugin-data/hermes-achievements/``). State used to
-    live in the install tree and died on ``hermes plugins remove``/``update``; legacy files
+    live in the install tree and died on ``haos plugins remove``/``update``; legacy files
     migrate on first read (see ``_data_file``)."""
     try:
         from plugins.plugin_storage import plugin_data_dir

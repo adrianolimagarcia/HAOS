@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterator, List, NamedTuple, Optional, Set, Tuple
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_cli._subprocess_compat import windows_hide_flags
 from utils import env_int
 
@@ -365,7 +365,7 @@ def _shrink_store_to_cap(store: Path, working_dir: str, cap_bytes: int) -> bool:
 
 def _migrate_legacy_store(base: Path) -> Optional[Path]:
     """Archive pre-v2 per-project shadow repos into ``legacy-<ts>/`` (moved, not deleted —
-    users may want to recover; the archive falls under retention and ``hermes checkpoints
+    users may want to recover; the archive falls under retention and ``haos checkpoints
     clear-legacy``).  Returns the archive path or None."""
     if not base.exists():
         return None
@@ -384,8 +384,8 @@ def _migrate_legacy_store(base: Path) -> Optional[Path]:
             shutil.move(str(child), str(legacy_root / child.name))
         except OSError as exc:
             logger.warning("Could not archive legacy checkpoint %s: %s", child, exc)
-    logger.info("Migrated pre-v2 checkpoint repos to %s. "
-                "Clear with `hermes checkpoints clear-legacy` when safe.", legacy_root)
+    logger.info("Migrated pre-v2 checkpoint repos to %s. " +
+                "Clear with `" + product_command("checkpoints") + " clear-legacy` when safe.", legacy_root)
     return legacy_root
 
 

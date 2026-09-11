@@ -62,7 +62,7 @@ def _existing_profile_homes(profile_homes: list) -> list:
 
     Ticking or heartbeating a deleted home recreates its ``cron/`` workspace (``record_ticker_heartbeat`` ->
     ``ensure_dirs`` -> ``mkdir(parents=True)``) on every 60s cycle, so the "deleted" profile silently comes
-    back on disk and in ``hermes profile list`` (#47368). Filtering on directory existence leaves a deleted
+    back on disk and in ``haos profile list`` (#47368). Filtering on directory existence leaves a deleted
     profile's home untouched, which is the correct invariant: a home that does not exist cannot hold jobs to
     fire.
     """

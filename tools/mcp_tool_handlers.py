@@ -1,5 +1,6 @@
 """Registry-facing sync handlers for MCP tools and utility tools (resources/prompts), plus the per-call recovery
 ladder: trust gating, circuit breaker, auth (401) refresh, session-expired reconnect and dead-stdio respawn retry."""
+from hermes_constants import product_command
 
 import logging
 import asyncio
@@ -24,7 +25,7 @@ logger = logging.getLogger("tools.mcp_tool")
 _MISSING = object()
 
 _NEEDS_REAUTH_MSG = (
-    "MCP server '{s}' requires re-authentication. Run `hermes mcp login {s}` (or delete the tokens file under "
+    "MCP server '{s}' requires re-authentication. Run `" + product_command("mcp") + " login {s}` (or delete the tokens file under " +
     "~/.hermes/mcp-tokens/ and restart). Do NOT retry this tool — ask the user to re-authenticate.")
 _STDIO_NO_RESPAWN_MSG = (
     "MCP server '{s}' stdio subprocess had exited (this is not a timeout — the call never reached the server). A "

@@ -1,5 +1,5 @@
 """Unified self-relaunch for Hermes CLI: preserves inherited flags (--tui, --dev, --profile, --model…)
-across process replacement so ``hermes sessions browse`` / post-setup relaunch keep the user's mode."""
+across process replacement so ``haos sessions browse`` / post-setup relaunch keep the user's mode."""
 
 import os
 import shutil

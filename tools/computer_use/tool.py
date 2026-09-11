@@ -4,6 +4,7 @@ Return contract: text-only results are a JSON string; captures / `capture_after=
 the Anthropic adapter turn it into provider-specific image tool content)."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import atexit
 import base64
@@ -255,7 +256,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
         backend = _get_backend(session_id=session_id)
     except Exception as e:
         return json.dumps({"error": f"computer_use backend unavailable: {e}",
-                           "hint": "If the cua-driver binary is missing, run `hermes computer-use install`. "
+                           "hint": "If the cua-driver binary is missing, run `" + product_command("computer-use") + " install`. " +
                                    "If a Python dependency is missing, the error above shows the exact install command."})
     try:
         with _backend_lock:
@@ -740,7 +741,7 @@ def _route_capture_through_aux_vision(cap: CaptureResult, summary: str, *, visib
 
 # ── Availability check (used by the tool registry check_fn) ─────────────────
 def check_computer_use_requirements() -> bool:
-    """macOS/Windows/Linux + cua-driver binary (or env override). `hermes computer-use doctor` names blocked checks."""
+    """macOS/Windows/Linux + cua-driver binary (or env override). `haos computer-use doctor` names blocked checks."""
     if sys.platform not in ("darwin", "win32", "linux"):
         return False
     from tools.computer_use.cua_backend_driver import cua_driver_binary_available

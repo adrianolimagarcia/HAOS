@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_constants import (
     _get_platform_default_hermes_home, get_default_hermes_root, get_hermes_home, display_hermes_home,
+product_command,
 )
 from hermes_state_dbfile import RETIRED_GENERATION_DIR_SUFFIX
 from utils import (
@@ -271,7 +272,7 @@ def _iter_backup_files(hermes_root: Path, out_path: Path, skipped_dirs: Optional
 
     The one owner of the walk policy (directory pruning so os.walk never descends a multi-GB
     excluded tree, the root-only ``hermes-agent`` carve-out, root runtime trees, per-file rules),
-    shared by ``hermes backup`` and the pre-update / pre-migration path so they can never drift.
+    shared by ``haos backup`` and the pre-update / pre-migration path so they can never drift.
     """
     for dirpath, dirnames, filenames in os.walk(hermes_root, followlinks=False):
         rel_dir = Path(dirpath).relative_to(hermes_root)
@@ -730,7 +731,7 @@ def _run_backup_locked(args, hermes_root: Path) -> None:
     if errors:
         _print_capped(f"\n  Warnings ({len(errors)} files skipped):", errors, "  ")
     else:
-        print(f"\nRestore with: hermes import {out_path.name}")
+        print(f"\nRestore with: {product_command('import')} {out_path.name}")
     keep = getattr(args, "keep", 0)  # 0 / absent: never prune (non-CLI callers)
     if keep and out_path.name.startswith(_RUN_BACKUP_PREFIX):
         pruned = _prune_prefixed_zips(out_path.parent, _RUN_BACKUP_PREFIX, keep, "backup")
@@ -1011,8 +1012,8 @@ def run_import(args) -> None:
         restored_profiles = _restore_profile_wrappers(hermes_root)
         print()
         if not (hermes_root / "hermes-agent").is_dir():
-            print("Note: The hermes-agent codebase was not included in the backup.\n"
-                  "  If this is a fresh install, run: hermes update")
+            print("Note: The hermes-agent codebase was not included in the backup.\n" +
+                  "  If this is a fresh install, run: " + product_command("update"))
         if restored_profiles:
             print("\nTo re-enable gateway services for profiles:")
             for pname in restored_profiles:
@@ -1052,8 +1053,8 @@ def _restore_profile_wrappers(hermes_root: Path) -> List[str]:
                       '    export PATH="$HOME/.local/bin:$PATH"')
     except ImportError:  # hermes_cli.profiles unavailable (fresh install)
         if any(profiles_dir.iterdir()):
-            print("\n  Profiles detected but aliases could not be created.\n"
-                  "  Run: hermes profile list  (after installing hermes)")
+            print("\n  Profiles detected but aliases could not be created.\n" +
+                  "  Run: " + product_command("profile") + " list  (after installing hermes)")
     return [n for n, _ in restored_profiles]
 
 
@@ -1070,7 +1071,7 @@ def _revive_gateway_after_import(hermes_root: Path) -> None:
             (native_default / marker).exists() for marker in ("config.yaml", ".env", "state.db")):
         print("\nRestored into a non-default home; leaving the gateway service alone to avoid clashing "
               f"with the install at {native_default}.\n"
-              "To start a gateway for this home, run:  hermes gateway install")
+              "To start a gateway for this home, run:  " + product_command("gateway") + " install")
         return
     try:
         from hermes_cli.gateway import ensure_gateway_service, _is_service_running
@@ -1078,7 +1079,7 @@ def _revive_gateway_after_import(hermes_root: Path) -> None:
             print()
             ensure_gateway_service(context="import")
     except Exception:
-        print("\nStart the gateway to activate cron jobs and messaging:\n  hermes gateway install")
+        print("\nStart the gateway to activate cron jobs and messaging:\n  " + product_command("gateway") + " install")
 
 
 # --- Quick state snapshots (used by /snapshot slash command and hermes backup --quick) ---
@@ -1208,7 +1209,7 @@ def _create_quick_snapshot_locked(
     """Copy the quick-snapshot set to a timestamped dir under state-snapshots/ and prune old ones.
 
     ``max_file_size`` skips (with a warning) larger files: the pre-update snapshot uses it so a
-    multi-GB ``state.db`` never stalls ``hermes update`` while the small files are always captured.
+    multi-GB ``state.db`` never stalls ``haos update`` while the small files are always captured.
     """
     root = _quick_snapshot_root(home)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -1362,7 +1363,7 @@ def _count_cron_jobs(path: Path) -> Optional[int]:
 
 
 def restore_cron_jobs_if_emptied(snapshot_id: str, hermes_home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Safety net for silent cron-job loss across ``hermes update``.
+    """Safety net for silent cron-job loss across ``haos update``.
 
     Conservative: restores only when the snapshot had MORE jobs than the live file (a user who
     deleted jobs is never second-guessed); an unreadable live file is left so corruption surfaces.
@@ -1477,7 +1478,7 @@ def _set_config_path_value(data: Dict[str, Any], dotted: Tuple[str, ...], value:
 
 def restore_config_model_settings_if_rewritten(
     snapshot_id: str, hermes_home: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Safety net for silent config.yaml model/MoA loss across ``hermes update``.
+    """Safety net for silent config.yaml model/MoA loss across ``haos update``.
 
     Mirrors :func:`restore_cron_jobs_if_emptied`: restore only the protected keys — never the
     whole file — whose user-set value in the same-run pre-update snapshot changed or vanished.
@@ -1576,7 +1577,7 @@ def prune_quick_snapshots(keep: int = _QUICK_DEFAULT_KEEP, hermes_home: Optional
 
 
 def run_quick_backup(args) -> None:
-    """CLI entry point for hermes backup --quick."""
+    """CLI entry point for haos backup --quick."""
     snap_id = create_quick_snapshot(label=getattr(args, "label", None))
     if snap_id:
         print(f"State snapshot created: {snap_id}\n"
@@ -1677,14 +1678,14 @@ def _create_prefixed_full_backup(
 def create_pre_update_backup(
     hermes_home: Optional[Path] = None, keep: int = _PRE_UPDATE_DEFAULT_KEEP) -> Optional[Path]:
     """Full zip backup to ``backups/pre-update-<timestamp>.zip``, auto-pruned; ``None`` if nothing
-    was found or the backup failed. Never raises — ``hermes update`` continues anyway."""
+    was found or the backup failed. Never raises — ``haos update`` continues anyway."""
     return _create_prefixed_full_backup(hermes_home, _PRE_UPDATE_PREFIX, max(keep, 1), "pre-update", "backup")
 
 
 def create_pre_migration_backup(
     hermes_home: Optional[Path] = None, keep: int = _PRE_MIGRATION_DEFAULT_KEEP) -> Optional[Path]:
-    """Full zip backup to ``backups/pre-migration-<timestamp>.zip`` before ``hermes claw migrate``
-    (same dir as update backups so listings/``hermes import`` find it); ``None`` if nothing was
+    """Full zip backup to ``backups/pre-migration-<timestamp>.zip`` before ``haos claw migrate``
+    (same dir as update backups so listings/``haos import`` find it); ``None`` if nothing was
     found or the write failed. Never raises."""
     return _create_prefixed_full_backup(
         hermes_home, _PRE_MIGRATION_PREFIX, max(keep, 0), "pre-migration", "pre-migration backup")

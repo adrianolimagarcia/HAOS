@@ -1,6 +1,7 @@
-"""``hermes whatsapp`` subcommand parser."""
+"""``haos whatsapp`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from typing import Callable
 
@@ -17,8 +18,8 @@ def build_whatsapp_cloud_parser(subparsers, *, cmd_whatsapp_cloud: Callable) -> 
     """Attach the ``whatsapp-cloud`` subcommand (official Meta Cloud API)."""
     whatsapp_cloud_parser = subparsers.add_parser(
         "whatsapp-cloud", help="Set up WhatsApp Business Cloud API integration",
-        description="Configure the official Meta WhatsApp Business Cloud API "
-            "adapter (Business account required, public webhook URL "
-            "required). Distinct from `hermes whatsapp` which sets up "
+        description="Configure the official Meta WhatsApp Business Cloud API " +
+            "adapter (Business account required, public webhook URL " +
+            "required). Distinct from `" + product_command("whatsapp") + "` which sets up " +
             "the Baileys bridge for personal accounts.")
     whatsapp_cloud_parser.set_defaults(func=cmd_whatsapp_cloud)

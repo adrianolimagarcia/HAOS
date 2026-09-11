@@ -2,6 +2,7 @@
 imported history must satisfy the provider role-alternation invariant (see ``_merge_turns``)."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import json
@@ -280,8 +281,8 @@ def pick_foreign_session(source: Optional[str] = None, *, limit: int = 25) -> Op
         ws = f"  ({os.path.basename(s.cwd.rstrip('/')) or s.cwd})" if s.cwd else ""
         print(f"  {i:>2}. {datetime.fromtimestamp(s.mtime):%Y-%m-%d %H:%M}  {s.label}{ws}  [{s.turn_count} turns]")
     if not sys.stdin.isatty():
-        print("Non-interactive terminal — pass the file path directly:\n"
-              "  hermes sessions import --from claude|codex <path>")
+        print("Non-interactive terminal — pass the file path directly:\n" +
+              "  " + product_command("sessions") + " import --from claude|codex <path>")
         return None
     try:
         raw = input(f"Import which session? [1-{len(sessions)}, empty to cancel] ").strip()
@@ -299,7 +300,7 @@ def pick_foreign_session(source: Optional[str] = None, *, limit: int = 25) -> Op
 
 
 def run_sessions_import(args, db=None) -> Optional[str]:
-    """`hermes sessions import` entry point. Returns new session id or None."""
+    """`haos sessions import` entry point. Returns new session id or None."""
     source = getattr(args, "from_source", None)
     path = getattr(args, "path", None)
     if path:

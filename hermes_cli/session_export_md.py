@@ -5,6 +5,7 @@ directories. Must not mutate state.db or call delete/prune/archive APIs.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import hashlib
 import json
@@ -16,7 +17,7 @@ from typing import Any
 
 from hermes_cli.timefmt import coerce_epoch
 
-EXPORTER_VERSION = "hermes sessions export (md/qmd) v1"
+EXPORTER_VERSION = product_command("sessions") + " export (md/qmd) v1"
 _SHA_LINE_RE = re.compile(r"- SHA256 of exported body: `([0-9a-f]{64})`")
 _SHA_PLACEHOLDER = "__SHA256_PLACEHOLDER__"
 _VERIFICATION_HEADING = "## Export verification"

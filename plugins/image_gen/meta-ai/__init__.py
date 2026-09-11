@@ -4,6 +4,7 @@ Selection: ``model`` kwarg → ``META_IMAGE_MODEL`` → ``image_gen.meta-ai.mode
 → :data:`DEFAULT_MODEL`."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -83,7 +84,7 @@ class MetaImageGenProvider(StaticImageGenProvider):
         api_key = _resolve_api_key()
         if not api_key:
             return error_factory("meta-ai", aspect)(
-                f"{API_KEY_ENV} not set. Run `hermes tools` -> Image "
+                f"{API_KEY_ENV} not set. Run `{product_command('tools')}` -> Image "
                 "Generation -> Meta Model API to configure.",
                 "auth_required")
 

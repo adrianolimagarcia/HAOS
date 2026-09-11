@@ -6,6 +6,7 @@ step may only persist values that differ from the schema default (plus removals/
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import copy
 import functools
@@ -28,7 +29,7 @@ def support_floor_message() -> str:
     return (
         f"This config predates version {SUPPORT_FLOOR_VERSION} (~2 years old) "
         "and can no longer be auto-migrated. Back up "
-        f"{display_hermes_home()}/config.yaml and run `hermes setup` to "
+        f"{display_hermes_home()}/config.yaml and run `{product_command('setup')}` to "
         f"regenerate, or manually set _config_version: {SUPPORT_FLOOR_VERSION} "
         "after reviewing the changelog.")
 
@@ -306,8 +307,8 @@ def _migrate_to_21(results: Dict[str, Any], quiet: bool) -> None:
         f"  ✓ Plugins now opt-in: grandfathered "
         f"{len(grandfathered)} existing plugin(s) into plugins.enabled"
         if grandfathered else
-        "  ✓ Plugins now opt-in: no existing plugins to grandfather. "
-        "Use `hermes plugins enable <name>` to activate.")
+        "  ✓ Plugins now opt-in: no existing plugins to grandfather. " +
+        "Use `" + product_command("plugins") + " enable <name>` to activate.")
     _commit(
         config, results, quiet,
         f"plugins.enabled (opt-in allow-list, {len(grandfathered)} grandfathered)", message)
@@ -356,7 +357,7 @@ def _migrate_to_23(results: Dict[str, Any], quiet: bool) -> None:
             if not quiet:
                 print(
                     f"  ✓ {'Curator' if label == 'curator' else label} settings now available "
-                    f"({', '.join(added)}) — edit via `hermes config set`")
+                    f"({', '.join(added)}) — edit via `{product_command('config')} set`")
 
 
 def _migrate_to_29(results: Dict[str, Any], quiet: bool) -> None:
@@ -513,8 +514,8 @@ def _migrate_to_39(results: Dict[str, Any], quiet: bool) -> None:
         _commit(
             config, results, quiet,
             "removed retired 'bfl' toolset from saved toolset lists",
-            "  ✓ Removed the retired BFL FLUX 3 toolset from saved toolset "
-            "lists — video generation now lives under `hermes tools` → "
+            "  ✓ Removed the retired BFL FLUX 3 toolset from saved toolset " +
+            "lists — video generation now lives under `" + product_command("tools") + "` → " +
             "Video Generation (Nous Subscription or FAL).")
 
 

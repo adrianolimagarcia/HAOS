@@ -18,7 +18,7 @@ from pathlib import Path
 
 from hermes_cli.config import get_hermes_home  # noqa: F401  (re-exported; patched via update_cmd)
 from hermes_cli.update_cmd_common import _best_effort
-from hermes_constants import get_default_hermes_root, venv_python_path
+from hermes_constants import get_default_hermes_root, venv_python_path, product_command
 
 # Re-exports: every split-module name stays reachable (and monkeypatchable) as update_cmd.<name>.
 from hermes_cli.update_abort_recovery import (  # noqa: F401
@@ -390,7 +390,7 @@ def _format_concurrent_instances_message(matches: list[tuple[int, str]], scripts
         "  Windows blocks REPLACE on a running executable.",
         "",
         "  Close Hermes Desktop, exit any open `hermes` REPLs, and",
-        "  stop the gateway (`hermes gateway stop`) before retrying.",
+        "  stop the gateway (`" + product_command("gateway") + " stop`) before retrying.",
         ""]
     if matches:
         pid_args = " ".join(f"/PID {pid}" for pid, _ in matches)
@@ -400,7 +400,7 @@ def _format_concurrent_instances_message(matches: list[tuple[int, str]], scripts
             f"      taskkill {pid_args} /F",
             ""]
     lines += [
-        "  Override with `hermes update --force` if you've already",
+        "  Override with `" + product_command("update") + " --force` if you've already",
         "  confirmed those processes will not write to the venv."]
     return "\n".join(lines)
 
@@ -479,7 +479,7 @@ def _run_logged_subprocess(cmd, *, cwd=None, env=None):
 
 
 def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
-    """``hermes update --check``: fetch and report without installing. ``branch_explicit`` is
+    """``haos update --check``: fetch and report without installing. ``branch_explicit`` is
     True iff --branch was passed (Docker installs print a notice instead of dropping the flag)."""
     # Same marker-first admission gate as the apply path, so --check never reports git
     # state for an install whose real update mechanism is an image pull.
@@ -627,7 +627,7 @@ def _repair_venv_on_current_checkout(
     healthy_after, detail_after = _venv_core_imports_healthy()
     if not healthy_after:
         print(f"⚠ Venv still unhealthy after repair: {detail_after}")
-        print("  Close all Hermes windows/gateways and re-run: hermes update")
+        print("  Close all Hermes windows/gateways and re-run: " + product_command("update"))
         return False
     print("✓ Dependencies repaired!")
     # Check for config migrations (#91360).
@@ -777,7 +777,7 @@ def _rollback_if_pulled_syntax_error(git_cmd, pre_pull_sha) -> None:
         rollback_result = _git_run(git_cmd, ["reset", "--hard", pre_pull_sha])
         if rollback_result.returncode == 0:
             print("  ✓ Rollback complete — your install is unchanged.")
-            print("  Try ``hermes update`` again later once a fix lands.")
+            print("  Try ``" + product_command("update") + "`` again later once a fix lands.")
         else:
             print("  ✗ Rollback failed. Recover manually with:")
             print(f"    cd {_m().PROJECT_ROOT} && git reset --hard {pre_pull_sha}")
@@ -958,7 +958,7 @@ def _prepare_checkout_for_update(
 
 @dataclass
 class _UpdateOptions:
-    """Resolved ``hermes update`` inputs (flags, config, pre-update snapshots)."""
+    """Resolved ``haos update`` inputs (flags, config, pre-update snapshots)."""
 
     active_lazy_features: object
     active_tool_dependencies: object
@@ -1111,7 +1111,7 @@ def _verify_head_after_pull(
             f"origin/{branch} advanced but the working tree stayed put.")
         print(
             "  Reattach to the branch and retry: "
-            f"git -C {_m().PROJECT_ROOT} checkout {branch} && hermes update")
+            f"git -C {_m().PROJECT_ROOT} checkout {branch} && {product_command('update')}")
         _m()._resume_windows_gateways_after_update(_windows_gateway_resume)
         sys.exit(1)
 
@@ -1125,7 +1125,7 @@ def _verify_head_after_pull(
             f"'{post_pull_branch}' — not claiming success.")
         print(
             "  Switch to the target branch and retry: "
-            f"git -C {_m().PROJECT_ROOT} checkout {branch} && hermes update")
+            f"git -C {_m().PROJECT_ROOT} checkout {branch} && {product_command('update')}")
         _m()._resume_windows_gateways_after_update(_windows_gateway_resume)
         sys.exit(1)
     return post_pull_sha

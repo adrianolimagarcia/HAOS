@@ -7,6 +7,7 @@ through :func:`_origin` at call time.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import uuid
@@ -139,7 +140,7 @@ def _generate_deepinfra_tts(text: str, output_path: str, tts_config: Dict[str, A
     delegate to the OpenAI-compatible handler."""
     api_key = _origin()._resolve_provider_key("DEEPINFRA_API_KEY", "deepinfra")
     if not api_key:
-        raise ValueError("DEEPINFRA_API_KEY not set. Run `hermes setup` to configure, or set the env var directly.")
+        raise ValueError("DEEPINFRA_API_KEY not set. Run `" + product_command("setup") + "` to configure, or set the env var directly.")
     di_config = _section(tts_config, "deepinfra")
     from hermes_cli.models import deepinfra_base_url, deepinfra_model_ids
     model = di_config.get("model")

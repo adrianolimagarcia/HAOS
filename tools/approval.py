@@ -553,7 +553,7 @@ _CRON_CTX = _Unattended(
 
 
 def _unattended_contexts() -> list[_Unattended]:
-    """Active unattended contexts in evaluation order: single-query first (``hermes chat -q``
+    """Active unattended contexts in evaluation order: single-query first (``haos chat -q``
     exports HERMES_INTERACTIVE=1 but nobody answers); cron beats a platform marker because
     cron binds the platform for delivery routing only."""
     contexts = []

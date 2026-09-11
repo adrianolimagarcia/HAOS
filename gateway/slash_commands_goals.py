@@ -2,6 +2,7 @@
 Bound onto ``GatewayRunner`` through ``GatewaySlashCommandsMixin``."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 
@@ -152,8 +153,8 @@ class GatewayGoalCommandsMixin:
         _watch()
         return (
             f"♥ Heartbeat set (every {format_interval(state.interval_seconds)}): {state.prompt}\n"
-            "Fires as a normal turn whenever this session is idle and the interval has "
-            "elapsed. Lives while the gateway runs — use `hermes cron` for durable schedules."
+            "Fires as a normal turn whenever this session is idle and the interval has " +
+            "elapsed. Lives while the gateway runs — use `" + product_command("cron") + "` for durable schedules."
         )
 
     def _idle_cached_agent_or_error(self, event: MessageEvent, verb: str):

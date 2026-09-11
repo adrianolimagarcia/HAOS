@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 from agent.skill_utils import is_excluded_skill_path
 from hermes_cli.archive_safe import archive_root_dirs, make_targz, normalize_archive_parts, safe_extract_targz
-from hermes_constants import clear_named_profile_deleted, mark_named_profile_deleted, named_profile_is_deleted
+from hermes_constants import clear_named_profile_deleted, mark_named_profile_deleted, named_profile_is_deleted, product_command
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ def _is_our_wrapper(path: Path) -> bool:
 
 
 def _missing_profile_error(canon: str) -> FileNotFoundError:
-    return FileNotFoundError(f"Profile '{canon}' does not exist. Create it with: hermes profile create {canon}")
+    return FileNotFoundError(f"Profile '{canon}' does not exist. Create it with: {product_command('profile')} create {canon}")
 
 
 # Validation
@@ -606,7 +606,7 @@ def _count_skills(profile_dir: Path) -> int:
 def read_profile_meta(profile_dir: Path) -> dict:
     """Read ``profile.yaml`` -> ``{description, description_auto, display_name}`` (empty
     defaults when missing/unreadable). Never raises — a corrupt file on one profile must not
-    break ``hermes profile list``."""
+    break ``haos profile list``."""
     data = _load_yaml_dict(profile_dir / "profile.yaml") or {}
     return {
         "description": str(data.get("description") or "").strip(),
@@ -800,11 +800,11 @@ def create_profile(
 
     ``clone_from`` defaults to the active profile when cloning. ``clone_all`` copies all state;
     ``clone_config`` copies config.yaml/.env/SOUL.md, installed skills, and identity files.
-    Either clone strips the source's messaging channels — bot tokens, allowlists, platform
+Either clone strips the source's messaging channels — bot tokens, allowlists, platform
     sections, pairing/session state — unless ``clone_channels`` opts in: a copied bot credential
     makes two gateways fight over one bot (``hermes_cli.profile_channels``; callers list what
     was left behind with ``channel_platforms_configured(source_dir)``).
-    ``no_skills`` creates an empty profile and writes a marker so ``hermes update`` skips
+    ``no_skills`` creates an empty profile and writes a marker so ``haos update`` skips
     re-seeding its skills; it is mutually exclusive with the clone options, which copy skills."""
     if no_skills and (clone_from is not None or clone_config or clone_all):
         raise ValueError(
@@ -853,8 +853,8 @@ def create_profile(
     if no_skills:
         _seed_file_if_missing(
             profile_dir / NO_BUNDLED_SKILLS_MARKER,
-            "This profile opted out of bundled-skill seeding (`hermes profile create --no-skills`).\n"
-            "Delete this file to re-enable sync on the next `hermes update`.\n",
+            "This profile opted out of bundled-skill seeding (`" + product_command("profile") + " create --no-skills`).\n" +
+            "Delete this file to re-enable sync on the next `" + product_command("update") + "`.\n",
         )
 
     # Migrate config-only clones now so desktop/status don't warn that a just-created
@@ -1135,7 +1135,7 @@ def delete_profile(name: str, yes: bool = False) -> Path:
     to prevent auto-restart, gateway stopped if running)."""
     canon = normalize_profile_name(name)
     if canon == "default":
-        raise ValueError("Cannot delete the default profile (~/.hermes).\nTo remove everything, use: hermes uninstall")
+        raise ValueError("Cannot delete the default profile (~/.hermes).\nTo remove everything, use: " + product_command("uninstall"))
     canon, profile_dir = _existing_profile_dir(canon)
     gw_running = _check_gateway_running(profile_dir)
     wrapper_path = _get_wrapper_dir() / canon
@@ -1550,8 +1550,8 @@ def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
     inferred_name = name or archive_root
     if not inferred_name:
         raise ValueError(
-            "Cannot determine profile name from archive. "
-            "Specify it explicitly: hermes profile import <archive> --name <name>"
+            "Cannot determine profile name from archive. " +
+            "Specify it explicitly: " + product_command("profile") + " import <archive> --name <name>"
         )
     if archive_root is None:
         raise ValueError("Profile archive must contain exactly one top-level directory.")
@@ -1561,8 +1561,8 @@ def import_profile(archive_path: str, name: Optional[str] = None) -> Path:
     canon = _canon_valid(inferred_name)
     if canon == "default":
         raise ValueError(
-            "Cannot import as 'default' — that is the built-in root profile (~/.hermes). "
-            "Specify a different name: hermes profile import <archive> --name <name>"
+            "Cannot import as 'default' — that is the built-in root profile (~/.hermes). " +
+            "Specify a different name: " + product_command("profile") + " import <archive> --name <name>"
         )
     profile_dir = get_profile_dir(canon)
     if profile_dir.exists():

@@ -1,4 +1,4 @@
-"""``hermes worktree`` subcommand parser."""
+"""``haos worktree`` subcommand parser."""
 
 from __future__ import annotations
 

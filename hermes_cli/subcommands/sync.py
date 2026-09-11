@@ -1,4 +1,4 @@
-"""``hermes sync`` subcommand parser — Skill Sync.
+"""``haos sync`` subcommand parser — Skill Sync.
 
 Personal sync (status/pull/push/now/enable/disable/device) moves your own skills across
 your devices; ``propose`` shares a skill with your organisation. Sync is INERT unless the
@@ -7,6 +7,7 @@ commands report that state rather than failing opaquely.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 from typing import Callable
@@ -20,11 +21,11 @@ def build_sync_parser(subparsers, *, cmd_sync: Callable) -> None:
             "own skills between your devices; if you belong to an "
             "organisation, you also get its shared skills and can propose "
             "your own back to the team.",
-        epilog="Examples:\n"
-            "  hermes sync status            what is synced, and from where\n"
-            "  hermes sync enable my-skill   include a skill in your sync\n"
-            "  hermes sync now               pull, then push\n"
-            "  hermes sync propose my-skill  share a skill with your team\n",
+        epilog="Examples:\n" +
+            "  " + product_command("sync") + " status            what is synced, and from where\n" +
+            "  " + product_command("sync") + " enable my-skill   include a skill in your sync\n" +
+            "  " + product_command("sync") + " now               pull, then push\n" +
+            "  " + product_command("sync") + " propose my-skill  share a skill with your team\n",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     sync_sub = sync_parser.add_subparsers(dest="sync_command")
 

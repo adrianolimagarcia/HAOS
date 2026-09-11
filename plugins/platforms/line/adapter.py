@@ -907,12 +907,12 @@ def validate_config(config) -> bool:
 
 
 def is_connected(config) -> bool:
-    """Surface in ``hermes status`` even before the adapter is instantiated."""
+    """Surface in ``haos status`` even before the adapter is instantiated."""
     return validate_config(config)
 
 
 def _env_enablement() -> Optional[Dict[str, Any]]:
-    """``env_enablement_fn``: seed ``PlatformConfig.extra`` from env-only setups so ``hermes status`` sees them."""
+    """Seed PlatformConfig.extra from env-only setups so ``haos status`` sees them."""
     if not _env_credentials_present():
         return None
     return _seed_extra_from_env(_ENV_SEED_KEYS, home_env="LINE_HOME_CHANNEL")
@@ -948,7 +948,7 @@ _SETUP_PROMPTS = (  # (env var, prompt, masked)
 
 
 def interactive_setup() -> None:
-    """``hermes setup line`` wizard (writes ``~/.hermes/.env``); CLI helpers are lazy-imported."""
+    """Minimal stdin wizard for ``haos setup line`` (writes ``~/.hermes/.env``)."""
     from hermes_cli.config import get_env_value, save_env_value
     from hermes_cli.cli_output import print_header, print_info, prompt
     from hermes_cli.setup_platforms import declines_reconfigure

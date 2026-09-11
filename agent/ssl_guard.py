@@ -2,6 +2,7 @@
 OpenAI/httpx turns them into an opaque ``FileNotFoundError``."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -15,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 _CA_BUNDLE_ENV_VARS = ("HERMES_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE")
 _REPAIR_HINT = (
-    "Repair: run `hermes doctor --fix` (auto-reinstalls certifi), or "
-    "manually: python -m pip install --force-reinstall certifi openai httpx\n"
+    "Repair: run `" + product_command("doctor") + " --fix` (auto-reinstalls certifi), or " +
+    "manually: python -m pip install --force-reinstall certifi openai httpx\n" +
     "If you configured a custom corporate CA bundle, fix or unset the broken CA bundle environment variable."
 )
 

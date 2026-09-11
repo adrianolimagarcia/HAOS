@@ -39,7 +39,7 @@ def _is_termux_env(env: dict | None = None) -> bool:
 def _stdout_to_stderr():
     """Route fd 1 (and sys.stdout) to stderr for the duration of an install.
 
-    ``hermes acp`` speaks JSON-RPC on stdout; an inherited-fd install child writing there would
+    ``haos acp`` speaks JSON-RPC on stdout; an inherited-fd install child writing there would
     corrupt the protocol.
     """
     saved_sys_stdout = sys.stdout
@@ -264,7 +264,7 @@ def _write_user_path_raw(entries: list[str], kind: int) -> None:
 def migrate_windows_bin_path(
     root, *, windows: bool | None = None, read_user_path=None, write_user_path=None,
 ) -> bool:
-    """One-time PATH migration to the ``HERMES_HOME\\bin`` launcher layout (``hermes update`` tail).
+    """One-time PATH migration to the ``HERMES_HOME\\bin`` launcher layout (``haos update`` tail).
 
     1. stage launchers into the managed binary dir; 2. verify both are present — otherwise STOP,
     leaving the user PATH untouched (never strip a working entry before its replacement is proven);
@@ -393,7 +393,7 @@ def _restore_quarantined_exes(moved: list[tuple[Path, Path]]) -> None:
 
     Delegates to the shared helper in the stdlib-only ``_early_recovery`` module: one retry ladder and one
     recovery message for every restore site, instead of the near-identical copies that had already drifted
-    (#75584). Warnings land on stderr — this module runs in the early-recovery path and ``hermes acp``
+    (#75584). Warnings land on stderr — this module runs in the early-recovery path and ``haos acp``
     speaks JSON-RPC on stdout.
     """
     _er.restore_quarantined_shims(moved)

@@ -3,10 +3,11 @@
 Env: ``TAVILY_API_KEY`` (https://app.tavily.com/home, optional), ``TAVILY_BASE_URL``.
 Keyed requests use ``Authorization: Bearer``; without a key the request is
 keyless (``X-Tavily-Access-Mode: keyless``). Tavily is NOT in the zero-config
-keyless ring — keyless access is opt-in by selecting Tavily in ``hermes tools``.
+keyless ring — keyless access is opt-in by selecting Tavily in ``haos tools``.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 from typing import Any, Dict, List, Optional
@@ -73,7 +74,7 @@ def _failed_document(url: str, error: str) -> Dict[str, Any]:
 
 
 def _missing_key_error(action: str) -> str:
-    return f"TAVILY_API_KEY is not set. Get a key at https://app.tavily.com/home or select Tavily in `hermes tools` for opt-in keyless {action}."
+    return f"TAVILY_API_KEY is not set. Get a key at https://app.tavily.com/home or select Tavily in `{product_command('tools')}` for opt-in keyless {action}."
 
 
 def _auth(action: str) -> tuple[Optional[str], Optional[str], str]:

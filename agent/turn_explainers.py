@@ -3,6 +3,7 @@
 The footer tells the model (and user) when a claimed file mutation did not land; the explainer
 summarises why a turn ended without a final answer. Every method resolves through ``AIAgent``'s MRO.
 """
+from hermes_constants import product_command
 import os
 import re
 from contextlib import suppress
@@ -111,12 +112,12 @@ _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
         "please send it again in a moment."
     ),
     "replaced": (
-        "the turn was stopped because the state database file "
-        "was replaced underneath this process. Do not run "
-        "`hermes doctor --fix` or in-place FTS repair — stop "
-        "the process, restore the intended state.db, then "
-        "restart. Unwritten messages were diverted to "
-        "sessions/<session_id>.jsonl and, on the gateway, "
+        "the turn was stopped because the state database file " +
+        "was replaced underneath this process. Do not run " +
+        "`" + product_command("doctor") + " --fix` or in-place FTS repair — stop " +
+        "the process, restore the intended state.db, then " +
+        "restart. Unwritten messages were diverted to " +
+        "sessions/<session_id>.jsonl and, on the gateway, " +
         "pending_messages/pending-*.json."
     ),
     "deleted_wal": (
@@ -135,20 +136,20 @@ _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
         "pending_messages/pending-*.json."
     ),
     "corrupt": (
-        "the turn was stopped because the state database "
-        "reported structural corruption (the transcript would "
-        "have been lost on restart). Freeing disk space will "
-        "not help. Recovery options:\n"
-        "1. Run `hermes {profile_arg}doctor --fix`\n"
-        "2. Stop the gateway, then recover with:\n"
-        "   hermes {profile_arg}sessions recover --source {db_path} --inspect-only\n"
-        "   (if it reports recoverable) hermes {profile_arg}sessions recover "
-        "--source {db_path} --output recovered-state.db\n"
-        "   — recovery snapshots the damaged file first; do NOT "
-        "run `sqlite3 ... \".recover\"` against the live "
-        "state.db, a vulnerable sqlite3 CLI can corrupt it "
-        "further\n"
-        "3. Restore from a backup in {backups_dir}/\n"
+        "the turn was stopped because the state database " +
+        "reported structural corruption (the transcript would " +
+        "have been lost on restart). Freeing disk space will " +
+        "not help. Recovery options:\n" +
+        "1. Run `" + product_command("doctor") + " --fix`\n" +
+        "2. Stop the gateway, then recover with:\n" +
+        "   " + product_command("sessions") + " recover --source {db_path} --inspect-only\n" +
+        "   (if it reports recoverable) " + product_command("sessions") + " recover " +
+        "--source {db_path} --output recovered-state.db\n" +
+        "   — recovery snapshots the damaged file first; do NOT " +
+        "run `sqlite3 ... \".recover\"` against the live " +
+        "state.db, a vulnerable sqlite3 CLI can corrupt it " +
+        "further\n" +
+        "3. Restore from a backup in {backups_dir}/\n" +
         "Then send your message again."
     ),
     # SQLite scoped the corruption to the FTS index and the derived indexes could not be
@@ -157,7 +158,7 @@ _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
         "the turn was stopped because the session search index (FTS5) "
         "is corrupt and could not be detached, so this message was not "
         "saved. The message store itself is not damaged: do not run "
-        "recovery tools or restore a backup. Run `hermes {profile_arg}doctor --fix` "
+        "recovery tools or restore a backup. Run `" + product_command("doctor") + " --fix` "
         "(or restart Hermes, which repairs the index on open), then "
         "send your message again."
     ),
@@ -170,9 +171,9 @@ _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
     ),
 }
 _PERSISTENCE_DEFAULT_EXPLANATION = (
-    "the turn was stopped because session storage could not be "
-    "written (the transcript would have been lost on restart). "
-    "Check the state database health (`hermes doctor`), then "
+    "the turn was stopped because session storage could not be " +
+    "written (the transcript would have been lost on restart). " +
+    "Check the state database health (`" + product_command("doctor") + "`), then " +
     "send your message again."
 )
 

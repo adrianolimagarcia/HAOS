@@ -24,7 +24,18 @@ import hermes_cli.update_cmd_zip as update_zip_mod
 
 
 _COUNT_RE = re.compile(r"user-modified \(kept\)")
-_HINT_RE = re.compile(r"hermes skills list-modified")
+# Aceita as duas formas do hint: literal (upstream) e dinamica via
+# product_command() (fork HAOS resolve o nome do CLI em runtime).
+# Em raw string, \' mantem a barra invertida — por isso o padrao usa triple-quote
+# e classe de aspas em vez de escapes.
+_HINT_RE = re.compile(
+    r"""
+    hermes\ skills\ list-modified
+    | product_command\(\s*["']skills["']\s*\)\s*\+\s*["']\s*list-modified
+    | \{product_command\(\s*["']skills["']\s*\)\}\s*list-modified
+    """,
+    re.VERBOSE,
+)
 
 
 def _source_lines() -> list[str]:

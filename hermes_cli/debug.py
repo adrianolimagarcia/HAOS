@@ -1,4 +1,4 @@
-"""``hermes debug`` debug tools for Hermes Agent."""
+"""``haos debug`` debug tools for Hermes Agent."""
 
 import contextlib
 import datetime
@@ -15,14 +15,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Optional
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from utils import atomic_json_write
 
 logger = logging.getLogger(__name__)
 
 # Prepended to upload-bound content when redaction is enabled so paste reviewers know.
 _REDACTION_BANNER = (
-    "[hermes debug share: log content redacted at upload time. "
+    "[" + product_command("debug") + " share: log content redacted at upload time. " +
     "run with --no-redact to disable]\n")
 _EMAIL_ADDRESS_RE = re.compile(
     r"(?<![A-Za-z0-9._%+-])"
@@ -120,11 +120,11 @@ Use --local to view the report without uploading.
 """
 
 _GATEWAY_PRIVACY_NOTICE = (
-    "⚠️ **Privacy notice:** This uploads system info + recent log tails "
-    "(may contain conversation fragments) to a public paste service. "
-    "Full logs are NOT included from the gateway — use `hermes debug share` "
-    "from the CLI for full log uploads.\n"
-    "Pastes auto-delete after 6 hours (dpaste.com fallback pastes: kept for "
+"⚠️ **Privacy notice:** This uploads system info + recent log tails " +
+    "(may contain conversation fragments) to a public paste service. " +
+    "Full logs are NOT included from the gateway — use `" + product_command("debug") + " share` " +
+    "from the CLI for full log uploads.\n" +
+    "Pastes auto-delete after 6 hours (dpaste.com fallback pastes: kept for " +
     "1 day, cannot be deleted).")
 
 
@@ -347,7 +347,7 @@ def _capture_default_log_snapshots(
 
 
 def _capture_dump() -> str:
-    """Run ``hermes dump`` and return its stdout as a string."""
+    """Run ``haos dump`` and return its stdout as a string."""
     from hermes_cli.dump import run_dump
     capture = io.StringIO()
     with contextlib.redirect_stdout(capture), contextlib.suppress(SystemExit):
@@ -360,7 +360,7 @@ def collect_debug_report(
     log_snapshots: Optional[dict[str, LogSnapshot]] = None) -> str:
     """Build the summary debug report (system dump + log tails) as upload-ready text.
 
-    ``dump_text`` is pre-captured dump output; when empty, ``hermes dump`` is run internally.
+    ``dump_text`` is pre-captured dump output; when empty, ``haos dump`` is run internally.
     """
     buf = io.StringIO()
     buf.write(dump_text or _capture_dump())
@@ -430,14 +430,14 @@ def build_debug_share(
         *, log_lines: int = 200, expiry: int = 1, redact: bool = True) -> DebugShareResult:
     """Collect the debug report + full logs, upload each, return the URLs.
 
-    Shared by ``hermes debug share`` and the dashboard ``POST /api/ops/debug-share``. Blocking
+    Shared by ``haos debug share`` and the dashboard ``POST /api/ops/debug-share``. Blocking
     network I/O — callers inside an event loop must run it in a worker thread.
     """
     _best_effort_sweep_expired_pastes()
     bundle = collect_share_bundle(log_lines=log_lines, redact=redact)
     if redact:
         logger.info(
-            "hermes debug share: applied force-mode redaction to log snapshots before upload")
+            product_command("debug") + " share: applied force-mode redaction to log snapshots before upload")
     report = bundle["report"]
     failures: list[str] = []
     # The summary report is required (raises so callers can fall back); full logs are optional.
@@ -500,7 +500,7 @@ def run_debug_share(args):
         result = build_debug_share(log_lines=log_lines, expiry=expiry, redact=redact)
     except RuntimeError as exc:
         print(f"\nUpload failed: {exc}", file=sys.stderr)
-        print("\nRun `hermes debug share --local` to print the report instead.\n")
+        print("\nRun `" + product_command("debug") + " share --local` to print the report instead.\n")
         sys.exit(1)
     label_width = max(len(k) for k in result.urls)
     print("\nDebug report uploaded:")
@@ -514,11 +514,11 @@ def run_debug_share(args):
               f"{result.auto_delete_seconds // 3600} hours.")
         print(f"⚠️  {len(dpaste_urls)} of {len(result.urls)} upload(s) fell back to "
               f"dpaste.com: those pastes stay public for {expiry} day(s) and CANNOT be "
-              "deleted with `hermes debug delete`.\n"
+              "deleted with `" + product_command("debug") + " delete`.\n"
               "\nShare these links with the Hermes team for support.")
     else:
         print(f"\n⏱  Pastes will auto-delete in {result.auto_delete_seconds // 3600} hours.\n"
-              "To delete now:  hermes debug delete <url>\n"
+              "To delete now:  " + product_command("debug") + " delete <url>\n"
               "\nShare these links with the Hermes team for support.")
 
 
@@ -538,7 +538,7 @@ _NOUS_PRIVACY_NOTICE = """\
 
 
 def _run_debug_share_nous(args, *, log_lines: int, redact: bool) -> None:
-    """``hermes debug share --nous``: gzip the same bundle into the Nous envelope → Nous-S3."""
+    """``haos debug share --nous``: gzip the same bundle into the Nous envelope → Nous-S3."""
     from hermes_cli.diagnostics_upload import share_to_nous
     print(_NOUS_PRIVACY_NOTICE)
     if not _confirm_upload(args):
@@ -549,15 +549,15 @@ def _run_debug_share_nous(args, *, log_lines: int, redact: bool) -> None:
     _best_effort_sweep_expired_pastes()
     bundle = collect_share_bundle(log_lines=log_lines, redact=redact)
     if redact:
-        logger.info("hermes debug share --nous: applied force-mode redaction before upload")
+        logger.info(product_command("debug") + " share --nous: applied force-mode redaction before upload")
     print("Uploading to Nous diagnostics storage...")
     try:
         res = share_to_nous(build_nous_bundle(bundle, redact=redact))
     except Exception as exc:
         print(f"\nNous upload failed: {exc}\n"
-              "\nThe Nous diagnostics service may be unavailable or not yet provisioned.\n"
-              "Run `hermes debug share --local` to print the report instead, "
-              "or `hermes debug share` to upload to a public paste service.\n", file=sys.stderr)
+              "\nThe Nous diagnostics service may be unavailable or not yet provisioned.\n" +
+              "Run `" + product_command("debug") + " share --local` to print the report instead, " +
+              "or `" + product_command("debug") + " share` to upload to a public paste service.\n", file=sys.stderr)
         sys.exit(1)
     view_url = res.get("viewUrl") or res.get("view_url")
     expires_at = res.get("expiresAt") or res.get("expires_at")
@@ -578,8 +578,8 @@ def run_debug_delete(args):
     """Delete one or more paste URLs uploaded by /debug."""
     urls = getattr(args, "urls", [])
     if not urls:
-        print("Usage: hermes debug delete <url> [<url> ...]\n"
-              "  Deletes paste.rs pastes uploaded by 'hermes debug share'.")
+        print("Usage: " + product_command("debug") + " delete <url> [<url> ...]\n" +
+              "  Deletes paste.rs pastes uploaded by '" + product_command("debug") + " share'.")
         return
     for url in urls:
         try:
@@ -605,7 +605,7 @@ def run_debug(args):
 
 
 _DEBUG_USAGE = """\
-Usage: hermes debug <command>
+Usage: """ + product_command("debug") + """ <command>
 
 Commands:
   share    Upload debug report to a paste service and print URL

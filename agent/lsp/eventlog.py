@@ -9,6 +9,7 @@ diagnostic event; WARNING for action-required failures (first ``server unavailab
 by the distinct pairs touched in one process — a bounded LRU would re-fire suppressed lines.
 """
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -84,7 +85,7 @@ def log_server_unavailable(server_id: str, binary_or_pkg: str) -> None:
     _emit_once(
         _announced_unavailable, (server_id, binary_or_pkg), server_id, logging.WARNING,
         f"server unavailable: {binary_or_pkg} not found "
-        "(install via `hermes lsp install <id>` or set lsp.servers.<id>.command)",
+        "(install via `" + product_command("lsp") + " install <id>` or set lsp.servers.<id>.command)",
         f"server still unavailable: {binary_or_pkg}",
     )
 

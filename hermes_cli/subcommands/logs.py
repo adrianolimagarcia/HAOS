@@ -1,6 +1,7 @@
-"""``hermes logs`` subcommand parser."""
+"""``haos logs`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 from typing import Callable
@@ -14,18 +15,18 @@ def build_logs_parser(subparsers, *, cmd_logs: Callable) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-    hermes logs                    Show last 50 lines of agent.log
-    hermes logs -f                 Follow agent.log in real time
-    hermes logs errors             Show last 50 lines of errors.log
-    hermes logs gateway -n 100     Show last 100 lines of gateway.log
-    hermes logs gui -f             Follow gui.log in real time
-    hermes logs desktop -f         Follow desktop.log (Electron app boot/backend)
-    hermes logs --level WARNING    Only show WARNING and above
-    hermes logs --session abc123   Filter by session ID
-    hermes logs --component tools  Only show tool-related lines
-    hermes logs --since 1h         Lines from the last hour
-    hermes logs --since 30m -f     Follow, starting from 30 min ago
-    hermes logs list               List available log files with sizes
+    """ + product_command("logs") + """                    Show last 50 lines of agent.log
+    """ + product_command("logs") + """ -f                 Follow agent.log in real time
+    """ + product_command("logs") + """ errors             Show last 50 lines of errors.log
+    """ + product_command("logs") + """ gateway -n 100     Show last 100 lines of gateway.log
+    """ + product_command("logs") + """ gui -f             Follow gui.log in real time
+    """ + product_command("logs") + """ desktop -f         Follow desktop.log (Electron app boot/backend)
+    """ + product_command("logs") + """ --level WARNING    Only show WARNING and above
+    """ + product_command("logs") + """ --session abc123   Filter by session ID
+    """ + product_command("logs") + """ --component tools  Only show tool-related lines
+    """ + product_command("logs") + """ --since 1h         Lines from the last hour
+    """ + product_command("logs") + """ --since 30m -f     Follow, starting from 30 min ago
+    """ + product_command("logs") + """ list               List available log files with sizes
 """)
     logs_parser.add_argument(
         "log_name", nargs="?", default="agent",

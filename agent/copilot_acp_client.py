@@ -5,6 +5,7 @@ as one prompt, collects text chunks, and returns the minimal OpenAI-client shape
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import json
@@ -54,13 +55,13 @@ _INITIALIZE_PARAMS = {
     "clientInfo": {"name": "hermes-agent", "title": "Hermes Agent", "version": "0.0.0"},
 }
 _DEPRECATED_CLI_ERROR = (
-    "Hermes ACP mode requires the NEW GitHub Copilot CLI (github.com/github/copilot-cli), but the binary it just "
-    "spawned is the deprecated `gh copilot` extension.\n\n"
-    "Install the new CLI:\n  npm install -g @github/copilot\n  # then verify with: copilot --help\n\n"
-    "If `copilot` already resolves to the new CLI but you still see this,\npoint Hermes at it explicitly:\n"
-    "  export HERMES_COPILOT_ACP_COMMAND=/path/to/new/copilot\n\n"
-    "Alternative: use the `copilot` provider (no ACP, hits the Copilot API\ndirectly with a Copilot subscription "
-    "token) via `hermes setup`.\n\nOriginal error:\n"
+    "Hermes ACP mode requires the NEW GitHub Copilot CLI (github.com/github/copilot-cli), but the binary it just " +
+    "spawned is the deprecated `gh copilot` extension.\n\n" +
+    "Install the new CLI:\n  npm install -g @github/copilot\n  # then verify with: copilot --help\n\n" +
+    "If `copilot` already resolves to the new CLI but you still see this,\npoint Hermes at it explicitly:\n" +
+    "  export HERMES_COPILOT_ACP_COMMAND=/path/to/new/copilot\n\n" +
+    "Alternative: use the `copilot` provider (no ACP, hits the Copilot API\ndirectly with a Copilot subscription " +
+    "token) via `" + product_command("setup") + "`.\n\nOriginal error:\n"
 )
 
 

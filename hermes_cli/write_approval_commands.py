@@ -2,6 +2,7 @@
 """Shared handlers for the /memory and /skills write-approval subcommands."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 from typing import List, Optional
@@ -144,7 +145,7 @@ def _set_approval(subsystem: str, rest: List[str], set_mode_fn) -> str:
     if set_mode_fn is None:
         val = "true" if enabled else "false"
         return (f"To change the {subsystem} approval gate, run:\n"
-                f"  hermes config set {subsystem}.write_approval {val}")
+                f"  {product_command('config')} set {subsystem}.write_approval {val}")
     try:
         set_mode_fn(enabled)
     except Exception as e:

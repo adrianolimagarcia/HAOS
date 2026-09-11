@@ -1,9 +1,10 @@
-"""Dispatcher and maintenance verbs for ``hermes kanban``: ``dispatch``,
+"""Dispatcher and maintenance verbs for ``haos kanban``: ``dispatch``,
 ``daemon`` (deprecated standalone loop), ``tail``/``watch`` event streaming,
 ``gc`` and ``repair``.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import json
@@ -140,13 +141,13 @@ def _cmd_dispatch(args: argparse.Namespace) -> int:
 
 
 _DAEMON_DEPRECATED = (
-    "hermes kanban daemon: DEPRECATED — the dispatcher now runs\ninside the gateway. To use "
-    "kanban:\n\n    hermes gateway start       # starts the gateway + embedded dispatcher\n\nReady "
-    "tasks will be picked up on the next dispatcher tick\n(default: every 60 seconds). Configure "
-    "via config.yaml:\n\n    kanban:\n      dispatch_in_gateway: true      # default\n      "
-    "dispatch_interval_seconds: 60\n      failure_limit: 2              # consecutive non-success "
-    "attempts before auto-block\n\nRunning both the gateway AND this standalone daemon will\nrace "
-    "for claims. If you truly need the old standalone\ndaemon (no gateway available), rerun with "
+    product_command("kanban") + " daemon: DEPRECATED — the dispatcher now runs\ninside the gateway. To use " +
+    "kanban:\n\n    " + product_command("gateway") + " start       # starts the gateway + embedded dispatcher\n\nReady " +
+    "tasks will be picked up on the next dispatcher tick\n(default: every 60 seconds). Configure " +
+    "via config.yaml:\n\n    kanban:\n      dispatch_in_gateway: true      # default\n      " +
+    "dispatch_interval_seconds: 60\n      failure_limit: 2              # consecutive non-success " +
+    "attempts before auto-block\n\nRunning both the gateway AND this standalone daemon will\nrace " +
+    "for claims. If you truly need the old standalone\ndaemon (no gateway available), rerun with " +
     "--force."
 )
 
@@ -208,8 +209,9 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                 print(
                     f"[{_fmt_ts(now)}] WARN dispatcher stuck: ready queue non-empty for "
                     f"{health_state['bad_ticks']} consecutive ticks but 0 workers spawned "
-                    f"successfully. Check profile health (venv, PATH, credentials) and `hermes "
-                    f"kanban list --status ready` / `hermes kanban list --status blocked` for "
+                    f"successfully. Check profile health (venv, PATH, credentials) and `"
+                    f"{product_command('kanban')} list --status ready` / "
+                    f"{product_command('kanban')} list --status blocked` for "
                     f"recent spawn_failed tasks.",
                     file=sys.stderr, flush=True,
                 )

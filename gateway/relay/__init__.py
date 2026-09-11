@@ -399,7 +399,7 @@ def _post_provision(
 def _resolve_relay_identity_token() -> str:
     """Resolve the caller-identity bearer token the connector introspects to a tenant.
 
-    Canonical resolver shared by runtime self-provision and ``hermes gateway enroll``.
+    Canonical resolver shared by runtime self-provision and ``haos gateway enroll``.
     Modes, in precedence order:
       1.  Generic OIDC client-credentials (self-hosted IdP): ``gateway.idp.token_url``
           (``GATEWAY_RELAY_IDP_TOKEN_URL``) set together with client id + secret ->

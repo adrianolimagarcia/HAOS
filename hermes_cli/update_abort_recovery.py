@@ -4,6 +4,7 @@ own vocabulary (``verified`` / ``relaunch_attempted`` / ``failed``, serve units,
 its own fail-closed contract."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import logging
@@ -216,7 +217,7 @@ def _recover_gateway_restart_after_abort(
 
 
 def _warn_stale_serve_runtimes(rows) -> None:
-    """Name the serve/dashboard processes still on pre-update code: ``hermes serve`` hosts
+    """Name the serve/dashboard processes still on pre-update code: ``haos serve`` hosts
     ``tui_gateway.server``, and an un-restarted unit keeps the pre-pull ``sys.modules`` graph so
     every chat turn fails with an ``ImportError`` no gateway row explains."""
     if not rows:
@@ -229,8 +230,8 @@ def _warn_stale_serve_runtimes(rows) -> None:
             f"      pid {row.get('pid')} — {row.get('kind')}"
             f" (profile {row.get('profile') or 'default'}, {row.get('supervisor') or 'unknown'})")
     print(
-        "    Restart them before using Hermes again, e.g. `systemctl --user restart hermes-serve.service`"
-        " or by relaunching `hermes serve` / the Desktop app.")
+        "    Restart them before using Hermes again, e.g. `systemctl --user restart hermes-serve.service`" +
+        " or by relaunching `" + product_command("serve") + "` / the Desktop app.")
 
 
 def _abort_recovery_is_complete(

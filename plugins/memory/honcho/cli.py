@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from plugins.memory.honcho.client import _first_parsed, _host_block, profile_host_key, resolve_active_host, resolve_config_path, HOST
 from plugins.memory.honcho.session_peers import sanitize_peer_id
 from hermes_cli.config import cfg_get
@@ -343,7 +343,7 @@ def cmd_sync(args) -> None:
 
 
 def sync_honcho_profiles_quiet() -> int:
-    """Sync host blocks for all profiles from `hermes update`; no output, no exceptions."""
+    """Sync host blocks for all profiles from `haos update`; no output, no exceptions."""
     return _sync_profiles(verbose=False)
 
 
@@ -878,7 +878,7 @@ def _setup_wizard(args) -> None:
         save_config(hermes_config)
         print("  Memory provider set to 'honcho' in config.yaml")
     except Exception as e:
-        print(f"  Could not auto-enable in config.yaml: {e}\n  Run: hermes config set memory.provider honcho")
+        print(f"  Could not auto-enable in config.yaml: {e}\n  Run: {product_command('config')} set memory.provider honcho")
 
     print("  Testing connection... ", end="", flush=True)
     try:
@@ -1844,7 +1844,7 @@ Step 6  Next steps
 
 # (subcommand, help, handler, ((arg, kwargs), ...)); order defines --help order.
 _SUBCOMMANDS = (
-    ("setup", "Initial Honcho setup (redirects to hermes memory setup)", None, ()),
+    ("setup", "Initial Honcho setup (redirects to " + product_command("memory") + " setup)", None, ()),
     ("status", "Show current Honcho config and connection status", cmd_status, (
         ("--all", dict(action="store_true", help="Show config overview across all profiles")),
     )),
@@ -1893,7 +1893,7 @@ def honcho_command(args) -> None:
     _profile_override = getattr(args, "target_profile", None)
     sub = getattr(args, "honcho_command", None)
     if sub == "setup":  # honcho setup goes through the unified memory-provider path
-        print("\n  Honcho is configured via the memory provider system.\n  Running 'hermes memory setup'...\n")
+        print("\n  Honcho is configured via the memory provider system.\n  Running '" + product_command("memory") + " setup'...\n")
         from hermes_cli.memory_setup import cmd_setup_provider
         return cmd_setup_provider("honcho")
     handler = cmd_status if sub is None else _HANDLERS.get(sub)

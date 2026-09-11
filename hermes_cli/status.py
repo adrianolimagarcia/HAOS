@@ -18,7 +18,7 @@ from hermes_cli.runtime_provider import resolve_requested_provider
 from hermes_cli.vercel_auth import describe_vercel_auth
 from hermes_cli.status_auth import (  # renderers wired into _SECTIONS below
     _render_api_keys, _render_apikey_providers, _render_auth_providers, _render_nous_gateway)
-from hermes_constants import OPENROUTER_MODELS_URL
+from hermes_constants import OPENROUTER_MODELS_URL, product_command
 from hermes_constants import is_termux as _is_termux
 
 
@@ -91,7 +91,7 @@ def _effective_provider_label() -> str:
 
 
 def _estop_status_line():
-    """One-line pause banner for `hermes status`, or None when not paused."""
+    """One-line pause banner for `haos status`, or None when not paused."""
     try:
         from agent.estop import get_state
     except ImportError:
@@ -100,7 +100,7 @@ def _estop_status_line():
     if state is None:
         return None
     reason = state.get("reason")
-    return f"⏸️  PAUSED (global emergency stop{f' — reason: {reason}' if reason else ''}; `hermes resume` to lift)"
+    return f"⏸️  PAUSED (global emergency stop{f' — reason: {reason}' if reason else ''}; `{product_command('resume')}` to lift)"
 
 
 # --- Data tables driving the per-section renderers -------------------------
@@ -241,7 +241,7 @@ def _render_gateway(ctx):
         if snapshot.has_process_service_mismatch:
             _kv("Service:", "installed but not managing the current running gateway")
         elif _is_termux() and not snapshot.gateway_pids:
-            _kv("Start with:", "hermes gateway")
+            _kv("Start with:", product_command("gateway"))
             _kv("Note:", "Android may stop background jobs when Termux is suspended")
         elif snapshot.service_installed and not snapshot.service_running:
             _kv("Service:", "installed but stopped")

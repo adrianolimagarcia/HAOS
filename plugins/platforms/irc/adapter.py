@@ -5,6 +5,7 @@ use_tls (true), server_password, nickserv_password, allowed_users ([] = allow al
 Env vars override config.yaml: IRC_SERVER, IRC_PORT, IRC_NICKNAME, IRC_CHANNEL, IRC_USE_TLS,
 IRC_SERVER_PASSWORD, IRC_NICKSERV_PASSWORD.
 """
+from hermes_constants import product_command
 
 import asyncio
 import datetime
@@ -337,7 +338,7 @@ def validate_config(config) -> bool:
 
 
 def interactive_setup() -> None:
-    """`hermes gateway setup` flow (lazy hermes_cli imports keep the plugin importable outside the CLI)."""
+    """`haos gateway setup` flow (lazy hermes_cli imports keep the plugin importable outside the CLI)."""
     from hermes_cli.setup import (
         prompt, prompt_yes_no, save_env_value, get_env_value, print_header, print_info, print_warning, print_success)
     from hermes_cli.setup_platforms import declines_reconfigure
@@ -405,7 +406,7 @@ def interactive_setup() -> None:
             print_info("No nicks allowed — the bot will ignore all messages until you add nicks.")
     print()
     print_success("IRC configuration saved to ~/.hermes/.env")
-    print_info("Restart the gateway for changes to take effect: hermes gateway restart")
+    print_info("Restart the gateway for changes to take effect: " + product_command("gateway") + " restart")
 
 
 def is_connected(config) -> bool:

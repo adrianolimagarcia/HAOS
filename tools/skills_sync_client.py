@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Skill Sync client -- the low-level sync layer (push objects + CAS a ref, pull the owner's
 HEAD, three-way merge on a 409). Driven by the debounced ``skill_manage`` push hook, the curator
-tick ``maybe_pull_skills`` and ``hermes sync``. Lives under tools/ so it never imports the CLI at
+tick ``maybe_pull_skills`` and ``haos sync``. Lives under tools/ so it never imports the CLI at
 module load; ``skills_sync_client_wire`` / ``skills_sync_client_org`` are re-exported here.
 ACCESS GATE (pre-launch): INERT unless the user is a Nous admin per the ``tool_gateway_admin``
 JWT claim (NAS's misleading name for the global portal-admin permission; replace before shipping).
@@ -9,6 +9,7 @@ OPT-IN DEFAULT (provisional): local intent is the ``sync`` flag in ``.usage.json
 cross-device state is the ``sync-manifest`` blob in the plane. Only ~/.hermes/skills/ skills qualify."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import logging
@@ -108,13 +109,13 @@ def sync_feature_enabled() -> bool:
 
 
 def sync_org_auto_propose() -> bool:
-    """False (default): edits to an org skill stay LOCAL until ``hermes sync propose``. True: every
+    """False (default): edits to an org skill stay LOCAL until ``haos sync propose``. True: every
     edit is proposed right away (an admin still approves unless the editor is one)."""
     return _sync_config_bool("HERMES_SYNC_ORG_AUTO_PROPOSE", "org_auto_propose", default=False)
 
 
 def sync_default_opt_in() -> bool:
-    """False (default): opt-IN -- a skill syncs only after ``hermes sync enable`` or a plane manifest
+    """False (default): opt-IN -- a skill syncs only after ``haos sync enable`` or a plane manifest
     opting it in. True: opt-OUT -- every eligible skill syncs unless disabled (Hermes Cloud default)."""
     return _sync_config_bool("HERMES_SYNC_DEFAULT_OPT_IN", "default_opt_in", default=False)
 
@@ -394,7 +395,7 @@ def _resolve_push_conflict(client: SyncClient, identity: Dict[str, Any], actual_
             client.cas_ref(conflict_ref, None, our_commit)
         return {"ok": False, "conflict": True, "conflict_ref": conflict_ref, "overlapping_skills": sorted(overlaps),
                 "actual_head": actual_head, "message": (f"{len(overlaps)} skill(s) changed on both sides; wrote "
-                                                        f"{conflict_ref}. Resolve out-of-band (hermes sync / NAS UI).")}
+                                                        f"{conflict_ref}. Resolve out-of-band ({product_command('sync')} / NAS UI).")}
     # Merge commit (parents: actual, ours); re-add our objects so the merge push is self-contained.
     merge_objects = ObjectSet()
     merge_objects.objects |= objects.objects
@@ -471,7 +472,7 @@ def maybe_pull_skills() -> Optional[Dict[str, Any]]:
 
 
 def sync_status() -> Dict[str, Any]:
-    """Snapshot for ``hermes sync status``; never raises. ``org_available`` False = not in a shared org."""
+    """Snapshot for ``haos sync status``; never raises. ``org_available`` False = not in a shared org."""
     status: Dict[str, Any] = {"nous_admin": False, "logged_in": False, "feature_enabled": sync_feature_enabled(),
                               "default_opt_in": sync_default_opt_in(), "base_url": resolve_sync_base_url(),
                               "opted_in_skills": [], "local_head": None, "owner": None, "org_available": False,

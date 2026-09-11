@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 
 from hermes_cli.colors import Colors, color
 
@@ -417,7 +417,7 @@ def _uninstall_profile(profile) -> None:
 
 
 def run_gui_uninstall(args):
-    """``hermes uninstall --gui``: remove the desktop app's built artifacts, packaged bundle
+    """``haos uninstall --gui``: remove the desktop app's built artifacts, packaged bundle
     (best-effort) and Electron userData — never config/sessions/.env, the agent or its venv."""
     from hermes_cli.gui_uninstall import agent_is_installed, gui_install_summary, uninstall_gui
     hermes_home = get_hermes_home()
@@ -459,7 +459,7 @@ def run_gui_uninstall(args):
     _print_box("│            ✓ Chat GUI Uninstalled!                      │", Colors.GREEN)
     print()
     print("The Hermes agent is still installed. Run 'hermes' to use the CLI,")
-    print("or 'hermes uninstall' to remove the agent too.")
+    print("or '" + product_command("uninstall") + "' to remove the agent too.")
     print()
 
 

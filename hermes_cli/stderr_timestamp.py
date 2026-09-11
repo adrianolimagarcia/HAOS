@@ -77,7 +77,7 @@ def _prepare_child_command(command: Sequence[str], environ: Mapping[str, str] | 
 
     launchd stamps ``XPC_SERVICE_NAME=<job label>`` only on this wrapper (its direct child; an
     interactive shell has none, the grandchild sees ``XPC_SERVICE_NAME=0``). Newly generated
-    plists put ``--external-supervisor`` on the inner ``gateway run`` so ``hermes update`` can see
+    plists put ``--external-supervisor`` on the inner ``gateway run`` so ``haos update`` can see
     the flag on the live process argv.
     """
     argv = [str(part) for part in command]

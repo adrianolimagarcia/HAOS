@@ -2,7 +2,7 @@
 
 Server-side fact extraction and semantic search via the Mem0 Platform API (cloud), a
 self-hosted Mem0 server (MEM0_HOST, HTTP), or OSS Memory. Secrets live in $HERMES_HOME/.env
-(MEM0_API_KEY, MEM0_HOST); settings in $HERMES_HOME/mem0.json via `hermes memory setup`:
+(MEM0_API_KEY, MEM0_HOST); settings in $HERMES_HOME/mem0.json via `haos memory setup`:
 mode ("platform"|"oss"), host, user_id (canonical id across gateways; unset → gateway-native
 id), agent_id. MEM0_* env vars remain a fallback.
 """

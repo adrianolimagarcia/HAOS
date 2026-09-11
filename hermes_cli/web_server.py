@@ -5,6 +5,7 @@ Route handlers live in ``web_routers/``; their helpers live in the sibling
 stays the single late-binding seam tests monkeypatch (``web_deps.late``).
 Usage: ``python -m hermes_cli.main web [--port 8080]``.
 """
+from hermes_constants import product_command
 
 from contextlib import asynccontextmanager
 
@@ -77,7 +78,7 @@ from hermes_cli.web_server_lifecycle import (  # noqa: E402
 def _start_desktop_cron_ticker(stop_event: "threading.Event", interval: int = 60) -> None:
     """Tick the cron scheduler from inside the desktop dashboard backend.
 
-    The desktop spawns a ``hermes dashboard`` backend, not a gateway, so without
+    The desktop spawns a ``haos dashboard`` backend, not a gateway, so without
     this a cron created in the app would never fire (no live adapters; delivery
     falls back to the per-platform send path). The primary backend outlives the
     per-profile pool (reaped after ~10 idle minutes), so it ticks EVERY local
@@ -844,7 +845,7 @@ _LAST_GATEWAY_RESTART: Optional[Tuple[float, subprocess.Popen, Tuple[str, ...]]]
 
 
 def _spawn_gateway_restart(profile: Optional[str] = None) -> Tuple[subprocess.Popen, bool]:
-    """Spawn ``hermes gateway restart``, reusing an in-flight or recent restart.
+    """Spawn ``haos gateway restart``, reusing an in-flight or recent restart.
 
     Concurrent children race each other on the kill-and-start path, so a live
     child is reused; requests within ``GATEWAY_RESTART_COOLDOWN_SECONDS`` for the
@@ -1029,17 +1030,17 @@ def _no_auth_provider_message(host: str) -> str:
         fix_hint = ""
 
     fix_hint += (
-        "Configure an auth provider before exposing the dashboard:\n"
-        "  • Password: set dashboard.basic_auth.username + "
-        "password_hash in config.yaml\n"
-        "    (hash with: python -c \"from "
-        "plugins.dashboard_auth.basic import hash_password; "
-        "print(hash_password('your-password'))\")\n"
-        "  • OAuth: run `hermes dashboard register` (Nous Portal) or "
-        "install a DashboardAuthProvider plugin.\n"
-        "There is no unauthenticated public-dashboard option. For "
-        "local-only use, bind 127.0.0.1 and leave dashboard.public_url "
-        "unset; a configured external public URL requires auth even "
+        "Configure an auth provider before exposing the dashboard:\n" +
+        "  • Password: set dashboard.basic_auth.username + " +
+        "password_hash in config.yaml\n" +
+        "    (hash with: python -c \"from " +
+        "plugins.dashboard_auth.basic import hash_password; " +
+        "print(hash_password('your-password'))\")\n" +
+        "  • OAuth: run `" + product_command("dashboard") + " register` (Nous Portal) or " +
+        "install a DashboardAuthProvider plugin.\n" +
+        "There is no unauthenticated public-dashboard option. For " +
+        "local-only use, bind 127.0.0.1 and leave dashboard.public_url " +
+        "unset; a configured external public URL requires auth even " +
         "when a local reverse proxy reaches a loopback backend."
     )
     # Credentials exist but the bundled provider is disabled (#54489). Basic
@@ -1054,11 +1055,11 @@ def _no_auth_provider_message(host: str) -> str:
         has_creds = bool(ba.get("username")) and bool(ba.get("password_hash") or ba.get("password"))
         if has_creds and (set(disabled) & _BASIC_AUTH_PLUGIN_KEYS):
             fix_hint = (
-                "The 'basic' dashboard-auth plugin is in "
-                "plugins.disabled but dashboard.basic_auth is "
-                "configured.\n"
-                "Remove 'basic' from plugins.disabled (or run "
-                "`hermes plugins enable basic`), then restart the "
+                "The 'basic' dashboard-auth plugin is in " +
+                "plugins.disabled but dashboard.basic_auth is " +
+                "configured.\n" +
+                "Remove 'basic' from plugins.disabled (or run " +
+                "`" + product_command("plugins") + " enable basic`), then restart the " +
                 "dashboard.\n\n"
             ) + fix_hint
     except Exception:

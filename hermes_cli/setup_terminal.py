@@ -1,6 +1,7 @@
 """Terminal-backend setup wizard (local/docker/singularity/modal/daytona/vercel/ssh/plugin).
 setup.py names are resolved through the module object so test patches on ``hermes_cli.setup.<name>``
 take effect; setup.py re-exports the public entry points."""
+from hermes_constants import product_command
 
 import json
 import logging
@@ -159,9 +160,9 @@ def _setup_backend_docker(config: dict) -> None:
         proxy_cfg.setdefault("enforce_on_docker", True)
         _setup.print_success("Egress firewall enabled in config")
         _setup.print_info(
-            "Run `hermes egress setup` then `hermes egress start` to mint tokens and launch the proxy.")
+            "Run `" + product_command("egress") + " setup` then `" + product_command("egress") + " start` to mint tokens and launch the proxy.")
     else:
-        _setup.print_info("Skipping egress firewall. You can enable it later with `hermes egress setup`.")
+        _setup.print_info("Skipping egress firewall. You can enable it later with `" + product_command("egress") + " setup`.")
 
 
 def _setup_backend_singularity(config: dict) -> None:

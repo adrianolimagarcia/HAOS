@@ -1,9 +1,10 @@
-"""`hermes checkpoints` CLI subcommand.
+"""`haos checkpoints` CLI subcommand.
 
 None of these require the agent to be running. Safe to call any time.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import time
@@ -54,7 +55,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"Legacy archives ({len(legacy)}):")
         _print_archives(sorted(legacy, key=lambda a: a.get("mtime", 0), reverse=True))
         print()
-        print("Clear with: hermes checkpoints clear-legacy")
+        print("Clear with: " + product_command("checkpoints") + " clear-legacy")
     return 0
 
 
@@ -184,7 +185,7 @@ def cmd_clear_legacy(args: argparse.Namespace) -> int:
 
 
 def register_cli(parser: argparse.ArgumentParser) -> None:
-    """Wire subcommands onto the ``hermes checkpoints`` parser."""
+    """Wire subcommands onto the ``haos checkpoints`` parser."""
     parser.set_defaults(func=cmd_status)  # bare `hermes checkpoints` → status
     subs = parser.add_subparsers(dest="checkpoints_command", metavar="COMMAND")
 

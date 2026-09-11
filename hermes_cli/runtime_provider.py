@@ -31,7 +31,7 @@ from hermes_cli.auth import (  # resolve_external_process_provider_credentials i
 )
 from hermes_cli import config as _config_mod
 from hermes_cli import models as _models  # attribute access keeps ``hermes_cli.models.<name>`` patches effective
-from hermes_constants import OPENROUTER_BASE_URL
+from hermes_constants import OPENROUTER_BASE_URL, product_command
 from hermes_cli.providers import determine_api_mode, is_actual_route, is_official_openai_host, nous_api_mode
 from utils import base_url_host_matches, base_url_hostname, env_int
 
@@ -497,7 +497,7 @@ def _openrouter_should_use_pool(requested_provider, model_cfg, explicit_api_key,
 
 def _refresh_nous_pool_entry(pool: CredentialPool, entry: Any, pool_api_key: str):
     """Nous pool entries carry the agent_key (an invoke JWT) which the pool does not refresh on
-    selection (avoids network calls in `hermes auth list`); refresh here before falling back to
+    selection (avoids network calls in `haos auth list`); refresh here before falling back to
     singleton auth resolution. Returns (entry, pool_api_key) — key "" when still unusable."""
     min_ttl = _nous_min_key_ttl()
     if _nous_entry_key_usable(entry, min_ttl):
@@ -767,10 +767,10 @@ def _resolve_vertex_runtime(requested_provider: str) -> Dict[str, Any]:
     from agent.vertex_adapter import get_vertex_config
     token, base_url = get_vertex_config()
     if not token or not base_url:
-        raise AuthError("Vertex AI credentials could not be resolved. Vertex uses OAuth2 (not a static API key): provide a "
-                        "service-account JSON via GOOGLE_APPLICATION_CREDENTIALS (or VERTEX_CREDENTIALS_PATH) in ~/.hermes/.env, "
-                        "or run 'gcloud auth application-default login' for ADC. Set the GCP project/region under vertex: in "
-                        "config.yaml if they aren't embedded in the credentials. Run `hermes setup` to install Vertex support.")
+        raise AuthError("Vertex AI credentials could not be resolved. Vertex uses OAuth2 (not a static API key): provide a " +
+                        "service-account JSON via GOOGLE_APPLICATION_CREDENTIALS (or VERTEX_CREDENTIALS_PATH) in ~/.hermes/.env, " +
+                        "or run 'gcloud auth application-default login' for ADC. Set the GCP project/region under vertex: in " +
+                        "config.yaml if they aren't embedded in the credentials. Run `" + product_command("setup") + "` to install Vertex support.")
     return _runtime("vertex", "chat_completions", base_url.rstrip("/"), token, source="vertex-oauth", requested_provider=requested_provider)
 
 

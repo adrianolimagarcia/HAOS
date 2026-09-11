@@ -1,10 +1,10 @@
-"""``hermes codebase-wiki`` — build/serve the HAOS Codebase Wiki.
+"""``haos codebase-wiki`` — build/serve the HAOS Codebase Wiki.
 
 Usage:
-    hermes codebase-wiki [ROOT] [--out DIR] [--include-tests] [--max-files N]
-    hermes codebase-wiki [ROOT] --watch          # re-index on file changes
-    hermes codebase-wiki [ROOT] --mcp            # expose wiki query via MCP stdio
-    hermes codebase-wiki --help
+    haos codebase-wiki [ROOT] [--out DIR] [--include-tests] [--max-files N]
+    haos codebase-wiki [ROOT] --watch          # re-index on file changes
+    haos codebase-wiki [ROOT] --mcp            # expose wiki query via MCP stdio
+    haos codebase-wiki --help
 
 The default output directory is ``<HERMES_HOME>/codebase-wiki``; artifacts are
 ``graph.json``, ``index.md`` and ``modules/*.md`` (see
@@ -69,7 +69,7 @@ def _default_out_dir() -> Path:
 
 
 def codebase_wiki_command(args: argparse.Namespace) -> int:
-    """Entry point from ``hermes codebase-wiki …``; returns a shell-style exit code."""
+    """Entry point from ``haos codebase-wiki …``; returns a shell-style exit code."""
     from .codebase_wiki_impl import run_cli, run_cli_mcp, run_cli_watch
 
     root = Path(args.root or ".")

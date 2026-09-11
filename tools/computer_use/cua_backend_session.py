@@ -3,6 +3,7 @@
 helpers are looked up lazily through the facade."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import asyncio
 import base64
@@ -306,7 +307,7 @@ class _CuaDriverSession:
             from hermes_constants import display_hermes_home
             raise RuntimeError(
                 f"cua-driver session never reached ready (timeout 30s; stuck in phase: "
-                f"{getattr(self, '_startup_phase', 'unknown')}). Run `hermes computer-use doctor` and check "
+                f"{getattr(self, '_startup_phase', 'unknown')}). Run `{product_command('computer-use')} doctor` and check "
                 f"{display_hermes_home()}/logs/agent.log for the phase timings.")
         if self._setup_error is not None:
             raise RuntimeError(f"cua-driver session setup failed: {self._setup_error}") from self._setup_error

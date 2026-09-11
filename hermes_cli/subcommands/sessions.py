@@ -1,4 +1,4 @@
-"""``hermes sessions`` subcommand parser."""
+"""``haos sessions`` subcommand parser."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""``hermes dashboard`` / ``hermes serve`` subcommand parsers.
+"""``haos dashboard`` / ``haos serve`` subcommand parsers.
 
 ``dashboard`` is the browser web UI; ``serve`` is the same gateway, headless —
 what the desktop app and remote backends run. ``serve`` also skips the web UI
@@ -7,6 +7,7 @@ Both share one handler (``cmd_dashboard`` → ``start_server``).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 from typing import Callable
@@ -64,7 +65,7 @@ def build_serve_parser(
 ) -> argparse.ArgumentParser:
     """Build the standalone parser used by the lean ``serve`` dispatch path."""
     parser = argparse.ArgumentParser(
-        prog="hermes serve",
+        prog=product_command("serve"),
         description="Run the Hermes backend server - the JSON-RPC/WebSocket gateway the "
             "desktop app and remote clients connect to. Headless: it never opens "
             "a browser UI.",
@@ -105,10 +106,10 @@ def build_dashboard_parser(
     dashboard_register_parser = dashboard_subparsers.add_parser(
         "register",
         help="Register a self-hosted dashboard with Nous Portal (writes the OAuth client ID to .env)",
-        description="Register this install as a self-hosted dashboard with your Nous "
-            "Portal account. Creates an OAuth client, writes "
-            "HERMES_DASHBOARD_OAUTH_CLIENT_ID into ~/.hermes/.env, and prints "
-            "how to engage the login gate. Requires being logged in (hermes setup).")
+        description="Register this install as a self-hosted dashboard with your Nous " +
+            "Portal account. Creates an OAuth client, writes " +
+            "HERMES_DASHBOARD_OAUTH_CLIENT_ID into ~/.hermes/.env, and prints " +
+            "how to engage the login gate. Requires being logged in (" + product_command("setup") + ").")
     dashboard_register_parser.add_argument(
         "--name", default=None,
         help="Human-readable label for the dashboard (default: an auto-generated name)")

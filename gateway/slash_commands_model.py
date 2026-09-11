@@ -7,6 +7,7 @@ the import cycle.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import asyncio
 import contextlib
@@ -49,7 +50,7 @@ def _model_switch_skew_guard() -> Optional[str]:
         error=(
             f"This gateway is running code from {boot_rev} but the checkout on "
             f"disk is now {disk_rev}. Switching models would risk a stale-module "
-            f"crash — restart the gateway to load the new code: hermes gateway restart"
+            f"crash — restart the gateway to load the new code: {product_command('gateway')} restart"
         ),
     )
 

@@ -7,6 +7,7 @@ late-bound (``_sched`` / module refs at the bottom) so monkeypatching the defini
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import errno
 import json
@@ -23,6 +24,11 @@ logger = logging.getLogger("cron.scheduler")
 # alert-once dedup. ``:silent`` = already alerted on a previous tick — do not deliver again.
 BLOCKED_CONFIG_MARKER = "[blocked_config]"
 BLOCKED_CONFIG_SILENT_MARKER = "[blocked_config:silent]"
+# Drift-guard skip: same alert-once contract as blocked_config — the ``:silent`` variant means
+# "already alerted on a previous tick — do not deliver again" (drift_alerted bit on the job
+# record, #73506 shape).
+DRIFT_SKIP_MARKER = "[drift_skip]"
+DRIFT_SKIP_SILENT_MARKER = "[drift_skip:silent]"
 
 _TRANSIENT_NET_EXC_NAMES = frozenset({
     "ConnectError", "ConnectTimeout", "ReadTimeout", "WriteTimeout", "PoolTimeout", "NetworkError",
@@ -108,8 +114,8 @@ def _preflight_check_provider_key(job: dict, cfg: dict) -> Optional[str]:
     except AuthError as exc:
         return (
             f"provider credential missing: {exc}. "
-            "Set the provider API key in .env (or `hermes setup`), or pin a "
-            "working provider via `hermes cron edit "
+            "Set the provider API key in .env (or `" + product_command("setup") + "`), or pin a " +
+            "working provider via `" + product_command("cron") + " edit "
             f"{job.get('id')} --provider <p>`."
         )
     except Exception:
@@ -269,8 +275,8 @@ def _preflight_check_delivery(job: dict) -> Optional[str]:
         ):
             return (
                 f"delivery platform '{platform_name}' has no gateway "
-                "credentials configured (not connected). Configure it via "
-                "`hermes setup` or change the job's `deliver` target."
+                "credentials configured (not connected). Configure it via " +
+                "`" + product_command("setup") + "` or change the job's `deliver` target."
             )
     return None
 

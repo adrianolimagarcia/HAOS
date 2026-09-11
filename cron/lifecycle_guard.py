@@ -1,6 +1,6 @@
 """Gateway lifecycle guard for cron job creation.
 
-A cron job that restarts/stops the gateway from inside the gateway (``hermes gateway restart``,
+A cron job that restarts/stops the gateway from inside the gateway (``haos gateway restart``,
 ``launchctl kickstart ai.hermes.gateway``, ``systemctl restart hermes-gateway``) kills the process,
 the supervisor revives it, auto-resume re-runs the turn: a SIGTERM-respawn loop.
 ``cron.jobs.create_job`` rejects such specs on every creation path. Patterns are command-shaped —
@@ -8,6 +8,7 @@ anchored on concrete command identifiers — so they cannot fire on prose. Defen
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -897,7 +898,7 @@ def _read_script_for_scanning(script_path: str) -> str:
         return ""
     script_text, unsafe = _read_referenced_script(resolved)
     if unsafe:
-        return "hermes gateway restart"
+        return product_command("gateway") + " restart"
     return script_text or ""
 
 
@@ -1037,9 +1038,9 @@ def check_gateway_lifecycle(prompt: Optional[str], script: Optional[str] = None)
         )
     if unsafe:
         raise GatewayLifecycleBlocked(
-            "Blocked: cron job contains a gateway lifecycle command or persistent "
-            "launchctl submit operation. This is blocked to prevent agent-driven "
-            "SIGTERM-respawn loops under launchd/systemd supervision "
-            "(#30719). Run `hermes gateway restart` from a shell outside "
+            "Blocked: cron job contains a gateway lifecycle command or persistent " +
+            "launchctl submit operation. This is blocked to prevent agent-driven " +
+            "SIGTERM-respawn loops under launchd/systemd supervision " +
+            "(#30719). Run `" + product_command("gateway") + " restart` from a shell outside " +
             "the running gateway instead."
         )

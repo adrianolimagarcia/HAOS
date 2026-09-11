@@ -1,6 +1,7 @@
-"""``hermes setup`` subcommand parser."""
+"""``haos setup`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from typing import Callable
 
@@ -9,9 +10,9 @@ def build_setup_parser(subparsers, *, cmd_setup: Callable) -> None:
     """Attach the ``setup`` subcommand to ``subparsers``."""
     setup_parser = subparsers.add_parser(
         "setup", help="Interactive setup wizard",
-        description="Configure Hermes Agent with an interactive wizard. "
-        "Run a specific section: "
-        "hermes setup model|tts|terminal|gateway|tools|telemetry|agent")
+        description="Configure Hermes Agent with an interactive wizard. " +
+        "Run a specific section: " +
+        product_command("setup") + " model|tts|terminal|gateway|tools|telemetry|agent")
     setup_parser.add_argument(
         "section", nargs="?",
         choices=["model", "tts", "terminal", "gateway", "tools", "telemetry", "agent"],
@@ -23,9 +24,9 @@ def build_setup_parser(subparsers, *, cmd_setup: Callable) -> None:
         "--reset", action="store_true", help="Reset configuration to defaults")
     setup_parser.add_argument(
         "--reconfigure", action="store_true",
-        help="(Default on existing installs.) Re-run the full wizard, "
-        "showing current values as defaults. Kept for backwards "
-        "compatibility — a bare 'hermes setup' now does this.")
+        help="(Default on existing installs.) Re-run the full wizard, " +
+        "showing current values as defaults. Kept for backwards " +
+        "compatibility — a bare '" + product_command("setup") + "' now does this.")
     setup_parser.add_argument(
         "--quick", action="store_true",
         help="On existing installs: only prompt for items that are missing "

@@ -8,6 +8,7 @@ the command may proceed. Split out of tools/terminal_tool.py; the origin
 module re-imports every public helper so ``tools.terminal_tool.<name>``
 keeps resolving.
 """
+from hermes_constants import product_command
 
 import json
 import logging
@@ -186,14 +187,14 @@ def gateway_lifecycle_block(
 ) -> Optional[str]:
     """Refuse gateway lifecycle commands issued from inside the supervised gateway.
 
-    ``systemctl``/``launchctl``/``hermes gateway restart|stop|uninstall``
+    ``systemctl``/``launchctl``/``haos gateway restart|stop|uninstall``
     targeting hermes-gateway would SIGTERM the gateway — and this very
     subprocess — before completing, so the service may never come back.
     Applies unconditionally (``force=True`` cannot bypass it). Gated on the
     SUPERVISED-gateway probe, not the raw ``_HERMES_GATEWAY`` marker: that
     marker leaks into every process that merely imports gateway.run (hermes
     serve, CLI, web server), which must still be able to restart the gateway;
-    an unsupervised foreground ``hermes gateway run`` has no KeepAlive to turn
+    an unsupervised foreground ``haos gateway run`` has no KeepAlive to turn
     a self-restart into a respawn loop, so it passes too.
     Returns the JSON error string when blocked, else None.
     """
@@ -233,10 +234,10 @@ def gateway_lifecycle_block(
         read_remote_script=lambda p: _read_script_for_guard(env, guard_cwd, p, _MAX_REFERENCED_SCRIPT_BYTES),
     ):
         return _blocked_json(
-            "Blocked: command or referenced script cannot restart, stop, or "
-            "uninstall the gateway from inside the gateway process. The gateway would "
-            "kill this command before it could complete (SIGTERM propagates "
-            "to child processes). Run `hermes gateway restart` from a "
+            "Blocked: command or referenced script cannot restart, stop, or " +
+            "uninstall the gateway from inside the gateway process. The gateway would " +
+            "kill this command before it could complete (SIGTERM propagates " +
+            "to child processes). Run `" + product_command("gateway") + " restart` from a " +
             "separate shell outside the running gateway.",
             "error",
         )

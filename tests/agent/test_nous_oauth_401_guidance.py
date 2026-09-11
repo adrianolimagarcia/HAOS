@@ -49,8 +49,10 @@ def test_nous_401_guidance_strings_present():
     # (Nous Portal has no API key path — auth_type=oauth_device_code only).
     assert "Nous Portal OAuth token was rejected" in source
 
-    # Must give a concrete re-auth command, not a generic "hermes setup".
-    assert "hermes portal" in source
+    # Must give a concrete re-auth command, not a generic "setup".
+    # Aceita as duas formas: literal (upstream) e dinamica via product_command()
+    # (fork HAOS resolve o nome do CLI em runtime).
+    assert 'product_command("portal")' in source or "hermes portal" in source
 
     # Must point at the portal so users can check account/credit status.
     assert "portal.nousresearch.com" in source

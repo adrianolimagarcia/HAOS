@@ -6,6 +6,7 @@ if unset). The bridge owns Raft message cursors/bodies; the agent uses the Raft 
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from collections import deque
 from datetime import datetime, timezone
@@ -525,7 +526,7 @@ def _env_enablement() -> Optional[dict]:
 
 
 def interactive_setup() -> None:
-    """``hermes gateway setup`` flow: persists ``RAFT_PROFILE`` to the Hermes env file.
+    """``haos gateway setup`` flow: persists ``RAFT_PROFILE`` to the Hermes env file.
     CLI helpers are lazy-imported so the plugin stays importable in gateway runtime and tests."""
     from hermes_cli.cli_output import print_header, print_info, print_success, print_warning, prompt
     from hermes_cli.config import get_env_value, save_env_value
@@ -546,7 +547,7 @@ def interactive_setup() -> None:
     save_env_value("RAFT_PROFILE", profile.strip())
     print()
     print_success("Raft configuration saved")
-    print_info("Restart the gateway for changes to take effect: hermes gateway restart")
+    print_info("Restart the gateway for changes to take effect: " + product_command("gateway") + " restart")
 
 
 def register(ctx) -> None:

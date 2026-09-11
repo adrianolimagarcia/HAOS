@@ -511,7 +511,7 @@ def task_attachments_dir(task_id: str, board: Optional[str] = None) -> Path:
 
 
 def worker_logs_dir(board: Optional[str] = None) -> Path:
-    """Per-board worker log dir (logs follow the board so ``hermes kanban log``
+    """Per-board worker log dir (logs follow the board so ``haos kanban log``
     is unambiguous when two boards share a task id)."""
     return _board_path(None, board, ("kanban", "logs"), "logs")
 

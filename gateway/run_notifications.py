@@ -6,6 +6,7 @@ so ``patch("gateway.run.X")`` keeps intercepting them at call time.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import asyncio
 import contextlib
@@ -60,7 +61,7 @@ class GatewayNotificationsMixin:
 
     @dataclasses.dataclass
     class _UpdatePaths:
-        """Marker files ``hermes update --gateway`` and its watcher exchange under HERMES_HOME."""
+        """Marker files ``haos update --gateway`` and its watcher exchange under HERMES_HOME."""
 
         pending: Path
         claimed: Path
@@ -545,7 +546,7 @@ class GatewayNotificationsMixin:
     async def _watch_update_progress(
         self, poll_interval: float = 2.0, stream_interval: float = 4.0, timeout: float = 1800.0
     ) -> None:
-        """Watch ``hermes update --gateway``, streaming output + forwarding prompts.
+        """Watch ``haos update --gateway``, streaming output + forwarding prompts.
 
         Polls ``.update_output.txt`` for new content and sends chunks to the user periodically;
         detects ``.update_prompt.json`` (written when the update process needs input) and forwards it.
@@ -668,7 +669,7 @@ class GatewayNotificationsMixin:
                 else:
                     msg = (
                         "✅ Hermes update finished successfully." if exit_code == 0 else
-                        "❌ Hermes update failed. Check the gateway logs or run `hermes update` manually for details."
+                        "❌ Hermes update failed. Check the gateway logs or run `" + product_command("update") + "` manually for details."
                     )
                 await adapter.send(chat_id, msg, metadata=_non_conversational_metadata(metadata, platform=platform))
                 logger.info("Sent post-update notification to %s:%s (exit=%s)", platform_str, chat_id, exit_code)
@@ -852,19 +853,19 @@ class GatewayNotificationsMixin:
             db_path = _default_db_path()
             backups_dir = get_default_hermes_root() / "backups"
             message = (
-                "⚠️ Session database corruption detected. Messages may not be "
-                "persisted. Recovery options:\n"
-                f"1. Run `hermes {profile_arg}doctor --fix`\n"
-                "2. Stop the gateway, then recover with:\n"
-                f"   hermes {profile_arg}sessions recover --source {db_path} "
-                "--inspect-only\n"
-                f"   (if it reports recoverable) hermes {profile_arg}sessions recover "
-                f"--source {db_path} --output recovered-state.db\n"
-                "   — recovery snapshots the damaged file first; do NOT run "
-                "`sqlite3 ... \".recover\"` against the live state.db, a "
-                "vulnerable sqlite3 CLI can corrupt it further\n"
-                f"3. Restore from a backup in {backups_dir}/\n"
-                f"Run `hermes {profile_arg}doctor` for sanitized diagnostics."
+                "⚠️ Session database corruption detected. Messages may not be " +
+                "persisted. Recovery options:\n" +
+                "1. Run `" + product_command("doctor") + " --fix`\n" +
+                "2. Stop the gateway, then recover with:\n" +
+                f"   {product_command('sessions')} recover --source {db_path} "
+                "--inspect-only\n" +
+                "   (if it reports recoverable) " + product_command("sessions") + " recover "
+                f"--source {db_path} --output recovered-state.db\n" +
+                "   — recovery snapshots the damaged file first; do NOT run " +
+                "`sqlite3 ... \".recover\"` against the live state.db, a " +
+                "vulnerable sqlite3 CLI can corrupt it further\n" +
+                f"3. Restore from a backup in {backups_dir}/\n" +
+                "Run `" + product_command("doctor") + "` for sanitized diagnostics."
             )
         elif cause == "fts_index":
             # Index-scoped corruption: the message tables are not damaged, so the recover /
@@ -878,7 +879,7 @@ class GatewayNotificationsMixin:
         else:
             message = (
                 f"⚠️ Session database unavailable — messages may not be persisted. "
-                f"{format_session_db_unavailable()}\nRun `hermes doctor` for diagnostics."
+                f"{format_session_db_unavailable()}\nRun `{product_command('doctor')}` for diagnostics."
             )
         logger.warning("Broadcasting state.db failure warning to home channels: %s", error)
         for platform, _platform_cfg, home, transport in self._home_channel_transports():

@@ -1,6 +1,6 @@
 """Kanban triage specifier — flesh out a one-liner into a real spec.
 
-``hermes kanban specify [task_id | --all]`` asks the auxiliary LLM for a
+``haos kanban specify [task_id | --all]`` asks the auxiliary LLM for a
 tightened title + concrete body for a Triage task, then flips it
 ``triage -> todo`` via ``kanban_db.specify_triage_task``.
 

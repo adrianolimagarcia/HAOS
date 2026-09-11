@@ -3,6 +3,7 @@
 ``XAI_IMAGE_MODEL`` → ``image_gen.xai.model`` → :data:`DEFAULT_MODEL`."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -254,7 +255,7 @@ class XAIImageGenProvider(StaticImageGenProvider):
         provider_name = str(creds.get("provider") or "xai").strip() or "xai"
         if not api_key:
             return error_factory(provider_name, aspect_ratio)(
-                "No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY.",
+                "No xAI credentials found. Configure xAI OAuth in `" + product_command("model") + "` or set XAI_API_KEY.",
                 "missing_api_key")
 
         model_id, meta = _resolve_model(kwargs.get("model"))

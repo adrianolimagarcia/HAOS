@@ -24,7 +24,7 @@ from typing import Any, Callable, NamedTuple, Optional  # noqa: F401  (Callable:
 from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope  # noqa: F401
 from hermes_constants import (
     get_hermes_home, get_hermes_home_override, profile_name_for_home,
-    reset_hermes_home_override, set_hermes_home_override)
+    reset_hermes_home_override, set_hermes_home_override, product_command)
 from hermes_cli.env_loader import load_hermes_dotenv
 from utils import is_truthy_value
 from hermes_state_ids import new_session_id
@@ -2248,8 +2248,8 @@ def _startup_system_prompt(cfg: dict, task_id: str) -> str:
         missing_display = ", ".join(missing_skills)
         if not loaded_skills:
             raise ValueError(f"Unknown skill(s): {missing_display}")
-        logger.warning("Unknown skill(s) requested, skipping: %s. Continuing with: %s. "
-                       "List available skills with `hermes skills list`.", missing_display, ", ".join(loaded_skills))
+        logger.warning("Unknown skill(s) requested, skipping: %s. Continuing with: %s. " +
+                       "List available skills with `" + product_command("skills") + " list`.", missing_display, ", ".join(loaded_skills))
     if skills_prompt:
         system_prompt = "\n\n".join(part for part in (system_prompt, skills_prompt) if part).strip()
     return system_prompt
@@ -3190,17 +3190,17 @@ def _rank_slash_completions(items: list[dict], usage, origin_of, *, browsing: bo
 
 # argv shapes that must not run headless in the gateway process → user hint.
 _CLI_EXEC_BLOCKED = {
-    ("setup",): "`hermes setup` needs a full terminal — run it outside the TUI",
-    ("gateway",): "`hermes gateway` is long-running — run it in another terminal",
-    ("sessions", "browse"): "`hermes sessions browse` is interactive — use /resume here, or run browse in another terminal",
-    ("config", "edit"): "`hermes config edit` needs $EDITOR in a real terminal",
+    ("setup",): "`" + product_command("setup") + "` needs a full terminal — run it outside the TUI",
+    ("gateway",): "`" + product_command("gateway") + "` is long-running — run it in another terminal",
+    ("sessions", "browse"): "`" + product_command("sessions") + " browse` is interactive — use /resume here, or run browse in another terminal",
+    ("config", "edit"): "`" + product_command("config") + " edit` needs $EDITOR in a real terminal",
 }
 
 
 def _cli_exec_blocked(argv: list[str]) -> str | None:
     """Return user hint if this argv must not run headless in the gateway process."""
     if not argv:
-        return "bare `hermes` is interactive — use `/hermes chat -q …` or run `hermes` in another terminal"
+        return "bare `hermes` is interactive — use `/" + product_command("chat") + " -q …` or run `hermes` in another terminal"
     head = tuple(a.lower() for a in argv[:2])
     return _CLI_EXEC_BLOCKED.get(head[:1]) or _CLI_EXEC_BLOCKED.get(head)
 

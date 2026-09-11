@@ -21,7 +21,7 @@ from typing import Callable, Dict, Any, List, Optional
 
 import copy
 
-from hermes_constants import display_hermes_home
+from hermes_constants import display_hermes_home, product_command
 
 logger = logging.getLogger(__name__)
 
@@ -164,19 +164,19 @@ _BUILTIN_DISPATCH: Dict[str, tuple] = {
     "minimax": (None, "MiniMax TTS", "_generate_minimax_tts", None),
     "xai": (None, "xAI TTS", "_generate_xai_tts", None),
     "mistral": (lambda: _importable(_import_mistral_client), "Mistral Voxtral TTS", "_generate_mistral_tts",
-                "Mistral provider selected but 'mistralai' package not installed. "
-                "Run `hermes setup` to install Mistral support."),
+                "Mistral provider selected but 'mistralai' package not installed. " +
+                "Run `" + product_command("setup") + "` to install Mistral support."),
     "gemini": (None, "Google Gemini TTS", "_generate_gemini_tts", None),
     "neutts": (lambda: _check_neutts_available(), "NeuTTS (local)", "_generate_neutts",
-               "NeuTTS provider selected but neutts is not installed. "
-               "Run hermes setup and choose NeuTTS, or install espeak-ng and run python -m pip install -U neutts[all]."),
+               "NeuTTS provider selected but neutts is not installed. " +
+               "Run " + product_command("setup") + " and choose NeuTTS, or install espeak-ng and run python -m pip install -U neutts[all]."),
     "kittentts": (lambda: _importable(_import_kittentts), "KittenTTS (local, ~25MB)", "_generate_kittentts",
-                  "KittenTTS provider selected but 'kittentts' package not installed. "
-                  "Run 'hermes setup tts' and choose KittenTTS, or install manually: "
+                  "KittenTTS provider selected but 'kittentts' package not installed. " +
+                  "Run '" + product_command("setup") + " tts' and choose KittenTTS, or install manually: " +
                   "pip install https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl"),
     "piper": (lambda: _importable(_import_piper), "Piper (local)", "_generate_piper_tts",
-              "Piper provider selected but 'piper-tts' package not installed. "
-              "Run 'hermes tools' and select Piper under TTS, or install manually: "
+              "Piper provider selected but 'piper-tts' package not installed. " +
+              "Run '" + product_command("tools") + "' and select Piper under TTS, or install manually: " +
               "pip install piper-tts")}
 
 

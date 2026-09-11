@@ -9,6 +9,7 @@ so ``hermes_cli.auth.<name>`` patches still intercept (and no import cycle).
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import hashlib
@@ -32,10 +33,10 @@ if TYPE_CHECKING:  # annotation-only; the runtime import would be a cycle
 logger = logging.getLogger("hermes_cli.auth")
 
 _MISSING_ACCESS_TOKEN_MSG = (
-    "Codex auth is missing access_token. Run `hermes auth` to re-authenticate.")
+    "Codex auth is missing access_token. Run `" + product_command("auth") + "` to re-authenticate.")
 _MISSING_REFRESH_TOKEN_MSG = (
-    "Codex auth is missing refresh_token. Run `hermes auth` to re-authenticate.")
-_NO_CREDENTIALS_MSG = "No Codex credentials stored. Run `hermes auth` to authenticate."
+    "Codex auth is missing refresh_token. Run `" + product_command("auth") + "` to re-authenticate.")
+_NO_CREDENTIALS_MSG = "No Codex credentials stored. Run `" + product_command("auth") + "` to authenticate."
 
 
 def _parse_retry_after_seconds(headers: Any) -> Optional[int]:
@@ -91,7 +92,7 @@ def _read_codex_tokens(*, _lock: bool = True) -> Dict[str, Any]:
     tokens = state.get("tokens")
     if not isinstance(tokens, dict):
         raise _codex_err(
-            "Codex auth state is missing tokens. Run `hermes auth` to re-authenticate.",
+            "Codex auth state is missing tokens. Run `" + product_command("auth") + "` to re-authenticate.",
             "codex_auth_invalid_shape", relogin=True)
     if not _nonempty_str(tokens.get("access_token")):
         raise _codex_err(_MISSING_ACCESS_TOKEN_MSG, "codex_auth_missing_access_token", relogin=True)
@@ -106,8 +107,8 @@ def _sync_codex_pool_entries(
     previous_singleton_tokens: Optional[Dict[str, str]] = None) -> None:
     """Mirror a fresh Codex re-auth into the credential_pool OAuth entries.
 
-    ``device_code`` (the singleton-seeded entry from ``hermes setup`` / the model picker) is always
-    synced. ``manual:device_code`` (``hermes auth add openai-codex``) is synced only when its
+    ``device_code`` (the singleton-seeded entry from ``haos setup`` / the model picker) is always
+    synced. ``manual:device_code`` (``haos auth add openai-codex``) is synced only when its
     access_token equals the PREVIOUS singleton token — a legacy alias of the singleton; an entry
     with its own token material is an independent account and must be left alone. ``manual:api_key``
     and any other source are independent credentials and are never overwritten by a re-auth.
@@ -306,10 +307,10 @@ def _codex_refresh_failure_error(response: "httpx.Response") -> AuthError:
         pass
     if code == "refresh_token_reused":
         message = (
-            "Codex refresh token was already consumed by another client "
-            "(e.g. Codex CLI or VS Code extension). "
-            "Run `codex` in your terminal to generate fresh tokens, "
-            "then run `hermes auth` to re-authenticate.")
+            "Codex refresh token was already consumed by another client " +
+            "(e.g. Codex CLI or VS Code extension). " +
+            "Run `codex` in your terminal to generate fresh tokens, " +
+            "then run `" + product_command("auth") + "` to re-authenticate.")
     # A 401/403 from the token endpoint always means the refresh token is invalid/expired —
     # force relogin even if the body error code wasn't one of the known strings.
     relogin_required = (

@@ -1,4 +1,4 @@
-"""``hermes plugins`` CLI subcommand — install, update, remove, and list plugins."""
+"""``haos plugins`` CLI subcommand — install, update, remove, and list plugins."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Optional
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_cli._subprocess_compat import noninteractive_git_env
 from hermes_cli.cli_output import line_input
 from hermes_cli.config import cfg_get
@@ -660,7 +660,7 @@ def _install_plugin_core(
         if target.exists() and not force:
             raise PluginOperationError(
                 f"Plugin '{plugin_name}' already exists. Use force reinstall "
-                f"or run `hermes plugins update {plugin_name}`.")
+                f"or run `{product_command('plugins')} update {plugin_name}`.")
         prior = old_metadata.get(plugin_name)
         if target.exists() and requested_revision is None and isinstance(prior, dict) and prior.get("pinned") is True:
             raise PluginOperationError(
@@ -678,6 +678,45 @@ def _install_plugin_core(
     _copy_example_files(target, _console())
     installed_manifest = _read_manifest(target)
     return target, installed_manifest, installed_manifest.get("name") or target.name
+
+
+def _looks_like_bare_index_name(identifier: str) -> bool:
+    """True for a bare plugin name (no slash, no URL scheme) — resolved via the community index."""
+    return "/" not in identifier and "\\" not in identifier and not identifier.startswith(_URL_SCHEMES)
+
+
+def _resolve_index_name(identifier: str, console) -> tuple[str, Optional[str]]:
+    """Resolve a bare plugin name to ``(install_identifier, pinned_ref)``; exit 1 when unknown or
+    ambiguous. The ref is only pinned when it is an exact 40-char SHA; tags are advisory output."""
+    from hermes_cli.plugin_index import SECURITY_FOOTER, load_index, resolve_name
+    entries, source = load_index()
+    entry, candidates = resolve_name(entries, identifier)
+    if entry is None:
+        if len(candidates) > 1:
+            console.print(
+                f"[red]Error:[/red] Plugin name '{identifier}' is ambiguous in the "
+                f"community index ({source}). Candidates:")
+            for c in candidates:
+                console.print(f"  {c.name}  →  {c.install_identifier}")
+            _fail(console, "Re-run with the exact name or the owner/repo identifier.")
+        _fail(console, (
+            f"[red]Error:[/red] Plugin '{identifier}' was not found in the "
+            f"community index ({source}). Use `{product_command('plugins')} search <term>` to "
+            "browse, or install directly with an owner/repo identifier."))
+
+    pinned_ref: Optional[str] = None
+    if entry.ref and _EXACT_COMMIT_RE.fullmatch(entry.ref):
+        pinned_ref = entry.ref.lower()
+    elif entry.ref:
+        console.print(
+            f"[dim]Index pins ref '{entry.ref}' (not an exact commit SHA); "
+            "installing the default branch head instead.[/dim]")
+    console.print(
+        f"[dim]Resolved '{entry.name}' via community index ({source}) → "
+        f"{entry.install_identifier}"
+        + (f" @ {pinned_ref[:12]}[/dim]" if pinned_ref else "[/dim]"))
+    console.print(f"[dim]{SECURITY_FOOTER}[/dim]")
+    return entry.install_identifier, pinned_ref
 
 
 def cmd_install(
@@ -755,14 +794,14 @@ def cmd_install(
     else:
         console.print(
             f"[dim]Plugin installed but not enabled. "
-            f"Run `hermes plugins enable {installed_name}` to activate.[/dim]")
+            f"Run `{product_command('plugins')} enable {installed_name}` to activate.[/dim]")
 
     # Non-interactive installs and declines leave declared capabilities ungranted (fail closed).
     declared_caps = _declared_capabilities_from_manifest(installed_manifest, installed_name)
     if declared_caps:
         _run_capability_consent(console, installed_name, declared_caps, context="install")
     console.print("[dim]Restart the gateway for the plugin to take effect:[/dim]")
-    console.print("[dim]  hermes gateway restart[/dim]")
+    console.print("[dim]  " + product_command("gateway") + " restart[/dim]")
     console.print()
 
 
@@ -805,7 +844,7 @@ def cmd_update(name: str) -> None:
             target,
             lambda rec: (
                 f"Plugin '{name}' is pinned to {rec.get('revision')}. To move it, run "
-                f"`hermes plugins install {escape(str(rec.get('source', '<source>')))} --force "
+                f"`{product_command('plugins')} install {escape(str(rec.get('source', '<source>')))} --force "
                 "--ref <40-character commit SHA>`."),
             lambda: f"Plugin '{name}' was not installed from git (no .git directory). Cannot update.",
             before_pull=lambda: console.print(f"[dim]Updating {name}...[/dim]"))
@@ -851,7 +890,7 @@ def _rescan_after_update(target: Path, name: str, console) -> None:
             _set_plugin_enabled(name, enable=False)
         console.print(
             f"[red]Plugin '{name}' has been disabled.[/red] Review the "
-            f"findings, then re-enable with `hermes plugins enable {name}` "
+            f"findings, then re-enable with `{product_command('plugins')} enable {name}` "
             f"if you trust them.")
 
 
@@ -926,7 +965,7 @@ _BASIC_AUTH_PLUGIN_KEYS = frozenset({"basic", "dashboard_auth/basic"})
 def ensure_basic_auth_plugin_enabled_in_config(cfg: dict) -> bool:
     """Drop the bundled basic dashboard-auth plugin from ``plugins.disabled`` in *cfg*.
 
-    ``hermes setup`` / ``hermes plugins disable basic`` can park it there while
+    ``haos setup`` / ``haos plugins disable basic`` can park it there while
     ``dashboard.basic_auth`` is configured, and password auth then silently fails.
     Returns True when modified.
     """
@@ -1097,8 +1136,8 @@ def _run_capability_consent(console, plugin_id: str, declared: list, *, context:
         console.print(
             "  [yellow]Non-interactive session: capabilities NOT granted "
             "(fail closed).[/yellow] Run "
-            f"`hermes plugins capabilities {plugin_id}` to review and "
-            f"`hermes plugins enable {plugin_id}` to grant interactively.")
+            f"`{product_command('plugins')} capabilities {plugin_id}` to review and "
+            f"`{product_command('plugins')} enable {plugin_id}` to grant interactively.")
         return False
 
     if _ask_yes("  Grant these capabilities? [y/N] ", console.input):
@@ -1111,12 +1150,12 @@ def _run_capability_consent(console, plugin_id: str, declared: list, *, context:
     console.print(
         f"  [dim]Declined. {plugin_id} stays enabled with these capabilities "
         "off; it should degrade gracefully (ctx.has_capability()). Re-run "
-        f"`hermes plugins enable {plugin_id}` to grant later.[/dim]")
+        f"`{product_command('plugins')} enable {plugin_id}` to grant later.[/dim]")
     return False
 
 
 def cmd_capabilities(name: Optional[str] = None) -> None:
-    """``hermes plugins capabilities [<id>]`` — declared vs granted."""
+    """``haos plugins capabilities [<id>]`` — declared vs granted."""
     from hermes_cli.plugin_capabilities import (
         CAPABILITY_REGISTRY,
         granted_capabilities,
@@ -1179,7 +1218,7 @@ def _resolve_tool_override_grant(console, key: str, allow_tool_override: Optiona
     else:
         console.print(
             f"[dim]{key} may not override built-in tools. Re-run "
-            f"`hermes plugins enable {key} --allow-tool-override` to grant "
+            f"`{product_command('plugins')} enable {key} --allow-tool-override` to grant "
             "this later.[/dim]")
 
 
@@ -1298,7 +1337,7 @@ def _plugin_status(name: str, enabled: set, disabled: set, key: str = "") -> str
 
 
 def _filter_plugin_entries(entries: list, args: Any, enabled: set, disabled: set) -> list:
-    """Apply ``hermes plugins list`` CLI filters."""
+    """Apply ``haos plugins list`` CLI filters."""
     filtered = entries
     if getattr(args, "no_bundled", False) or getattr(args, "user", False):
         filtered = [entry for entry in filtered if entry[3] != "bundled"]
@@ -1319,7 +1358,7 @@ def cmd_list(args: Any | None = None) -> None:
     entries = _discover_all_plugins()
     if not entries:
         console.print("[dim]No plugins installed.[/dim]")
-        console.print("[dim]Install with:[/dim] hermes plugins install owner/repo")
+        console.print("[dim]Install with:[/dim] " + product_command("plugins") + " install owner/repo")
         return
 
     enabled = _get_enabled_set()
@@ -1365,9 +1404,9 @@ def cmd_list(args: Any | None = None) -> None:
     for line in removed_lines:
         console.print(line)
     console.print()
-    console.print("[dim]Compact view:[/dim] hermes plugins list --plain --no-bundled")
-    console.print("[dim]Interactive toggle:[/dim] hermes plugins")
-    console.print("[dim]Enable/disable:[/dim] hermes plugins enable/disable <name>")
+    console.print("[dim]Compact view:[/dim] " + product_command("plugins") + " list --plain --no-bundled")
+    console.print("[dim]Interactive toggle:[/dim] " + product_command("plugins"))
+    console.print("[dim]Enable/disable:[/dim] " + product_command("plugins") + " enable/disable <name>")
     console.print("[dim]Plugins are opt-in by default — only 'enabled' plugins load.[/dim]")
 
 
@@ -1456,7 +1495,7 @@ def cmd_show(name: str) -> None:
     match = _find_plugin_entry(name)
     if match is None:
         console.print(f"[red]Plugin '{name}' not found.[/red]")
-        _fail(console, "[dim]List installed plugins:[/dim] hermes plugins list")
+        _fail(console, "[dim]List installed plugins:[/dim] " + product_command("plugins") + " list")
 
     pname, version, description, source, dir_path, key = match
     manifest = _read_manifest(Path(dir_path)) if dir_path else {}
@@ -1851,7 +1890,7 @@ def dashboard_update_user_plugin(name: str) -> dict[str, Any]:
             target,
             lambda rec: (
                 f"Plugin '{name}' is pinned to {rec.get('revision')}; "
-                f"run `hermes plugins install {rec.get('source', '<source>')} --force "
+                f"run `{product_command('plugins')} install {rec.get('source', '<source>')} --force "
                 "--ref <40-character commit SHA>` to move it."),
             lambda: f"Plugin '{name}' is not a git checkout; cannot pull updates.")
     except PluginOperationError as exc:
@@ -2006,6 +2045,39 @@ def cmd_plugin_doctor(target: str = ".", *, ci: bool = False) -> None:
         raise SystemExit(1)
 
 
+def cmd_search(
+    term: str = "",
+    *,
+    json_output: bool = False,
+    capability: Optional[str] = None,
+    refresh: bool = False,
+) -> None:
+    """Search the community plugin index (fuzzy on name/description/tags)."""
+    from hermes_cli.plugin_index import SECURITY_FOOTER, load_index, search_index
+    console = _console()
+    entries, source = load_index(refresh=refresh)
+    results = search_index(entries, term, capability=capability)
+    if json_output:
+        print(json.dumps(
+            {"source": source, "query": term, "results": [e.to_dict() for e in results], "note": SECURITY_FOOTER},
+            indent=2))
+        return
+
+    if not results:
+        console.print(f"[yellow]No plugins matched '{term}'[/yellow] [dim](index source: {source})[/dim]")
+        return
+
+    table = _table(
+        (("Name", "bold"), ("Description", None), ("Author", None), ("Tags", "dim")),
+        title=f"Community plugins ({len(results)} match{'es' if len(results) != 1 else ''})")
+    for e in results:
+        desc = e.description if len(e.description) <= 70 else e.description[:67] + "..."
+        table.add_row(e.name, desc, e.author, ", ".join(e.tags))
+    console.print(table)
+    console.print(f"[dim]Index source: {source}. Install: {product_command('plugins')} install <name>[/dim]")
+    console.print(f"[dim]{SECURITY_FOOTER}[/dim]")
+
+
 def _tri_state_flag(args, yes_attr: str, no_attr: str) -> Optional[bool]:
     """Map an argparse ``--x`` / ``--no-x`` pair to True / False / None (neither given)."""
     return True if getattr(args, yes_attr, False) else (False if getattr(args, no_attr, False) else None)
@@ -2022,7 +2094,7 @@ def _action_pack(args):
 
 
 def cmd_compat(args: Any | None = None) -> None:
-    """``hermes plugins compat`` — which installed plugins import paths scheduled for removal, and where."""
+    """``haos plugins compat`` — which installed plugins import paths scheduled for removal, and where."""
     import sys
     from pathlib import Path
     from hermes_cli.plugin_compat import (
@@ -2090,7 +2162,7 @@ _PLUGIN_ACTIONS = {
 
 
 def plugins_command(args) -> None:
-    """Dispatch hermes plugins subcommands."""
+    """Dispatch haos plugins subcommands."""
     action = getattr(args, "plugins_action", None)
     handler = _PLUGIN_ACTIONS.get(action)
     if handler is None:

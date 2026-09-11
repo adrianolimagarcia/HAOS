@@ -4,7 +4,7 @@ The fork ships ``haos-gateway``; upstream and pre-rename installs use
 ``hermes-gateway``. Both must be *recognized* everywhere a unit name is matched —
 fleet discovery, restart-by-kind, the lifecycle guard, the updater's plan
 reconciliation — or a renamed install silently stops being restarted by
-``hermes update``. That failure is why this module exists instead of a literal in
+``haos update``. That failure is why this module exists instead of a literal in
 each caller.
 
 Generation lives in :func:`hermes_cli.gateway.get_service_name` (which appends the

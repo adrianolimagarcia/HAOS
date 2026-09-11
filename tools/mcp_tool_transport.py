@@ -1,6 +1,7 @@
 """Transport bring-up for MCPServerTask: stdio spawn (OSV preflight, cached-npx swap, child PID
 ledger + death-supervisor registration), Streamable HTTP / SSE connect (preflight, identity header, client certs, OAuth),
 protocol negotiation and initial tool discovery. Split from tools/mcp_tool.py."""
+from hermes_constants import product_command
 
 import logging
 import asyncio
@@ -209,7 +210,7 @@ class MCPServerTransportMixin:
                            "HTTP/SSE transports — ignored for stdio servers", self.name)
         if not _core._ensure_mcp_sdk():
             raise ImportError(f"MCP server '{self.name}' requires the 'mcp' Python SDK, but "
-                              "it is not installed. Run `hermes setup` to install MCP support, then retry.")
+                              "it is not installed. Run `" + product_command("setup") + "` to install MCP support, then retry.")
         command = config.get("command")
         if not command:
             raise ValueError(f"MCP server '{self.name}' has no 'command' in config")

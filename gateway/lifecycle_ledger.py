@@ -10,6 +10,7 @@ clean exit path.  Best-effort: forensics must never affect the lifecycle.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import logging
@@ -189,8 +190,8 @@ def _report_unclean_exit(evidence: Dict[str, Any], home: Optional[Path]) -> None
     verdict = evidence["state_db_integrity"] = check_state_db_integrity(home=home)
     if verdict not in ("ok", "absent"):
         logger.error(
-            "state.db FAILED integrity check after an unclean gateway exit: %s — sessions may read as "
-            "missing until it is repaired. Run `hermes doctor`.",
+            "state.db FAILED integrity check after an unclean gateway exit: %s — sessions may read as " +
+            "missing until it is repaired. Run `" + product_command("doctor") + "`.",
             verdict,
         )
     _append_exit_diag({"ts": _now_iso(), "tag": "gateway.previous_unclean_exit", "pid": os.getpid(), **evidence}, home)

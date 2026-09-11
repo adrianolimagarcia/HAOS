@@ -1,6 +1,7 @@
 """Mixture-of-Agents configuration and slash-command helpers."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import base64
 import json
@@ -287,7 +288,7 @@ def resolve_moa_preset(config: Any, name: str | None = None) -> dict[str, Any]:
         available = ", ".join(cfg["presets"]) or "(none)"
         raise MoAPresetNotFoundError(
             f"MoA preset '{preset_name}' was not found. Available presets: "
-            f"{available}. Run `hermes moa list`.")
+            f"{available}. Run `{product_command('moa')} list`.")
     return deepcopy(preset)
 
 

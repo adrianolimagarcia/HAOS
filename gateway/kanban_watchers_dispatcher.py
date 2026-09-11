@@ -6,6 +6,7 @@ the singleton lock and the health telemetry; everything that only needs the
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import os
@@ -190,11 +191,11 @@ class _KanbanDispatcher:
             if self.is_corrupt_board_db_error(exc):
                 self.disabled_corrupt_boards[slug] = (fingerprint, time.monotonic())
                 logger.error(
-                    "kanban dispatcher: board %s database %s is not a valid "
-                    "SQLite database; pausing dispatch for this board until "
-                    "the file changes, the gateway restarts, or the "
-                    "quarantine timer expires. Move or restore the file, "
-                    "then run `hermes kanban init` if you need a fresh board.",
+                    "kanban dispatcher: board %s database %s is not a valid " +
+                    "SQLite database; pausing dispatch for this board until " +
+                    "the file changes, the gateway restarts, or the " +
+                    "quarantine timer expires. Move or restore the file, " +
+                    "then run `" + product_command("kanban") + " init` if you need a fresh board.",
                     slug, fingerprint[0],
                 )
                 return None

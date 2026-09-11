@@ -7,6 +7,7 @@ provider; we resolve to one or raise an actionable error rather than drift.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import os
@@ -81,8 +82,8 @@ def resolve_provider(*, require_references: bool = True, prefer: str | None = No
     if not require_references and active is not None and active.is_available():
         return SpriteProvider(name=getattr(active, "name", "unknown"), provider=active, supports_references=False)
     raise GenerationError(
-        "Pet generation needs an image backend that supports reference images. "
-        "Open `hermes tools` → Image Generation and configure Nous Portal, "
+        "Pet generation needs an image backend that supports reference images. " +
+        "Open `" + product_command("tools") + "` → Image Generation and configure Nous Portal, " +
         "OpenRouter, or OpenAI (gpt-image-2) with an API key."
     )
 

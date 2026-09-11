@@ -11,6 +11,7 @@ helpers shared by ``bot_mode_dm`` and ``bot_relay``.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import os
 import re
@@ -137,7 +138,7 @@ def _profile_role(profile_dir: Path) -> str:
 
 
 def _peers(root: Path) -> list[str]:
-    """Registered peer gateway names (``hermes peer``) from config.yaml, read
+    """Registered peer gateway names (``haos peer``) from config.yaml, read
     directly (no config-loader import; the section is absent on most installs). Never raises."""
     def _names() -> list[str]:
         peers = (_read_yaml_dict(root / "config.yaml", "bot_peers") or {}).get("bot_peers")
@@ -184,8 +185,8 @@ def _peer_paragraph(root: Path) -> str:
     return (
         "\n\nTeammates on OTHER machines: this install also has peer gateways "
         f"registered ({listed}). Message an agent on a peer the same way — "
-        'message_agent with target "<peer>/<agent-name>" (or "<peer>" alone '
-        "for the peer's main agent). Run `hermes peer list` for the live "
+        'message_agent with target "<peer>/<agent-name>" (or "<peer>" alone ' +
+        "for the peer's main agent). Run `" + product_command("peer") + " list` for the live " +
         "peer list."
     )
 

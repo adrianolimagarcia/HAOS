@@ -3,10 +3,11 @@
 
 Usage:
     hermes                     # Interactive chat (default)
-    hermes chat / gateway / setup / status / cron / doctor / update / ...
+    haos chat / gateway / setup / status / cron / doctor / update / ...
     hermes --version           # Show version and update status
     hermes <cmd> --help        # Per-command help
 """
+from hermes_constants import product_command
 
 # hermes_bootstrap must be the very first import — it sets up UTF-8 stdio on
 # Windows (no-op on POSIX). Guarded: after a ``git pull`` / interrupted
@@ -399,7 +400,7 @@ _PROFILE_NAME_RE = r"^[a-z0-9][a-z0-9_-]{0,63}$"  # mirrors hermes_cli.profiles.
 
 
 def _inside_mcp_add_args(argv: list, index: int) -> bool:
-    """True once argv reaches `hermes mcp add ... --args <command argv>`.
+    """True once argv reaches `haos mcp add ... --args <command argv>`.
 
     ``mcp add --args`` is command-argv passthrough. Flags after that point
     belong to the child MCP command (for example Docker MCP Toolkit's
@@ -416,7 +417,7 @@ def _inside_mcp_add_args(argv: list, index: int) -> bool:
 def _scan_profile_flag(argv: list) -> tuple:
     """Find -p/--profile/--profile= in argv -> (name, tokens_consumed, index).
 
-    Historically the flag worked even after the subcommand (`hermes chat -p
+    Historically the flag worked even after the subcommand (`haos chat -p
     coder`), so scan broadly; stop at ``--`` and at the `mcp add --args`
     passthrough region. Values that can't be profile names (pytest's
     ``-p no:xdist``) are rejected so resolve_profile_env never sys.exits on them.
@@ -480,7 +481,7 @@ def _under_gateway_supervisor(argv: list) -> bool:
     ``-p <name>`` or pin HERMES_HOME to the profile dir; a bare invocation
     means "the root HERMES_HOME profile". If a supervised default-profile
     child read active_profile, switching the active profile (dashboard,
-    ``hermes profile use``) would silently redirect the default gateway into
+    ``haos profile use``) would silently redirect the default gateway into
     that profile — adopting its credentials and double-polling a Telegram
     token already owned by that profile's own gateway (#74872).
 
@@ -1388,7 +1389,7 @@ def _resolve_continue_arg(args, *, use_tui: bool) -> None:
             else:
                 print(f"No session found matching '{continue_val}'.", file=sys.stderr)
                 print(
-                    "Use 'hermes sessions list' to see available sessions, or "
+                    "Use '" + product_command("sessions") + " list' to see available sessions, or " +
                     "pass --create-if-missing to start a new session with that title.",
                     file=sys.stderr,
                 )
@@ -1486,7 +1487,7 @@ def _resolve_chat_session_args(args, use_tui: bool) -> None:
         else:
             kind = "TUI" if use_tui else "CLI"
             print(f"No previous {kind} session found to resume.")
-            print("Use 'hermes sessions list' to see available sessions.")
+            print("Use '" + product_command("sessions") + " list' to see available sessions.")
             sys.exit(1)
 
     _resolve_continue_arg(args, use_tui=use_tui)
@@ -1592,7 +1593,7 @@ def _start_chat_background_prefetch() -> None:
 
 
 def _first_run_setup_guard(args) -> None:
-    """No provider configured: offer `haos setup`/`hermes setup` (TTY) or exit 1 with guidance."""
+    """No provider configured: offer `haos setup`/`haos setup` (TTY) or exit 1 with guidance."""
     from hermes_constants import product_cli_name, product_command
     _product = product_cli_name()
     print()
@@ -1969,7 +1970,7 @@ def _pick_provider(config, active, provider_labels, custom_provider_map):
 def select_provider_and_model(args=None):
     """Core provider selection + model picking logic.
 
-    Shared by ``cmd_model`` (``hermes model``) and the setup wizard
+    Shared by ``cmd_model`` (``haos model``) and the setup wizard
     (``setup_model_provider`` in setup.py).  Handles the full flow:
     provider picker, credential prompting, model selection, and config
     persistence.
@@ -2105,7 +2106,7 @@ def cmd_verify(args):
 
 
 def cmd_security(args):
-    """Dispatch `hermes security <subcmd>`."""
+    """Dispatch `haos security <subcmd>`."""
     sub = getattr(args, "security_command", None)
     if sub in ("audit", None):
         from hermes_cli.security_audit import cmd_security_audit
@@ -2118,7 +2119,7 @@ def cmd_security(args):
 
 
 def cmd_approvals(args):
-    """Dispatch `hermes approvals <subcmd>`."""
+    """Dispatch `haos approvals <subcmd>`."""
     from hermes_cli.approvals_suggest import approvals_command
 
     status = approvals_command(args)
@@ -2395,7 +2396,7 @@ def _dashboard_lifecycle_flags(args, token_file) -> None:
         sys.exit(0)  # status is informational, always 0
     if getattr(args, "stop", False):
         if not _find_stale_dashboard_pids():
-            print("No hermes dashboard processes running.")
+            print("No " + product_command("dashboard") + " processes running.")
             sys.exit(0)
         # Reuse the same SIGTERM-grace-SIGKILL path used after `hermes update`;
         # it prints outcomes itself. Exit 1 only if every pid was unkillable.
@@ -2428,7 +2429,7 @@ def _dashboard_validate_serve_args(args, headless_backend, token_file):
     if ssh_owner_nonce and not re.fullmatch(r"[0-9a-f]{16}", ssh_owner_nonce):
         raise SystemExit("--ssh-owner-nonce must be 16 lowercase hex characters")
     if token_file and not headless_backend:
-        raise SystemExit("--ssh-session-token-file is only valid with hermes serve")
+        raise SystemExit("--ssh-session-token-file is only valid with " + product_command("serve"))
     return ssh_owner_nonce
 
 
@@ -2438,7 +2439,7 @@ def _dashboard_sanitize_desktop_env(headless_backend) -> None:
     Desktop Electron spawns its backend with HERMES_DESKTOP=1 plus
     HERMES_WEB_DIST=<packaged app.asar[/unpacked]/dist> (and often
     HERMES_SERVE_HEADLESS=1). A shell inheriting those then running
-    `hermes dashboard` would serve the desktop renderer ("Desktop IPC bridge
+    `haos dashboard` would serve the desktop renderer ("Desktop IPC bridge
     is unavailable", #52945) or disable the SPA. Only Electron-packaged
     WEB_DIST contamination is stripped — caller-managed overrides (dev /
     custom builds) must still work, and the desktop-spawned backend itself
@@ -3185,7 +3186,7 @@ def _register_plugin_cli_commands(subparsers) -> None:
 
 
 def _cmd_sessions_lazy(args, **kwargs):
-    """``hermes sessions`` handler; sessions_cmd imports only when the subcommand runs."""
+    """``haos sessions`` handler; sessions_cmd imports only when the subcommand runs."""
     from hermes_cli.sessions_cmd import cmd_sessions
 
     return cmd_sessions(args, **kwargs)

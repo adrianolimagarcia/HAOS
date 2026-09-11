@@ -3,6 +3,7 @@
 Split out of ``hermes_cli/main.py``. Names that still live in main (``PROJECT_ROOT``, ...)
 are imported lazily inside the functions that use them (avoids an import cycle).
 """
+from hermes_constants import product_command
 
 import contextlib
 import os
@@ -238,7 +239,7 @@ def _dashboard_cmdline_for_pid(pid: int) -> list[str] | None:
 
 
 def _respawn_dashboard_processes(commands: list[list[str]]) -> list[list[str]]:
-    """Respawn manually-started dashboards after ``hermes update``, detached, logging to
+    """Respawn manually-started dashboards after ``haos update``, detached, logging to
     ``logs/dashboard-restart.log``; returns the argvs that failed to spawn. Callers pre-filter via
     ``_filter_dashboard_respawn_candidates`` (no Desktop ``--port 0`` backends, capped per profile).
 
@@ -273,7 +274,7 @@ def _respawn_dashboard_processes(commands: list[list[str]]) -> list[list[str]]:
 
 
 class _UpdateOutputStream:
-    """stdout/stderr wrapper for ``hermes update``: mirrors to ``logs/update.log`` and, once the
+    """stdout/stderr wrapper for ``haos update``: mirrors to ``logs/update.log`` and, once the
     terminal vanishes (BrokenPipe/OSError/ValueError), drops screen output instead of the update."""
 
     _BROKEN = (BrokenPipeError, OSError, ValueError)
@@ -348,7 +349,7 @@ def _install_hangup_protection(gateway_mode: bool = False):
 
         import datetime as _dt
 
-        log_file.write(f"\n=== hermes update started {_dt.datetime.now().isoformat(timespec='seconds')} ===\n")
+        log_file.write(f"\n=== {product_command('update')} started {_dt.datetime.now().isoformat(timespec='seconds')} ===\n")
 
         state["log_file"] = log_file
         sys.stdout = _UpdateOutputStream(state["prev_stdout"], log_file)
@@ -398,10 +399,10 @@ def _report_dashboard_status() -> int:
         live.append((pid, command, mode))
 
     if not live:
-        print("No hermes dashboard or serve processes running.")
+        print("No " + product_command("dashboard") + " or serve processes running.")
         return 0
 
-    print(f"{len(live)} hermes dashboard/serve process(es) running:")
+    print(f"{len(live)} {product_command('dashboard')}/serve process(es) running:")
     for pid, command, mode in live:
         print(f"    PID {pid} [{mode}]: {command}")
     return len(live)
@@ -457,7 +458,7 @@ def _maybe_setup_dashboard_auth_interactively(args) -> None:
     print()
     print("  How do you want to authenticate the dashboard?")
     print("    [1] Username & password (quickest; for a trusted LAN / VPN)")
-    print("    [2] OAuth via Nous Portal (run `hermes dashboard register`)\n    [3] Cancel\n")
+    print("    [2] OAuth via Nous Portal (run `" + product_command("dashboard") + " register`)\n    [3] Cancel\n")
 
     try:
         choice = input("  Choice [1]: ").strip() or "1"
@@ -467,12 +468,12 @@ def _maybe_setup_dashboard_auth_interactively(args) -> None:
     if choice == "2":
         print()
         print(
-            "  Run this on the host where the dashboard lives, then start "
-            "the dashboard again:\n"
-            "    hermes dashboard register\n"
-            "  It provisions a Nous Portal OAuth client and writes "
-            "HERMES_DASHBOARD_OAUTH_CLIENT_ID into ~/.hermes/.env for you.\n"
-            "  Docs: https://hermes-agent.nousresearch.com/docs/"
+            "  Run this on the host where the dashboard lives, then start " +
+            "the dashboard again:\n" +
+            "    " + product_command("dashboard") + " register\n" +
+            "  It provisions a Nous Portal OAuth client and writes " +
+            "HERMES_DASHBOARD_OAUTH_CLIENT_ID into ~/.hermes/.env for you.\n" +
+            "  Docs: https://hermes-agent.nousresearch.com/docs/" +
             "user-guide/features/web-dashboard#authentication-gated-mode"
         )
         sys.exit(0)
@@ -624,7 +625,7 @@ def _read_ssh_session_token_file(path: str) -> str:
 def _is_electron_packaged_web_dist(path: str) -> bool:
     """True when *path* is an Electron-packaged renderer dist (``app.asar[.unpacked]/dist``).
 
-    A standalone ``hermes dashboard`` inheriting that ``HERMES_WEB_DIST`` would
+    A standalone ``haos dashboard`` inheriting that ``HERMES_WEB_DIST`` would
     serve the desktop frontend in the browser ("Desktop IPC bridge is unavailable").
     """
     if not path:

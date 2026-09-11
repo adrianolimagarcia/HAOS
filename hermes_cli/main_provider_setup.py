@@ -3,6 +3,7 @@ routing menu, API-key/reasoning prompts, Anthropic OAuth.
 
 Split out of ``hermes_cli/main.py``. Names that still live in main are imported lazily at call time.
 """
+from hermes_constants import product_command
 
 import contextlib
 
@@ -567,7 +568,7 @@ def _prompt_reasoning_effort_selection(efforts, current_effort=""):
 
 
 def _prompt_api_key(pconfig, existing_key: str, provider_id: str = "", existing_source: str = "") -> tuple:
-    """API-key entry for ``hermes setup`` / ``hermes model``: first-time entry, or [K]eep / [R]eplace /
+    """API-key entry for ``haos setup`` / ``haos model``: first-time entry, or [K]eep / [R]eplace /
     [C]lear when a key exists (a malformed paste is recoverable without editing ``.env``).
     Returns ``(resolved_key, abort)``; ``abort=True`` means the caller must ``return`` at once."""
     from hermes_cli.auth import LMSTUDIO_NOAUTH_PLACEHOLDER
@@ -621,7 +622,7 @@ def _prompt_api_key(pconfig, existing_key: str, provider_id: str = "", existing_
         return new_key, False
     if choice.startswith("c") and not pool_backed:
         save_env_value(key_env, "")
-        print(f"  API key cleared.  Re-run `hermes setup` to configure {pconfig.name} again.")
+        print(f"  API key cleared.  Re-run `{product_command('setup')}` to configure {pconfig.name} again.")
         return "", True
     # Keep (default, or any other input)
     print()
@@ -692,7 +693,7 @@ def _run_anthropic_oauth_flow(save_env_value):
              "    1. Install Claude Code:  npm install -g @anthropic-ai/claude-code",
              "    2. Run:                  claude setup-token",
              "    3. Follow the browser prompts to authorize",
-             "    4. Re-run:               hermes model", "",
+             "    4. Re-run:               " + product_command("model"), "",
              "  Or paste an existing setup-token now (sk-ant-oat-...):", "")
         saved = _paste_token("  Setup-token (or Enter to cancel): ")
         if saved is None:
@@ -773,7 +774,7 @@ def _named_custom_provider_map(cfg) -> dict[str, dict[str, str]]:
 
 def _build_provider_picker_rows(config: dict, active: str, provider_labels: dict[str, str],
                                 custom_provider_map: dict[str, dict[str, str]]) -> tuple[list[tuple[str, str, list[str]]], int]:
-    """Rows for the ``hermes model`` provider picker plus the pre-selected index. Canonical providers
+    """Rows for the ``haos model`` provider picker plus the pre-selected index. Canonical providers
     fold into display groups (PROVIDER_GROUPS): a group row's ``members`` drive a sub-picker, leaf
     rows have ``members == []``; saved custom providers and trailing actions stay flat. Honors
     ``model_catalog.excluded_providers`` (slug or alias, case-insensitive) like the gateway/TUI."""

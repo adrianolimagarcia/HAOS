@@ -7,6 +7,7 @@ is read lazily from ``tools.transcription_tools``.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import subprocess
@@ -118,7 +119,7 @@ def _unregistered_stt_provider_error(provider: str) -> Dict[str, Any]:
     key = str(provider or "").strip()
     return _error_result(
         f"stt.provider='{key}' is set but no built-in, command, or plugin "
-        "provider registered that name. Run `hermes plugins list` to see "
+        "provider registered that name. Run `" + product_command("plugins") + " list` to see " +
         "installed STT plugins, or configure a command provider under "
         f"`stt.providers.{key}.command`.",
         provider=key,

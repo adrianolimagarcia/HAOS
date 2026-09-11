@@ -1,4 +1,4 @@
-"""``hermes dashboard register`` — register a self-hosted dashboard OAuth client.
+"""``haos dashboard register`` — register a self-hosted dashboard OAuth client.
 
 Automates the Nous Portal ``/local-dashboards`` flow: resolve a fresh Nous access token, POST
 ``{portal}/api/oauth/self-hosted-client`` (the ``agent:`` prefix is applied server-side),
@@ -7,6 +7,7 @@ idempotently, then print the gate-engagement hint.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import json
 import os
@@ -82,8 +83,8 @@ def _register_self_hosted_client(
         except Exception:
             detail = ""
         if exc.code == 401:
-            message = ("Nous Portal rejected the access token (401). "
-                       "Try `hermes auth add nous` to re-authenticate.")
+            message = ("Nous Portal rejected the access token (401). " +
+                       "Try `" + product_command("auth") + " add nous` to re-authenticate.")
         elif exc.code == 403:
             message = detail or "Your account is not permitted to register a self-hosted dashboard."
         else:
@@ -107,8 +108,8 @@ def _print_post_register_hint(
     if public_url:
         print("    HERMES_DASHBOARD_PUBLIC_URL=" + str(public_url))
     print(
-        "\n  Heads up — Nous login only *engages* on a non-loopback bind. A plain\n"
-        "  `hermes dashboard` (localhost) leaves the gate off and serves locally\n"
+        "\n  Heads up — Nous login only *engages* on a non-loopback bind. A plain\n" +
+        "  `" + product_command("dashboard") + "` (localhost) leaves the gate off and serves locally\n" +
         "  without auth, which is fine for your own machine.\n")
     if custom_redirect_uri:
         try:  # example host matches the one the user registered
@@ -121,8 +122,8 @@ def _print_post_register_hint(
             "  at its /login page.")
     else:
         print(
-            "  To require Nous login (e.g. exposing on your LAN or a public host):\n"
-            "    hermes dashboard --host 0.0.0.0\n"
+            "  To require Nous login (e.g. exposing on your LAN or a public host):\n" +
+            "    " + product_command("dashboard") + " --host 0.0.0.0\n" +
             "  …then log in at the dashboard's /login page.")
     print(
         "\n  If the dashboard is already running, restart it to pick up the new env.\n"
@@ -166,7 +167,7 @@ def cmd_dashboard_register(args) -> None:
     from hermes_cli.config import is_managed, save_env_value
     # Managed installs get the client id stamped in by the orchestrator (save_env_value refuses).
     if is_managed():
-        print("✗ `hermes dashboard register` is not available in a managed/hosted install.\n"
+        print("✗ `" + product_command("dashboard") + " register` is not available in a managed/hosted install.\n" +
               "  The dashboard OAuth client is provisioned by the hosting platform.")
         sys.exit(1)
 
@@ -174,8 +175,8 @@ def cmd_dashboard_register(args) -> None:
         access_token = resolve_nous_access_token()
     except Exception as exc:
         if isinstance(exc, AuthError) and getattr(exc, "relogin_required", False):
-            print("✗ You're not logged into Nous Portal.\n"
-                  "  Run `hermes setup` (or `hermes auth add nous`) first, then retry.")
+            print("✗ You're not logged into Nous Portal.\n" +
+                  "  Run `" + product_command("setup") + "` (or `" + product_command("auth") + " add nous`) first, then retry.")
         else:
             print(f"✗ Could not resolve a Nous Portal access token: {exc}")
         sys.exit(1)

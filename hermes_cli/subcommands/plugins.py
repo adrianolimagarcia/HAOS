@@ -1,6 +1,7 @@
-"""``hermes plugins`` subcommand parser."""
+"""``haos plugins`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from typing import Callable
 
@@ -19,8 +20,9 @@ def build_plugins_parser(subparsers, *, cmd_plugins: Callable) -> None:
         "install", help="Install a plugin from the curated catalog, a Git URL, or owner/repo")
     plugins_install.add_argument(
         "identifier",
-        help="Bare plugin catalog entry name (see `hermes plugins search`), Git URL, or owner/repo "
-            "shorthand (e.g. anpicasso/hermes-plugin-chrome-profiles)")
+help="Git URL, owner/repo shorthand (e.g. anpicasso/hermes-plugin-chrome-profiles), " +
+            "or a bare plugin name resolved through the community index " +
+            "(see `" + product_command("plugins") + " search`)")
     plugins_install.add_argument(
         "--force", "-f", action="store_true", help="Remove existing plugin and reinstall")
     plugins_install.add_argument(
@@ -35,7 +37,7 @@ def build_plugins_parser(subparsers, *, cmd_plugins: Callable) -> None:
         help="Auto-enable the plugin after install (skip confirmation prompt)")
     _install_enable_group.add_argument(
         "--no-enable", action="store_true",
-        help="Install disabled (skip confirmation prompt); enable later with `hermes plugins enable <name>`",
+        help="Install disabled (skip confirmation prompt); enable later with `" + product_command("plugins") + " enable <name>`",
     )
 
     plugins_search = plugins_subparsers.add_parser(

@@ -2037,7 +2037,7 @@ def get_plugin_auxiliary_tasks() -> List[Dict[str, Any]]:
 
 
 def get_plugin_toolsets() -> List[tuple]:
-    """Plugin toolsets as ``(key, label, description)`` tuples for the ``hermes tools`` TUI."""
+    """Plugin toolsets as ``(key, label, description)`` tuples for the ``haos tools`` TUI."""
     manager = get_plugin_manager()
     if not manager._plugin_tool_names:
         return []

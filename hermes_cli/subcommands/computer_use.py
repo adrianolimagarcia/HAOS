@@ -1,6 +1,7 @@
-"""``hermes computer-use`` subcommand parser."""
+"""``haos computer-use`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import sys
 
@@ -25,7 +26,7 @@ def _cu_status(args) -> int:
     override = _os.environ.get("HERMES_CUA_DRIVER_CMD", "").strip()
     if not path:
         print("cua-driver: not installed")
-        print("  Run: hermes computer-use install")
+        print("  Run: " + product_command("computer-use") + " install")
         return 1
     version = ""
     try:
@@ -49,24 +50,24 @@ def _cu_status(args) -> int:
         print("  ⚠ Repair required: " + (contract.get("reason") or "runtime contract is incomplete"))
         if override:
             print(
-                "    Update the binary selected by HERMES_CUA_DRIVER_CMD, or unset "
-                "the override and run: hermes computer-use install --upgrade")
+                "    Update the binary selected by HERMES_CUA_DRIVER_CMD, or unset " +
+                "the override and run: " + product_command("computer-use") + " install --upgrade")
         else:
-            print("    Run: hermes computer-use install")
+            print("    Run: " + product_command("computer-use") + " install")
         return 1
     try:
         st = cua_driver_update_check()
         if st and st.get("update_available"):
             latest = st.get("latest_version") or "?"
             print(f"  ⬆ Update available: cua-driver {latest}.")
-            print("    Run: hermes computer-use install --upgrade")
+            print("    Run: " + product_command("computer-use") + " install --upgrade")
         elif st:
             print("  ✓ Up to date.")
         else:
             # Older driver (no check-update verb) or offline.
-            print("  Refresh to latest: hermes computer-use install --upgrade")
+            print("  Refresh to latest: " + product_command("computer-use") + " install --upgrade")
     except Exception:
-        print("  Refresh to latest: hermes computer-use install --upgrade")
+        print("  Refresh to latest: " + product_command("computer-use") + " install --upgrade")
     return 0
 
 
@@ -89,7 +90,7 @@ def _cu_perms_status(args) -> None:
         print(f"Computer Use is not supported on {st['platform']}.")
         sys.exit(1)
     if not st["installed"]:
-        print("cua-driver: not installed. Run: hermes computer-use install")
+        print("cua-driver: not installed. Run: " + product_command("computer-use") + " install")
         sys.exit(1)
     glyph = lambda v: "✅" if v is True else ("❌" if v is False else "•")  # noqa: E731
     print(f"cua-driver: {st['version'] or 'installed'} ({st['platform']})")
@@ -97,7 +98,7 @@ def _cu_perms_status(args) -> None:
         print(f"  {glyph(st['accessibility'])} Accessibility")
         print(f"  {glyph(st['screen_recording'])} Screen Recording")
         if not st["ready"]:
-            print("  Grant: hermes computer-use permissions grant")
+            print("  Grant: " + product_command("computer-use") + " permissions grant")
     else:  # no TCC model — readiness is driver health
         print(f"  {glyph(st['ready'])} driver health (no permission toggles on {st['platform']})")
     for c in st["checks"]:
@@ -117,18 +118,18 @@ def build_computer_use_parser(subparsers) -> None:
     """Attach the ``computer-use`` subcommand to ``subparsers``."""
     computer_use_parser = subparsers.add_parser(
         "computer-use", help="Manage the Computer Use (cua-driver) backend (macOS/Windows/Linux)",
-        description="Install or check the cua-driver binary used by the\n"
-            "`computer_use` toolset. Supported on macOS, Windows, and\n"
-            "Linux.\n\n"
-            "Use `hermes computer-use install` to fetch and run the\n"
-            "upstream cua-driver installer. This is equivalent to the\n"
-            "post-setup hook that `hermes tools` runs when you first\n"
-            "enable the Computer Use toolset, and is a stable target\n"
-            "for re-running the install if it didn't fire (e.g. when\n"
-            "toggling the toolset on a returning-user setup).\n\n"
-            "Use `hermes computer-use doctor` to run cua-driver's\n"
-            "`health_report` MCP tool and surface its check matrix\n"
-            "(TCC, bundle identity, version, platform support, ...)\n"
+        description="Install or check the cua-driver binary used by the\n" +
+            "`computer_use` toolset. Supported on macOS, Windows, and\n" +
+            "Linux.\n\n" +
+            "Use `" + product_command("computer-use") + " install` to fetch and run the\n" +
+            "upstream cua-driver installer. This is equivalent to the\n" +
+            "post-setup hook that `" + product_command("tools") + "` runs when you first\n" +
+            "enable the Computer Use toolset, and is a stable target\n" +
+            "for re-running the install if it didn't fire (e.g. when\n" +
+            "toggling the toolset on a returning-user setup).\n\n" +
+            "Use `" + product_command("computer-use") + " doctor` to run cua-driver's\n" +
+            "`health_report` MCP tool and surface its check matrix\n" +
+            "(TCC, bundle identity, version, platform support, ...)\n" +
             "in human-readable form.")
     computer_use_sub = computer_use_parser.add_subparsers(dest="computer_use_action")
 

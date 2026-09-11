@@ -9,6 +9,7 @@ recovery action and auto-clears when the failure mode resolves.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Iterable, Optional
@@ -118,7 +119,7 @@ def _cli_hint(label: str, command: str, *, suggested: bool = False) -> Diagnosti
 
 
 def _log_hint_action(task_id: str) -> DiagnosticAction:
-    cmd = f"hermes kanban log {task_id}"
+    cmd = f"{product_command('kanban')} log {task_id}"
     return _cli_hint(f"Check logs: {cmd}", cmd, suggested=True)
 
 
@@ -272,8 +273,8 @@ _TRIAGE_SLOTS = {
     ),
     False: (
         "auxiliary.triage_specifier", "auxiliary.kanban_decomposer", "specifier",
-        "Auto-decompose is off, so triage tasks need "
-        "`hermes kanban specify`, which uses auxiliary.triage_specifier.",
+        "Auto-decompose is off, so triage tasks need " +
+        "`" + product_command("kanban") + " specify`, which uses auxiliary.triage_specifier.",
     ),
 }
 
@@ -305,14 +306,14 @@ def _rule_triage_aux_unavailable(task, events, runs, now, cfg) -> list[Diagnosti
 
     task_id = _task_field(task, "id") or "<task_id>"
     actions = [_cli_hint(
-        f"Configure {primary_slot}", f"hermes config set {primary_slot}.provider auto", suggested=True,
+        f"Configure {primary_slot}", f"{product_command('config')} set {primary_slot}.provider auto", suggested=True,
     )]
     if not fallback_explicit and not main_visible:
         actions.append(_cli_hint(
-            f"Or configure fallback {fallback_slot}", f"hermes config set {fallback_slot}.provider auto",
+            f"Or configure fallback {fallback_slot}", f"{product_command('config')} set {fallback_slot}.provider auto",
         ))
     if not auto_decompose:
-        cmd = f"hermes kanban specify {task_id}"
+        cmd = f"{product_command('kanban')} specify {task_id}"
         actions.append(_cli_hint(f"Specify manually: {cmd}", cmd))
 
     return [Diagnostic(
@@ -511,12 +512,12 @@ def _rule_review_dependency_deadlock(task, events, runs, now, cfg) -> list[Diagn
     actions: list[DiagnosticAction] = []
     if task_id:
         actions.append(_cli_hint(
-            "Complete the finished implementation phase", f"hermes kanban complete {task_id}",
+            "Complete the finished implementation phase", f"{product_command('kanban')} complete {task_id}",
             suggested=True,
         ))
     if task_id and child_ids:
         actions.append(_cli_hint(
-            "Or unlink the incorrectly gated reviewer", f"hermes kanban unlink {task_id} {child_ids[0]}",
+            "Or unlink the incorrectly gated reviewer", f"{product_command('kanban')} unlink {task_id} {child_ids[0]}",
         ))
 
     blocked_at = _event_ts(latest_block) or now
@@ -604,7 +605,7 @@ def _rule_block_unblock_cycling(task, events, runs, now, cfg) -> list[Diagnostic
     task_id = _task_field(task, "id")
     actions: list[DiagnosticAction] = []
     if task_id:
-        cmd = f"hermes kanban events {task_id}"
+        cmd = f"{product_command('kanban')} events {task_id}"
         actions.append(_cli_hint(f"Check block reasons: {cmd}", cmd, suggested=True))
     return [Diagnostic(
         kind="block_unblock_cycling", severity="warning",
@@ -662,7 +663,7 @@ def _rule_stranded_in_ready(task, events, runs, now, cfg) -> list[Diagnostic]:
     actions = [
         DiagnosticAction(kind="reassign", label="Reassign to a different worker",
                          payload={"current_assignee": assignee}),
-        _cli_hint("Check dispatcher status", "hermes kanban diagnostics"),
+        _cli_hint("Check dispatcher status", product_command("kanban") + " diagnostics"),
     ]
     return [Diagnostic(
         kind="stranded_in_ready", severity=severity,

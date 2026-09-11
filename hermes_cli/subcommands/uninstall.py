@@ -1,4 +1,4 @@
-"""``hermes uninstall`` subcommand parser."""
+"""``haos uninstall`` subcommand parser."""
 
 from __future__ import annotations
 

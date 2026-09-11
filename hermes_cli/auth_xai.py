@@ -5,6 +5,7 @@ Split out of ``hermes_cli/auth.py``; origin helpers are imported lazily per func
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import base64
@@ -26,7 +27,7 @@ if TYPE_CHECKING:  # annotation-only; the runtime import would be a cycle
     from hermes_cli.auth import ProviderConfig
 logger = logging.getLogger("hermes_cli.auth")
 
-_RELOGIN = "Re-authenticate with `hermes model`."
+_RELOGIN = "Re-authenticate with `" + product_command("model") + "`."
 
 
 def _clean(value: Any) -> str:
@@ -79,7 +80,7 @@ def _read_xai_oauth_tokens(*, _lock: bool = True) -> Dict[str, Any]:
             state = global_state
     if not state:
         raise _xai_err(
-            "No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `hermes model`.",
+            "No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `" + product_command("model") + "`.",
             "xai_auth_missing", relogin=True,
         )
     tokens = state.get("tokens")
@@ -226,7 +227,7 @@ def _xai_validate_oauth_endpoint(url: str, *, field: str) -> str:
             f"xAI OIDC discovery {field} host {host!r} is not on the xAI origin "
             f"(expected x.ai or a *.x.ai subdomain). Refusing to use a cached "
             f"endpoint that may have been substituted by a MITM during initial "
-            f"discovery; re-authenticate with `hermes model` to re-fetch."
+            f"discovery; re-authenticate with `{product_command('model')}` to re-fetch."
         ),
     }[problem]
     raise _xai_err(message, "xai_discovery_invalid")

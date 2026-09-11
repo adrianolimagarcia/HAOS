@@ -1,4 +1,4 @@
-"""Shared implementation behind ``hermes codebase-wiki`` (CLI + skill paths)."""
+"""Shared implementation behind ``haos codebase-wiki`` (CLI + skill paths)."""
 
 from __future__ import annotations
 

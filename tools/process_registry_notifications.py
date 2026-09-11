@@ -2,6 +2,7 @@
 watch_match, watch_disabled, watch_overflow_*, async_delegation) into the
 ``[IMPORTANT: ...]`` / ``[ASYNC DELEGATION ...]`` text the CLI drain loop, gateway and
 TUI inject into the agent conversation."""
+from hermes_constants import product_command
 
 import time
 from dataclasses import dataclass
@@ -108,7 +109,7 @@ def _delegation_model_not_found_notice(results) -> "list[str] | None":
         f'"{model}" was rejected by provider "{provider}" '
         "(HTTP 400: not a valid model ID).",
         "Every task in this batch failed for this reason before doing any work.",
-        "Check Settings → Advanced → Subagent Model (or: hermes config get delegation.model)."]
+        "Check Settings → Advanced → Subagent Model (or: " + product_command("config") + " get delegation.model)."]
     with suppress(Exception):
         from hermes_cli.fallback_config import get_fallback_chain
         if not get_fallback_chain(config):

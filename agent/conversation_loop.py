@@ -6,6 +6,7 @@ retries, fallbacks, compression, post-turn hooks). Symbols that callers patch on
 ``_ra`` so those patches keep working."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import inspect
 import json
@@ -514,7 +515,7 @@ def _billing_or_entitlement_message(
                 "at https://claude.ai/settings/usage",
                 switch,
                 # The exhaustion latch replays the stored error without a request.
-                "Retry with a fresh credential state: `hermes auth reset anthropic`. Until that "
+                "Retry with a fresh credential state: `" + product_command("auth") + " reset anthropic`. Until that " +
                 "cooldown clears, this error can be replayed from cache without contacting the API.",
             ])
         return "\n".join([
@@ -878,8 +879,8 @@ _EMPTY_TOOL_RESPONSE_NUDGE = (
 
 # Shared trailer for both content-policy refusal paths so guidance cannot drift.
 _CONTENT_POLICY_RECOVERY_HINT = (
-    "Try rephrasing the request, narrowing the context, or adding a fallback provider with "
-    "`hermes fallback add`."
+    "Try rephrasing the request, narrowing the context, or adding a fallback provider with " +
+    "`" + product_command("fallback") + " add`."
 )
 
 

@@ -26,12 +26,12 @@ covers both and an abort can strand either one (#92145):
 - **gateway profiles**, relaunched through the existing per-profile
   ``hermes_cli.main -p <profile> gateway restart`` command; and
 - **``hermes-serve*`` systemd units**, restarted directly through
-  ``systemctl``.  ``hermes serve`` is not a gateway profile and has no
+  ``systemctl``.  ``haos serve`` is not a gateway profile and has no
   per-profile relaunch command, but it is the runtime that hosts
   ``tui_gateway.server``: the process the original report saw answering every
   chat turn with an ``ImportError`` for a symbol that existed on disk.  The
   unit family is enumerated from systemd itself rather than from the update
-  inventory, so a manually launched or Desktop-owned ``hermes serve`` — which
+  inventory, so a manually launched or Desktop-owned ``haos serve`` — which
   has no relaunch authority — can never enter this path.
 
 Serve-unit identity is always ``<scope>/<unit>`` (``user/hermes-serve``,
@@ -245,7 +245,7 @@ def restart_serve_units(
     """Restart every active ``hermes-serve*`` systemd unit from this process.
 
     Units are enumerated from systemd, never from the update inventory, so a manually launched or
-    Desktop-owned ``hermes serve`` (no unit) structurally cannot be touched here.
+    Desktop-owned ``haos serve`` (no unit) structurally cannot be touched here.
     """
     skipped_qualified, skipped_legacy = _normalized_skips(skip_units)
     # (scope, base unit) -> replaced?  The same unit name in the user and the system

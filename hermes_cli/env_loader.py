@@ -1,6 +1,7 @@
 """Helpers for loading Hermes .env files consistently across entrypoints."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import codecs
 import io
@@ -217,11 +218,11 @@ def _sanitize_loaded_credentials() -> None:
               f"{'s' if stripped != 1 else ''} ({detail}) — stripped so the "
               f"key can be sent as an HTTP header.", file=sys.stderr)
         print(
-            "  This usually means the key was copy-pasted from a PDF, "
-            "rich-text editor, or web page that substituted lookalike\n"
-            "  Unicode glyphs for ASCII letters. If authentication fails "
-            "(e.g. \"API key not valid\"), re-copy the key from the\n"
-            "  provider's dashboard and run `hermes setup` (or edit the "
+            "  This usually means the key was copy-pasted from a PDF, " +
+            "rich-text editor, or web page that substituted lookalike\n" +
+            "  Unicode glyphs for ASCII letters. If authentication fails " +
+            "(e.g. \"API key not valid\"), re-copy the key from the\n" +
+            "  provider's dashboard and run `" + product_command("setup") + "` (or edit the " +
             ".env file in a plain-text editor).",
             file=sys.stderr,
         )

@@ -1,8 +1,9 @@
-"""Windows gateway lifecycle for ``hermes update``: pause/resume/cold-start the service, sweep venv holders, reap orphaned backends.
+"""Windows gateway lifecycle for ``haos update``: pause/resume/cold-start the service, sweep venv holders, reap orphaned backends.
 
 Split out of ``update_cmd.py``; names are re-imported there so ``hermes_cli.update_cmd.<name>`` still resolves/monkeypatches.
 Origin helpers are imported lazily per function (no cycle; test patches on the origin stay effective).
 """
+from hermes_constants import product_command
 
 import logging
 from contextlib import contextmanager, suppress
@@ -263,14 +264,14 @@ def _hermes_holder_subcommand(cmdline: str) -> str | None:
 def _format_venv_python_holders_message(matches: list[tuple[int, str, str]]) -> str:
     """Explain which venv processes block the update and how to clear them.
 
-    Labels come from the parsed SUBCOMMAND, never substring: a standalone ``hermes dashboard`` must not be
+    Labels come from the parsed SUBCOMMAND, never substring: a standalone ``haos dashboard`` must not be
     called the Desktop backend, ``--preserve-cache`` must not match "serve". Unknown argv gets no hint.
 
     See #90778.
     """
     hint_by_subcommand = {
         "serve": "  ← Hermes backend (if the Desktop app is open, close it)",
-        "dashboard": "  ← hermes dashboard (stop it: hermes dashboard stop, or close that terminal)",
+        "dashboard": "  ← " + product_command("dashboard") + " (stop it: " + product_command("dashboard") + " stop, or close that terminal)",
         "gateway": "  ← gateway",
     }
     lines = ["✗ Other Hermes processes are running from this install's venv:"]
@@ -280,10 +281,10 @@ def _format_venv_python_holders_message(matches: list[tuple[int, str, str]]) -> 
     if len(matches) > 6:
         lines.append(f"  ... and {len(matches) - 6} more")
     lines.append(
-        "\n  On Windows these keep native extension files (.pyd) locked, so the\n"
-        "  dependency update would fail partway and leave a broken install.\n"
-        "  Close the Hermes desktop app / other Hermes terminals, then re-run:\n    hermes update\n"
-        "  (or use `hermes update --force-venv` to proceed anyway at your own risk)"
+        "\n  On Windows these keep native extension files (.pyd) locked, so the\n" +
+        "  dependency update would fail partway and leave a broken install.\n" +
+        "  Close the Hermes desktop app / other Hermes terminals, then re-run:\n    " + product_command("update") + "\n" +
+        "  (or use `" + product_command("update") + " --force-venv` to proceed anyway at your own risk)"
     )
     return "\n".join(lines)
 
@@ -333,7 +334,7 @@ def _leftover_pausable_gateway_pids(matches: list[tuple[int, str, str]]) -> list
 
 
 def _refuse_gateway_ancestor_tree_kill(pids: list[int], *, gateway_mode: bool) -> bool:
-    """Refuse a plain Windows update that would tree-kill its own ancestry (a chat agent's ``hermes update`` is
+    """Refuse a plain Windows update that would tree-kill its own ancestry (a chat agent's ``haos update`` is
     a gateway child; ``taskkill /T /F`` kills the updater first). ``--gateway`` is exempt (detached delivery).
     Refuse only when a nominated gateway is positively an ancestor; unknown ancestry keeps existing recovery.
 
@@ -352,8 +353,8 @@ def _refuse_gateway_ancestor_tree_kill(pids: list[int], *, gateway_mode: bool) -
     print(
         "✗ Refusing to stop the gateway process tree because this updater "
         f"is running inside it (gateway PID(s): {', '.join(str(pid) for pid in ancestors)}).\n"
-        "  On Windows, taskkill /T would terminate the updater before the update can run.\n"
-        "  From a chat platform, use `/update` instead.\n  Otherwise, run `hermes update` from a separate terminal."
+        "  On Windows, taskkill /T would terminate the updater before the update can run.\n" +
+        "  From a chat platform, use `/update` instead.\n  Otherwise, run `" + product_command("update") + "` from a separate terminal."
     )
     return True
 
@@ -416,7 +417,7 @@ def _relaunch_stopped_serves(token: dict) -> None:
         print("  ⟲ Relaunching stopped serve/dashboard backend(s)")
         failed = _m()._respawn_dashboard_processes(commands)
     if skipped or failed:
-        print("  ⚠ Some stopped backends could not be relaunched automatically; restart them manually (hermes serve --host <ip> --port <port>).")
+        print("  ⚠ Some stopped backends could not be relaunched automatically; restart them manually (" + product_command("serve") + " --host <ip> --port <port>).")
     _record_update_step(
         "serve_relaunch", not failed and not skipped,
         f"relaunched={len(commands) - len(failed)} failed={len(failed)} skipped={skipped}",
@@ -586,7 +587,7 @@ def _stop_process_trees(pids: list[int] | list[tuple[int, int]]) -> None:
 
 
 def _looks_like_desktop_control_plane(cmdline: str) -> bool:
-    """True for this-install ``hermes serve`` / ``hermes dashboard`` argv (Desktop control plane).
+    """True for this-install ``haos serve`` / ``haos dashboard`` argv (Desktop control plane).
 
     Not the messaging gateway — don't feed into ``looks_like_gateway_command_line``. Token-based via the
     parser-derived classifier, never substring (``kanban --preserve-cache``, ``-m dashboard chat``).
@@ -904,7 +905,7 @@ def _pause_windows_gateways_for_update() -> dict | None:
     if unmapped_pids:
         print(f"  → Stopped {len(unmapped_pids)} gateway process(es) without profile mapping")
         if any(not u.get("argv") for u in unmapped):  # no recoverable cmdline (psutil missing, denied, gone)
-            print("    Restart manually after update: hermes gateway run")
+            print("    Restart manually after update: " + product_command("gateway") + " run")
     token = {"resume_needed": True, "profiles": profiles, "unmapped_pids": unmapped_pids, "unmapped": unmapped}
     return _pause_windows_gateway_services(service_gateways, token, profiles, unmapped)
 
@@ -955,7 +956,7 @@ def _refresh_windows_gateway_launchers() -> None:
     None`` death). The task's /TR points at a stable path, so rewriting in place retargets it without UAC.
 
     The Scheduled Task / Startup-folder launchers (``gateway.cmd`` + ``gateway.vbs``) are persistence
-    artifacts written once at install time — ``hermes update`` never touched them, so installs created
+    artifacts written once at install time — ``haos update`` never touched them, so installs created
     before the hidden-console rework (aa2ae36c3f) kept launching the gateway through ``pythonw.exe``
     forever: every descendant spawn flashed a conhost (#54220/#56747) and, since #70344, the console-less
     gateway died at startup with ``RuntimeError: sys.stderr is None`` (#71671).
@@ -981,7 +982,7 @@ def _refresh_bootstrap_cache_scripts(branch: str = "main") -> None:
     cached branch-ref script — ``install-main.ps1`` cached at install time is reused forever, executing
     months-stale code with long-fixed bugs (the 2026-08-09 incident: a June 4 cached script's venv stage
     lacked the 81327 process-tree sweep and died on ``Access denied``). The binary has no self-update path,
-    so the poisoned cache outlives every ``hermes update``.
+    so the poisoned cache outlives every ``haos update``.
     Overwriting the cached script for *branch* with the freshly pulled ``scripts/install.ps1`` /
     ``scripts/install.sh`` on every update turns the stale binary's unconditional reuse into a feature: it
     "reuses" a file this function keeps permanently current. Post-#67193 installers re-download on each run
@@ -1097,9 +1098,9 @@ def _verify_relaunched_gateways_alive(token: dict, profiles: dict, unmapped: lis
         token["profiles"] = dict(profiles)
         token["unmapped"] = list(unmapped)
         print(
-            "\n  ⚠ Windows gateway restart could not be verified — no stable gateway process appeared after relaunch.\n"
-            "    (The respawned gateway may have been killed by a parent Job Object during updater teardown, #48820.)\n"
-            "    Recover with: hermes gateway restart"
+            "\n  ⚠ Windows gateway restart could not be verified — no stable gateway process appeared after relaunch.\n" +
+            "    (The respawned gateway may have been killed by a parent Job Object during updater teardown, #48820.)\n" +
+            "    Recover with: " + product_command("gateway") + " restart"
         )
         raise RuntimeError("Windows gateway relaunch after update was not verified alive")
     with suppress(Exception):

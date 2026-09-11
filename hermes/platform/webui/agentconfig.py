@@ -19,6 +19,7 @@ que o agente usa (``HERMES_HOME/config.yaml``), sem duplicar estado:
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import datetime as _dt
 import json
@@ -201,7 +202,7 @@ def patch_config(updates: Dict[str, Any], backup_dir: Optional[Path] = None) -> 
     path = cfg.get_config_path()
     if not path.is_file():
         raise ConfigUnavailable("config_missing",
-                                f"config.yaml não existe em {path} — rode `hermes setup`.")
+                                f"config.yaml não existe em {path} — rode `{product_command('setup')}`.")
     if cfg.is_managed():
         raise ConfigUnavailable("managed",
                                 "HERMES_HOME é um perfil gerenciado; escrita bloqueada (read-only).")

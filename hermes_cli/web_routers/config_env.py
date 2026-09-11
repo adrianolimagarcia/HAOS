@@ -171,7 +171,7 @@ def _catalog_provider_env_metadata() -> dict:
 
     Returns ``{env_var: {provider, provider_label, description, url, is_password,
     advanced}}`` for every API-key provider in the unified ``provider_catalog()``
-    (the ``hermes model`` universe), so the desktop Keys tab renders a card even
+    (the ``haos model`` universe), so the desktop Keys tab renders a card even
     for providers never hand-added to ``OPTIONAL_ENV_VARS``. Hand
     ``OPTIONAL_ENV_VARS`` prose is layered on top in the endpoint; this only
     supplies membership + grouping + fallbacks.

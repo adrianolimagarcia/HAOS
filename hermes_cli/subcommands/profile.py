@@ -1,6 +1,7 @@
-"""``hermes profile`` subcommand parser."""
+"""``haos profile`` subcommand parser."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 from typing import Callable
 
@@ -36,13 +37,13 @@ def build_profile_parser(subparsers, *, cmd_profile: Callable) -> None:
         "--no-alias", action="store_true", help="Skip wrapper script creation")
     profile_create.add_argument(
         "--no-skills", action="store_true",
-        help="Create an empty profile with no bundled skills (opts out of `hermes update` skill sync)",
+        help="Create an empty profile with no bundled skills (opts out of `" + product_command("update") + "` skill sync)",
     )
     profile_create.add_argument(
         "--description", default=None,
-        help="One- or two-sentence description of what this profile is good at. "
-             "Used by the kanban decomposer to route tasks based on role instead "
-             "of profile name alone. Skip and add later via `hermes profile describe`.")
+        help="One- or two-sentence description of what this profile is good at. " +
+             "Used by the kanban decomposer to route tasks based on role instead " +
+             "of profile name alone. Skip and add later via `" + product_command("profile") + " describe`.")
 
     profile_delete = profile_subparsers.add_parser("delete", help="Delete a profile")
     profile_delete.add_argument("profile_name", help="Profile to delete")

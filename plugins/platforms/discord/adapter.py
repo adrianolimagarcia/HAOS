@@ -1,4 +1,5 @@
 from __future__ import annotations
+from hermes_constants import product_command
 
 """
 Discord platform adapter.
@@ -5365,7 +5366,7 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         self, chat_id: str, prompt: str, default: str = "", session_key: str = "",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Yes/No prompt for the gateway ``/update`` watcher when ``hermes update --gateway`` needs input."""
+        """Yes/No prompt for the gateway ``/update`` watcher when ``haos update --gateway`` needs input."""
         def _build(_channel):
             default_hint = f" (default: {default})" if default else ""
             embed = discord.Embed(
@@ -6146,7 +6147,7 @@ def _define_discord_view_classes() -> None:
             await self._resolve(interaction, "cancel", discord.Color.greyple(), "Cancelled")
 
     class UpdatePromptView(_HermesView):
-        """Yes/No buttons for ``hermes update`` prompts; the answer is written to
+        """Yes/No buttons for ``haos update`` prompts; the answer is written to
         ``.update_response`` for the detached update process to pick up."""
 
         def __init__(self, session_key: str, allowed_user_ids: set, allowed_role_ids: Optional[set] = None):
@@ -7052,7 +7053,7 @@ def register(ctx) -> None:
         ensure_deps_fn=check_discord_requirements,
         is_connected=_is_connected,
         required_env=["DISCORD_BOT_TOKEN"],
-        install_hint="Run `hermes setup` to install Discord support.",
+        install_hint="Run `" + product_command("setup") + "` to install Discord support.",
         setup_fn=interactive_setup,
         # YAML→env bridge: ``discord:`` config keys → ``DISCORD_*`` env vars read via os.getenv().
         # YAML→env config bridge — owns the translation of ``config.yaml`` ``discord:`` keys

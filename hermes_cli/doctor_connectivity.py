@@ -1,4 +1,4 @@
-"""API connectivity probes for ``hermes doctor`` (split out of ``doctor.py``).
+"""API connectivity probes for ``haos doctor`` (split out of ``doctor.py``).
 
 Every probe is a pure function: one HTTP/SDK call returning a ``ProbeResult`` with the row(s) to
 print and issue strings to append. No printing inside workers — the caller prints in submission order.
@@ -14,7 +14,7 @@ from typing import NamedTuple
 
 from hermes_cli.colors import Colors, color
 from hermes_cli.models import _HERMES_USER_AGENT
-from hermes_constants import OPENROUTER_MODELS_URL
+from hermes_constants import OPENROUTER_MODELS_URL, product_command
 from utils import base_url_host_matches
 
 _APIKEY_PROVIDERS_CACHE: list | None = None
@@ -122,9 +122,9 @@ def _build_apikey_providers_list() -> list:
 _OPENROUTER_STATUS = {
     401: ("(invalid API key)", "Check OPENROUTER_API_KEY in .env"),
     402: ("(out of credits — payment required)",
-          "OpenRouter account has insufficient credits. "
-          "Fix: run 'hermes config set model.provider <provider>' "
-          "to switch providers, or fund your OpenRouter account "
+          "OpenRouter account has insufficient credits. " +
+          "Fix: run '" + product_command("config") + " set model.provider <provider>' " +
+          "to switch providers, or fund your OpenRouter account " +
           "at https://openrouter.ai/settings/credits"),
     429: ("(rate limited)", "OpenRouter rate limit hit — consider switching to a different provider or waiting"),
 }

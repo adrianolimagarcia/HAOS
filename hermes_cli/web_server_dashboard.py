@@ -1,5 +1,6 @@
 """Dashboard UI assets: SPA mount, theme normalisation/bootstrap CSS, dashboard-plugin discovery and the plugins-hub merge.
 """
+from hermes_constants import product_command
 
 import logging
 import importlib.util
@@ -85,8 +86,8 @@ def _render_active_theme_bootstrap_css() -> str:
 _IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 _NO_STORE = {"Cache-Control": "no-store, no-cache, must-revalidate"}
 _HEADLESS_MSG = (
-    "Headless backend (hermes serve): web UI disabled — use "
-    "`hermes dashboard` for the browser UI."
+    "Headless backend (" + product_command("serve") + "): web UI disabled — use " +
+    "`" + product_command("dashboard") + "` for the browser UI."
 )
 
 
@@ -628,7 +629,7 @@ def _plugin_auth_hint(name: str, provides_tools: list) -> tuple:
             if cached_result is None:
                 _schedule_check_fn_probe(entry.check_fn)
             elif cached_result is False:
-                return True, f"hermes auth {name}"
+                return True, f"{product_command('auth')} {name}"
     except Exception:
         pass
     return False, ""

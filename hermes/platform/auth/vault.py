@@ -218,7 +218,7 @@ class OAuthVault:
     """Perfis OAuth genéricos persistidos no vault real (namespace ``haos-oauth``).
 
     Para providers OAuth reais do Hermes (nous/openai-codex/xai-oauth/spotify),
-    o caminho canônico é o fluxo upstream (``hermes auth login`` +
+    o caminho canônico é o fluxo upstream (``haos auth login`` +
     ``OAUTH_PROVIDER_FLOWS``); esta classe guarda perfis adicionais/opacos com a
     mesma persistência do vault, sem tocar no estado do provider ativo.
     """

@@ -8,6 +8,7 @@ Requires the ``teams`` extra (auto-installed by the gateway on first start, or
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import asyncio
 # microsoft-teams-apps calls ``load_dotenv(find_dotenv(usecwd=True))`` at ``microsoft_teams.apps.app``
@@ -188,7 +189,7 @@ async def _standalone_send(
 ) -> Dict[str, Any]:
     """Acquire a Bot Framework bearer token and POST a single message activity; used by
     ``send_message_tool._send_via_adapter`` when the gateway runner is not in this process
-    (``hermes cron``). ``TEAMS_SERVICE_URL`` is allowlisted and ``chat_id`` charset-checked
+    (``haos cron``). ``TEAMS_SERVICE_URL`` is allowlisted and ``chat_id`` charset-checked
     (SSRF/path traversal). ``media_files`` / ``force_document`` are signature parity only — text-only."""
     extra = getattr(pconfig, "extra", {}) or {}
     client_id, client_secret, tenant_id = _credentials(pconfig)
@@ -766,7 +767,7 @@ def interactive_setup() -> None:
     print()
     print_success("Teams configuration saved to ~/.hermes/.env")
     print_info("Install the app in Teams:  teams app install --id <teamsAppId>")
-    print_info("Restart the gateway:       hermes gateway restart")
+    print_info("Restart the gateway:       " + product_command("gateway") + " restart")
 
 
 def _install_hint() -> str:

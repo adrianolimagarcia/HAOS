@@ -1,4 +1,5 @@
 """Cron subcommand for hermes CLI."""
+from hermes_constants import product_command
 
 import contextlib
 import json
@@ -80,9 +81,9 @@ def _warn_if_gateway_not_running() -> None:
     if _builtin_gateway_liveness() is not False:
         return
     print(color("  ⚠  Gateway is not running — jobs won't fire automatically.", Colors.YELLOW))
-    print(color("     Start it with: hermes gateway install\n"
-                "                    sudo hermes gateway install --system  # Linux servers\n"
-                "     Check status:  hermes cron status", Colors.DIM))
+    print(color("     Start it with: " + product_command("gateway") + " install\n" +
+                "                    sudo " + product_command("gateway") + " install --system  # Linux servers\n" +
+                "     Check status:  " + product_command("cron") + " status", Colors.DIM))
 
 
 def _format_lateness(seconds: float) -> str:
@@ -143,7 +144,7 @@ def cron_list(show_all: bool = False):
     jobs = list_jobs(include_disabled=show_all)
 
     if not jobs:
-        print(color("No scheduled jobs.\nCreate one with 'hermes cron create ...' "
+        print(color("No scheduled jobs.\nCreate one with '" + product_command("cron") + " create ...' " +
                     "or the /cron command in chat.", Colors.DIM))
         return
 
@@ -250,7 +251,7 @@ def cron_tick():
         # For the one-shot CLI surface, report cleanly instead of dumping a traceback; the gateway ticker
         # loop handles its own retry. See #87644.
         print(color(f"✗ Cron tick failed: {exc}", Colors.RED))
-        print("  Check `hermes cron status` and the gateway log for details.")
+        print("  Check `" + product_command("cron") + " status` and the gateway log for details.")
         return 1
     return 0
 
@@ -283,7 +284,7 @@ def cron_incidents(args) -> int:
     if action == "ack":
         incident_id = getattr(args, "incident_id", None)
         if not incident_id:
-            print(color("✗ Incident ID required: hermes cron incidents ack <incident_id>", Colors.RED))
+            print(color("✗ Incident ID required: " + product_command("cron") + " incidents ack <incident_id>", Colors.RED))
             return 1
         if ack_incident(incident_id):
             print(color(f"✓ Incident {incident_id} acknowledged (closed).", Colors.GREEN))
@@ -314,13 +315,13 @@ def cron_incidents(args) -> int:
             if label != "Output" or value:
                 print(f"    {label + ':':<12}{value}")
         print()
-    print(color(f"  {len(incidents)} incident(s)  |  ack one with: hermes cron incidents ack <id>",
+    print(color(f"  {len(incidents)} incident(s)  |  ack one with: {product_command('cron')} incidents ack <id>",
                 Colors.DIM))
     return 0
 
 
-_PERMISSION_HINT = ("  Hint: jobs.json may be owned by another user (e.g. rewritten by a root "
-                    "`docker exec hermes hermes cron ...`). Fix ownership to match the gateway "
+_PERMISSION_HINT = ("  Hint: jobs.json may be owned by another user (e.g. rewritten by a root " +
+                    "`docker exec hermes " + product_command("cron") + " ...`). Fix ownership to match the gateway " +
                     "user, and prefer `docker exec -u <uid>:<gid>`.")
 _FD_EXHAUSTION_HINT = ("  Hint: the ticker hit file-descriptor exhaustion (EMFILE). The scheduler "
                        "now retries with backoff and attempts fd reclamation, but if the leak "
@@ -351,13 +352,13 @@ def _print_ticker_health(pids: list) -> None:
     if hb_age is None:
         # Ticker never started (non-cron profile, gateway just started, or a config issue).
         _warn("⚠ Gateway is running but the cron ticker has not reported a heartbeat.")
-        print("  Cron jobs will NOT fire until the ticker writes its first heartbeat.\n"
-              "  If the gateway just started, wait ~60s and re-run `hermes cron status`.\n"
-              "  If heartbeat never appears, restart: hermes gateway restart")
+        print("  Cron jobs will NOT fire until the ticker writes its first heartbeat.\n" +
+              "  If the gateway just started, wait ~60s and re-run `" + product_command("cron") + " status`.\n" +
+              "  If heartbeat never appears, restart: " + product_command("gateway") + " restart")
     elif hb_age > STALE_AFTER:  # ticker thread is gone
         _warn("⚠ Gateway is running but the cron ticker looks STALLED — "
               f"no heartbeat for {int(hb_age)}s (expected every ~60s).")
-        print("  Cron jobs may NOT be firing. Restart: hermes gateway restart")
+        print("  Cron jobs may NOT be firing. Restart: " + product_command("gateway") + " restart")
     elif ok_age is not None and ok_age > STALE_AFTER:  # loop alive but every tick fails
         _warn("⚠ Gateway and cron ticker are running, but no tick has "
               f"succeeded in {int(ok_age)}s — ticks may be failing.")
@@ -419,11 +420,11 @@ def cron_status():
             _print_ticker_health(pids)
         else:
             print(color("✗ Gateway is not running — cron jobs will NOT fire", Colors.RED))
-            print("\n  To enable automatic execution:\n"
-                  "    hermes gateway install    # Install as a user service\n"
-                  "    sudo hermes gateway install --system  "
-                  "# Linux servers: boot-time system service\n"
-                  "    hermes gateway            # Or run in foreground")
+            print("\n  To enable automatic execution:\n" +
+                  "    " + product_command("gateway") + " install    # Install as a user service\n" +
+                  "    sudo " + product_command("gateway") + " install --system  " +
+                  "# Linux servers: boot-time system service\n" +
+                  "    " + product_command("gateway") + "            # Or run in foreground")
 
     print()
     _print_active_jobs_summary(list_jobs(include_disabled=False))
@@ -542,7 +543,7 @@ def cron_doctor() -> int:
         for issue in issues:
             print(f"    - {issue}")
     print()
-    print(color("Next: fix the listed job config, then run `hermes cron doctor` again.", Colors.DIM))
+    print(color("Next: fix the listed job config, then run `" + product_command("cron") + " doctor` again.", Colors.DIM))
     return 1
 
 
@@ -712,7 +713,7 @@ def cron_resume(args) -> int:
 
 
 def cron_notepad(args) -> int:
-    """Handle ``hermes cron notepad <job_id> [get|set|delete|list]`` (per-job durable KV).
+    """Handle ``haos cron notepad <job_id> [get|set|delete|list]`` (per-job durable KV).
 
     A running cron agent updates its own notepad via its terminal tool; the scheduler injects
     non-empty notepads into the job prompt on each run.
@@ -736,7 +737,7 @@ def cron_notepad(args) -> int:
             return 0
         usage_args = "set <key> <value>" if action == "set" else f"{action} <key>"
         if key is None or (action == "set" and value is None):
-            print(color(f"Usage: hermes cron notepad <job_id> {usage_args}", Colors.RED))
+            print(color(f"Usage: {product_command('cron')} notepad <job_id> {usage_args}", Colors.RED))
             return 1
         if action == "set":
             notepad.set_note(job_id, key, value)
@@ -785,7 +786,7 @@ def cron_command(args):
     if handler is not None:
         return handler(args)
     print(f"Unknown cron command: {subcmd}\n"
-          "Usage: hermes cron [list|create|edit|pause|resume|run|remove|resnap|status|runs|doctor|tick]")
+"Usage: " + product_command("cron") + " [list|create|edit|pause|resume|run|remove|resnap|status|runs|doctor|tick]")
     sys.exit(1)
 
 

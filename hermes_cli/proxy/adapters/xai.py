@@ -1,6 +1,7 @@
 """xAI Grok OAuth upstream adapter."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 import threading
@@ -23,7 +24,7 @@ _ALLOWED_PATHS: FrozenSet[str] = frozenset(
 class XAIGrokAdapter(UpstreamAdapter):
     """Proxy upstream for xAI Grok via Hermes-managed OAuth credentials."""
 
-    auth_hint = "hermes auth add xai-oauth --type oauth"
+    auth_hint = product_command("auth") + " add xai-oauth --type oauth"
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -50,13 +51,13 @@ class XAIGrokAdapter(UpstreamAdapter):
             pool = self._load_pool()
             if pool is None or not pool.has_credentials():
                 raise RuntimeError(
-                    "No xAI OAuth credentials found. Run `hermes auth add xai-oauth --type oauth` first."
+                    "No xAI OAuth credentials found. Run `" + product_command("auth") + " add xai-oauth --type oauth` first."
                 )
             entry = pool.select()
             if entry is None:
                 raise RuntimeError(
-                    "No available xAI OAuth credentials found. Run "
-                    "`hermes auth reset xai-oauth` or re-authenticate with `hermes auth add xai-oauth --type oauth`."
+                    "No available xAI OAuth credentials found. Run " +
+                    "`" + product_command("auth") + " reset xai-oauth` or re-authenticate with `" + product_command("auth") + " add xai-oauth --type oauth`."
                 )
             self._pool = pool
             return self._credential_from_entry(entry)
@@ -94,8 +95,8 @@ class XAIGrokAdapter(UpstreamAdapter):
         bearer = str(getattr(entry, "runtime_api_key", None) or entry.access_token or "").strip()
         if not bearer:
             raise RuntimeError(
-                "xAI OAuth credential pool entry did not contain an access token. "
-                "Re-authenticate with `hermes auth add xai-oauth --type oauth`."
+                "xAI OAuth credential pool entry did not contain an access token. " +
+                "Re-authenticate with `" + product_command("auth") + " add xai-oauth --type oauth`."
             )
         base_url = str(
             getattr(entry, "runtime_base_url", None) or entry.base_url or DEFAULT_XAI_OAUTH_BASE_URL

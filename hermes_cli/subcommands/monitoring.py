@@ -1,4 +1,4 @@
-"""``hermes monitoring`` subcommand parser (gateway health/diagnostics export control)."""
+"""``haos monitoring`` subcommand parser (gateway health/diagnostics export control)."""
 
 from __future__ import annotations
 

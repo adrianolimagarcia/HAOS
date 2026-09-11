@@ -1,4 +1,4 @@
-"""On-demand worktree + branch reclaim (``hermes worktree`` / ``/worktree prune``).
+"""On-demand worktree + branch reclaim (``haos worktree`` / ``/worktree prune``).
 
 The startup pruner (``cli._prune_stale_worktrees``) is conservative and silent — clean, fully
 merged scratch past an age tier only. This module also reclaims trees whose only "dirt" is
@@ -6,6 +6,7 @@ untracked scratch (archived first) and branches whose content is on upstream.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import logging
@@ -116,7 +117,7 @@ def _classify_tree(_ops, repo_root: str, entry: Path, merge_cache, remote_heads)
     if _KANBAN_RE.match(entry.name):
         return "keep", "kanban task tree (owned by kanban gc)", []
     if _ops._worktree_lock_is_live(repo_root, path, timeout=5) == "live":
-        return "keep", "in use by a running hermes session", []
+        return "keep", "in use by a running " + product_command("session"), []
     tracked_dirty, untracked = _dirty_split(path)
     if tracked_dirty:
         return "keep", "uncommitted tracked changes (real work)", []

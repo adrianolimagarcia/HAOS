@@ -3,6 +3,7 @@ load/save paths (state.db gateway_routing primary, sessions.json legacy mirror).
 ``gateway/session.py``; bound onto ``SessionStore`` via the MRO."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import logging
@@ -24,10 +25,10 @@ _DB_UNPINNED = object()
 
 # Self-documenting sentinel written first into sessions.json; "_" keys are skipped on load.
 _SESSIONS_JSON_README = (
-    "LEGACY MIRROR of the gateway routing index (the primary copy lives in the gateway_routing "
-    "table in ~/.hermes/state.db). Maps messaging session keys (agent:main:<platform>:...) to "
-    "active session IDs. This is NOT the session list. ALL sessions (CLI, TUI, and gateway) live "
-    "in ~/.hermes/state.db and are shown by `hermes sessions list` and `/sessions`. Disable this "
+    "LEGACY MIRROR of the gateway routing index (the primary copy lives in the gateway_routing " +
+    "table in ~/.hermes/state.db). Maps messaging session keys (agent:main:<platform>:...) to " +
+    "active session IDs. This is NOT the session list. ALL sessions (CLI, TUI, and gateway) live " +
+    "in ~/.hermes/state.db and are shown by `" + product_command("sessions") + " list` and `/sessions`. Disable this " +
     "file with `gateway.write_sessions_json: false` in config.yaml."
 )
 

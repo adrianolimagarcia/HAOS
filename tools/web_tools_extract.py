@@ -5,6 +5,7 @@ refusal -> SSRF filter (in web_tools.web_extract_tool) -> provider resolution
 (strict selection) -> per-URL website policy -> disk cache -> vendor call with
 one-shot keyless rescue. Logs under the origin (tools.web_tools) logger.
 """
+from hermes_constants import product_command
 
 import asyncio
 import json
@@ -41,7 +42,7 @@ def _disabled_plugin_error(capability: str, disabled_key: str) -> str:
     vendor = disabled_key.split("/", 1)[-1]
     return (
         f"web.{capability}_backend is set to '{vendor}', but its plugin ('{disabled_key}') is disabled "
-        f"in config. Re-enable it with `hermes plugins enable {disabled_key}` "
+        f"in config. Re-enable it with `{product_command('plugins')} enable {disabled_key}` "
         "(or remove it from plugins.disabled)."
     )
 

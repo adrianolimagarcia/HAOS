@@ -10,6 +10,7 @@ Reference: https://learn.microsoft.com/azure/ai-foundry/foundry-models/how-to/co
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import functools
 import logging
@@ -299,9 +300,9 @@ def build_bearer_http_client(token_provider: Callable[[], str], **httpx_kwargs: 
             # Chain exhausted / az login expired: strip ALL auth headers (incl. the anthropic_adapter placeholder
             # sentinel) so Azure returns a clean "missing auth" 401 and the sentinel never reaches upstream logs.
             # WARNING so the misconfiguration is visible at default levels.
-            logger.warning("Bearer hook: Entra ID token provider returned empty (%s) "
-                           "— stripping Authorization headers. Azure will respond 401. "
-                           "Run `hermes doctor` or `az login` to recover.", exc)
+            logger.warning("Bearer hook: Entra ID token provider returned empty (%s) " +
+                           "— stripping Authorization headers. Azure will respond 401. " +
+                           "Run `" + product_command("doctor") + "` or `az login` to recover.", exc)
             _strip_auth_headers(request)
             return
         _strip_auth_headers(request)

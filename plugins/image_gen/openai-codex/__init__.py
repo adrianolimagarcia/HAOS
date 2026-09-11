@@ -11,6 +11,7 @@ any remaining HTTP error must surface verbatim.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import base64
 import json
@@ -56,8 +57,8 @@ _PARTIAL_IMAGES_REQUESTED = 0
 _NONFINAL_RETRIES = 1  # content-agnostic retries when the stream yields no final result
 
 _NO_AUTH = (
-    "No Codex/ChatGPT OAuth credentials available. Run "
-    "`hermes auth codex` (or `hermes setup` → Codex) to sign in.")
+    "No Codex/ChatGPT OAuth credentials available. Run " +
+    "`" + product_command("auth") + " codex` (or `" + product_command("setup") + "` → Codex) to sign in.")
 
 
 def _summarize_error_body(body: str) -> str:
@@ -336,7 +337,7 @@ class OpenAICodexImageGenProvider(StaticImageGenProvider):
             "tag": "gpt-image-2 via ChatGPT/Codex OAuth — no API key required; supports text and image inputs",
             "env_vars": [],
             "post_setup_hint": (
-                "Sign in with `hermes auth codex` (or `hermes setup` → Codex) "
+                "Sign in with `" + product_command("auth") + " codex` (or `" + product_command("setup") + "` → Codex) " +
                 "if you haven't already. No API key needed."),
         }
 

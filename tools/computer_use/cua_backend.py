@@ -1,12 +1,13 @@
 """Cua-driver backend (macOS, Windows, Linux): MCP over stdio to `cua-driver`. The async `mcp` SDK runs on a
 background loop (``cua_backend_session``); the same tool surface works on all three platforms, and per-host gaps
-(no DISPLAY, missing AT-SPI, TCC) surface via `hermes computer-use doctor` instead of failing silently. Install
-with `hermes computer-use install`. The macOS path uses private SkyLight SPIs that can break on OS updates.
+(no DISPLAY, missing AT-SPI, TCC) surface via `haos computer-use doctor` instead of failing silently. Install
+with `haos computer-use install`. The macOS path uses private SkyLight SPIs that can break on OS updates.
 Siblings: ``cua_backend_driver`` (binary/contract/update), ``cua_backend_capture`` + ``cua_backend_input``
 (mixins), ``cua_backend_parse``, ``cua_backend_session`` (bridge + session + CLI fallback), ``cua_backend_daemon``
 (private daemon + macOS app identity). Siblings look this module's config/policy helpers up lazily."""
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import contextlib
 import importlib
@@ -168,9 +169,9 @@ def _empty_discovery_reason() -> str:
     if sys.platform == "linux" and not os.environ.get("DISPLAY"):
         return "no DISPLAY is set — X11/XWayland is not reachable from this process"
     if sys.platform == "darwin":  # headless Mac / asleep panel: ScreenCaptureKit has 0 shareable displays while TCC looks fine
-        return ("window discovery returned no windows; on macOS this usually means no shareable display (headless Mac or "
-                "panel asleep) — wake the display or attach a monitor/HDMI dummy, then run `hermes computer-use doctor`")
-    return "window discovery returned no windows; run `hermes computer-use doctor` (display reachability, AX capability)"
+        return ("window discovery returned no windows; on macOS this usually means no shareable display (headless Mac or " +
+                "panel asleep) — wake the display or attach a monitor/HDMI dummy, then run `" + product_command("computer-use") + " doctor`")
+    return "window discovery returned no windows; run `" + product_command("computer-use") + " doctor` (display reachability, AX capability)"
 
 _update_checked = False
 # One auto-repair attempt per process: when the runtime-contract gate fails for something a reinstall fixes
@@ -252,7 +253,7 @@ class CuaDriverBackend(_CaptureMixin, _InputMixin, ComputerUseBackend):
         if not contract.get("ready"):
             raise RuntimeError(f"cua-driver is not ready: {contract.get('reason') or 'runtime contract is incomplete'}. "
                                + ("Update the binary selected by HERMES_CUA_DRIVER_CMD or remove that override."
-                                  if os.environ.get(_CUA_DRIVER_CMD_ENV, "").strip() else "Run `hermes computer-use install` to repair it."))
+                                  if os.environ.get(_CUA_DRIVER_CMD_ENV, "").strip() else "Run `" + product_command("computer-use") + " install` to repair it."))
         _maybe_nudge_update()
         # `mcp` is an optional extra: lazy-install on first use (gated by `security.allow_lazy_installs`); failure
         # raises FeatureUnavailable with the exact `uv pip install` hint.

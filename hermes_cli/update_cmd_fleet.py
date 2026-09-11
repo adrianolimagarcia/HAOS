@@ -1,9 +1,10 @@
-"""Gateway fleet restart + post-update verification for ``hermes update``.
+"""Gateway fleet restart + post-update verification for ``haos update``.
 
 Split out of ``hermes_cli/update_cmd.py``; every name is re-imported there so
 ``hermes_cli.update_cmd.<name>`` keeps resolving/monkeypatching. Origin helpers are
 imported lazily inside each function (no import cycle; test patches stay effective).
 """
+from hermes_constants import product_command
 
 import logging
 from contextlib import suppress
@@ -88,7 +89,7 @@ def _receipt_looks_unfinished(receipt: dict) -> bool:
 
     The command boundary stamps a ``stop_reason`` on every receipt, including clean
     ones (``completed at command boundary``, ``sys.exit(0)``); it must not make a
-    successful receipt look unfinished, or the next ``hermes update`` retriggers
+    successful receipt look unfinished, or the next ``haos update`` retriggers
     ``fleet_restart_pending`` from pre-pull plan SHAs (#98022).
     """
     exit_code = receipt.get("exit_code")
@@ -205,10 +206,10 @@ def _pending_fleet_restart_needed() -> bool:
 def _warn_pending_fleet_restart(*, startup: bool = False) -> None:
     """Print the specific interrupted-update fleet-restart warning."""
     stream = sys.stderr if startup else sys.stdout
-    print("⚠ A previous `hermes update` pulled new code but did not restart running gateways.", file=stream)
+    print("⚠ A previous `" + product_command("update") + "` pulled new code but did not restart running gateways.", file=stream)
     print("  Gateways may still be serving pre-update modules (mixed sys.modules).", file=stream)
     if startup:
-        print("  Run `hermes update` or `hermes gateway restart`.", file=stream)
+        print("  Run `" + product_command("update") + "` or `" + product_command("gateway") + " restart`.", file=stream)
 
 
 def _warn_pending_fleet_restart_on_startup() -> None:
@@ -350,7 +351,7 @@ def _run_pending_fleet_restart() -> bool:
 
 
 def _apply_pending_fleet_restart_catchup() -> None:
-    """On an already-up-to-date ``hermes update``, finish a skipped restart.
+    """On an already-up-to-date ``haos update``, finish a skipped restart.
 
     No-op when nothing is pending; exits 1 on incomplete catch-up so automation
     does not treat the fleet as healthy.
@@ -364,7 +365,7 @@ def _apply_pending_fleet_restart_catchup() -> None:
     if _run_pending_fleet_restart():
         _clear_fleet_restart_pending_marker()
         return
-    print("  ⚠ Fleet restart incomplete. Recover with: hermes gateway restart")
+    print("  ⚠ Fleet restart incomplete. Recover with: " + product_command("gateway") + " restart")
     sys.exit(1)
 
 
@@ -485,13 +486,13 @@ def _warn_incomplete_gateway_fleet_restart(failed_units: list) -> None:
         # See #88848.
         print("  Listed services may be deregistered from launchd, or still")
         print("  running pre-update code (mixed sys.modules). Recover with:")
-        print("    hermes gateway status")
+        print("    " + product_command("gateway") + " status")
         print("    launchctl list | grep <label>")
         print("    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist")
         return
     print("  Skipped units may still be running pre-update code (mixed")
     print("  sys.modules). Restart them manually, then verify:")
-    print("    hermes gateway status")
+    print("    " + product_command("gateway") + " status")
     if any(not name.startswith("ai.hermes.") for name in ordered):
         print("    systemctl --user restart <unit>   # user-scope")
         print("    sudo systemctl restart <unit>     # system-scope")
@@ -529,8 +530,8 @@ def _restart_launchd_gateway_after_update(*, supervision_verify: bool = True) ->
             stderr = (getattr(e, "stderr", "") or "").strip()
             print(
                 f"  ⚠ Gateway restart failed: {stderr}\n"
-                "    The gateway may be DOWN on pre-update code. "
-                "Recover manually: hermes gateway restart"
+                "    The gateway may be DOWN on pre-update code. " +
+                "Recover manually: " + product_command("gateway") + " restart"
             )
             return [], [current_label]
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
@@ -540,7 +541,7 @@ def _restart_launchd_gateway_after_update(*, supervision_verify: bool = True) ->
             # The old code `pass`ed here (#74973's second silent variant); count it and tell the operator.
             "  ⚠ Could not restart the gateway "
             f"({e.__class__.__name__}: {e}).\n"
-            "    Recover manually: hermes gateway restart"
+            "    Recover manually: " + product_command("gateway") + " restart"
         )
         return [], [current_label]
 
@@ -557,7 +558,7 @@ def _restart_launchd_gateway_after_update(*, supervision_verify: bool = True) ->
         return [current_label], []
     print(
         f"  ✗ {current_label} restarted but launchd is not supervising it.\n"
-        "    Check logs, then: hermes gateway restart"
+        "    Check logs, then: " + product_command("gateway") + " restart"
     )
     return [], [current_label]
 
@@ -725,8 +726,8 @@ def _warn_gateway_restart_phase_aborted(exc: BaseException, pids) -> None:
         print("  Any gateway still running is serving pre-update code")
         print("  (mixed sys.modules) against the updated checkout.")
     print("  Restart it manually, then verify:")
-    print("    hermes gateway restart")
-    print("    hermes gateway status")
+    print("    " + product_command("gateway") + " restart")
+    print("    " + product_command("gateway") + " status")
 
 
 def _drain_or_signal_gateway_for_update(pid: int, drain_budget: float, label: str) -> bool:
@@ -874,7 +875,7 @@ def _restart_one_systemd_gateway_unit(
             f"  ⚠ {svc_name} is a system service and restarting it needs root.\n"
             f"    Restart it manually to load the new version:\n"
             f"      sudo systemctl restart {svc_name}\n"
-            f"    To let `hermes update` restart it automatically, allow\n"
+            f"    To let `{product_command('update')}` restart it automatically, allow\n"
             f"    passwordless sudo for systemctl, or run updates with sudo."
         )
         return
@@ -928,7 +929,7 @@ def _restart_systemd_gateway_units(restarted_services, failed_or_stale_units, re
         print(
             f"  ⚠ systemctl timed out listing {scope}-scope "
             f"gateway units ({exc.cmd if exc.cmd else 'unknown command'}). "
-            f"Check the gateway with: hermes gateway status"
+            f"Check the gateway with: {product_command('gateway')} status"
         )
 
     def _on_unit_timeout(svc_name: str, exc: subprocess.TimeoutExpired) -> None:
@@ -1074,7 +1075,7 @@ def _restart_manual_gateways(out: _GatewayRestartOutcome, _drain_budget) -> None
         unmapped_count = (len(out.killed_pids) - len(out.relaunched_profiles) - len(out.externally_supervised_profiles))
         if unmapped_count:
             print(f"  → Stopped {unmapped_count} manual gateway process(es)")
-            print("    Restart manually: hermes gateway run")
+            print("    Restart manually: " + product_command("gateway") + " run")
             if unmapped_count > 1:
                 print("    (or: hermes -p <profile> gateway run  for each profile)")
 
@@ -1334,7 +1335,7 @@ def _verify_fleet_after_update(restart, *, _pre_update_plan, _windows_gateway_re
 
     print()
     print("Tip: You can now select a provider and model:")
-    print("  hermes model              # Select provider and model")
+    print("  " + product_command("model") + "              # Select provider and model")
 
     # Compare every live gateway's stamped code_sha against the fresh checkout
     # instead of assuming the restart phase worked.

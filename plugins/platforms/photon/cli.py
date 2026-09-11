@@ -4,6 +4,7 @@ the sidecar dir), telemetry [on|off]. Device login is the first step of ``setup`
 standalone ``login`` verb); inbound is the gRPC stream, so there are no webhook subcommands.
 """
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import getpass
@@ -142,9 +143,9 @@ def _setup_credentials(token: str, dashboard_id: str, name: str) -> Optional[str
             print(f"  ✓ Spectrum ready (project id {dashboard_id}) — existing credentials valid")
         else:
             print(f"  ✓ Spectrum ready (project id {dashboard_id}) — new secret saved")
-            print("  ⚠ Project secret was regenerated. If the gateway is running, "
-                  "restart it so the sidecar picks up the new secret:\n"
-                  "      hermes gateway restart")
+            print("  ⚠ Project secret was regenerated. If the gateway is running, " +
+                  "restart it so the sidecar picks up the new secret:\n" +
+                  "      " + product_command("gateway") + " restart")
     except Exception as e:
         print(f"spectrum provisioning failed: {e}", file=sys.stderr)
         return None
@@ -220,7 +221,7 @@ def _cmd_setup(args: argparse.Namespace) -> int:
         print("  ✓ photon platform enabled in config.yaml")
     except Exception as e:
         print(f"      (could not enable Photon in config: {e})", file=sys.stderr)
-    print("\n✓ Photon setup complete.\n  Start the gateway:  hermes gateway start")
+    print("\n✓ Photon setup complete.\n  Start the gateway:  " + product_command("gateway") + " start")
     return 0
 
 
@@ -285,7 +286,7 @@ def _cmd_telemetry(args: argparse.Namespace) -> int:
         print(f"could not save PHOTON_TELEMETRY: {e}", file=sys.stderr)
         return 1
     print(f"✓ Spectrum telemetry turned {state} (PHOTON_TELEMETRY in ~/.hermes/.env)")
-    print("  Restart the gateway for the sidecar to pick it up:  hermes gateway restart")
+    print("  Restart the gateway for the sidecar to pick it up:  " + product_command("gateway") + " restart")
     return 0
 
 
@@ -328,7 +329,7 @@ _COMMANDS = {
 
 
 def gateway_setup() -> None:
-    """Run Photon first-time setup from the unified `hermes gateway setup` wizard (same flow
+    """Run Photon first-time setup from the unified `haos gateway setup` wizard (same flow
     as ``hermes photon setup``; phone is prompted when stdin is a TTY)."""
     _cmd_setup(argparse.Namespace(
         photon_command="setup", project_name=None, phone=None, first_name=None, last_name=None,

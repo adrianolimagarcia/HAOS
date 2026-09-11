@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from hermes_constants import get_hermes_home, get_optional_mcps_dir
+from hermes_constants import get_hermes_home, get_optional_mcps_dir, product_command
 from hermes_cli._subprocess_compat import noninteractive_git_env
 from hermes_cli.colors import Colors, color
 from hermes_cli.config import load_config, save_config, get_env_value, save_env_value
@@ -510,11 +510,11 @@ def _apply_tool_selection(
 
     Probe-success: curses checklist; pre-check priority *prior_selection* (reinstall) > manifest
     ``tools.default_enabled`` > all; all-on clears any filter. Probe-fail: keep the prior filter,
-    else apply ``default_enabled``, else no filter; point the user at ``hermes mcp configure``.
+    else apply ``default_enabled``, else no filter; point the user at ``haos mcp configure``.
     """
     print()
     name = entry.name
-    configure_hint = f"`hermes mcp configure {name}`"
+    configure_hint = f"`{product_command('mcp')} configure {name}`"
 
     # Exclude-mode manifests never probe: the curated exclude list (names or globs) is written as-is
     # and everything else stays enabled, including tools the server adds later. A prior include
@@ -635,7 +635,7 @@ def install_entry(entry: CatalogEntry, *, enable: bool = True) -> None:
         # guidance rather than auto-running it to keep install decoupled from provider-auth lifecycle.
         _say(
             f"  This MCP uses {entry.auth.provider} OAuth. Run "
-            f"`hermes auth {entry.auth.provider}` if you have not "
+            f"`{product_command('auth')} {entry.auth.provider}` if you have not "
             "already authenticated.",
             Colors.YELLOW)
     elif entry.auth.type == "oauth":

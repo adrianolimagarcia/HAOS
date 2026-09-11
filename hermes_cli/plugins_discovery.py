@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Set
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_cli.config import cfg_get
 from hermes_cli.plugin_capabilities import VALID_CAPABILITY_IDS
 from hermes_cli.plugin_capabilities import parse_declared_capabilities as _parse_declared_capabilities
@@ -212,7 +212,7 @@ def gate_manifest(
             return ManifestGate("defer")
     if enabled is None or not names & enabled:
         return _placeholder(
-            f"not enabled in config (run `hermes plugins enable {lookup_key}` to activate)", logging.DEBUG,
+            f"not enabled in config (run `{product_command('plugins')} enable {lookup_key}` to activate)", logging.DEBUG,
             "Skipping '%s' (not in plugins.enabled)",
         )
     return ManifestGate("load")

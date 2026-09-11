@@ -6,6 +6,7 @@ so ``patch("gateway.run.X")`` keeps intercepting them at call time.
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import logging
 from typing import TYPE_CHECKING
@@ -238,7 +239,7 @@ class GatewayInboundMixin:
     def _hm_estop_gate(
         self, event: "MessageEvent", source: SessionSource, is_internal: bool
     ) -> Optional[str]:
-        """Global emergency-stop (`hermes pause`) notice when this turn must be blocked, else None.
+        """Global emergency-stop (`haos pause`) notice when this turn must be blocked, else None.
         Placed after auth so unauthorized senders can't probe pause state."""
         if is_internal:
             return None
@@ -1097,7 +1098,7 @@ class GatewayInboundMixin:
                 if _skill_name and _skill_name in _plat_disabled:
                     return (
                         f"The **{_skill_name}** skill is disabled for {_plat}.\n"
-                        f"Enable it with: `hermes skills config`"
+                        f"Enable it with: `{product_command('skills')} config`"
                     )
                 _disabled_extra = [
                     skill_cmds.get(k, {}).get("name", "")
@@ -1108,7 +1109,7 @@ class GatewayInboundMixin:
                     return (
                         f"The **{', '.join(_disabled_extra)}** skill(s) in this "
                         f"stacked invocation are disabled for {_plat}.\n"
-                        f"Enable them with: `hermes skills config`"
+                        f"Enable them with: `{product_command('skills')} config`"
                     )
             if extra_keys and _build_stacked is not None:
                 stacked_result = _build_stacked(

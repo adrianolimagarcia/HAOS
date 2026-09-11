@@ -1,4 +1,4 @@
-"""``hermes doctor`` — diagnose (and with --fix, repair) a Hermes install.
+"""``haos doctor`` — diagnose (and with --fix, repair) a Hermes install.
 
 ``run_doctor`` walks ``DOCTOR_CHECKS`` in order; each check prints its own rows and returns a ``Finding``.
 Check bodies live in the ``doctor_*`` siblings.
@@ -123,7 +123,7 @@ DOCTOR_CHECKS = (
 
 
 def _ack_advisory(ack_target: str) -> None:
-    """`hermes doctor --ack <id>`: persist the ack and return without running diagnostics."""
+    """`haos doctor --ack <id>`: persist the ack and return without running diagnostics."""
     from hermes_cli.security_advisories import ADVISORIES, ack_advisory
     valid_ids = {a.id for a in ADVISORIES}
     if ack_target not in valid_ids:

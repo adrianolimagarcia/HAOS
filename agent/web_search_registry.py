@@ -13,7 +13,7 @@ provider configured as ``web.extract_backend`` falls through):
    the historic ``tools.web_tools._get_backend()`` order, so installs that never
    set a config key keep landing on the same provider.
 4. Keyless free-tier walk (``_KEYLESS_PREFERENCE``), last resort.
-5. ``None`` — the tool points the user at ``hermes tools``.
+5. ``None`` — the tool points the user at ``haos tools``.
 """
 
 from __future__ import annotations

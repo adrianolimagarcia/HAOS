@@ -1,4 +1,4 @@
-"""``hermes browser`` subcommand parser."""
+"""``haos browser`` subcommand parser."""
 
 from __future__ import annotations
 
