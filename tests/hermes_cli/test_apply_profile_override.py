@@ -26,7 +26,9 @@ def _run_apply_profile_override(
     Returns the value of os.environ["HERMES_HOME"] after the call,
     or None if unset.
     """
-    hermes_root = tmp_path / ".hermes"
+    # Fork HAOS: o default canonico e ~/.haos (hermes_constants). O store legado
+    # ~/.hermes so entra quando o teste aponta HERMES_HOME para ele de proposito.
+    hermes_root = tmp_path / (".hermes" if hermes_home else ".haos")
     hermes_root.mkdir(parents=True, exist_ok=True)
 
     if active_profile is not None:
@@ -206,7 +208,8 @@ class TestSupervisedChildIgnoresStickyProfile:
         """A supervised named-profile slot passes ``-p <name>`` explicitly;
         that must still resolve (the sentinel guard only skips the sticky
         active_profile fallback, never an explicit flag)."""
-        hermes_root = tmp_path / ".hermes"
+        # Raiz canonica do fork (~/.haos): HERMES_HOME fica ausente neste teste.
+        hermes_root = tmp_path / ".haos"
         hermes_root.mkdir(parents=True, exist_ok=True)
         (hermes_root / "active_profile").write_text("briefer")
         (hermes_root / "profiles" / "briefer").mkdir(parents=True, exist_ok=True)

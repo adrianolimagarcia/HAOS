@@ -167,8 +167,13 @@ class TestTrustLevelFor:
         # `.system/`) — so we just assert membership not path equality.
         from tools.skills_guard import TRUSTED_REPOS
 
+        # Fork HAOS: wshobson/agents e affaan-m/ECC sao servidos pelo catalogo
+        # empacotado (hermes/platform/skills/wshobson_catalog.py + .json), nao por
+        # tap do GitHubSource — sao trusted sem serem DEFAULT_TAPS de proposito.
+        catalog_served = {"wshobson/agents", "affaan-m/ECC"}
+
         tap_repos = {tap["repo"] for tap in GitHubSource.DEFAULT_TAPS}
-        for repo in TRUSTED_REPOS:
+        for repo in TRUSTED_REPOS - catalog_served:
             assert repo in tap_repos, (
                 f"Trusted repo {repo!r} is in TRUSTED_REPOS but missing "
                 "from GitHubSource.DEFAULT_TAPS — its skills will not be "
