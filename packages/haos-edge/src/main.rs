@@ -145,6 +145,9 @@ fn cmd_status() {
     // GraphRAG: store canônico (ADR-008) + índice CSV local de fallback
     let graphrag_store = home.join("memory").join("graphrag.db");
     let graphrag_entities = count_csv_rows(&home.join("graphrag").join("entities.csv"));
+    // Contagens reais do store canônico (escrito por scripts/haos_memory_populate.py)
+    let graphrag_store_entities = DbHelper::count_rows(&graphrag_store, "entities");
+    let graphrag_store_relations = DbHelper::count_rows(&graphrag_store, "relations");
     // DeepDoc/RAG (FTS5) e memórias reconciliadas (dream): criados sob demanda
     let rag_chunks = DbHelper::count_rows(&home.join("memory").join("ragflow.db"), "haos_rag_chunks");
     let reconciled_memories =
@@ -177,19 +180,19 @@ fn cmd_status() {
     );
     println!(
         "  • GraphRAG DB  : {}",
-        if graphrag_store.exists() {
-            "✓ store canônico presente (memory/graphrag.db)".to_string()
-        } else {
-            "✗ store canônico ausente (memory/graphrag.db)".to_string()
+        match (graphrag_store.exists(), graphrag_store_entities, graphrag_store_relations) {
+            (true, Some(e), Some(r)) => format!("✓ store canônico ({e} entidades, {r} relações)"),
+            (true, _, _) => "✓ store canônico presente (memory/graphrag.db)".to_string(),
+            (false, _, _) => "✗ store canônico ausente (memory/graphrag.db)".to_string(),
         }
     );
     println!("--------------------------------------------------");
     println!("Memória canônica:");
     println!("  • Obsidian Vault : {vault_notes} notas ({})", home.join("obsidian_vault").display());
     println!(
-        "  • GraphRAG index : {}",
+        "  • GraphRAG CSV   : {}",
         match graphrag_entities {
-            Some(n) => format!("{n} entidades (índice CSV local)"),
+            Some(n) => format!("{n} entidades (seed local; o store canônico é a fonte)"),
             None => "ausente".to_string(),
         }
     );

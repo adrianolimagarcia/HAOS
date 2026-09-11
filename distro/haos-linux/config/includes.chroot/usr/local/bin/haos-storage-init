@@ -54,5 +54,31 @@ INSERT OR IGNORE INTO system_metadata (key, value) VALUES ('initialized', 'true'
 EOF
 fi
 
+# ------------------------------------------------------------------------------
+# Rotina periódica de manutenção (integridade + memória canônica)
+# O cron do HAOS só executa scripts sob <HERMES_HOME>/scripts/ (caminho absoluto é
+# rejeitado por path traversal), então a rotina do repo é instalada no store do nó
+# e agendada no scheduler nativo — visível em `haos cron list` e na aba Scheduler
+# da WebUI. Idempotente e rodando a cada boot (antes do haos-gateway, que é quem
+# faz o tick), então um jobs.json perdido se auto-recupera.
+# ------------------------------------------------------------------------------
+MAINT_SRC="/opt/haos/scripts/haos_nightly_maintenance.sh"
+MAINT_DIR="/home/haos/.haos/scripts"
+MAINT_JOB_NAME="HAOS manutencao noturna"
+if [ -f "${MAINT_SRC}" ]; then
+    install -d -o haos -g haos -m 755 "${MAINT_DIR}"
+    install -o haos -g haos -m 755 "${MAINT_SRC}" "${MAINT_DIR}/haos_nightly_maintenance.sh"
+
+    HAOS_PY="/opt/haos/venv/bin/python"
+    JOBS_FILE="/home/haos/.haos/cron/jobs.json"
+    # Checagem barata no jobs.json evita subir o Python a cada boot.
+    if [ -x "${HAOS_PY}" ] && ! grep -q "haos_nightly_maintenance.sh" "${JOBS_FILE}" 2>/dev/null; then
+        runuser -u haos -- env HAOS_HOME=/home/haos/.haos "${HAOS_PY}" \
+            -m hermes_cli.main cron create "0 3 * * *" \
+            --name "${MAINT_JOB_NAME}" \
+            --no-agent --script haos_nightly_maintenance.sh >/dev/null 2>&1 || true
+    fi
+fi
+
 chown -R haos:haos /home/haos /var/lib/haos /opt/haos 2>/dev/null || true
 exit 0

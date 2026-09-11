@@ -86,6 +86,19 @@ rm -rf "${CHROOT}/var/lib/haos/edge/sessions"
 rm -f "${CHROOT}/home/haos/.haos/memory/ragflow.db"* \
       "${CHROOT}/home/haos/.haos/memory/reconciled_memories.db"* \
       "${CHROOT}/home/haos/.haos/memory/graphrag.db"*
+# cron: histórico/saída/ticker da VM de dev não vão para a ISO. jobs.json também
+# sai — o haos-storage-init recria a rotina noturna de manutenção no primeiro
+# boot (idempotente), então a ISO não carrega job de teste nenhum.
+rm -f "${CHROOT}/home/haos/.haos/cron/jobs.json" \
+      "${CHROOT}/home/haos/.haos/cron/executions.db"* \
+      "${CHROOT}/home/haos/.haos/cron/ticker_heartbeat" \
+      "${CHROOT}/home/haos/.haos/cron/ticker_last_success" \
+      "${CHROOT}/home/haos/.haos/cron/".*.lock
+rm -rf "${CHROOT}/home/haos/.haos/cron/output"
+# store órfão ~/.hermes: criado quando algum processo roda SEM HAOS_HOME/HERMES_HOME
+# (get_process_hermes_home() cai no default da plataforma). O nó ancora tudo em
+# ~/.haos, então esse diretório nunca deve existir no appliance.
+rm -rf "${CHROOT}/home/haos/.hermes"
 
 # haos-setup em modo DEV (sync do /opt/haos desativado)? restaura o bloco
 # original NO SNAPSHOT: a VM fica em DEV para sempre, mas a ISO sai com o
@@ -151,6 +164,9 @@ docker run --rm -v "${DISTRO_DIR}:/b:ro" haos-iso-builder:latest bash -c '
   echo "  sessoes webui: $(test -d v/var/lib/haos/edge/sessions && echo PRESENTE-BUG || echo ausente-ok)"
   echo "  stores de memoria: $(test -e v/home/haos/.haos/memory/ragflow.db && echo PRESENTE-BUG || echo ausente-ok)"
   echo "  vault canonico (seed): $(test -e v/home/haos/.haos/obsidian_vault/index.md && echo presente-ok || echo AUSENTE-BUG)"
+  echo "  cron jobs (dev): $(test -e v/home/haos/.haos/cron/jobs.json && echo PRESENTE-BUG || echo ausente-ok)"
+  echo "  rotina noturna (fonte): $(test -e v/opt/haos/scripts/haos_nightly_maintenance.sh && echo presente-ok || echo AUSENTE-BUG)"
+  echo "  store orfao ~/.hermes: $(test -d v/home/haos/.hermes && echo PRESENTE-BUG || echo ausente-ok)"
   echo "  (var/lib/haos extraido: $(test -d v/var/lib/haos && echo sim || echo NAO))"
   grep -c UV_PROJECT_ENVIRONMENT v/usr/local/bin/haos-setup | sed "s/^  haos-setup UV fix: /  /"
 ' 2>/dev/null

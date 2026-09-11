@@ -171,6 +171,30 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
   (Operational/Active/Enforced)" eram hardcoded e o check de RAG usava caminho
   fixo; agora reporta contagens reais (sessoes/mensagens/tarefas/chunks/notas/
   entidades/OKF/reconciliadas) dos caminhos canonicos.
+- **Rotina periódica de memória (RESOLVIDO 11/09/2026)**: não existia NENHUM job
+  periódico populando a memória (o `scripts/haos_nightly_maintenance.sh` existia
+  mas tinha `WORKSPACE_ROOT` hardcoded da máquina de dev, usava `.venv` e abortava
+  no appliance pelo `set -e`; nunca foi agendado). Agora:
+  - `scripts/haos_memory_populate.py` popula os três stores canônicos de uma vez:
+    DeepDoc/RAG (`memory/ragflow.db`), GraphRAG (`memory/graphrag.db`) e dream
+    (`memory/reconciled_memories.db` + lições OKF). Idempotente.
+  - `scripts/haos_nightly_maintenance.sh` roda integridade dos SQLite + essa
+    população; resolve o tree do agente (`/opt/haos` ou `$HAOS_AGENT_DIR`) em vez
+    de fixar caminho; AST do código é opt-in (`HAOS_MAINTENANCE_AST=1`).
+  - Agendado no **cron nativo** do HAOS (`haos cron list`, aba Scheduler da
+    WebUI): job `HAOS manutencao noturna`, `0 3 * * *`, `--no-agent --script`.
+    O `haos-storage-init` (boot, antes do gateway) instala o script em
+    `~/.haos/scripts/` e recria o job se faltar — o cron REJEITA caminho
+    absoluto, o script tem de viver sob `<HERMES_HOME>/scripts/`.
+  - Pitfall de caminho: `get_process_hermes_home()` = `HERMES_HOME` → `HAOS_HOME`
+    → default `~/.hermes`. Rodar qualquer tool Python SEM esses envs grava num
+    store órfão (aconteceu com `hermes haos doc index`: 4 chunks em
+    `~/.hermes/memory/ragflow.db` enquanto o store do nó ficava vazio). O
+    populador fixa o env resolvido antes de importar o runtime.
+  - GraphRAG: `GraphRAGAdapter` é só memória; a persistência é o write-through
+    `IncrementalGraphRAGUpdater(store=GraphRAGStore(...))`. Sem `store=` o
+    `graphrag.db` nunca recebe entidades (o dashboard também não passa `store=`,
+    então o grafo dele é só de tela).
 - **Pendencia aberta**: o `haos web` (WebUI Python, doc STANDALONE_WEBUI.md) e
   uma superficie separada e nao tem unit no appliance; verificar auth antes de
   expor.

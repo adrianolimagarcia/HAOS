@@ -98,6 +98,18 @@ sessões e cache do agente.
     - **gtop** (monitor de processos no terminal, npm global) e **sudo** (usuário `haos` no grupo `sudo`).
     - Daemon **`haos-edge`** (Rust) **pré-compilado vendored** em `/usr/local/bin/haos-edge` — a toolchain Rust **não** é assada. O binário é o **servidor do WebUI** (`haos-edge server`, unit `haos-edge.service` em `127.0.0.1:8788`: terminal PTY, tasks, SPA) **com autenticação do operador** (senha PBKDF2 em `/var/lib/haos/edge/webui.passwd`, sessão por cookie HttpOnly com "salvar login" de 30 dias; sem senha definida o WebUI fica inacessível — fail-closed). Definir a senha no nó: `HAOS_DATA_DIR=/var/lib/haos/edge haos-edge admin set-password`. O mesmo binário também é CLI (`status`, `team`, `doc`, `doctor`). Detalhes: `docs/haos/STANDALONE_WEBUI.md` §3.1.
     - **Playwright Chromium assado** (a partir da ISO derivada da VM): `chromium-1234` + `chromium_headless_shell` + `ffmpeg` (~656 MB) em `/home/haos/.cache/ms-playwright/` — o doctor mostra "✓ Playwright Chromium (browser engine)" e a tool `browser` fica disponível offline. (A ISO do caminho clássico `build-iso.sh` NÃO carrega o binário — só o `iso-from-vm.sh`.)
+5. **Rotina periódica de memória** (agendada no cron nativo, sem LLM):
+   - Job **`HAOS manutencao noturna`** (`0 3 * * *`, `--no-agent --script`) visível em
+     `haos cron list` e na aba Scheduler do WebUI. O `haos-storage-init` (boot,
+     antes do `haos-gateway`, que é quem faz o tick) instala
+     `~/.haos/scripts/haos_nightly_maintenance.sh` e recria o job se faltar —
+     o cron rejeita caminho absoluto, o script tem de viver sob `<HERMES_HOME>/scripts/`.
+   - O que ele faz: `PRAGMA integrity_check` nos SQLite do nó + popula a memória
+     canônica (`scripts/haos_memory_populate.py`): notas do vault →
+     `memory/ragflow.db` (DeepDoc/RAG FTS5), → `memory/graphrag.db` (store
+     canônico, ADR-008) e consolidação do dream (`memory/reconciled_memories.db`
+     + lições OKF). AST do código é opt-in (`HAOS_MAINTENANCE_AST=1`).
+   - Rodar à mão: `haos cron run <job-id>`; a saída fica em `~/.haos/cron/output/<job-id>/`.
 
 ## Estrutura de Pastas
 
