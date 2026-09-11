@@ -1,3 +1,4 @@
+mod auth;
 mod db;
 mod pty;
 mod server;
@@ -46,6 +47,18 @@ enum Commands {
 
     /// Fast diagnostics of HAOS environment and persistence
     Doctor,
+
+    /// Administração do WebUI (senha do operador)
+    Admin {
+        #[command(subcommand)]
+        action: AdminCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum AdminCommands {
+    /// Define/atualiza a senha do operador do WebUI (lê de stdin se omitida)
+    SetPassword { password: Option<String> },
 }
 
 #[derive(Subcommand, Debug)]
@@ -104,6 +117,11 @@ async fn main() {
         Some(Commands::Doctor) => {
             cmd_doctor();
         }
+        Some(Commands::Admin { action }) => match action {
+            AdminCommands::SetPassword { password } => {
+                cmd_set_password(password);
+            }
+        },
         None => {
             if !cli.args.is_empty() {
                 delegate_to_python(&cli.args);
@@ -217,6 +235,67 @@ fn cmd_doctor() {
     println!("✅ [PASS] SQLite WAL checkpoint engine ready");
     println!("=================================================================");
     println!("⚡ Verification finished in {:.2?}", t0.elapsed());
+}
+
+fn cmd_set_password(password: Option<String>) {
+    let data_dir = std::env::var("HAOS_DATA_DIR").unwrap_or_else(|_| "/tmp/haos_shared_data".into());
+
+    let password = match password {
+        Some(p) => p,
+        None => {
+            eprint!("Nova senha do WebUI: ");
+            match read_password_hidden() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("✗ Falha ao ler a senha: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
+
+    if password.trim().is_empty() {
+        eprintln!("✗ Senha vazia — nada foi alterado.");
+        std::process::exit(1);
+    }
+
+    match auth::write_passwd(std::path::Path::new(&data_dir), &password) {
+        Ok(_) => {
+            println!("✓ Senha do WebUI gravada em {data_dir}/webui.passwd");
+            println!("  Sessões ativas continuam válidas; para invalidar todas: rm -rf {data_dir}/sessions");
+        }
+        Err(e) => {
+            eprintln!("✗ Falha ao gravar a senha: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Lê uma linha do stdin sem ecoar (quando é TTY).
+fn read_password_hidden() -> std::io::Result<String> {
+    use nix::sys::termios::{tcgetattr, tcsetattr, LocalFlags, SetArg};
+    use std::io::BufRead;
+    use std::os::fd::AsRawFd;
+
+    let stdin = std::io::stdin();
+    let is_tty = nix::unistd::isatty(stdin.as_raw_fd()).unwrap_or(false);
+    let original = if is_tty { tcgetattr(&stdin).ok() } else { None };
+
+    if let Some(orig) = &original {
+        let mut quiet = orig.clone();
+        quiet.local_flags.remove(LocalFlags::ECHO);
+        let _ = tcsetattr(&stdin, SetArg::TCSANOW, &quiet);
+    }
+
+    let mut line = String::new();
+    let read = stdin.lock().read_line(&mut line);
+
+    if let Some(orig) = &original {
+        let _ = tcsetattr(&stdin, SetArg::TCSANOW, orig);
+        println!();
+    }
+    read?;
+    Ok(line.trim_end_matches(['\r', '\n']).to_string())
 }
 
 fn delegate_to_python(args: &[String]) {

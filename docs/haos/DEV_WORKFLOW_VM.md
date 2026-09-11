@@ -147,8 +147,20 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
   `cmd_status()`, exit 0, loop); fix = `ExecStart=haos-edge server --port 8788
   --host 127.0.0.1 --static-dir /opt/haos/hermes/platform/webui/static`,
   `User=haos`, `HAOS_HOME=/home/haos/.haos`, `HAOS_DATA_DIR=/var/lib/haos/edge`.
-  Validado com reboot (active, 0 restarts, /health healthy). Servidor SEM auth
-  (terminal PTY) -> bind so em 127.0.0.1.
+  Validado com reboot (active, 0 restarts, /health healthy).
+- **Autenticacao do WebUI (RESOLVIDO 11/09/2026)**: o control plane exige sessao.
+  Senha do operador PBKDF2-HMAC-SHA256 (200k) em `$HAOS_DATA_DIR/webui.passwd`
+  (0600) via `haos-edge admin set-password`; login em `GET /login` +
+  `POST /api/login` gera cookie HttpOnly `haos_session` (arquivo 0600 em
+  `sessions/`, dir 0700); `remember=true` = Max-Age 30 dias ("salvar login neste
+  dispositivo", a senha nunca vai para o navegador). Publico: /health, /static,
+  /login, /api/login; resto = 401 (/api/*) ou 302 -> /login (SPA). Sem senha
+  definida: 503 fail-closed. Bind 127.0.0.1 (sem TLS -> exposicao na rede exige
+  proxy reverso). O scrub da ISO remove webui.passwd/sessions/locks e a
+  validacao do squashfs acusa PRESENTE-BUG se vazarem.
+- **Pendencia aberta**: o `haos web` (WebUI Python, doc STANDALONE_WEBUI.md) e
+  uma superficie separada e nao tem unit no appliance; verificar auth antes de
+  expor.
 - `haos-edge` é o **servidor do Standalone WebUI** (axum/tokio): /api/terminal/*
   (PTY remoto), /api/tasks, /health, e o SPA (chat/terminal/taskboard/scheduler).
   Mesmo binário também é CLI (`status`, `team`, `doc search`, `doctor`) e shim

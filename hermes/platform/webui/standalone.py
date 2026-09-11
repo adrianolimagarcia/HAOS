@@ -1382,11 +1382,18 @@ def terminal_manager():
 def make_standalone_server(
     data_dir: Optional[Path] = None,
     *,
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = _DEFAULT_PORT,
     title: str = "HAOS Standalone",
 ) -> tuple[ThreadingHTTPServer, HAOSStandaloneState, str]:
     """Constrói o servidor standalone. Retorna (server, state, base_url)."""
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"⚠ [HAOS STANDALONE] bind em {host} SEM autenticação: o control plane "
+            "(terminal PTY, config do agente, tasks) fica exposto a quem alcançar a "
+            "porta. Use 127.0.0.1 (default) ou ponha um proxy com TLS+auth na frente.",
+            file=sys.stderr,
+        )
     if data_dir is not None:
         data_dir = Path(data_dir)
     else:
@@ -1432,7 +1439,7 @@ def main() -> None:
     """CLI entrypoint para executar o HAOS Standalone WebUI."""
     import argparse
     parser = argparse.ArgumentParser(description="HAOS Standalone WebUI Server")
-    parser.add_argument("--host", default=os.environ.get("HAOS_HOST", "0.0.0.0"), help="Host para escutar")
+    parser.add_argument("--host", default=os.environ.get("HAOS_HOST", "127.0.0.1"), help="Host para escutar")
     parser.add_argument("--port", type=int, default=int(os.environ.get("HAOS_PORT", _DEFAULT_PORT)), help="Porta HTTP")
     parser.add_argument("--data-dir", default=None, help="Diretório persistente do engine (default: ~/.haos)")
     args = parser.parse_args()

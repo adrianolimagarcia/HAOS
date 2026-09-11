@@ -75,6 +75,12 @@ rm -rf "${CHROOT}/home/haos/.haos/sessions" "${CHROOT}/home/haos/.haos/logs" \
        "${CHROOT}/home/haos/.haos/memories"
 # cache do wrapper antigravity (sem token de auth; recriado no boot)
 rm -rf "${CHROOT}/var/lib/haos/antigravity/"*
+# credenciais do WebUI do operador: a ISO NUNCA carrega a senha/sessões da VM
+# de desenvolvimento (a senha é definida pelo operador no primeiro boot com
+# `HAOS_DATA_DIR=/var/lib/haos/edge haos-edge admin set-password`)
+rm -f "${CHROOT}/var/lib/haos/edge/webui.passwd" \
+      "${CHROOT}/var/lib/haos/edge/controlplane_"*.lock
+rm -rf "${CHROOT}/var/lib/haos/edge/sessions"
 
 # haos-setup em modo DEV (sync do /opt/haos desativado)? restaura o bloco
 # original NO SNAPSHOT: a VM fica em DEV para sempre, mas a ISO sai com o
@@ -125,6 +131,7 @@ docker run --rm -v "${DISTRO_DIR}:/b:ro" haos-iso-builder:latest bash -c '
     usr/local/bin/haos-setup usr/local/bin/node \
     etc/systemd/system/haos-hostname.service etc/systemd/system/unbound.service \
     etc/systemd/system/multi-user.target.wants/unbound.service \
+    var/lib/haos \
     home/haos/.ssh home/haos/.git-credentials 2>/dev/null | tail -n 1
   echo "  hostname: $(cat v/etc/hostname 2>/dev/null)"
   echo "  kernels assados: $(ls v/boot/ 2>/dev/null | grep -E "^vmlinuz" | tr "\n" " ")"
@@ -135,6 +142,9 @@ docker run --rm -v "${DISTRO_DIR}:/b:ro" haos-iso-builder:latest bash -c '
   echo "  unit hostname: $(test -f v/etc/systemd/system/haos-hostname.service && echo presente || echo ausente)"
   echo "  unbound mascarado: $(test -L v/etc/systemd/system/unbound.service && echo sim || echo NAO)"
   echo "  unbound habilitado: $(test -e v/etc/systemd/system/multi-user.target.wants/unbound.service && echo SIM || echo nao)"
+  echo "  senha webui: $(test -e v/var/lib/haos/edge/webui.passwd && echo PRESENTE-BUG || echo ausente-ok)"
+  echo "  sessoes webui: $(test -d v/var/lib/haos/edge/sessions && echo PRESENTE-BUG || echo ausente-ok)"
+  echo "  (var/lib/haos extraido: $(test -d v/var/lib/haos && echo sim || echo NAO))"
   grep -c UV_PROJECT_ENVIRONMENT v/usr/local/bin/haos-setup | sed "s/^  haos-setup UV fix: /  /"
 ' 2>/dev/null
 

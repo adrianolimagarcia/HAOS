@@ -96,7 +96,7 @@ sessões e cache do agente.
     - **Node.js 26 LTS** (v26.8.2) + npm (11.19.1) em `/usr/local` — usados pelos builds web/TUI e pelo gtop.
     - **SQLite 3.53.4 compilado** com `FTS5`, `RTREE`, `MATH_FUNCTIONS` e `DBSTAT_VTAB` em `/usr/local` (o módulo sqlite3 do Python e o wrapper `haos` o usam por precedência do ld.so/LD_PRELOAD; o pacote Debian `libsqlite3-0` permanece íntegro no dpkg).
     - **gtop** (monitor de processos no terminal, npm global) e **sudo** (usuário `haos` no grupo `sudo`).
-    - Daemon **`haos-edge`** (Rust) **pré-compilado vendored** em `/usr/local/bin/haos-edge` — a toolchain Rust **não** é assada.
+    - Daemon **`haos-edge`** (Rust) **pré-compilado vendored** em `/usr/local/bin/haos-edge` — a toolchain Rust **não** é assada. O binário é o **servidor do WebUI** (`haos-edge server`, unit `haos-edge.service` em `127.0.0.1:8788`: terminal PTY, tasks, SPA) **com autenticação do operador** (senha PBKDF2 em `/var/lib/haos/edge/webui.passwd`, sessão por cookie HttpOnly com "salvar login" de 30 dias; sem senha definida o WebUI fica inacessível — fail-closed). Definir a senha no nó: `HAOS_DATA_DIR=/var/lib/haos/edge haos-edge admin set-password`. O mesmo binário também é CLI (`status`, `team`, `doc`, `doctor`). Detalhes: `docs/haos/STANDALONE_WEBUI.md` §3.1.
     - **Playwright Chromium assado** (a partir da ISO derivada da VM): `chromium-1234` + `chromium_headless_shell` + `ffmpeg` (~656 MB) em `/home/haos/.cache/ms-playwright/` — o doctor mostra "✓ Playwright Chromium (browser engine)" e a tool `browser` fica disponível offline. (A ISO do caminho clássico `build-iso.sh` NÃO carrega o binário — só o `iso-from-vm.sh`.)
 
 ## Estrutura de Pastas

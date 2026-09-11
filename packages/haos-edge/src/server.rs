@@ -1,7 +1,8 @@
+use crate::auth;
 use crate::db::DbHelper;
 use crate::pty::PtyManager;
 use axum::extract::{Path as AxPath, State};
-use axum::http::StatusCode;
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::CorsLayer;
@@ -19,6 +20,7 @@ use tower_http::services::ServeDir;
 pub struct AppState {
     pub pty_manager: Arc<PtyManager>,
     pub static_dir: PathBuf,
+    pub data_dir: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -46,8 +48,10 @@ pub struct DrainResponse {
 }
 
 pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> Result<(), String> {
-    let data_dir = std::env::var("HAOS_DATA_DIR").unwrap_or_else(|_| "/tmp/haos_shared_data".into());
-    let lock_path = Path::new(&data_dir).join(format!("controlplane_{port}.lock"));
+    let data_dir = PathBuf::from(
+        std::env::var("HAOS_DATA_DIR").unwrap_or_else(|_| "/tmp/haos_shared_data".into()),
+    );
+    let lock_path = data_dir.join(format!("controlplane_{port}.lock"));
     let _ = std::fs::create_dir_all(&data_dir);
 
     let lock_file = File::create(&lock_path).map_err(|e| format!("Failed to create lock file: {e}"))?;
@@ -57,6 +61,7 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
             return Err(format!("Control plane is already running on port {port} (locked by another process)"));
         }
     }
+    auth::ensure_sessions_dir(&data_dir).map_err(|e| format!("Failed to init sessions dir: {e}"))?;
 
     // Resolve static files directory
     let static_dir = if let Some(p) = static_path {
@@ -77,6 +82,7 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
     let state = AppState {
         pty_manager,
         static_dir: static_dir.clone(),
+        data_dir: data_dir.clone(),
     };
 
     // Background WAL auto-checkpoint thread every 5 minutes
@@ -89,6 +95,9 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
 
     let app = Router::new()
         .route("/health", get(health_handler))
+        .route("/login", get(login_page_handler))
+        .route("/api/login", post(login_handler))
+        .route("/api/logout", post(logout_handler))
         .route("/api/terminal", get(list_terminals))
         .route("/api/terminal/start", post(start_terminal))
         .route("/api/terminal/{sid}/input", post(input_terminal))
@@ -138,7 +147,53 @@ async fn health_handler() -> Json<serde_json::Value> {
     }))
 }
 
-async fn index_handler(State(state): State<AppState>) -> impl IntoResponse {
+// ------------------------------------------------------------ auth
+fn cookie_from(headers: &HeaderMap) -> Option<&str> {
+    headers.get(header::COOKIE).and_then(|v| v.to_str().ok())
+}
+
+fn unauthorized() -> (StatusCode, Json<serde_json::Value>) {
+    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Não autenticado"})))
+}
+
+async fn login_page_handler() -> impl IntoResponse {
+    Html(auth::LOGIN_PAGE)
+}
+
+#[derive(Deserialize)]
+pub struct LoginRequest {
+    pub password: String,
+    #[serde(default)]
+    pub remember: bool,
+}
+
+async fn login_handler(State(state): State<AppState>, Json(payload): Json<LoginRequest>) -> impl IntoResponse {
+    if !auth::password_is_set(&state.data_dir) {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error": format!(
+                "Senha não definida. Rode no nó: HAOS_DATA_DIR={} haos-edge admin set-password",
+                state.data_dir.display()
+            )
+        }))).into_response();
+    }
+    if !auth::verify_password(&state.data_dir, &payload.password) {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Senha incorreta"}))).into_response();
+    }
+    match auth::create_session(&state.data_dir, payload.remember) {
+        Ok((_token, cookie)) => ([(header::SET_COOKIE, cookie)], Json(serde_json::json!({"ok": true}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Erro ao criar sessão: {e}")).into_response(),
+    }
+}
+
+async fn logout_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    auth::destroy_session(&state.data_dir, cookie_from(&headers));
+    ([(header::SET_COOKIE, auth::clear_cookie())], Json(serde_json::json!({"ok": true}))).into_response()
+}
+
+async fn index_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return (StatusCode::FOUND, [(header::LOCATION, "/login")]).into_response();
+    }
     let index_file = state.static_dir.join("index.html");
     if index_file.exists() {
         match std::fs::read_to_string(&index_file) {
@@ -150,75 +205,100 @@ async fn index_handler(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-async fn list_terminals(State(state): State<AppState>) -> Json<serde_json::Value> {
+async fn list_terminals(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
     let sessions = state.pty_manager.list();
-    Json(serde_json::json!({ "sessions": sessions }))
+    Json(serde_json::json!({ "sessions": sessions })).into_response()
 }
 
 async fn start_terminal(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<StartRequest>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let session = state
-        .pty_manager
-        .start(payload.cwd.as_deref(), payload.env)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-
-    Ok(Json(serde_json::json!({
-        "session_id": session.id,
-        "pid": session.pid.as_raw(),
-        "running": true
-    })))
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    match state.pty_manager.start(payload.cwd.as_deref(), payload.env) {
+        Ok(session) => Json(serde_json::json!({ "session_id": session.id, "pid": session.pid.as_raw(), "running": true })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e }))).into_response(),
+    }
 }
 
 async fn input_terminal(
     AxPath(sid): AxPath<String>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<InputRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    let session = state.pty_manager.get(&sid).ok_or(StatusCode::NOT_FOUND)?;
-    session
-        .write_input(payload.data.as_bytes())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(serde_json::json!({ "ok": true })))
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let session = match state.pty_manager.get(&sid) {
+        Some(s) => s,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    match session.write_input(payload.data.as_bytes()) {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 async fn drain_terminal(
     AxPath(sid): AxPath<String>,
     State(state): State<AppState>,
-) -> Result<Json<DrainResponse>, StatusCode> {
-    let session = state.pty_manager.get(&sid).ok_or(StatusCode::NOT_FOUND)?;
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let session = match state.pty_manager.get(&sid) {
+        Some(s) => s,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
     let (data, running) = session.drain();
-    Ok(Json(DrainResponse {
-        data,
-        running,
-        exit_code: if running { 0 } else { 1 },
-    }))
+    Json(DrainResponse { data, running, exit_code: if running { 0 } else { 1 } }).into_response()
 }
 
 async fn resize_terminal(
     AxPath(sid): AxPath<String>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ResizeRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    let session = state.pty_manager.get(&sid).ok_or(StatusCode::NOT_FOUND)?;
-    session
-        .resize(payload.rows, payload.cols)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(serde_json::json!({ "ok": true })))
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let session = match state.pty_manager.get(&sid) {
+        Some(s) => s,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    match session.resize(payload.rows, payload.cols) {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 async fn kill_terminal(
     AxPath(sid): AxPath<String>,
     State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
     let ok = state.pty_manager.remove(&sid);
-    Json(serde_json::json!({ "ok": ok }))
+    Json(serde_json::json!({ "ok": ok })).into_response()
 }
 
-async fn get_tasks_handler() -> Json<serde_json::Value> {
+async fn get_tasks_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
     match DbHelper::get_tasks() {
-        Ok(tasks) => Json(serde_json::json!({ "tasks": tasks })),
-        Err(e) => Json(serde_json::json!({ "error": e, "tasks": [] })),
+        Ok(tasks) => Json(serde_json::json!({ "tasks": tasks })).into_response(),
+        Err(e) => Json(serde_json::json!({ "error": e, "tasks": [] })).into_response(),
     }
 }

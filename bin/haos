@@ -46,7 +46,8 @@ def main():
     web_parser = subparsers.add_parser(
         "web", help="Inicia a UI standalone do HAOS (Console, Taskboard, Scheduler, Ouroboros, Eventos, Config)")
     web_parser.add_argument("--port", type=int, default=8788, help="Porta (default: 8788)")
-    web_parser.add_argument("--host", type=str, default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+    web_parser.add_argument("--host", type=str, default=os.environ.get("HAOS_HOST", "127.0.0.1"),
+                            help="Bind host (default: 127.0.0.1; sem autenticação — exponha só atrás de proxy com TLS+auth)")
     web_parser.add_argument("--data-dir", dest="data_dir", type=str, default=None,
                             help="Diretório persistente do engine (default: ~/.haos)")
 

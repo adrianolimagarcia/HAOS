@@ -63,11 +63,48 @@ Princípios preservados da plataforma:
 ## 3. Como rodar
 
 ```bash
-bin/haos web                       # default: 0.0.0.0:8788, data ~/.hermes/haos
+bin/haos web                       # default: 127.0.0.1:8788, data ~/.haos
 bin/haos web --port 8788 --data-dir /caminho/do/data_dir
 ```
 
-Acesse `http://<host>:8788/`. `/api/state` expõe o mesmo payload em JSON.
+Acesse `http://127.0.0.1:8788/`. `/api/state` expõe o mesmo payload em JSON.
+
+> **Sem autenticação (fail-safe no bind).** Este servidor Python **não tem
+> login**: quem alcança a porta alcança o terminal PTY, o editor do
+> `config.yaml` e as tasks. Por isso o bind padrão é **`127.0.0.1`** (acesso
+> remoto por túnel SSH) e `--host 0.0.0.0` (ou `HAOS_HOST`) emite um aviso
+> explícito — exponha só atrás de um proxy com TLS + autenticação. Para acesso
+> remoto autenticado no appliance, use o daemon Rust (§3.1), que tem login.
+
+## 3.1 Acesso ao daemon Rust (`haos-edge server`) — autenticação
+
+No appliance o WebUI é servido pelo daemon Rust (`haos-edge server`, unit
+`haos-edge.service`, `127.0.0.1:8788`) e **todo o control plane** (terminal PTY,
+tasks, SPA) exige sessão autenticada:
+
+- **Definir/alterar a senha do operador** (nó, como usuário `haos`):
+  ```bash
+  HAOS_DATA_DIR=/var/lib/haos/edge haos-edge admin set-password
+  ```
+  Grava PBKDF2-HMAC-SHA256 (200k iterações, sal por deployment) em
+  `$HAOS_DATA_DIR/webui.passwd` (0600). **Sem senha definida o login responde
+  503 e o WebUI fica inacessível — fail-closed**, nunca aberto por padrão.
+- **Login**: `GET /login` (página própria do daemon) → `POST /api/login` com
+  `{"password": "...", "remember": true|false}`. Com `remember=true` o cookie
+  `haos_session` (HttpOnly, SameSite=Strict, Path=/) recebe `Max-Age` de 30 dias
+  — é o "salvar login neste dispositivo". **A senha nunca é persistida no
+  navegador**, só o token de sessão (arquivo 0600 em `$HAOS_DATA_DIR/sessions/`).
+- **Público**: `/health`, `/static`, `/login`, `/api/login`. Todo o resto
+  responde `401 {"error":"Não autenticado"}` (`/api/*`) ou `302 → /login` (SPA).
+- **Logout**: `POST /api/logout` invalida o token. Para invalidar **todas** as
+  sessões: `rm -rf $HAOS_DATA_DIR/sessions`.
+- **Bind do appliance**: `127.0.0.1` — acesso remoto por túnel SSH
+  (`ssh -L 8788:127.0.0.1:8788 haos@<nó>`); o daemon **não faz TLS**, então
+  expor na rede exige proxy reverso com TLS na frente.
+- A ISO derivada da VM **não carrega** a senha nem as sessões de
+  desenvolvimento (`iso-from-vm.sh` remove `webui.passwd`, `sessions/` e os
+  locks; a validação do squashfs falha explicitamente se eles estiverem
+  presentes).
 
 ## 4. Rotas da API
 
