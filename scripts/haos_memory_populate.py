@@ -66,16 +66,8 @@ def index_vault_rag(home: Path) -> dict:
 
 def build_graphrag_store(home: Path) -> dict:
     """Passo 2: vault -> memory/graphrag.db (store canônico, ADR-008)."""
-    from hermes.platform.context.memory.events import (
-        KnowledgeEvent,
-        KnowledgeEventType,
-    )
-    from hermes.platform.context.memory.graphrag import GraphRAGAdapter
-    from hermes.platform.context.memory.graphrag_store import GraphRAGStore
-    from hermes.platform.context.memory.incremental_graphrag import (
-        IncrementalGraphRAGUpdater,
-    )
     from hermes.platform.context.memory.obsidian import ObsidianAdapter
+    from hermes.platform.memory.haos_memory_sync import graphrag_upsert_note
 
     vault = home / "obsidian_vault"
     if not vault.is_dir():
@@ -83,28 +75,21 @@ def build_graphrag_store(home: Path) -> dict:
 
     # ObsidianAdapter(ContextSource) não expõe available(): retrieve() devolve []
     # quando o vault não existe, então a checagem de vault vazio vem do count.
-    # As notas são coletadas antes de abrir o store para não criar um store vazio.
     notes = list(ObsidianAdapter(vault).retrieve())
     if not notes:
         return {"status": "skipped", "reason": f"vault sem notas .md: {vault}"}
 
-    # GraphRAGAdapter é só memória; a persistência no SQLite canônico (ADR-008) é
-    # o write-through `store=` do updater. Sem ele o store nunca é escrito — foi
-    # por isso que graphrag.db não existia no nó.
+    # O store canônico é escrito pelo write-through `store=` do updater — lógica
+    # compartilhada com a sync imediata de nota (haos_memory_sync.graphrag_upsert_note).
+    counts: dict = {}
+    for note in notes:
+        counts = graphrag_upsert_note(
+            home,
+            uri=note.source_uri,
+            title=note.title,
+            content=note.content,
+        )
     store_path = home / "memory" / "graphrag.db"
-    graph = GraphRAGAdapter()
-    with GraphRAGStore(db_path=store_path) as store:
-        updater = IncrementalGraphRAGUpdater(graphrag_adapter=graph, store=store)
-        for note in notes:
-            updater.process_event(
-                KnowledgeEvent.create(
-                    event_type=KnowledgeEventType.NOTE_CREATED,
-                    uri=note.source_uri,
-                    title=note.title,
-                    content=note.content,
-                )
-            )
-        counts = store.counts()
     return {"status": "ok", "store": str(store_path), "notes": len(notes), **counts}
 
 

@@ -67,17 +67,29 @@ def obsidian_get_adr(adr_id: str) -> str:
 
 
 def obsidian_save_note(title: str, content: str, folder: str = "") -> str:
-    """Salva uma nota ou ADR no Obsidian Vault canônico."""
+    """Salva uma nota ou ADR no Obsidian Vault canônico e sincroniza os stores derivados."""
     try:
         home = Path(get_hermes_home())
         vault = home / "obsidian_vault"
         target_dir = vault / folder if folder else vault
         target_dir.mkdir(parents=True, exist_ok=True)
-        
+
         filename = f"{title}.md" if not title.endswith(".md") else title
         note_path = target_dir / filename
         note_path.write_text(content, encoding="utf-8")
-        return json.dumps({"success": True, "path": str(note_path)})
+
+        # Espelha a nota na hora em DeepDoc + GraphRAG; uma falha de sync não
+        # invalida a escrita no vault (que é a fonte da verdade).
+        sync_info = {}
+        try:
+            from hermes.platform.memory.haos_memory_sync import sync_note
+
+            relative_path = str(note_path.relative_to(vault))
+            sync_info = sync_note(home, note_path, relative_path, title, content)
+        except Exception as exc:  # noqa: BLE001
+            sync_info = {"sync_warning": f"{type(exc).__name__}: {exc}"}
+
+        return json.dumps({"success": True, "path": str(note_path), "sync": sync_info})
     except Exception as e:
         return json.dumps({"error": str(e)})
 

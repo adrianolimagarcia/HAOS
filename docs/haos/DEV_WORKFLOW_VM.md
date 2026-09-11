@@ -195,6 +195,14 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
     `IncrementalGraphRAGUpdater(store=GraphRAGStore(...))`. Sem `store=` o
     `graphrag.db` nunca recebe entidades (o dashboard também não passa `store=`,
     então o grafo dele é só de tela).
+  - **Sync imediata de nota (11/09/2026)**: `obsidian_save_note` agora espelha a
+    nota na hora em DeepDoc + GraphRAG (via `hermes/platform/memory/
+    haos_memory_sync.py`), então `haos-edge doc search` e `graphrag_query` veem a
+    nota nova sem esperar o job noturno. A rotina noturna continua sendo a
+    passada de reconciliação completa (reindexa o vault inteiro) + dream +
+    integridade. Limitação: não há tool de EXCLUIR nota, então remoção manual de
+    um `.md` deixa chunk/entidade órfãos até um reindex (o `index_directory` não
+    limpa chunks de arquivos que sumiram).
 - **Pendencia aberta**: o `haos web` (WebUI Python, doc STANDALONE_WEBUI.md) e
   uma superficie separada e nao tem unit no appliance; verificar auth antes de
   expor.

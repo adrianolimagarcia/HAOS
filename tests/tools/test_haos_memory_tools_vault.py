@@ -57,3 +57,33 @@ def test_roundtrip_escrita_e_leitura_no_mesmo_vault():
     assert found.get("found") is True, found
     assert "corpo do adr" in json.dumps(found)
     assert Path(saved["path"]).is_relative_to(home / "obsidian_vault")
+
+
+def test_save_note_sincroniza_stores_derivados():
+    """Escrever uma nota espelha na hora em DeepDoc + GraphRAG.
+
+    Sem isso a nota só entrava nos stores derivados na rotina noturna (até 24h
+    de defasagem): o vault ficava legível, mas ``haos-edge doc search`` e
+    ``graphrag_query`` não viam a nota nova.
+    """
+    home = Path(get_hermes_home())
+
+    saved = json.loads(obsidian_save_note("Nota Sync Imediata", "conteudo unico de sync", "notas"))
+    assert saved["success"] is True, saved
+
+    sync = saved.get("sync", {})
+    assert sync.get("deepdoc_chunks", 0) >= 1, sync
+    assert sync.get("entities", 0) >= 1, sync
+
+    # DeepDoc: a nota é recuperável por busca FTS5.
+    from hermes.platform.memory.ragflow_engine import RAGFlowStore
+
+    store = RAGFlowStore(db_path=home / "memory" / "ragflow.db")
+    hits = store.hybrid_search("conteudo unico de sync", limit=5)
+    assert any("Nota Sync Imediata" in (h.doc_path or "") for h in hits), hits
+
+    # GraphRAG: a entidade primária da nota existe no store canônico.
+    from hermes.platform.context.memory.graphrag_store import GraphRAGStore
+
+    with GraphRAGStore(db_path=home / "memory" / "graphrag.db") as gs:
+        assert gs.get_entity("Nota Sync Imediata") is not None
