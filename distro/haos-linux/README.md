@@ -110,6 +110,21 @@ sessões e cache do agente.
      canônico, ADR-008) e consolidação do dream (`memory/reconciled_memories.db`
      + lições OKF). AST do código é opt-in (`HAOS_MAINTENANCE_AST=1`).
    - Rodar à mão: `haos cron run <job-id>`; a saída fica em `~/.haos/cron/output/<job-id>/`.
+   - **Não remover este job.** A escrita de nota via `obsidian_save_note` já
+     sincroniza DeepDoc + GraphRAG na hora, mas três funções continuam sendo SÓ
+     deste job; sem ele o nó degrada em silêncio:
+     1. **Dream (consolidação de sessões)** — único produtor das lições OKF e
+        memórias reconciliadas. Nenhum outro mecanismo o dispara: removeu o job,
+        as sessões acumulam para sempre (o cursor para de avançar) e o agente
+        nunca mais consolida o que aprendeu.
+     2. **Reindex completo do vault** — única cobertura para notas escritas por
+        outras vias que NÃO passam pelo `obsidian_save_note`
+        (`master_plan_orchestrator`, `context/memory/provider`,
+        `federated_fabric`, edições manuais e rsync): sem ele essas notas ficam
+        invisíveis ao `haos-edge doc search` e ao `graphrag_query`. O reindex
+        também auto-repara drift/arquivos legados.
+     3. **Integrity check** — único health check (`PRAGMA integrity_check`) dos
+        SQLite do nó.
 
 ## Estrutura de Pastas
 
