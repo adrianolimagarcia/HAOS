@@ -158,6 +158,19 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
   definida: 503 fail-closed. Bind 127.0.0.1 (sem TLS -> exposicao na rede exige
   proxy reverso). O scrub da ISO remove webui.passwd/sessions/locks e a
   validacao do squashfs acusa PRESENTE-BUG se vazarem.
+- **Vault canonico (RESOLVIDO 11/09/2026)**: o unico caminho valido e
+  `<HAOS_HOME>/obsidian_vault` (lido por context_expand_tool, dashboard plugin e
+  context/memory/provider). `tools/haos_memory_tools.py` apontava para
+  `<HAOS_HOME>/vault` -> `obsidian_get_adr` respondia "vault nao disponivel"
+  (adapter fail-closed exige .md) e `obsidian_save_note` gravava nota orfa num
+  diretorio fantasma (falso sucesso). Corrigido + teste de contrato
+  `tests/tools/test_haos_memory_tools_vault.py` (vermelho no codigo antigo).
+  Divergencia conhecida que NAO foi alterada: `hermes/platform/memory/dream.py`
+  grava ADRs em `memory/vault/adrs` (subsistema proprio, com git store).
+- **`haos-edge status` honesto (11/09/2026)**: as linhas "Memory Scopes
+  (Operational/Active/Enforced)" eram hardcoded e o check de RAG usava caminho
+  fixo; agora reporta contagens reais (sessoes/mensagens/tarefas/chunks/notas/
+  entidades/OKF/reconciliadas) dos caminhos canonicos.
 - **Pendencia aberta**: o `haos web` (WebUI Python, doc STANDALONE_WEBUI.md) e
   uma superficie separada e nao tem unit no appliance; verificar auth antes de
   expor.

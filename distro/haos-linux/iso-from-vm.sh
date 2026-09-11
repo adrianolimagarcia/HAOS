@@ -81,6 +81,11 @@ rm -rf "${CHROOT}/var/lib/haos/antigravity/"*
 rm -f "${CHROOT}/var/lib/haos/edge/webui.passwd" \
       "${CHROOT}/var/lib/haos/edge/controlplane_"*.lock
 rm -rf "${CHROOT}/var/lib/haos/edge/sessions"
+# stores de memória (SQLite) criados sob demanda na VM de dev — a ISO distribui
+# o vault canônico + o índice GraphRAG-semente, nunca os stores de teste
+rm -f "${CHROOT}/home/haos/.haos/memory/ragflow.db"* \
+      "${CHROOT}/home/haos/.haos/memory/reconciled_memories.db"* \
+      "${CHROOT}/home/haos/.haos/memory/graphrag.db"*
 
 # haos-setup em modo DEV (sync do /opt/haos desativado)? restaura o bloco
 # original NO SNAPSHOT: a VM fica em DEV para sempre, mas a ISO sai com o
@@ -144,6 +149,8 @@ docker run --rm -v "${DISTRO_DIR}:/b:ro" haos-iso-builder:latest bash -c '
   echo "  unbound habilitado: $(test -e v/etc/systemd/system/multi-user.target.wants/unbound.service && echo SIM || echo nao)"
   echo "  senha webui: $(test -e v/var/lib/haos/edge/webui.passwd && echo PRESENTE-BUG || echo ausente-ok)"
   echo "  sessoes webui: $(test -d v/var/lib/haos/edge/sessions && echo PRESENTE-BUG || echo ausente-ok)"
+  echo "  stores de memoria: $(test -e v/home/haos/.haos/memory/ragflow.db && echo PRESENTE-BUG || echo ausente-ok)"
+  echo "  vault canonico (seed): $(test -e v/home/haos/.haos/obsidian_vault/index.md && echo presente-ok || echo AUSENTE-BUG)"
   echo "  (var/lib/haos extraido: $(test -d v/var/lib/haos && echo sim || echo NAO))"
   grep -c UV_PROJECT_ENVIRONMENT v/usr/local/bin/haos-setup | sed "s/^  haos-setup UV fix: /  /"
 ' 2>/dev/null

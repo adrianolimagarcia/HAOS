@@ -15,7 +15,9 @@ from tools.registry import registry
 
 def _get_obsidian_adapter():
     home = Path(get_hermes_home())
-    vault = home / "vault"
+    # Vault canônico: <hermes_home>/obsidian_vault — o MESMO caminho lido por
+    # tools/context_expand_tool.py, plugins/haos/dashboard e context/memory/provider.
+    vault = home / "obsidian_vault"
     if not vault.exists():
         vault.mkdir(parents=True, exist_ok=True)
         adrs = vault / "adrs"
@@ -68,7 +70,7 @@ def obsidian_save_note(title: str, content: str, folder: str = "") -> str:
     """Salva uma nota ou ADR no Obsidian Vault canônico."""
     try:
         home = Path(get_hermes_home())
-        vault = home / "vault"
+        vault = home / "obsidian_vault"
         target_dir = vault / folder if folder else vault
         target_dir.mkdir(parents=True, exist_ok=True)
         

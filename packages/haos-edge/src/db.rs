@@ -115,6 +115,21 @@ impl DbHelper {
         Ok(results)
     }
 
+    /// Conta linhas de uma tabela (None se o banco/tabela não existe). O nome da
+    /// tabela é sempre literal interno — nunca vem de entrada do usuário.
+    pub fn count_rows(db_path: &std::path::Path, table: &str) -> Option<i64> {
+        if !db_path.exists() {
+            return None;
+        }
+        let conn = Connection::open_with_flags(
+            db_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .ok()?;
+        conn.query_row(&format!("SELECT count(*) FROM {table};"), [], |r| r.get(0))
+            .ok()
+    }
+
     pub fn checkpoint_all_dbs() {
         let home = Self::get_haos_home();
         let candidate_dbs = [

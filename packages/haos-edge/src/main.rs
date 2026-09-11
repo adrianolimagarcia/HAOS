@@ -135,9 +135,23 @@ async fn main() {
 fn cmd_status() {
     let t0 = std::time::Instant::now();
     let home = DbHelper::get_haos_home();
-    let kanban_exists = home.join("kanban.db").exists();
-    let state_exists = home.join("state.db").exists();
-    let rag_exists = home.join("memory").join("ragflow.db").exists();
+
+    let state_db = home.join("state.db");
+    let kanban_db = home.join("kanban.db");
+    let sessions = DbHelper::count_rows(&state_db, "sessions");
+    let messages = DbHelper::count_rows(&state_db, "messages");
+    let tasks = DbHelper::count_rows(&kanban_db, "tasks");
+
+    // GraphRAG: store canônico (ADR-008) + índice CSV local de fallback
+    let graphrag_store = home.join("memory").join("graphrag.db");
+    let graphrag_entities = count_csv_rows(&home.join("graphrag").join("entities.csv"));
+    // DeepDoc/RAG (FTS5) e memórias reconciliadas (dream): criados sob demanda
+    let rag_chunks = DbHelper::count_rows(&home.join("memory").join("ragflow.db"), "haos_rag_chunks");
+    let reconciled_memories =
+        DbHelper::count_rows(&home.join("memory").join("reconciled_memories.db"), "haos_memories");
+    // Memória canônica de arquivos
+    let vault_notes = count_md_files(&home.join("obsidian_vault"));
+    let okf_docs = count_md_files(&home.join("okf"));
 
     println!("==================================================");
     println!("       🦀 HAOS EDGE PLATFORM STATUS (RUST CORE)   ");
@@ -147,16 +161,78 @@ fn cmd_status() {
     println!("Storage   : SQLite WAL Mode (Zero Daemons Required)");
     println!("--------------------------------------------------");
     println!("Databases:");
-    println!("  • State DB     : {}", if state_exists { "✓ Active" } else { "✗ Not initialized" });
-    println!("  • Kanban DB    : {}", if kanban_exists { "✓ Active" } else { "✗ Not initialized" });
-    println!("  • RAGFlow DB   : {}", if rag_exists { "✓ Active" } else { "✗ Not initialized" });
+    println!(
+        "  • State DB     : {}",
+        match (sessions, messages) {
+            (Some(s), Some(m)) => format!("✓ Active ({s} sessões, {m} mensagens)"),
+            _ => "✗ Not initialized".to_string(),
+        }
+    );
+    println!(
+        "  • Kanban DB    : {}",
+        match tasks {
+            Some(n) => format!("✓ Active ({n} tarefas)"),
+            None => "✗ Not initialized".to_string(),
+        }
+    );
+    println!(
+        "  • GraphRAG DB  : {}",
+        if graphrag_store.exists() {
+            "✓ store canônico presente (memory/graphrag.db)".to_string()
+        } else {
+            "✗ store canônico ausente (memory/graphrag.db)".to_string()
+        }
+    );
     println!("--------------------------------------------------");
-    println!("Memory Scopes:");
-    println!("  • Reconciled Memories : ✓ Operational");
-    println!("  • DeepDoc Breadcrumbs : ✓ Active");
-    println!("  • Provenance Anchors  : ✓ Enforced");
+    println!("Memória canônica:");
+    println!("  • Obsidian Vault : {vault_notes} notas ({})", home.join("obsidian_vault").display());
+    println!(
+        "  • GraphRAG index : {}",
+        match graphrag_entities {
+            Some(n) => format!("{n} entidades (índice CSV local)"),
+            None => "ausente".to_string(),
+        }
+    );
+    println!(
+        "  • DeepDoc/RAG    : {}",
+        match rag_chunks {
+            Some(n) => format!("{n} chunks (memory/ragflow.db)"),
+            None => "✗ store ausente (memory/ragflow.db)".to_string(),
+        }
+    );
+    println!("  • OKF bundles    : {okf_docs} documentos");
+    println!(
+        "  • Reconciliadas  : {}",
+        match reconciled_memories {
+            Some(n) => format!("{n} memórias (memory/reconciled_memories.db)"),
+            None => "✗ não consolidada (hermes memory dream)".to_string(),
+        }
+    );
     println!("==================================================");
     println!("⚡ Latency: {:.2?}", t0.elapsed());
+}
+
+/// Conta arquivos .md recursivamente (0 se o diretório não existe).
+fn count_md_files(dir: &std::path::Path) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            total += count_md_files(&path);
+        } else if path.extension().is_some_and(|e| e == "md") {
+            total += 1;
+        }
+    }
+    total
+}
+
+/// Linhas de dados de um CSV (descontando o cabeçalho); None se ausente.
+fn count_csv_rows(path: &std::path::Path) -> Option<usize> {
+    let content = std::fs::read_to_string(path).ok()?;
+    Some(content.lines().filter(|l| !l.trim().is_empty()).count().saturating_sub(1))
 }
 
 fn cmd_team() {
