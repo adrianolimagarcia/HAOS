@@ -298,8 +298,16 @@ A VM de aceitação é o checkout de desenvolvimento:
   3.13; as dependências do agente são instaladas no primeiro boot pelo
   `haos-setup` (`uv sync --frozen --no-dev --python 3.13`). Não existe "venv de
   fábrica com tudo instalado".
-- **`unbound.service` falha no boot** → sistema fica `degraded`. O resolver local
-  do HAOS (DNS) precisa de investigação própria.
+- **~~`unbound.service` falha no boot~~ RESOLVIDO (11/09/2026)**: o `unbound` e o
+  `haos-dns` (resolver Rust do HAOS) disputavam `127.0.0.1:53` — `bind: address
+  already in use` → 5 restarts → `failed` → `degraded`. **Race condition real**:
+  o vencedor da corrida variava por boot (neste nó o `haos-dns` ganhou; em outro
+  o unbound poderia servir o DNS no lugar do resolver do HAOS). Fix: dono
+  determinístico da `:53` = `haos-dns`; `unbound` **mascarado** no runtime
+  (`/etc/systemd/system/unbound.service → /dev/null`, trackeado em
+  `config/includes.chroot/`) — o pacote continua instalado porque é o resolver do
+  chroot durante o **build**. Validado com reboot: `systemctl is-system-running`
+  = `running`, 0 units failed.
 - **`haos-gateway`/`haos-mesh` nascem em `failed`/`activating`** até o `haos-setup`
   preencher o venv e reiniciar os daemons (unidades habilitadas na imagem com
   ExecStart no venv, que só existe de verdade depois do setup — "ovo e galinha"

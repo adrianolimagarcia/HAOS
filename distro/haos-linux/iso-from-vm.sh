@@ -122,13 +122,19 @@ echo "[4/5] validação rápida do squashfs"
 docker run --rm -v "${DISTRO_DIR}:/b:ro" haos-iso-builder:latest bash -c '
   cd /tmp && rm -rf v && unsquashfs -d v /b/binary/live/filesystem.squashfs \
     etc/hostname boot/vmlinuz-* usr/bin/python3.13 opt/haos/venv/bin/python \
-    usr/local/bin/haos-setup usr/local/bin/node 2>/dev/null | tail -n 1
+    usr/local/bin/haos-setup usr/local/bin/node \
+    etc/systemd/system/haos-hostname.service etc/systemd/system/unbound.service \
+    etc/systemd/system/multi-user.target.wants/unbound.service \
+    home/haos/.ssh home/haos/.git-credentials 2>/dev/null | tail -n 1
   echo "  hostname: $(cat v/etc/hostname 2>/dev/null)"
   echo "  kernels assados: $(ls v/boot/ 2>/dev/null | grep -E "^vmlinuz" | tr "\n" " ")"
   echo "  venv: $([ -x v/usr/bin/python3.13 ] && v/usr/bin/python3.13 --version 2>&1)"
   echo "  maquina-id: $(test -f v/etc/machine-id && echo PRESENTE || echo ausente)"
-  echo "  chave aceitacao: $(test -f v/home/haos/.ssh/authorized_keys && echo PRESENTE || echo ausente)"
+  echo "  chave aceitacao: $(test -e v/home/haos/.ssh/authorized_keys && echo PRESENTE || echo ausente)"
+  echo "  credencial git: $(test -e v/home/haos/.git-credentials && echo PRESENTE || echo ausente)"
   echo "  unit hostname: $(test -f v/etc/systemd/system/haos-hostname.service && echo presente || echo ausente)"
+  echo "  unbound mascarado: $(test -L v/etc/systemd/system/unbound.service && echo sim || echo NAO)"
+  echo "  unbound habilitado: $(test -e v/etc/systemd/system/multi-user.target.wants/unbound.service && echo SIM || echo nao)"
   grep -c UV_PROJECT_ENVIRONMENT v/usr/local/bin/haos-setup | sed "s/^  haos-setup UV fix: /  /"
 ' 2>/dev/null
 

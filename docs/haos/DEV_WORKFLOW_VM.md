@@ -123,6 +123,8 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
 - Serviços `active`: `haos-gateway`, `haos-mesh` (127.0.0.1:9120), `haos-dns`,
   `haos-antigravity`. Venv `/opt/haos/venv`: Python 3.13.5, 165 pkgs,
   SQLite **3.53.4** (FTS5/RTREE) no caminho real do agente (`state.db`).
+- **Sistema `running` com 0 units failed**: `unbound` mascarado e `haos-dns`
+  dono de `127.0.0.1:53` (validado com reboot).
 - `A6API_API_KEY` (do host) no `.env` da VM para teste de chat — **escovada na
   ISO**. Provider config: `model.provider: a6api`.
 - Validação funcional feita: chat real com tool calls (respondeu kernel+hostname
@@ -133,8 +135,14 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
 
 ## 7. Limitações conhecidas (não resolvidas)
 
-- `unbound.service` falha no boot → systemd `degraded` (resolver local a
-  investigar — candidato a próximo ajuste na VM).
+- **RESOLVIDO (11/09/2026)** `unbound.service` vs `haos-dns`: os dois disputavam
+  `127.0.0.1:53` (`bind: address already in use` → 5 restarts → `failed` →
+  `degraded`); race real (o vencedor variava por boot — se o unbound ganhasse, o
+  DNS do HAOS ficava fora). Fix: dono determinístico da `:53` = `haos-dns`;
+  `unbound` **mascarado** no runtime
+  (`/etc/systemd/system/unbound.service → /dev/null`, trackeado em
+  `config/includes.chroot/`). O pacote segue instalado (é o resolver do chroot
+  no build). Validado com reboot: `is-system-running` = `running`, 0 failed.
 - `haos-edge` (Rust) em restart loop em alguns cenários; daemons gateway/mesh
   nascem `failed/activating` antes do primeiro `haos-setup` (venv vazio).
 - Doctor: `browser-cdp`/`browser-use` "system dependency not met" (deps npm
