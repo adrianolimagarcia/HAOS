@@ -86,6 +86,9 @@ rm -rf "${CHROOT}/var/lib/haos/edge/sessions"
 rm -f "${CHROOT}/home/haos/.haos/memory/ragflow.db"* \
       "${CHROOT}/home/haos/.haos/memory/reconciled_memories.db"* \
       "${CHROOT}/home/haos/.haos/memory/graphrag.db"*
+# pastas legadas do dream (memory/okf, memory/vault): o produtor passou a usar
+# os caminhos canonicos <home>/okf e <home>/obsidian_vault
+rm -rf "${CHROOT}/home/haos/.haos/memory/okf" "${CHROOT}/home/haos/.haos/memory/vault"
 # cron: histórico/saída/ticker da VM de dev não vão para a ISO. jobs.json também
 # sai — o haos-storage-init recria a rotina noturna de manutenção no primeiro
 # boot (idempotente), então a ISO não carrega job de teste nenhum.

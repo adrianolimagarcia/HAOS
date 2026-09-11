@@ -72,3 +72,35 @@ def test_dream_consolidator_runs_and_records_cursor(tmp_path: Path, monkeypatch)
     idle_res = consolidator.run_dream(dry_run=False)
     assert idle_res["status"] == "idle"
     assert idle_res["consolidated_count"] == 0
+
+
+def test_dream_escreve_licoes_no_okf_canonico(tmp_path: Path, monkeypatch):
+    """O dream tem de escrever onde os leitores procuram.
+
+    Os leitores (tools/haos_memory_tools.py, hybrid_router, status do haos-edge)
+    usam <home>/okf e <home>/obsidian_vault. Com o dream gravando em memory/okf
+    e memory/vault/adrs, as lições e ADRs produzidos ficavam invisíveis — o
+    status mostrava "OKF bundles: 0 documentos" com lições no disco.
+    """
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    db = SessionDB()
+    sid = "20260911_test_dream_paths"
+    db.ensure_session(session_id=sid, source="cli", model="gemini-test")
+    db.set_session_title(sid, "Caminhos canônicos do dream")
+    db.append_message(sid, "user", "Onde o dream grava as lições?")
+    db.append_message(sid, "assistant", "No OKF canônico do nó, não em memory/.")
+    db.close()
+
+    consolidator = DreamConsolidator(hermes_home=home)
+    assert consolidator.okf_dir == home / "okf"
+    assert consolidator.vault_adrs_dir == home / "obsidian_vault" / "adrs"
+
+    res = consolidator.run_dream(dry_run=False)
+    assert res["status"] == "success"
+
+    lessons = list((home / "okf").glob("lesson_*.md"))
+    assert lessons, "nenhuma lição no OKF canônico"
+    assert not (home / "memory" / "okf").exists()

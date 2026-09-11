@@ -44,7 +44,7 @@ def _discover_homes() -> List[Path]:
         if str(p) in seen:
             return
         markers = [p / "config.yaml", p / "kanban.db", p / "state.db",
-                   p / "vault", p / "graphrag", p / "memories", p / "haos"]
+                   p / "obsidian_vault", p / "graphrag", p / "memories", p / "haos"]
         if any(m.exists() for m in markers):
             seen.add(str(p))
             found.append(p)
@@ -99,7 +99,7 @@ def _config_summary(home: Path) -> Dict[str, Any]:
 
 
 def _knowledge(home: Path) -> Dict[str, Any]:
-    vault = home / "vault"
+    vault = home / "obsidian_vault"
     gr = home / "graphrag"
     notes = 0
     if vault.is_dir():

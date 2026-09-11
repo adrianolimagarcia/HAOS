@@ -1207,7 +1207,9 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
 
         haos_dir = p / ".haos"
         memories_dir = haos_dir / "memories"
-        vault_dir = p / "vault"
+        # Vault canônico do nó (<home>/obsidian_vault); "vault" era o diretório
+        # fantasma que deixava o painel mostrando 0 notas com o vault cheio.
+        vault_dir = haos_dir / "obsidian_vault"
         graphrag_dir = haos_dir / "graphrag"
 
         memories = []

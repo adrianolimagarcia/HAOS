@@ -162,7 +162,7 @@ class DashboardStats:
             from pathlib import Path
             import os
             h = Path(get_hermes_home())
-            vault = h / "vault"
+            vault = h / "obsidian_vault"
             if vault.is_dir():
                 from hermes.platform.memory.obsidian import ObsidianAdapter
                 obs = ObsidianAdapter(str(vault))

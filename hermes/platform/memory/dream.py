@@ -145,8 +145,13 @@ class DreamConsolidator:
 
         self.home = (hermes_home or Path(get_hermes_home())).resolve()
         self.memory_dir = self.home / "memory"
-        self.okf_dir = self.memory_dir / "okf"
-        self.vault_adrs_dir = self.memory_dir / "vault" / "adrs"
+        # Caminhos CANÔNICOS do nó, não subpastas de memory/: são estes que os
+        # leitores usam (tools/haos_memory_tools.py, hybrid_router, status do
+        # haos-edge). Escrevendo em memory/okf e memory/vault/adrs o dream
+        # produzia lições e ADRs que NENHUM leitor enxergava — o vault canônico é
+        # <home>/obsidian_vault e o OKF é <home>/okf.
+        self.okf_dir = self.home / "okf"
+        self.vault_adrs_dir = self.home / "obsidian_vault" / "adrs"
         self.cursor_file = self.memory_dir / ".dream_cursor"
         self.git_store = DreamGitStore(self.memory_dir)
         self.reconciler = MemoryReconciler(self.memory_dir / "reconciled_memories.db")
