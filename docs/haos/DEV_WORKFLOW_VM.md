@@ -143,8 +143,18 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
   (`/etc/systemd/system/unbound.service → /dev/null`, trackeado em
   `config/includes.chroot/`). O pacote segue instalado (é o resolver do chroot
   no build). Validado com reboot: `is-system-running` = `running`, 0 failed.
-- `haos-edge` (Rust) em restart loop em alguns cenários; daemons gateway/mesh
-  nascem `failed/activating` antes do primeiro `haos-setup` (venv vazio).
+- **RESOLVIDO (11/09/2026)** `haos-edge`: o unit rodava sem subcomando (cai em
+  `cmd_status()`, exit 0, loop); fix = `ExecStart=haos-edge server --port 8788
+  --host 127.0.0.1 --static-dir /opt/haos/hermes/platform/webui/static`,
+  `User=haos`, `HAOS_HOME=/home/haos/.haos`, `HAOS_DATA_DIR=/var/lib/haos/edge`.
+  Validado com reboot (active, 0 restarts, /health healthy). Servidor SEM auth
+  (terminal PTY) -> bind so em 127.0.0.1.
+- `haos-edge` é o **servidor do Standalone WebUI** (axum/tokio): /api/terminal/*
+  (PTY remoto), /api/tasks, /health, e o SPA (chat/terminal/taskboard/scheduler).
+  Mesmo binário também é CLI (`status`, `team`, `doc search`, `doctor`) e shim
+  para o agente Python em args desconhecidos.
+- Daemons gateway/mesh nascem `failed/activating` antes do primeiro `haos-setup`
+  (venv vazio — ovo e galinha).
 - Doctor: `browser-cdp`/`browser-use` "system dependency not met" (deps npm
   opcionais, não bloqueiam); advisories npm de tooling (build-time).
 - A checagem "API key" do doctor não reconhece `A6API_API_KEY` (cosmético).

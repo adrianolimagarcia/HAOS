@@ -312,9 +312,18 @@ A VM de aceitação é o checkout de desenvolvimento:
   preencher o venv e reiniciar os daemons (unidades habilitadas na imagem com
   ExecStart no venv, que só existe de verdade depois do setup — "ovo e galinha"
   intencional: o fluxo correto é instalar → `haos-setup`).
-- **`haos-edge`** reinicia em loop (`exit 0` + `Restart=always`) até o wrapper
-  Antigravity ter token (`agy auth login` como `haos` + restart do serviço) — ver
-  seção "Wrapper-antigravity".
+- **~~`haos-edge` reinicia em loop~~ RESOLVIDO (11/09/2026)**: o unit rodava
+  `/usr/local/bin/haos-edge` **sem subcomando** → o binário caía em `cmd_status()`
+  (imprime o banner e sai com 0) → `Restart=always` → loop infinito; o servidor
+  nunca subia. O unit também rodava como `root` (HAOS_HOME errado = `/root/.haos`,
+  DBs "✗ Not initialized") e o lock do control-plane ficava em `/tmp` com dono
+  root (Permission denied ao trocar para o usuário `haos`). Fix: unit com
+  `ExecStart=haos-edge server --port 8788 --host 127.0.0.1 --static-dir
+  /opt/haos/hermes/platform/webui/static`, `User=haos`, `HAOS_HOME=/home/haos/.haos`,
+  `HAOS_DATA_DIR=/var/lib/haos/edge`. Validado com reboot: `active`, 0 restarts,
+  `GET /health` = healthy. **Atenção**: o servidor não tem autenticação e expõe
+  terminal PTY → bind **127.0.0.1 apenas** (acesso via tunnel SSH); abrir para a
+  rede exige auth primeiro.
 - **CLI `hermes`**: o doctor sugere `~/.local/bin/hermes`; no appliance o entry
   canônico é o wrapper `/usr/local/bin/haos` (que re-executa como usuário `haos`).
   Criar o symlink é opcional.
