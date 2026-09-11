@@ -44,7 +44,7 @@ BATCH_MARKER = "context compression attempt telemetry: "
 
 
 def default_log() -> Path:
-    home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    home = os.environ.get("HERMES_HOME") or str(Path.home() / ".haos")
     return Path(home) / "logs" / "agent.log"
 
 

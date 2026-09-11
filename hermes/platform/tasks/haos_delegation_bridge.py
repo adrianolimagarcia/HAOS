@@ -26,7 +26,7 @@ def _get_haos_data_dir() -> Optional[Path]:
     candidates.extend([
         Path("/tmp/haos_shared_data"),
         Path.home() / ".haos",
-        Path.home() / ".hermes",
+        Path.home() / ".hermes",  # haos-legacy-path: cadeia de candidatos: le o store legado de proposito
     ])
     for p in candidates:
         if (p / "kanban.db").exists():

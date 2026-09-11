@@ -1,0 +1,69 @@
+name: HAOS guards
+
+# Guardas do fork HAOS. Arquivo do fork (não do upstream) de propósito: assim um
+# rebase do upstream nunca conflita com estas checagens.
+#
+# 1. Nenhum default de path pode construir ~/.hermes — o home canônico é ~/.haos.
+#    Sites legados intencionais levam `# haos-legacy-path: <motivo>`.
+# 2. O contrato do default de home do fork fica verde (testes de comportamento).
+
+on:
+  push:
+    branches: [main, haos-standalone]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: haos-guards-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  legacy-home-guard:
+    name: Guard de path legado (~/.hermes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+
+      - name: Forbid new ~/.hermes path defaults
+        run: python scripts/ci/check_legacy_hermes_home.py
+
+  home-contract-tests:
+    name: Contrato do home do fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          version: "0.9.28"
+
+      - name: Set up Python 3.11
+        uses: ./.github/actions/retry
+        with:
+          command: uv python install 3.11
+
+      - name: Install dependencies
+        # Mesmo lock do tests.yml: env reprodutível, sem depender de requirements-dev.
+        uses: ./.github/actions/retry
+        with:
+          command: uv sync --locked --python 3.11 --extra all --extra dev
+
+      - name: Run home-contract tests
+        run: |
+          source .venv/bin/activate
+          scripts/run_tests.sh \
+            tests/test_haos_default_home.py \
+            tests/test_haos_no_legacy_home_defaults.py

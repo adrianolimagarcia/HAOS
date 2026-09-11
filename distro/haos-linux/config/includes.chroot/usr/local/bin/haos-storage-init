@@ -29,6 +29,14 @@ if [ ! -f /home/haos/.haos/obsidian_vault/index.md ] && [ -f /etc/skel/.haos/obs
     cp -rn /etc/skel/.haos/* /home/haos/.haos/ 2>/dev/null || true
 fi
 
+# Compat de caminho: ferramenta ou processo legado que ainda escreva em ~/.hermes
+# passa a acertar o store canonico. Só quando ~/.hermes NAO existe — se existir, e um
+# store legado de verdade e nunca deve ser sobrescrito por um symlink.
+if [ ! -e /home/haos/.hermes ]; then
+    ln -s /home/haos/.haos /home/haos/.hermes 2>/dev/null || true
+    chown -h haos:haos /home/haos/.hermes 2>/dev/null || true
+fi
+
 # Se o sistema de arquivos for Btrfs, desativar CoW em pastas de banco SQLite/WAL
 if command -v chattr >/dev/null 2>&1; then
     chattr +C /home/haos/.haos/sqlite 2>/dev/null || true

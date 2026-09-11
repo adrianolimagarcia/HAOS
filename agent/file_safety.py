@@ -20,7 +20,7 @@ def _constants_path(getter_name: str) -> Path:
 
         return getattr(hermes_constants, getter_name)()
     except Exception:
-        return Path(os.path.expanduser("~/.hermes"))
+        return Path(os.path.expanduser("~/.haos"))
 
 
 def _hermes_home_path() -> Path:

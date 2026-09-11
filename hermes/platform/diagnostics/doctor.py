@@ -224,7 +224,7 @@ class HAOSDoctor:
 
     def check_data_persistence(self) -> CheckResult:
         """Verifica que os dados estão isolados e não em ~/.hermes/haos."""
-        legacy_dir = Path.home() / ".hermes" / "haos"
+        legacy_dir = Path.home() / ".hermes" / "haos"  # haos-legacy-path: deteccao de migracao (o doctor existe para achar o store legado)
         has_legacy = legacy_dir.exists() and any(legacy_dir.iterdir()) if legacy_dir.exists() else False
 
         data_dir = Path(os.environ.get("HAOS_DATA_DIR", self.haos_home))

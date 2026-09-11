@@ -310,6 +310,15 @@ if [ -d "$HOME/.hermes" ]; then
     fi
 fi
 
+# Compat de caminho: ferramenta ou processo legado que ainda escreva em ~/.hermes passa
+# a acertar o store canonico. Só quando o home canonico esta em uso e ~/.hermes NAO
+# existe — nunca sobrescreve um store legado real nem aponta para um HAOS_HOME temporario.
+if [ "$HAOS_HOME" = "$HOME/.haos" ] && [ ! -e "$HOME/.hermes" ]; then
+    ln -s "$HAOS_HOME" "$HOME/.hermes" 2>/dev/null \
+        && log_info "Compat: $HOME/.hermes -> $HAOS_HOME" \
+        || log_warn "Nao foi possivel criar o atalho $HOME/.hermes -> $HAOS_HOME"
+fi
+
 if command -v cargo >/dev/null 2>&1 && [ -d "$INSTALL_DIR/packages/haos-edge" ]; then
     log_info "Building HAOS Rust Edge layer..."
     (cd "$INSTALL_DIR/packages/haos-edge" && cargo build --release)
@@ -338,6 +347,12 @@ if [ ! -f "\$HAOS_HOME/config.yaml" ]; then
     if [ -f "\$USER_HOME/.hermes/config.yaml" ]; then cp -p "\$USER_HOME/.hermes/config.yaml" "\$HAOS_HOME/config.yaml"
     elif [ -f "/root/.haos/config.yaml" ]; then cp -p "/root/.haos/config.yaml" "\$HAOS_HOME/config.yaml"
     elif [ -f "/root/.hermes/config.yaml" ]; then cp -p "/root/.hermes/config.yaml" "\$HAOS_HOME/config.yaml"; fi
+fi
+
+# Compat de caminho por usuario: ferramenta/processo legado que escreva em ~/.hermes
+# acerta o store canonico. Só com o home canonico em uso e ~/.hermes inexistente.
+if [ "\$HAOS_HOME" = "\$USER_HOME/.haos" ] && [ ! -e "\$USER_HOME/.hermes" ]; then
+    ln -s "\$HAOS_HOME" "\$USER_HOME/.hermes" 2>/dev/null || true
 fi
 
 export HERMES_HOME="\${HAOS_HOME}"

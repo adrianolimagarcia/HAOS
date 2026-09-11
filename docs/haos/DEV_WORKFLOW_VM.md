@@ -194,6 +194,26 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
     (o `install_haos.sh` herda `.env`/`config.yaml` de lá).
     Dívida cosmética conhecida: ~400 strings user-facing herdadas do upstream
     ainda dizem `~/.hermes/...`; o certo é passar por `display_hermes_home()`.
+    **O que NÃO é cosmético (corrigido em 11/09/2026):** 28 sites construíam
+    path de verdade com `Path.home()/".hermes"` (defaults reais: `main.py`,
+    `_startup_fast`, `dashboard_procs`, `worktree_gc`, `self_repo_guard`,
+    `workspace_scope` — boundary de segurança —, `file_safety`, `nous_rate_guard`,
+    `mcp_tool_config`, `codex_app_server`, `a2a/protocol`, `photon/auth`,
+    `bot_mode_dm/probe`, `bot_relay`, `mem0`/`openviking`, `telegram`,
+    `google_chat` e scripts de dev). Todos passaram a resolver pelo home canônico.
+    Guard: `python scripts/ci/check_legacy_hermes_home.py` (AST, não grep) roda no
+    workflow do fork `.github/workflows/haos-guards.yml` e falha em default NOVO.
+    Site legado intencional (cadeia de candidatos, detecção de migração, guarda do
+    store real, `PROJECT_SKILLS_SUBDIRS`) leva `# haos-legacy-path: <motivo>` na
+    linha — hoje são 10, e o motivo é obrigatório.
+  - **Atalho de compatibilidade `~/.hermes` → `~/.haos` (11/09/2026)**: criado
+    pelo `haos-storage-init` (ISO) e pelo `install_haos.sh` + wrapper `haos`
+    (fora da ISO) para que ferramenta/processo legado que ainda escreva em
+    `~/.hermes` acerte o store canônico. Guardas: só é criado quando o home
+    canônico está em uso (`$HOME/.haos`) e `~/.hermes` NÃO existe — nunca
+    sobrescreve um store legado real nem aponta para um `HAOS_HOME` temporário.
+    É o que cobre o `main_dashboard` (o cliente Desktop escreve em
+    `$HOME/.hermes/desktop-ssh` por design, #69551) sem tocar no código dele.
   - **Instalação fora da ISO (11/09/2026)**: `scripts/install_haos.sh` passou a
     provisionar a MESMA estrutura canônica que o `haos-storage-init` faz na ISO —
     dirs (`obsidian_vault/adrs`, `okf`, `memory`, `graphrag`, `scripts`, `cron`),

@@ -474,8 +474,13 @@ def _auth_file_path() -> Path:
     path = get_hermes_home() / "auth.json"
     # Seat belt: under pytest, refuse to touch the real user's auth store (tests that forgot to
     # monkeypatch HERMES_HOME or escaped the hermetic conftest). In production: one dict lookup.
+    # O store real do fork e ~/.haos/auth.json; o literal legado segue coberto
+    # porque num no migrado o ~/.hermes ainda pode ser o store de verdade.
+    from hermes_constants import _get_platform_default_hermes_home
+
+    _real_stores = (_get_platform_default_hermes_home() / "auth.json", Path.home() / ".hermes" / "auth.json")  # haos-legacy-path: guarda do store real do operador (fork + legado)
     if (os.environ.get("PYTEST_CURRENT_TEST")
-            and _same_path(path, Path.home() / ".hermes" / "auth.json")):
+            and any(_same_path(path, _real) for _real in _real_stores)):
         raise RuntimeError(
             f"Refusing to touch real user auth store during test run: {path}. "
             "Set HERMES_HOME to a tmp_path in your test fixture, or run "

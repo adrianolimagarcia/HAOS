@@ -2752,13 +2752,18 @@ def _hermes_home_for_target_user(target_home_dir: str) -> str:
     current_hermes_raw = os.environ.get("HERMES_HOME", "").strip()
     current_hermes = Path(current_hermes_raw).expanduser() if current_hermes_raw else get_hermes_home()
     # Keep paths lexical: resolving a non-existent path can bake a different HERMES_HOME into the unit.
-    current_default = Path.home() / ".hermes"
-    target_default = Path(target_home_dir) / ".hermes"
-    try:
-        # Default ~/.hermes or a profile/subdir of it → preserve the relative structure under the target.
-        return str(target_default / current_hermes.relative_to(current_default))
-    except ValueError:
-        return str(current_hermes)  # Completely custom path (not under ~/.hermes) — keep as-is
+    from hermes_constants import _get_platform_default_hermes_home
+
+    canonical_default = _get_platform_default_hermes_home()
+    # O alvo acompanha a baseline que casou: um home legado ~/.hermes continua ~/.hermes
+    # no usuario alvo (nao vira .haos, o que apontaria a unidade para um store inexistente).
+    for baseline, target_name in ((canonical_default, canonical_default.name), (Path.home() / ".hermes", ".hermes")):  # haos-legacy-path: baseline legada do remap sob sudo
+        try:
+            # Home default ou profile/subdir dele: preserva a estrutura sob o usuario alvo.
+            return str(Path(target_home_dir) / target_name / current_hermes.relative_to(baseline))
+        except ValueError:
+            continue
+    return str(current_hermes)  # Completely custom path (not under ~/.hermes) — keep as-is
 
 
 def _build_service_path_dirs(project_root: Path | None = None) -> list[str]:

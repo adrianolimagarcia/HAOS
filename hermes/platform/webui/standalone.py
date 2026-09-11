@@ -1419,8 +1419,8 @@ def make_standalone_server(
                     state.data_dir / "state.db",
                     state.data_dir / "memory" / "reconciled_memories.db",
                     state.data_dir / "memory" / "ragflow.db",
-                    Path.home() / ".hermes" / "state.db",
-                    Path.home() / ".hermes" / "kanban.db",
+                    Path.home() / ".hermes" / "state.db",  # haos-legacy-path: candidato legado do backup
+                    Path.home() / ".hermes" / "kanban.db",  # haos-legacy-path: candidato legado do backup
                 ]
                 for db in candidate_dbs:
                     if db and Path(db).exists():

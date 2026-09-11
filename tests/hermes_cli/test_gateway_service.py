@@ -13,6 +13,7 @@ pwd = pytest.importorskip("pwd")
 grp = pytest.importorskip("grp")
 
 import hermes_cli.gateway as gateway_cli
+from hermes_constants import _get_platform_default_hermes_home
 from gateway import status
 from gateway.restart import (
     DEFAULT_GATEWAY_CRON_DRAIN_TIMEOUT,
@@ -1357,6 +1358,7 @@ class TestSystemUnitHermesHome:
         # Simulate sudo: Path.home() returns /root, target user is alice
         monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
         monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("HAOS_HOME", raising=False)
         monkeypatch.setattr(
             gateway_cli, "_system_service_identity",
             lambda run_as_user=None: ("alice", "alice", "/home/alice", 1001),
@@ -1368,8 +1370,9 @@ class TestSystemUnitHermesHome:
 
         unit = gateway_cli.generate_systemd_unit(system=True, run_as_user="alice")
 
-        assert 'HERMES_HOME=/home/alice/.hermes' in unit
-        assert '/root/.hermes' not in unit
+        canonico = _get_platform_default_hermes_home().name
+        assert f'HERMES_HOME=/home/alice/{canonico}' in unit
+        assert f'/root/{canonico}' not in unit
 
     def test_user_unit_unaffected_by_change(self):
         # User-scope units should still use the calling user's HERMES_HOME
@@ -1516,9 +1519,12 @@ class TestHermesHomeForTargetUser:
     def test_remaps_default_home(self, monkeypatch):
         monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
         monkeypatch.delenv("HERMES_HOME", raising=False)
+        monkeypatch.delenv("HAOS_HOME", raising=False)
 
         result = gateway_cli._hermes_home_for_target_user("/home/alice")
-        assert result == "/home/alice/.hermes"
+        # Contrato: o default do home vira o equivalente do usuário alvo, com o mesmo
+        # nome canônico (no fork HAOS é ~/.haos) — nunca o home de quem chamou o sudo.
+        assert result == str(Path("/home/alice") / _get_platform_default_hermes_home().name)
 
 
 class TestGeneratedUnitUsesDetectedVenv:

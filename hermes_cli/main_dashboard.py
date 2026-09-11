@@ -553,7 +553,7 @@ def _read_ssh_session_token_file(path: str) -> str:
     # validation there, NOT get_hermes_home(): a non-default profile or a Docker
     # /opt/data root re-homes get_hermes_home() and would reject every token.
     # See #69551.
-    token_root = Path.home() / ".hermes" / "desktop-ssh"
+    token_root = Path.home() / ".hermes" / "desktop-ssh"  # haos-legacy-path: contrato do Desktop client, independente de HERMES_HOME (#69551)
     try:
         relative = Path(path).relative_to(token_root)
     except ValueError as exc:

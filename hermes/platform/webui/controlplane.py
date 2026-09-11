@@ -66,7 +66,7 @@ def canonical_kanban_db_paths() -> List[str]:
             candidates.append(str(Path(base).expanduser() / "kanban.db"))
     if not profile_set:
         candidates.append(str(Path.home() / ".haos" / "kanban.db"))
-        candidates.append(str(Path.home() / ".hermes" / "kanban.db"))
+        candidates.append(str(Path.home() / ".hermes" / "kanban.db"))  # haos-legacy-path: candidato legado
     # De-duplicate preserving order.
     seen: set[str] = set()
     out: List[str] = []
@@ -96,7 +96,7 @@ def canonical_state_db_paths() -> List[str]:
             candidates.append(str(Path(base).expanduser() / "state.db"))
     if not profile_set:
         candidates.append(str(Path.home() / ".haos" / "state.db"))
-        candidates.append(str(Path.home() / ".hermes" / "state.db"))
+        candidates.append(str(Path.home() / ".hermes" / "state.db"))  # haos-legacy-path: candidato legado
     # De-duplicate preserving order.
     seen: set[str] = set()
     out: List[str] = []

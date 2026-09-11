@@ -73,7 +73,8 @@ def resolve_workspace_scope(
             from hermes_constants import get_hermes_home
             agent_ws = Path(get_hermes_home()).resolve()
         except Exception:
-            agent_ws = Path(os.path.expanduser("~/.hermes")).resolve()
+            # Fallback do fork: o home canonico e ~/.haos, nao ~/.hermes.
+            agent_ws = Path(os.path.expanduser("~/.haos")).resolve()
 
     if project_dir is not None:
         proj_ws = Path(os.path.expanduser(str(project_dir))).resolve()
