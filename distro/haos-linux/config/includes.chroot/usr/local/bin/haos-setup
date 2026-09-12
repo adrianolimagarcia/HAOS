@@ -243,6 +243,12 @@ set_node_provider() {
     }
     _haos_set_cfg model.provider "${provider}"
     [ -n "${model}" ] && _haos_set_cfg model.default "${model}"
+    # Handoff restart-safe do cron (systemd-run --user --scope). O nó precisa de "prefer":
+    # o default do upstream é "require", que FALHA o run agendado quando o scope transiente
+    # não pode ser criado — e num appliance onde o user manager não sobe isso significa que
+    # nenhuma manutenção agendada roda. Com "prefer" o job degrada para o caminho in-process
+    # com aviso no log (o custo é um restart do gateway no meio do run interromper o worker).
+    _haos_set_cfg cron.restart_safe_scope prefer
     return 0
 }
 

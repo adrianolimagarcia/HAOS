@@ -10,6 +10,14 @@ Group=haos
 WorkingDirectory=/opt/haos
 Environment="HAOS_HOME=/home/haos/.haos"
 Environment="PYTHONUNBUFFERED=1"
+# Handoff restart-safe (cron e kanban) usa `systemd-run --user --scope`, que fala com o user
+# manager pelo socket privado $XDG_RUNTIME_DIR/systemd/private. Um serviço de sistema não
+# recebe essa variável, e sem ela o handoff falha com "Failed to connect to user scope bus via
+# local transport: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined" — foi o que
+# derrubou toda execução agendada no appliance. O usuário haos é criado pelo instalador com o
+# primeiro uid livre a partir de 1000, portanto 1000 nesta imagem; o caminho é literal porque
+# especificador %U não existe em unit de sistema.
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
 # Do NOT set PLAYWRIGHT_BROWSERS_PATH here. Once set, Playwright resolves the browser ONLY under
 # that path — an explicit path that does not exist breaks every launch, while the doctor's presence
 # check also scans the default cache and keeps reporting "Playwright Chromium" green (it did, with

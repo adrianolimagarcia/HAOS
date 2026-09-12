@@ -8,7 +8,14 @@ echo "[HAOS Hook] Criando usuário e grupos para o ambiente HAOS..."
 
 # Criar usuário 'haos' se não existir
 if ! id -u haos >/dev/null 2>&1; then
-    useradd -m -s /bin/bash -U haos
+    # uid fixo em 1000: haos-gateway.service aponta XDG_RUNTIME_DIR para /run/user/1000
+    # (caminho literal — especificador %U não é resolvido em unit de sistema, verificado na
+    # VM) para que o handoff restart-safe (systemd-run --user --scope) alcance o user
+    # manager. Sem -u, o uid seria o primeiro livre e o caminho do unit apontaria para o
+    # runtime dir errado. Fallback: se 1000 estiver ocupado, cria com o próximo livre — o
+    # handoff então degrada por cron.restart_safe_scope: prefer em vez de derrubar o install.
+    useradd -u 1000 -m -s /bin/bash -U haos 2>/dev/null \
+        || useradd -m -s /bin/bash -U haos
     # Senha padrão inicial 'haos' (pode ser alterada no primeiro login)
     echo "haos:haos" | chpasswd
 fi

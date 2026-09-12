@@ -109,3 +109,10 @@ libreadline-dev
 libncursesw5-dev
 libsqlite3-dev
 docker-cli
+# systemd --user no appliance. Sem este pacote o user manager nunca sobe — o PAM falha com
+# "unable to dlopen(pam_systemd.so)" — e o handoff restart-safe de cron e kanban
+# (systemd-run --user --scope) falha sempre: job agendado não roda e o dispatcher do kanban
+# não consegue cunhar worker. Verificado na VM: instalado o pacote (com linger ligado),
+# user@1000.service fica active, /run/user/1000/systemd/private aparece e
+# `systemd-run --user --scope` funciona como haos.
+libpam-systemd
