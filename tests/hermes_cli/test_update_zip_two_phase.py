@@ -175,7 +175,16 @@ def test_no_open_coded_venv_layout_remains_in_hermes_cli():
     exempt = {"stdio.py"}
     pkg = Path(hermes_cli.__file__).parent
     offenders = []
-    for py in pkg.rglob("*.py"):
+    # os.walk, not Path.rglob: rglob's recursive selector descends into EVERY directory and raises
+    # FileNotFoundError if one disappears mid-walk. This suite runs 16 workers over one filesystem,
+    # so a sibling process mutating hermes_cli/__pycache__ was enough to fail this scan with
+    # `FileNotFoundError: .../hermes_cli/__pycache__` (FLAKY in a full run). os.walk absorbs that
+    # race through onerror, and __pycache__ holds no .py source, so pruning it costs no coverage.
+    sources: list[Path] = []
+    for root, dirs, files in os.walk(pkg, onerror=lambda _e: None):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        sources.extend(Path(root) / name for name in files if name.endswith(".py"))
+    for py in sources:
         if py.name in exempt:
             continue
         try:
