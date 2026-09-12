@@ -410,6 +410,11 @@ async def console_ws(ws: WebSocket) -> None:
     finally:
         if active_task and not active_task.done():
             active_task.cancel()
+            # Reap only the child's CancelledError here, never our own: this finally is the
+            # LAST statement of the handler, so even if the handler's own cancel (client
+            # disconnect) landed inside this reap and was swallowed, the handler simply
+            # returns right after — no reconnect loop, no unbounded join, nothing for a
+            # swallowed stop request to wedge. Not the "swallowed cancellation" defect.
             try:
                 await active_task
             except (asyncio.CancelledError, Exception):
