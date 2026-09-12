@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from typing import Any, Optional
 
+from hermes_constants import _node_store_for_root_operator  # stdlib-only, no cycle
+
 try:  # Hard dependency, but tolerate scaffold-phase imports before pip install.
     import psutil
 except ImportError:  # pragma: no cover - stripped/scaffold installs only
@@ -22,20 +24,56 @@ except ImportError:  # pragma: no cover - stripped/scaffold installs only
 _STATE_DB_GUARD_BYPASS_ENV = "HERMES_STATE_DB_GUARD_BYPASS"
 
 
-def _real_platform_state_root() -> Optional[Path]:
-    """The REAL platform-default Hermes root. Avoids ``Path.home()`` /
-    ``hermes_constants`` (tests monkeypatch Path.home to a tempdir); ``expanduser``
-    reads HOME/passwd, which the conftest never rewrites."""
+def _real_platform_state_roots() -> tuple[Path, ...]:
+    """Every root a production ``state.db`` can live under for this platform and user.
+
+    Mirrors ``hermes_constants._get_platform_default_hermes_home()`` with the environment
+    ignored, because the guard answers "would an env-less process resolve a REAL store?".
+    ``Path.home()`` and the resolver itself are avoided (tests monkeypatch ``Path.home`` to a
+    tempdir); ``expanduser`` reads HOME/passwd, which the conftest never rewrites.
+
+    Staying in lockstep with the resolver is load-bearing, not cosmetic: the guard only refuses
+    paths under the roots it knows, so any root the resolver can produce but this function omits
+    is a live database the guard silently stops protecting. Hardcoding ``~/.hermes`` did exactly
+    that on Windows (#82770), and again on POSIX once the HAOS fork moved the default to
+    ``~/.haos``: an argless ``SessionDB()`` in a spawned child resolved ``~/.haos/state.db``
+    while the guard only denied ``~/.hermes/state.db``, so the child opened the developer's live
+    store unrefused. ``~/.hermes`` stays listed because the alias is still supported
+    (``is_haos_environment`` returns False for it) and is therefore a real store when present.
+    """
     try:
         home = Path(os.path.expanduser("~"))
         if sys.platform == "win32":
             base = os.environ.get("LOCALAPPDATA", "").strip()
-            root = Path(base) / "hermes" if base else home / "AppData" / "Local" / "hermes"
+            candidates = [
+                Path(base) / "hermes" if base else home / "AppData" / "Local" / "hermes"
+            ]
         else:
-            root = home / ".hermes"
-        return root.resolve()
+            candidates = []
+            # A root shell adopts the appliance node store, so that is the resolver's answer
+            # there (pwd-based, so immune to a patched Path.home).
+            node_store = _node_store_for_root_operator()
+            if node_store is not None:
+                candidates.append(node_store)
+            candidates.append(home / ".haos")
+            candidates.append(home / ".hermes")
     except Exception:
-        return None
+        return ()
+    roots: list[Path] = []
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except Exception:
+            continue
+        if resolved not in roots:
+            roots.append(resolved)
+    return tuple(roots)
+
+
+def _real_platform_state_root() -> Optional[Path]:
+    """The single root an env-less process on this host would resolve to, if any."""
+    roots = _real_platform_state_roots()
+    return roots[0] if roots else None
 
 
 #: Exported by the hermetic conftest alongside the HERMES_HOME redirect. Unlike

@@ -1036,19 +1036,33 @@ class TestFTS5Search:
         ]
         assert all("context" in row and row["context"] for row in default)
 
-    def test_search_projection_skips_context_enrichment_queries(self, db):
+    def test_search_projection_skips_context_enrichment_queries(self, db, monkeypatch):
         db.create_session(session_id="s1", source="cli")
         db.append_message("s1", role="user", content="before")
         db.append_message("s1", role="assistant", content="projectionneedle")
         db.append_message("s1", role="user", content="after")
 
         statements = []
-        read_conn = db._get_read_conn() or db._conn
-        traced_connections = [db._conn]
-        if read_conn is not db._conn:
-            traced_connections.append(read_conn)
-        for conn in traced_connections:
-            conn.set_trace_callback(statements.append)
+        traced_connections = []
+        # Trace EVERY connection the search can run on. The context window runs inside
+        # ``_finalize_search_matches`` through ``_read_ctx()``, which takes a read-only
+        # connection from the per-path pool (opening a fresh one on a miss) and only degrades
+        # to the writer under lock. Tracing the writer, or a read connection borrowed here,
+        # therefore observes NOTHING — the query lands on a connection this test never held,
+        # and the counter silently reads 0 for every projection. Install the trace where the
+        # read connections are created instead.
+        original_get_read_conn = SessionDB._get_read_conn
+
+        def traced_get_read_conn(self):
+            conn = original_get_read_conn(self)
+            if conn is not None:
+                conn.set_trace_callback(statements.append)
+                traced_connections.append(conn)
+            return conn
+
+        monkeypatch.setattr(SessionDB, "_get_read_conn", traced_get_read_conn)
+        db._conn.set_trace_callback(statements.append)
+        traced_connections.append(db._conn)
 
         def context_query_count():
             normalized = (" ".join(sql.upper().split()) for sql in statements)

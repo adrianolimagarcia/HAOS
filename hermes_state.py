@@ -35,7 +35,8 @@ from hermes_state_errors import (
     is_malformed_schema_error,
 )
 from hermes_state_guard import (
-    _STATE_DB_GUARD_BYPASS_ENV, _in_test_context, _is_production_state_db, _real_platform_state_root,
+    _STATE_DB_GUARD_BYPASS_ENV, _in_test_context, _is_production_state_db,
+    _real_platform_state_root, _real_platform_state_roots,
     _set_last_init_error, get_last_init_error,
 )
 from hermes_state_readpool import _READ_POOL_MAX, _proc_fd_targets, _read_budget_for
@@ -194,7 +195,7 @@ def _ensure_test_isolation(db_path: Path) -> None:
         resolved = Path(db_path).expanduser().resolve()
     except Exception:
         return
-    roots = [r for r in (_real_platform_state_root(),) if r is not None]
+    roots = list(_real_platform_state_roots())
     for extra in _STATE_DB_GUARD_EXTRA_DENY_ROOTS:
         try:
             roots.append(Path(extra).expanduser().resolve())
