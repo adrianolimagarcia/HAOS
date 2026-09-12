@@ -4,6 +4,7 @@ description: "Reviews code diffs to delete over-engineered code."
 version: "1.0.0"
 author: "Dietrich Gebert (@DietrichGebert)"
 license: "MIT"
+platforms: [linux, macos, windows]
 metadata:
   hermes:
     category: "software-development"

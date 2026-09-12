@@ -4,6 +4,7 @@ description: "Lazy senior dev mode: YAGNI, stdlib first, -54% LOC."
 version: "1.0.0"
 author: "Dietrich Gebert (@DietrichGebert)"
 license: "MIT"
+platforms: [linux, macos, windows]
 metadata:
   hermes:
     category: "software-development"
