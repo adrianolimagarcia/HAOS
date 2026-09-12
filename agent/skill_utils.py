@@ -758,6 +758,53 @@ def is_skill_description_truncated_for_prompt(frontmatter: Dict[str, Any]) -> bo
     return len(_normalize_skill_description(frontmatter)) > SKILL_PROMPT_DESC_LIMIT
 
 
+# Loadout cap (HAOS backlog P3 — docs/haos/RESEARCH_MEDIUM_ABSORPTION.md, Etapa 1, item B):
+# the literature recommends <= 20 tools per agent, so the always-on skills index is capped.
+# The cap limits the LOADOUT (which skills ship in the system prompt), never the park: skills
+# beyond it stay installed and load via skill_view/skills_list. Selection is deterministic —
+# ESSENTIAL_SKILLS first, then skills.loadout_pin, then alphabetical by (category, name).
+SKILL_LOADOUT_DEFAULT_LIMIT = 20
+
+
+def get_skill_loadout_limit() -> int:
+    """``skills.loadout_limit`` from config.yaml (0 = unlimited); default 20.
+
+    Contract: the value exposed here is the exact budget ``select_skill_loadout`` honors.
+    """
+    raw = _skills_cfg_get("loadout_limit")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return SKILL_LOADOUT_DEFAULT_LIMIT
+    return max(0, value)
+
+
+def get_skill_loadout_pins() -> Tuple[str, ...]:
+    """``skills.loadout_pin`` — names that always stay in the loadout (beyond ESSENTIAL_SKILLS).
+
+    Scalar or list; sorted so the selection priority is byte-stable across processes.
+    """
+    return tuple(sorted(_normalize_string_set(_skills_cfg_get("loadout_pin"))))
+
+
+def select_skill_loadout(
+    entries, *, limit: "Optional[int]" = None, essential: "frozenset[str]" = ESSENTIAL_SKILLS,
+    prioritized: "tuple[str, ...] | list[str] | set[str]" = (),
+):
+    """Deterministic loadout selection from ``(category, name, payload)`` entries.
+
+    Priority order: essential names first, then prioritized (pinned) names, then alphabetical
+    by (category, name) — the same stable order the index renderer uses today, so a large
+    budget changes nothing. ``limit`` <= 0 or None keeps every entry (no cap). Never raises
+    and never drops an entry from disk: it only decides what the always-on index lists.
+    """
+    prioritized_set = set(prioritized or ())
+    ordered = sorted(entries, key=lambda e: (e[1] not in essential, e[1] not in prioritized_set, e[0], e[1]))
+    if limit is None or limit <= 0:
+        return ordered
+    return ordered[:limit]
+
+
 def iter_skill_index_files(skills_dir: Path, filename: str):
     """Walk skills_dir yielding sorted paths matching *filename*; prunes
     EXCLUDED_SKILL_DIRS and support dirs of skill roots. Org mirrors are

@@ -25,7 +25,8 @@ from agent.runtime_cwd import resolve_agent_cwd
 from agent.skill_utils import (
     EXCLUDED_SKILL_DIRS, ORG_ACTIVE_MARKER, ORG_MIRROR_DIR_NAME, ORG_PROVENANCE_FILE, SKILL_SUPPORT_DIRS,
     extract_skill_conditions, extract_skill_description, get_all_skills_dirs, get_disabled_skill_names,
-    iter_skill_index_files, parse_frontmatter, read_active_org_id, skill_matches_environment,
+    get_skill_loadout_limit, get_skill_loadout_pins, iter_skill_index_files, parse_frontmatter,
+    read_active_org_id, select_skill_loadout, skill_matches_environment,
     skill_matches_platform, skill_matches_platform_list,
 )
 from tools.threat_patterns import scan_for_threats as _scan_for_threats
@@ -1257,9 +1258,12 @@ def build_skills_system_prompt(
     """Compact skill index for the system prompt.
 
     External dirs (``skills.external_dirs``) are read-only and lose name collisions to local skills.
-    ``compact_categories`` (coding posture) demotes categories to a names-only line — nothing is ever hidden.
-    ``skills_dir_override`` makes home resolution EXPLICIT: a build thread that never bound the HERMES_HOME
-    ContextVar would otherwise leak the default profile's skills into a bot's prompt.
+    ``compact_categories`` (coding posture) demotes categories to a names-only line — nothing is
+    ever hidden by demotion. ``skills.loadout_limit`` (default 20) caps the always-on index — the
+    loadout — to the literature's <= 20 tools/agent; over-limit skills stay on disk and load via
+    ``skill_view`` / ``skills_list``. ``skills_dir_override`` makes home resolution EXPLICIT: a
+    build thread that never bound the HERMES_HOME ContextVar would otherwise leak the default
+    profile's skills into a bot's prompt.
     """
     _home_token = None
     if skills_dir_override is not None:
@@ -1341,8 +1345,10 @@ def _render_skills_index(
     """Render the ## Skills block; "" when there is nothing to list."""
     if not skills_by_category:
         return ""
-    # Demoted categories collapse to one names-only line. NEVER drop entries — agent-created skills are the
-    # model's project memory and it won't rediscover them via skills_list. Nested categories follow their parent.
+    # Demoted categories collapse to one names-only line. NEVER drop entries during demotion —
+    # agent-created skills are the model's project memory and it won't rediscover them via
+    # skills_list. (The loadout cap is applied BEFORE rendering and is a separate, deliberate
+    # budget — see _apply_skill_loadout; over-limit skills stay on disk and load via skill_view.)
     demoted = frozenset(cat for cat in skills_by_category if cat.split("/", 1)[0] in (compact_categories or frozenset()))
     hidden_note = (
         "\n(Categories marked [names only] are outside the current coding "
@@ -1387,6 +1393,25 @@ def _render_skills_index(
     )
 
 
+def _apply_skill_loadout(
+    skills_by_category: dict[str, list[tuple[str, str]]], *, limit: int, prioritized: "tuple[str, ...]",
+) -> dict[str, list[tuple[str, str]]]:
+    """Cut the always-on index to the loadout budget (P3).
+
+    Deterministic: essential (hermes-agent) first, then ``skills.loadout_pin`` names, then
+    alphabetical by (category, name) — the same stable order the renderer already uses, so a
+    budget above the park size changes nothing. Skills beyond the cap are NOT removed from
+    disk: they remain installed and load via skill_view/skills_list (the cap is a prompt
+    budget, not a library prune).
+    """
+    flat = [(cat, name, desc) for cat in sorted(skills_by_category) for name, desc in skills_by_category[cat]]
+    selected = select_skill_loadout(flat, limit=limit, prioritized=prioritized)
+    regrouped: dict[str, list[tuple[str, str]]] = {}
+    for cat, name, desc in selected:
+        regrouped.setdefault(cat, []).append((name, desc))
+    return regrouped
+
+
 def _build_skills_system_prompt_inner(
     skills_dir: "Path", external_dirs: "list[Path]", available_tools: "set[str] | None",
     available_toolsets: "set[str] | None", compact_categories: "frozenset[str] | None",
@@ -1396,11 +1421,16 @@ def _build_skills_system_prompt_inner(
     _platform_hint = _current_session_platform_hint()
     disabled = get_disabled_skill_names(_platform_hint or None)
     project_dirs = project_dirs or []
+    # Loadout budget + pins are session-stable (config), so they belong in the cache key:
+    # changing the cap must re-render, exactly like changing the disabled list.
+    loadout_limit = get_skill_loadout_limit()
+    loadout_pins = get_skill_loadout_pins()
     cache_key = (
         str(skills_dir), tuple(str(d) for d in external_dirs), tuple(str(d) for d in project_dirs),
         tuple(sorted(str(t) for t in (available_tools or set()))),
         tuple(sorted(str(ts) for ts in (available_toolsets or set()))),
         _platform_hint, tuple(sorted(disabled)), tuple(sorted(compact_categories or ())),
+        ("loadout", loadout_limit, loadout_pins),
     )
     with _SKILLS_PROMPT_CACHE_LOCK:
         cached = _SKILLS_PROMPT_CACHE.get(cache_key)
@@ -1457,6 +1487,11 @@ def _build_skills_system_prompt_inner(
                               skills_by_category, desc_prefix="", log_fmt="Error reading external skill %s: %s")
         for cat, cat_desc in _read_category_descriptions(ext_dir, "Could not read external skill description %s: %s").items():
             category_descriptions.setdefault(cat, cat_desc)
+
+    # Loadout cap (P3): the always-on index ships at most `loadout_limit` skills; the rest of
+    # the park stays installed and loads via skill_view/skills_list. Budget 0 disables the cap.
+    if loadout_limit:
+        skills_by_category = _apply_skill_loadout(skills_by_category, limit=loadout_limit, prioritized=loadout_pins)
 
     result = _render_skills_index(skills_by_category, category_descriptions, compact_categories, available_tools)
     with _SKILLS_PROMPT_CACHE_LOCK:

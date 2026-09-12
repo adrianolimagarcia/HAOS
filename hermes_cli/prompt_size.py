@@ -128,6 +128,15 @@ def _compute_skills_breakdown(skills_block: str) -> List[Dict[str, Any]]:
     return entries
 
 
+def loadout_metrics(in_index: int, on_disk: int, limit: int) -> Dict[str, Any]:
+    """Capped-loadout numbers for the diagnostic: ``in_index`` skills shipped in the always-on
+    index out of ``on_disk`` installed, under budget ``limit`` (0 reads as unlimited -> None).
+
+    Contract: with a cap, in_index <= limit; without one, in_index == on_disk.
+    """
+    return {"limit": None if limit <= 0 else limit, "in_index": in_index, "on_disk": on_disk}
+
+
 def _compute_toolsets_breakdown(tools: List[Any]) -> List[Dict[str, Any]]:
     """Per-toolset schema-byte breakdown, largest-first (tie-broken by name). Each tool is
     attributed to its single canonical toolset so ``json_bytes`` sums to the grand total.
@@ -180,6 +189,12 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
         for label, text in (("stable (identity/guidance/skills)", stable), ("context (AGENTS.md/cwd files)", context),
                             ("volatile (memory/profile/timestamp)", volatile))
     ]
+    skills_breakdown = _compute_skills_breakdown(skills_index)
+    from agent.skill_utils import get_skill_loadout_limit
+    skills_loadout = loadout_metrics(
+        in_index=len(skills_breakdown), on_disk=len(_skill_md_paths_by_name()),
+        limit=get_skill_loadout_limit(),
+    )
     return {
         "platform": platform,
         "model": getattr(agent, "model", "") or "",
@@ -189,7 +204,8 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
         "user_profile": _size(user_block),
         "tools": {"count": len(tools), "json_bytes": _bytes(json.dumps(tools, ensure_ascii=False))},
         "sections": sections,
-        "skills_breakdown": _compute_skills_breakdown(skills_index),
+        "skills_breakdown": skills_breakdown,
+        "skills_loadout": skills_loadout,
         "toolsets_breakdown": _compute_toolsets_breakdown(tools),
     }
 
@@ -225,6 +241,10 @@ def render_breakdown(data: Dict[str, Any]) -> str:
             lines.append(f"    {name:<28} {md_str}  {sk['index_line_bytes']:>8,} B")
         if (remaining := len(skills) - len(shown)) > 0:
             lines.append(f"    … and {remaining} more (use --json for the full list)")
+    # Loadout: how many of the installed skills actually ship in the always-on index.
+    if (loadout := data.get("skills_loadout")) is not None:
+        cap = f"cap={loadout['limit']}" if loadout["limit"] else "uncapped"
+        lines.append(f"  Skills loadout    : {loadout['in_index']}/{loadout['on_disk']} in index ({cap})")
     return "\n".join(lines)
 
 

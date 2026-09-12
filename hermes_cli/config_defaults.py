@@ -1381,6 +1381,13 @@ DEFAULT_CONFIG = {
         # curator ledger` / `rollback <entry-id>`. Never a gate — failures can't block.
         # See #79686.
         "ledger": True,
+        # Loadout cap (HAOS P3): the always-on skills index in the system prompt carries at most
+        # `loadout_limit` skills (literature: <= 20 tools per agent). 0 = unlimited. Skills beyond
+        # the cap stay installed and load via skill_view / skills_list — the cap never deletes.
+        "loadout_limit": 20,
+        # Names that always stay in the loadout regardless of the cap (beyond the essential
+        # hermes-agent). Selection priority: essential -> pins -> alphabetical (category, name).
+        "loadout_pin": [],
     },
 
     # Curator — background maintenance of AGENT-CREATED skills (never hub-installed): marks
