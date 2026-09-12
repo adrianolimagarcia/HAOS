@@ -7,7 +7,6 @@ the known-fragile core packages, using the pins from pyproject.toml).
 """
 
 from __future__ import annotations
-from hermes_constants import product_command
 
 import importlib
 import os
@@ -477,6 +476,12 @@ def _complete_pending_core_install(root: Path, core_marker: Path) -> bool:
         if not _claim_recovery_lock(root):
             return False
         try:
+            # Import local de propósito: este módulo roda ANTES das dependências do venv
+            # existirem e o import do topo precisa ser stdlib-only
+            # (tests/hermes_cli/test_early_recovery.py). A marcação do comando só é
+            # necessária aqui, quando o ambiente já está de pé.
+            from hermes_constants import product_command
+
             print("⚠ A previous `" + product_command("update") + "` was interrupted mid-install — " +
                   "finishing dependency installation now (before any native " +
                   "extensions load)...", file=sys.stderr)
