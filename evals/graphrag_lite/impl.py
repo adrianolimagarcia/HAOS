@@ -829,8 +829,52 @@ def case_topo_recuperacao():
     return None
 
 
+def case_ab_rrf_linear():
+    """Pergunta: RRF e mistura linear, sobre as MESMAS listas ranqueadas do
+    store real, produzem metricas de topo comparaveis e reportadas?"""
+    from evals.graphrag_lite.measure_topo import (
+        build_scenarios,
+        run_ab_comparison,
+    )
+
+    scenarios = build_scenarios()
+    if len(scenarios) < 5:
+        fail(f"A/B com {len(scenarios)} cenarios (< 5)")
+    comp = run_ab_comparison(scenarios)
+    for method in ("rrf", "linear"):
+        m = comp["metrics"].get(method)
+        if not isinstance(m, dict):
+            fail(f"metrica ausente para {method}: {m!r}")
+        for key in ("top1_hit_rate", "mean_mrr"):
+            v = m.get(key)
+            if not (isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0):
+                fail(f"A/B {method}.{key} fora de [0,1]: {v!r}")
+    again = run_ab_comparison(scenarios)
+    if again["metrics"] != comp["metrics"]:
+        fail(f"A/B nao-deterministico: {comp['metrics']} != {again['metrics']}")
+    if comp["scenario_count"] != len(scenarios):
+        fail(f"A/B rodou {comp['scenario_count']} cenarios != {len(scenarios)}")
+    lines = [
+        "A/B RRF vs linear (mesmas listas do store real):",
+        f"  RRF    top-1={comp['metrics']['rrf']['top1_hit_rate']:.3f} "
+        f"MRR={comp['metrics']['rrf']['mean_mrr']:.3f}",
+        f"  linear top-1={comp['metrics']['linear']['top1_hit_rate']:.3f} "
+        f"MRR={comp['metrics']['linear']['mean_mrr']:.3f}",
+        "  nenhum vencedor escolhido: a comparacao e o entregavel",
+    ]
+    for s in comp["scenarios"]:
+        lines.append(
+            f"  [{s['id']}] rrf_top1={'SIM' if s['rrf_top1'] else 'nao'} "
+            f"(mrr {s['rrf_mrr']:.3f}) | linear_top1="
+            f"{'SIM' if s['linear_top1'] else 'nao'} (mrr {s['linear_mrr']:.3f})"
+        )
+    print("PASS: " + "\n".join(lines))
+    return None
+
+
 _CASES = {
     "topo-recuperacao": case_topo_recuperacao,
+    "ab-rrf-linear": case_ab_rrf_linear,
     "graphrag-extrai-relacoes-linha": case_graphrag_extrai_relacoes_linha,
     "graphrag-extrai-entidades": case_graphrag_extrai_entidades,
     "graphrag-extrai-idempotente": case_graphrag_extrai_idempotente,

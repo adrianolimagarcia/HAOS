@@ -201,6 +201,47 @@ class ReciprocalRankFusion:
         return sorted_items
 
 
+class LinearScoreFusion:
+    """Mistura linear (backlog HAOS P7 — Etapa 4): a contraparte score-based
+    do RRF (rank-based) para o A/B de fusão.
+
+    Interpretação documentada (a spec só diz "A/B de RRF contra a mistura
+    linear"): RRF soma pesos por RANK (w/(k+rank)); a mistura linear soma
+    pesos por SCORE NORMALIZADO por lista (min-max por lista):
+    score(d) = SUM_i w_i * norm_i(d). Item ausente de uma lista contribui 0;
+    lista com span zero (max==min) normaliza para 0.5 (neutro). Pool fechado
+    (só ids das listas de entrada) e determinística. Nenhum vencedor é
+    escolhido no código: os dois fusores existem e o harness do A/B compara
+    e reporta (decisão fica para o humano com o número na mesa).
+    """
+
+    @staticmethod
+    def fuse(
+        rankings: List[List[Tuple[str, float]]],
+        weights: Optional[List[float]] = None,
+    ) -> List[Tuple[str, float]]:
+        """Funde listas ranqueadas por combinação linear de scores normalizados."""
+        if not rankings:
+            return []
+
+        weights = weights or [1.0] * len(rankings)
+        scores: Dict[str, float] = {}
+
+        for r_idx, ranked_items in enumerate(rankings):
+            w = weights[r_idx] if r_idx < len(weights) else 1.0
+            if not ranked_items:
+                continue
+            raw = [s for _, s in ranked_items]
+            lo, hi = min(raw), max(raw)
+            span = hi - lo
+            for item_id, s in ranked_items:
+                norm = 0.5 if span == 0 else (s - lo) / span
+                scores[item_id] = scores.get(item_id, 0.0) + w * norm
+
+        # Sort estável desc: empates mantêm a ordem de inserção (determinístico).
+        return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+
 class RetrievalBudget:
     """Kill-switch por orçamento (backlog HAOS P6 — Etapa 4).
 
@@ -373,6 +414,124 @@ class RAGFlowStore:
         # Quote each token to prevent FTS5 syntax exceptions
         return " OR ".join(f'"{t}"' for t in tokens)
 
+    @staticmethod
+    def _chunk_from_row(r) -> DocumentChunk:
+        """Constrói um DocumentChunk a partir de uma linha do schema relacional."""
+        return DocumentChunk(
+            chunk_id=r["id"],
+            doc_id=r["doc_id"],
+            doc_path=r["doc_path"],
+            breadcrumb=json.loads(r["breadcrumb_json"] or "[]"),
+            header_path=r["header_path"],
+            content=r["content"],
+            start_line=int(r["start_line"]),
+            end_line=int(r["end_line"]),
+            provenance_anchor=r["provenance_anchor"],
+            metadata=json.loads(r["metadata_json"] or "{}"),
+            created_at=float(r["created_at"]),
+        )
+
+    def _build_rank_lists(
+        self,
+        conn: sqlite3.Connection,
+        clean_q: str,
+        fts_query: str,
+        tokens: List[str],
+        limit: int,
+        budget: RetrievalBudget,
+    ) -> "Tuple[List[Tuple[str, float]], List[Tuple[str, float]]]":
+        """Listas ranqueadas cruas (FTS5 BM25, lexical) — a MESMA entrada que
+        a fusão recebe (compartilhada entre ``hybrid_search`` e ``rank_lists``,
+        para o A/B do P7 aplicar RRF e mistura linear a listas idênticas).
+        A passada léxica é orçamentada (kill-switch do P6)."""
+        # 1. FTS5 BM25 Ranking
+        fts_ranked: List[Tuple[str, float]] = []
+        if fts_query:
+            try:
+                rows = conn.execute("""
+                    SELECT id, bm25(haos_rag_fts) AS rank_score
+                    FROM haos_rag_fts
+                    WHERE haos_rag_fts MATCH ?
+                    ORDER BY rank_score ASC
+                    LIMIT ?;
+                """, (fts_query, limit * 3)).fetchall()
+                fts_ranked = [(r["id"], float(r["rank_score"])) for r in rows]
+            except Exception as exc:
+                logger.warning("FTS5 query failed (%s): %s", fts_query, exc)
+
+        # 2. Token Overlap & Semantic Breadcrumb Ranking (orçamentada — P6)
+        all_chunks_rows = conn.execute("""
+            SELECT id, doc_path, header_path, content FROM haos_rag_chunks
+            ORDER BY created_at DESC LIMIT 200;
+        """).fetchall()
+
+        lexical_candidates: List[Tuple[str, float]] = []
+        for r in all_chunks_rows:
+            if not budget.consume():
+                break  # kill-switch: orçamento esgotado — para de avaliar
+            cid = r["id"]
+            text_blob = f"{r['doc_path']} {r['header_path']} {r['content']}".lower()
+            matches = sum(1 for t in tokens if t in text_blob)
+            if matches > 0:
+                score = matches / max(len(tokens), 1)
+                # Boost exact query phrase
+                if clean_q.lower() in text_blob:
+                    score += 1.0
+                lexical_candidates.append((cid, score))
+
+        lexical_candidates.sort(key=lambda x: x[1], reverse=True)
+        return fts_ranked, lexical_candidates[: limit * 3]
+
+    def rank_lists(
+        self,
+        query_str: str,
+        limit: int = 5,
+        max_candidates: Optional[int] = None,
+    ) -> "Tuple[List[Tuple[str, float]], List[Tuple[str, float]]]":
+        """Listas ranqueadas cruas antes da fusão (P7 — A/B de fusão).
+
+        Devolve ``(fts_ranked, lexical_ranked)`` — exatamente o que
+        ``hybrid_search`` funde — para os dois fusores (RRF e mistura linear)
+        receberem a MESMA entrada na comparação. ``max_candidates`` repassa o
+        orçamento do P6 à passada léxica. Consulta vazia devolve duas listas
+        vazias.
+        """
+        clean_q = query_str.strip()
+        if not clean_q:
+            return [], []
+        budget = RetrievalBudget(max_candidates)
+        fts_query = self._sanitize_fts_query(clean_q)
+        tokens = [t.lower() for t in re.findall(r"\b\w+\b", clean_q)]
+        with self._lock, self._get_connection() as conn:
+            return self._build_rank_lists(conn, clean_q, fts_query, tokens, limit, budget)
+
+    def chunks_by_id(
+        self,
+        ids: List[str],
+        conn: "Optional[sqlite3.Connection]" = None,
+    ) -> List[DocumentChunk]:
+        """Resolve ids fundidos para DocumentChunk na ordem dada (pool fechado).
+
+        ``conn`` é para chamadores que JÁ seguram ``self._lock`` (ex.:
+        ``hybrid_search``) — sem ele o método abre conexão própria e toma o
+        lock sozinho.
+        """
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+
+        def _fetch(c: sqlite3.Connection) -> List[DocumentChunk]:
+            rows = c.execute(f"""
+                SELECT * FROM haos_rag_chunks WHERE id IN ({placeholders});
+            """, ids).fetchall()
+            by_id = {r["id"]: self._chunk_from_row(r) for r in rows}
+            return [by_id[cid] for cid in ids if cid in by_id]
+
+        if conn is not None:
+            return _fetch(conn)
+        with self._lock, self._get_connection() as own:
+            return _fetch(own)
+
     def hybrid_search(
         self,
         query_str: str,
@@ -400,43 +559,9 @@ class RAGFlowStore:
         tokens = [t.lower() for t in re.findall(r"\b\w+\b", clean_q)]
 
         with self._lock, self._get_connection() as conn:
-            # 1. FTS5 BM25 Ranking
-            fts_ranked: List[Tuple[str, float]] = []
-            if fts_query:
-                try:
-                    rows = conn.execute("""
-                        SELECT id, bm25(haos_rag_fts) AS rank_score
-                        FROM haos_rag_fts
-                        WHERE haos_rag_fts MATCH ?
-                        ORDER BY rank_score ASC
-                        LIMIT ?;
-                    """, (fts_query, limit * 3)).fetchall()
-                    fts_ranked = [(r["id"], float(r["rank_score"])) for r in rows]
-                except Exception as exc:
-                    logger.warning("FTS5 query failed (%s): %s", fts_query, exc)
-
-            # 2. Token Overlap & Semantic Breadcrumb Ranking (orçamentada — P6)
-            all_chunks_rows = conn.execute("""
-                SELECT id, doc_path, header_path, content FROM haos_rag_chunks
-                ORDER BY created_at DESC LIMIT 200;
-            """).fetchall()
-
-            lexical_candidates: List[Tuple[str, float]] = []
-            for r in all_chunks_rows:
-                if not budget.consume():
-                    break  # kill-switch: orçamento esgotado — para de avaliar
-                cid = r["id"]
-                text_blob = f"{r['doc_path']} {r['header_path']} {r['content']}".lower()
-                matches = sum(1 for t in tokens if t in text_blob)
-                if matches > 0:
-                    score = matches / max(len(tokens), 1)
-                    # Boost exact query phrase
-                    if clean_q.lower() in text_blob:
-                        score += 1.0
-                    lexical_candidates.append((cid, score))
-
-            lexical_candidates.sort(key=lambda x: x[1], reverse=True)
-            lexical_ranked = lexical_candidates[: limit * 3]
+            fts_ranked, lexical_ranked = self._build_rank_lists(
+                conn, clean_q, fts_query, tokens, limit, budget,
+            )
 
             # 3. Fuse with Reciprocal Rank Fusion
             fused = ReciprocalRankFusion.fuse([fts_ranked, lexical_ranked], k=k_rrf)
@@ -449,28 +574,7 @@ class RAGFlowStore:
                 }
                 return []
 
-            # Fetch final chunks in fused order
-            placeholders = ",".join("?" for _ in top_ids)
-            chunk_rows = conn.execute(f"""
-                SELECT * FROM haos_rag_chunks WHERE id IN ({placeholders});
-            """, top_ids).fetchall()
-
-            chunks_by_id = {
-                r["id"]: DocumentChunk(
-                    chunk_id=r["id"],
-                    doc_id=r["doc_id"],
-                    doc_path=r["doc_path"],
-                    breadcrumb=json.loads(r["breadcrumb_json"] or "[]"),
-                    header_path=r["header_path"],
-                    content=r["content"],
-                    start_line=int(r["start_line"]),
-                    end_line=int(r["end_line"]),
-                    provenance_anchor=r["provenance_anchor"],
-                    metadata=json.loads(r["metadata_json"] or "{}"),
-                    created_at=float(r["created_at"]),
-                )
-                for r in chunk_rows
-            }
+            chunks_by_id = {c.chunk_id: c for c in self.chunks_by_id(top_ids, conn=conn)}
 
             self.last_search_budget = {
                 "evaluated": budget.used, "hit": budget.tripped,

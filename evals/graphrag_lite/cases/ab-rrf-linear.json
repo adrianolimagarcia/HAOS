@@ -1,0 +1,11 @@
+{
+  "id": "ab-rrf-linear",
+  "pergunta": "RRF e mistura linear, aplicados as MESMAS listas ranqueadas do store real, produzem metricas de topo reportaveis?",
+  "descricao": "A/B de fusao (backlog HAOS P7 — Etapa 4): RRF (ReciprocalRankFusion, ja existente) contra a MISTURA LINEAR (LinearScoreFusion, combinacao ponderada de scores normalizados) sobre as mesmas listas ranqueadas geradas pelo RAGFlowStore real (rank_lists). Metrica: top-1 hit rate e MRR no corpus rotulado deterministico do harness do P4. O caso reporta os dois numeros e NAO escolhe vencedor — comparar e o entregavel. Falha se as metricas sairem de [0,1], se os metodos nao rodarem sobre os mesmos cenarios ou se a segunda passada divergir.",
+  "tags": ["ab", "fusao", "rrf", "linear", "p7"],
+  "timeout": 120,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('ab-rrf-linear')"
+  }
+}

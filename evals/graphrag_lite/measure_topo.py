@@ -169,6 +169,96 @@ def run_measurement(scenarios: List[Scenario]) -> Dict[str, Any]:
     return {"scenarios": per_scenario, "aggregate": aggregate}
 
 
+# ── A/B de fusão (P7): RRF vs mistura linear — as MESMAS listas ───────────────
+
+def _fused_top(
+    rankings: "List[List[Tuple[str, float]]]",
+    store: Any,
+    *,
+    linear: bool,
+) -> List[Any]:
+    """Aplica o fusor (RRF ou mistura linear) às listas cruas e resolve o topo
+    para DocumentChunk (doc_path) com o pool fechado do store real."""
+    from hermes.platform.memory.ragflow_engine import (
+        LinearScoreFusion,
+        ReciprocalRankFusion,
+    )
+
+    if linear:
+        fused = LinearScoreFusion.fuse(rankings)
+    else:
+        fused = ReciprocalRankFusion.fuse(rankings, k=60)
+    top_ids = [cid for cid, _ in fused[:5]]
+    return store.chunks_by_id(top_ids)
+
+
+def _ab_scenario_metrics(
+    scenario: Scenario,
+    store: Any,
+    rankings: "List[List[Tuple[str, float]]]",
+) -> Dict[str, Any]:
+    """Metricas (top1 hit, mrr) de UMA consulta para UMA estrategia de fusao."""
+    chunks = _fused_top(rankings, store, linear=False)
+    top_doc = chunks[0].doc_path if chunks else ""
+    rrf = {
+        "top1_hit": _top1_hit(top_doc, scenario.expected_doc),
+        "mrr": _mrr(chunks, scenario.expected_doc),
+    }
+    chunks = _fused_top(rankings, store, linear=True)
+    top_doc = chunks[0].doc_path if chunks else ""
+    linear = {
+        "top1_hit": _top1_hit(top_doc, scenario.expected_doc),
+        "mrr": _mrr(chunks, scenario.expected_doc),
+    }
+    return {"rrf": rrf, "linear": linear}
+
+
+def run_ab_comparison(scenarios: List[Scenario]) -> Dict[str, Any]:
+    """A/B reproduzível (P7): RRF contra a mistura linear sobre as MESMAS
+    listas ranqueadas do store real, para cada cenario do corpus rotulado.
+
+    Resultado REPORTADO (nunca usado para escolher vencedor no código):
+    ``metrics.{rrf,linear}.{top1_hit_rate,mean_mrr}`` + o topo por cenario.
+    Determinístico: duas chamadas devolvem o mesmo dict.
+    """
+    from hermes.platform.memory.ragflow_engine import RAGFlowStore
+
+    tallies = {"rrf": {"hits": 0, "mrr": 0.0}, "linear": {"hits": 0, "mrr": 0.0}}
+    per_scenario: List[Dict[str, Any]] = []
+    n = max(len(scenarios), 1)
+
+    for scenario in scenarios:
+        with tempfile.TemporaryDirectory(prefix="ab-eval-") as td:
+            store = RAGFlowStore(Path(td) / "rag.db")
+            for doc_path, markdown in scenario.docs:
+                store.index_document(doc_path, markdown, doc_id=doc_path)
+            fts, lexical = store.rank_lists(scenario.query, limit=5)
+            metrics = _ab_scenario_metrics(scenario, store, [fts, lexical])
+            for method in ("rrf", "linear"):
+                tallies[method]["hits"] += int(metrics[method]["top1_hit"])
+                tallies[method]["mrr"] += metrics[method]["mrr"]
+            per_scenario.append({
+                "id": scenario.id,
+                "rrf_top1": metrics["rrf"]["top1_hit"],
+                "rrf_mrr": metrics["rrf"]["mrr"],
+                "linear_top1": metrics["linear"]["top1_hit"],
+                "linear_mrr": metrics["linear"]["mrr"],
+            })
+
+    metrics = {
+        method: {
+            "top1_hit_rate": tallies[method]["hits"] / n,
+            "mean_mrr": tallies[method]["mrr"] / n,
+        }
+        for method in ("rrf", "linear")
+    }
+    return {
+        "scenario_count": len(scenarios),
+        "scenarios": per_scenario,
+        "metrics": metrics,
+    }
+
+
 def main(argv: "Optional[List[str]]" = None) -> int:
     """Uso direto: python evals/graphrag_lite/measure_topo.py — imprime o
     report do topo atual (RRF, como o store real faz hoje) e sai 0."""
