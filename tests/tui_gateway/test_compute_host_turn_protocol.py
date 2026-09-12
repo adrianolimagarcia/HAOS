@@ -25,7 +25,17 @@ def _frames(out: io.StringIO) -> list[dict]:
     return [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
 
 
-def _wait(out: io.StringIO, predicate, timeout: float = 5.0) -> dict:
+# Liveness guard, NOT a timing assertion. ``turn.end`` is emitted only after the turn thread's
+# post-``message.complete`` settle path finishes, and that path is expensive COLD: the first
+# ``server._session_info(...)`` build (lazy imports plus skills/MCP scans) measured 778ms of an
+# 820ms ``_emit_settled_session_info`` span (2.30s for that span under heavier load), and
+# ``_prepare_turn_input`` costs 0.19-0.62s before the deltas ever start -- all of it ~0.1s warm.
+# Cold, under the runner's default 16 workers on 8 cores, ``turn.start`` -> ``turn.end`` measured
+# 0.97s / 2.33s / 4.19s (min/median/max over 8 fresh processes), and one reproduced failure still
+# had no ``turn.end`` 5.0s in (its ``session.info`` landed 3.53s after ``message.complete``). The
+# previous 5.0s bound sat inside that distribution and failed ~1 run in 12; a real hang still
+# fails, just later.
+def _wait(out: io.StringIO, predicate, timeout: float = 30.0) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         for frame in _frames(out):
