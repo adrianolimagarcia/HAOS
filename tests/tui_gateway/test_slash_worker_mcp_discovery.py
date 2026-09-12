@@ -99,9 +99,13 @@ def test_profile_local_mcp_tool_is_visible_in_slash_worker(tmp_path):
         proc.stdin.write(json.dumps({"id": 1, "command": "/tools"}) + "\n")
         proc.stdin.flush()
         try:
-            line = output.get(timeout=10)
+            # Generous: the worker is a real subprocess doing MCP discovery + profile setup, and
+            # 10s was not enough on a loaded 16-worker/8-core run (FLAKY: no /tools response).
+            # Nothing competes for this bound — the test only needs the response to arrive — so
+            # more room cannot mask a bug, it only delays a real failure.
+            line = output.get(timeout=60)
         except queue.Empty:
-            pytest.fail("slash worker produced no /tools response within 10 seconds")
+            pytest.fail("slash worker produced no /tools response within 60 seconds")
         response = json.loads(line)
         assert response["ok"] is True
         assert "mcp__profileprobe__hermes_61922_profile_probe" in response["output"]
