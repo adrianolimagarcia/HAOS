@@ -38,8 +38,8 @@ def _add_server_runtime_args(parser) -> None:
     # Internal: set by the unified-launch re-exec to preselect the launching profile.
     parser.add_argument("--open-profile", dest="open_profile", default="", help=argparse.SUPPRESS)
     # Lifecycle flags win over the start-a-server flags (they exit first). No service
-    # manager / PID file: they scan the process table for `hermes dashboard|serve`
-    # cmdlines and SIGTERM them — the same path `hermes update` uses.
+    # manager / PID file: they scan the process table for `haos dashboard|serve`
+    # cmdlines and SIGTERM them — the same path `haos update` uses.
     parser.add_argument(
         "--stop", action="store_true", help="Stop all running Hermes web server processes and exit")
     parser.add_argument(
@@ -84,7 +84,7 @@ def build_dashboard_parser(
     _add_server_runtime_args(dashboard_parser)
     dashboard_parser.add_argument(
         "--no-open", action="store_true", help="Don't open browser automatically")
-    # Compat shim: desktop shells <= 0.15.x spawn `hermes dashboard --no-open --tui ...`;
+    # Compat shim: desktop shells <= 0.15.x spawn `haos dashboard --no-open --tui ...`;
     # `--tui` was removed (embedded chat always on). Accept + ignore so an old app with a
     # new CLI doesn't die on "unrecognized arguments". Drop once the app floor is > 0.16.0.
     dashboard_parser.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)
@@ -101,7 +101,7 @@ def build_dashboard_parser(
             "a browser UI.")
     _configure_serve_parser(serve_parser, cmd_dashboard=cmd_dashboard)
 
-    # `register` is nested so bare `hermes dashboard` keeps launching the server.
+    # `register` is nested so bare `haos dashboard` keeps launching the server.
     dashboard_subparsers = dashboard_parser.add_subparsers(dest="dashboard_subcommand")
     dashboard_register_parser = dashboard_subparsers.add_parser(
         "register",

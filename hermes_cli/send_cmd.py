@@ -168,7 +168,7 @@ def cmd_send(args: argparse.Namespace) -> None:
     """Entry point wired into the top-level argparse dispatcher."""
     _load_hermes_env()  # the downstream gateway config loader reads credentials from os.environ
     if getattr(args, "list_targets", False):  # --list short-circuits everything else
-        # `hermes send --list telegram` lands "telegram" in the `message` positional.
+        # `haos send --list telegram` lands "telegram" in the `message` positional.
         exit_code = _list_targets(getattr(args, "message", None), json_mode=getattr(args, "json", False))
         sys.exit(exit_code)
     target = (getattr(args, "to", None) or "").strip()
@@ -192,7 +192,7 @@ def cmd_send(args: argparse.Namespace) -> None:
     if subject:
         message = f"{subject}\n\n{message.lstrip()}"
 
-    # Lazy import keeps `hermes send --help` fast (no tool registry / gateway config stack).
+    # Lazy import keeps `haos send --help` fast (no tool registry / gateway config stack).
     from tools.send_message_tool import send_message_tool
 
     # Routes to the platform adapter (bot-token path for built-ins, live-adapter path for plugin

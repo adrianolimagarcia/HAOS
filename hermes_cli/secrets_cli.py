@@ -17,7 +17,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 # The Bitwarden backend pulls in ``cryptography`` at import time; on Windows that mapped native
-# module makes the ``hermes update`` self-lock preflight defer. This module is registered
+# module makes the ``haos update`` self-lock preflight defer. This module is registered
 # parse-time from ``hermes_cli.main``, so the backend import stays lazy (nothing touches ``bw``
 # until a handler runs) and ``_BWS_VERSION`` is duplicated here for the ``install --help`` text.
 # ``agent.secret_sources.bitwarden._BWS_VERSION`` is the source of truth; bump both together.

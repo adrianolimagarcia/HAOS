@@ -241,14 +241,14 @@ class CLIAgentSetupMixin:
         self.base_url = base_url
 
         # A custom_provider entry's explicit `model` wins when the CLI model is unset or
-        # is just the provider slug/display name (`hermes chat --model <provider-name>`
+        # is just the provider slug/display name (`haos chat --model <provider-name>`
         # would otherwise send the provider name as the model string -> 400).
         runtime_model = runtime.get("model")
         if runtime_model and isinstance(runtime_model, str) and (
             not self.model or self.model == self.provider or self.model == runtime.get("name")):
             self.model = runtime_model
 
-        # Still empty (e.g. `hermes auth add` without `hermes model`): fall back to the
+        # Still empty (e.g. `haos auth add` without `haos model`): fall back to the
         # provider's first catalog model so the API doesn't reject an empty model.
         if not self.model and resolved_provider:
             try:
@@ -440,7 +440,7 @@ class CLIAgentSetupMixin:
         from cli import ChatConsole, _DIM, _RST, _accent_hex, _cprint
         session_meta = self._session_db.get_session(self.session_id)
         # Quiet mode (tool_progress_mode == "off") routes resume status lines to
-        # stderr so stdout stays machine-readable for `$(hermes chat -Q --resume ...)`.
+        # stderr so stdout stays machine-readable for `$(haos chat -Q --resume ...)`.
         # Without this, the resume banner pollutes captured stdout. See #11793.
         _quiet_mode = getattr(self, "tool_progress_mode", "full") == "off"
 

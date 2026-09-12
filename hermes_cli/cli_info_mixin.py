@@ -207,7 +207,7 @@ class CLIInfoMixin:
             self._console_print("[dim]   Switch with: /model sonnet  or  /model gpt5[/]")
 
         # Project-local skills one-liner: trusted → count; untrusted-with-skills → point at
-        # `hermes skills trust`. Never raises.
+        # `haos skills trust`. Never raises.
         try:
             from agent.skill_utils import (
                 get_project_skills_dirs, get_untrusted_project_skills_root, iter_skill_index_files)

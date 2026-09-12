@@ -55,7 +55,7 @@ if tools were lost).
 
 `ModelContextProtocol.GenerateClientConfig` writes config files for Claude
 Code/Cursor/VSCode/Gemini/Codex into the project root. Hermes' connection
-lives in `~/.hermes/config.yaml` via `hermes mcp install unreal-engine`.
+lives in `~/.hermes/config.yaml` via `haos mcp install unreal-engine`.
 Running GenerateClientConfig neither helps nor harms Hermes — just don't
 mistake it for the Hermes setup step.
 

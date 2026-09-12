@@ -589,7 +589,7 @@ def _profile_info(args):
     print()
 
 
-# Order mirrors the original if/elif chain; None = bare ``hermes profile``.
+# Order mirrors the original if/elif chain; None = bare ``haos profile``.
 PROFILE_ACTIONS = {
     None: _profile_status,
     'list': _profile_list,

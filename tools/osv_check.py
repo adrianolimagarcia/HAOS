@@ -20,7 +20,7 @@ _OSV_ENDPOINT = os.getenv("OSV_ENDPOINT", "https://api.osv.dev/v1/query")
 _TIMEOUT = 10  # seconds
 
 # Result cache: (ecosystem, package, version) -> (expiry_wallclock, result). Reconnect
-# ladders, parked-server self-probes and repeated `hermes mcp test` runs re-run the preflight
+# ladders, parked-server self-probes and repeated `haos mcp test` runs re-run the preflight
 # for the SAME package on every spawn; uncached, a flapping server becomes a sustained OSV/DNS
 # query stream. Clean AND blocked verdicts are reusable; network failures are NOT cached
 # (fail-open covers them and caching one could mask a real advisory later).

@@ -20,7 +20,7 @@ from typing import Callable
 
 from hermes_cli.curses_ui import MenuNavigationEvent, MenuNavigationStart
 # Config helpers are re-exported (tests patch them on this module). display_hermes_home is
-# imported lazily at call sites (stale-module safety during hermes update).
+# imported lazily at call sites (stale-module safety during haos update).
 from hermes_cli.config import (
     cfg_get, DEFAULT_CONFIG, get_hermes_home, get_config_path, get_env_path, load_config, save_config,
     save_env_value, remove_env_value, get_env_value, ensure_hermes_home,
@@ -386,7 +386,7 @@ def setup_model_provider(config: dict, *, quick: bool = False):
 
     # Re-sync from disk in place: cmd_model saved via its own load/save cycle and the wizard's
     # final save_config(config) must not clobber it with stale values. Rotation, vision and TTS
-    # keep safe defaults (configure via `hermes auth add` / `hermes setup tts`).
+    # keep safe defaults (configure via `haos auth add` / `haos setup tts`).
     config.clear()
     config.update(load_config())
     save_config(config)

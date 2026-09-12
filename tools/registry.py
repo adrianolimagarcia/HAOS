@@ -196,7 +196,7 @@ _OVERRIDE_DENIED_MSG = (
 
 # ---- check_fn TTL cache ----------------------------------------------------
 # check_fns probe external state (Docker, Modal SDK, playwright) that changes on human
-# timescales, so results are cached ~30 s: env-var flips via ``hermes tools`` still land
+# timescales, so results are cached ~30 s: env-var flips via ``haos tools`` still land
 # within a turn or two. Transient-failure suppression: a flapping probe (``docker version``
 # timing out under load) would silently strip a whole toolset from the agent being built —
 # most visibly a subagent reporting "Tool read_file does not exist" — so a failure within a

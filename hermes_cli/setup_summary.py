@@ -132,7 +132,7 @@ def _image_gen_row(config, feats):
 
 
 def _video_gen_row(config, feats):
-    # Opt-in via `hermes tools` → Video Generation. Only show the row when a plugin reports
+    # Opt-in via `haos tools` → Video Generation. Only show the row when a plugin reports
     # available so we don't badger users who don't care about video gen with a "missing" line.
     if feats.video_gen.managed_by_nous:
         return ("Video Generation (FAL via Nous subscription)", True, None)
@@ -173,7 +173,7 @@ def _home_assistant_row(config, feats):
 
 
 def _spotify_row(config, feats):
-    # OAuth via hermes auth spotify — check auth.json, not env vars
+    # OAuth via haos auth spotify — check auth.json, not env vars
     try:
         from hermes_cli.auth import get_provider_auth_state
         state = get_provider_auth_state("spotify") or {}

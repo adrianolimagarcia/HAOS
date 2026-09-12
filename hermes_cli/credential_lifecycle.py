@@ -153,7 +153,7 @@ def purge_env_credential_references(
     """
     pruned = _prune_env_pool_entries(env_var)
     providers = sorted(set(pruned) | set(_providers_for_env_var(env_var)))
-    # Make the removal sticky the same way `hermes auth remove` does: a lingering shell export (or
+    # Make the removal sticky the same way `haos auth remove` does: a lingering shell export (or
     # another live process's os.environ) would otherwise re-seed the pool entry on the next
     # load_pool(). The save path lifts the suppression on an explicit re-add.
     _for_each_provider(providers, "hermes_cli.auth.suppress_credential_source", f"env:{env_var}")

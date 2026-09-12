@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Query helper for the HAOS Codebase Wiki graph.
 
-Reads ``graph.json`` produced by ``hermes codebase-wiki`` and answers
+Reads ``graph.json`` produced by ``haos codebase-wiki`` and answers
 structural questions: edges touching a node, shortest path between two nodes,
 god nodes. Stdlib-only and offline so it can run anywhere the wiki lives.
 
@@ -14,6 +14,7 @@ Usage:
 """
 
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import json
@@ -34,7 +35,7 @@ def default_graph_path() -> Path:
 
 def load_graph(path: Path) -> Dict[str, Any]:
     if not path.is_file():
-        sys.exit(f"graph not found: {path} — run `hermes codebase-wiki` first")
+        sys.exit(f"graph not found: {path} — run `{product_command('codebase-wiki')}` first")
     return json.loads(path.read_text(encoding="utf-8"))
 
 

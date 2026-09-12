@@ -967,7 +967,7 @@ def run_curator_review(
 
     # Persist before the LLM pass so a crash mid-review still records the run.
     # Dry-run does NOT bump last_run_at/run_count (a preview must not push the
-    # next real pass out) but still records a summary for `hermes curator status`.
+    # next real pass out) but still records a summary for `haos curator status`.
     prefix = "dry-run auto: " if dry_run else "auto: "
     state = {**load_state(), "last_run_summary": f"{prefix}{auto_summary}"}
     if not dry_run:
@@ -986,7 +986,7 @@ def run_curator_review(
             llm_meta = _llm_meta("skipped (consolidation off)")
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
         state2 = {**load_state(), "last_run_duration_seconds": elapsed, "last_run_summary": final_summary}
-        # Per-run report, best-effort; path recorded for `hermes curator status`.
+        # Per-run report, best-effort; path recorded for `haos curator status`.
         try:
             report_path = _write_run_report(
                 started_at=start, elapsed_seconds=elapsed, auto_counts=counts, auto_summary=auto_summary,

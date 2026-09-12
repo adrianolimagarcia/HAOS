@@ -200,7 +200,7 @@ class PluginLoaderMixin:
                 registered,
             )
         except Exception as exc:
-            # Tools registered before the raise are live: credit them or `hermes plugins list` under-reports
+            # Tools registered before the raise are live: credit them or `haos plugins list` under-reports
             # (and _load_plugin's later diff would miss them too). Never break discovery (the platform stays
             # deferred), but a broken tools.py IS the symptom, so warn — and say where it failed first.
             partial, total = _credit(), len(declared)
@@ -367,7 +367,7 @@ class PluginLoaderMixin:
         def _keys(kind: str) -> List[str]:
             return [r.key for r in registrations if r.kind == kind]
 
-        # Discovery-time tools predate registration_start; credit them back or `hermes plugins list`
+        # Discovery-time tools predate registration_start; credit them back or `haos plugins list`
         # under-reports once the deferred adapter materializes.
         predeclared = [t for t in self._predeclared_tools.pop(plugin_key, []) if t in self._plugin_tool_names]
         loaded.tools_registered = predeclared + [k for k in _keys("tool") if k not in predeclared]

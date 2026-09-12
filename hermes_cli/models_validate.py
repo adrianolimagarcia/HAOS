@@ -432,7 +432,7 @@ def _validate_live_listing(req: _Request) -> Optional[dict[str, Any]]:
         return _accept_with_note(f"Note: `{req.requested}` was not found in the live /v1/models listing "
                                  "but exists in the curated catalog — accepted.")
     # Nous: the Portal's recommended-models feed can list a model before the curated list or the
-    # docs-hosted manifest catches up; `hermes chat` already accepts those at model-list build
+    # docs-hosted manifest catches up; `haos chat` already accepts those at model-list build
     # time, so mirror that source of truth for per-message /model validation.
     if req.normalized == "nous" and req.lookup.lower() in _nous_portal_recommended_names():
         return _accept_with_note(f"Note: `{req.requested}` was not found in the live /v1/models listing "

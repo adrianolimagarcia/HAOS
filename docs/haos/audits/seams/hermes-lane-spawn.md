@@ -33,9 +33,9 @@ canônico para a lane `hermes` do HAOS, substituindo o `NotImplementedError` de
    (`detect_crashed_workers` :937-979): rc0 sem terminal call = protocol
    violation (:720-731,:756-767); exit 75 = quota (kanban_db.py:294, :768-777).
    Exit codes do child: cli.py:4097-4141 (0 ok / 1 falha / 75 rate-limit).
-3. **Não existe `hermes kanban run <id>`** — o worker é o chat oneshot genérico
+3. **Não existe `haos kanban run <id>`** — o worker é o chat oneshot genérico
    (`chat -q`, gramática `hermes_cli/_parser.py:187-225`; dispatchers:
-   gateway tick, `hermes kanban dispatch` kanban_ops.py:60, `daemon` :154 +
+   gateway tick, `haos kanban dispatch` kanban_ops.py:60, `daemon` :154 +
    run_daemon kanban_db_dispatch.py:2285-2337). Lane não-perfil nunca é spawnada
    (`skipped_nonspawnable`, kanban_db_dispatch.py:1510-1517): `hermes -p <lane>`
    sai rc1 (main.py:526-531).

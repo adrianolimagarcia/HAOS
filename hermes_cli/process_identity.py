@@ -210,7 +210,7 @@ def register_self(purpose: str, *, project_root: Optional[Path] = None, detail: 
     try:
         import sys as _sys
 
-        # 10 tokens: enough for `hermes serve --host X --port N --profile P` while bounding
+        # 10 tokens: enough for `haos serve --host X --port N --profile P` while bounding
         # pathological argv. Structured detail is canonical; argv is the human-readable fallback.
         entry.argv = " ".join(_sys.argv[:10])
     except Exception:

@@ -135,7 +135,7 @@ _BOARD_SPECS = [
     )),
 ]
 
-# Top-level ``hermes kanban <action>`` records, in ``--help`` order.
+# Top-level ``haos kanban <action>`` records, in ``--help`` order.
 _SPECS = [
     _cmd("init", help="Create kanban.db if missing (idempotent)"),
     _cmd("boards", children=("boards_action", _BOARD_SPECS),

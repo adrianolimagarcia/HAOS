@@ -26,7 +26,7 @@ router = APIRouter()
 
 _config_profile_scope = late("_config_profile_scope", "hermes_cli.web_server_profiles")
 load_config = late("load_config", "hermes_cli.config")
-# Labels per hub source id (matches `hermes skills search` provenance); keep in
+# Labels per hub source id (matches `haos skills search` provenance); keep in
 # sync with create_source_router()'s source list.
 _SKILL_HUB_SOURCE_LABELS = {
     "official": "Official (Nous)",

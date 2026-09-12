@@ -279,7 +279,7 @@ def _check_agent_browser(should_fix: bool) -> bool:
     if resolved and _is_npx_agent_browser_sentinel(resolved):
         check_ok("agent-browser", "(resolves via npx on first use)")
         if should_fix:
-            # Can't tell whether npx's cache is warm — fire the same warm-up `hermes update` does.
+            # Can't tell whether npx's cache is warm — fire the same warm-up `haos update` does.
             from tools.browser_tool_install import warm_agent_browser_npx_cache
             check_info("  Warmed npx cache for agent-browser" if warm_agent_browser_npx_cache()
                        else "  Could not warm npx cache (offline or npx unavailable)")
@@ -288,7 +288,7 @@ def _check_agent_browser(should_fix: bool) -> bool:
         check_ok("agent-browser", "(browser automation)")
         return True
     if resolved:
-        # Almost always a dangling global symlink left by npm postinstall after `hermes update` wiped node_modules.
+        # Almost always a dangling global symlink left by npm postinstall after `haos update` wiped node_modules.
         check_warn("agent-browser found but not runnable", f"(broken symlink at {resolved}? run: npx agent-browser --version)")
     elif _is_termux():
         _termux_browser_hints("agent-browser is not installed (expected in the tested Termux path)",

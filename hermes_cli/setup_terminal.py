@@ -140,7 +140,7 @@ def _report_binary(found: str | None, missing: str, install_hint: str, found_pre
 def _setup_backend_local(config: dict) -> None:
     _setup.print_success("Terminal backend: Local")
     _setup.print_info("Commands run directly on this machine.")
-    # Gateway cwd defaults to home; sudo stays off. Both configurable via `hermes setup terminal`.
+    # Gateway cwd defaults to home; sudo stays off. Both configurable via `haos setup terminal`.
     config["terminal"].setdefault("cwd", str(Path.home()))
 
 
@@ -148,7 +148,7 @@ def _setup_backend_docker(config: dict) -> None:
     _setup.print_success("Terminal backend: Docker")
     _report_binary(shutil.which("docker"), "Docker not found in PATH!",
                    "Install Docker: https://docs.docker.com/get-docker/", "Docker found: ")
-    # Image and resource limits use defaults; tune via `hermes setup terminal`.
+    # Image and resource limits use defaults; tune via `haos setup terminal`.
     config["terminal"].setdefault("docker_image", _SANDBOX_IMAGE)
     _setup._info(None, "Docker sandboxes can be protected with the egress credential firewall.",
                  "It routes sandbox traffic through iron-proxy so containers receive "

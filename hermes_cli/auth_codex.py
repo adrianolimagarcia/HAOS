@@ -702,7 +702,7 @@ def _codex_login_rate_limited_error(response: "httpx.Response", *, during: str =
     """AuthError for a 429 from OpenAI's device-auth endpoints (throttle, not credential fault)."""
     # Upstream rate-limit / usage-quota exhaustion on the token endpoint. The stored refresh token is still
     # valid here — re-authenticating cannot lift a quota cap. Classify distinctly from auth failures so
-    # callers surface a "retry later" notice instead of a misleading "run hermes auth" prompt (see issue
+    # callers surface a "retry later" notice instead of a misleading "run haos auth" prompt (see issue
     # #32790).
     retry_after = _parse_retry_after_seconds(getattr(response, "headers", None))
     wait_hint = (

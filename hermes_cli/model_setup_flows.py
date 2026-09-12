@@ -366,7 +366,7 @@ def _model_flow_openai_codex(config, current_model=""):
         PROVIDER_REGISTRY["openai-codex"], recheck=lambda: get_codex_auth_status().get("logged_in")):
         return
 
-    # Prefer the credential pool (where `hermes auth` stores device_code tokens),
+    # Prefer the credential pool (where `haos auth` stores device_code tokens),
     # fall back to legacy provider state.
     _codex_token = None
     with contextlib.suppress(Exception):
@@ -398,7 +398,7 @@ def _model_flow_xai_oauth(_config, current_model="", *, args=None):
         return
 
     # ``resolve_xai_oauth_runtime_credentials`` only reads the auth.json singleton, but
-    # credentials may live only in the pool (``hermes auth add xai-oauth``) — fall back to
+    # credentials may live only in the pool (``haos auth add xai-oauth``) — fall back to
     # the default base URL so the picker still completes.
     base_url = DEFAULT_XAI_OAUTH_BASE_URL
     with contextlib.suppress(Exception):

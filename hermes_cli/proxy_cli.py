@@ -21,7 +21,7 @@ from hermes_cli.config import load_config, load_env, save_config
 
 def register_cli(parent_parser: argparse.ArgumentParser) -> None:
     """Attach the egress subcommand tree to a parent parser."""
-    # dest='egress_command' keeps this tree disjoint from the inbound OAuth ``hermes proxy``
+    # dest='egress_command' keeps this tree disjoint from the inbound OAuth ``haos proxy``
     # subparser (dest='proxy_command') so a grep-and-refactor on one never hits the other.
     sub = parent_parser.add_subparsers(dest="egress_command")
     # (name, help, handler, [(flag, add_argument kwargs), ...]) — declaration order is the

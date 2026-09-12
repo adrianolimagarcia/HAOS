@@ -186,7 +186,7 @@ class HermesMCPOAuthProvider(HermesProviderMixin, *_SDK_BASES):
             storage = self._hermes_storage()
             # A rejected CIMD URL would loop if re-presented (the server already fetched and refused
             # it): drop it so the retry takes DCR, and mark it on disk so the next process doesn't walk
-            # back into the same refusal (`hermes mcp login` clears the marker).
+            # back into the same refusal (`haos mcp login` clears the marker).
             cimd_url = getattr(self.context, "client_metadata_url", None)
             if cimd_url and getattr(self.context.client_info, "client_id", None) == cimd_url:
                 logger.warning("MCP OAuth '%s': authorization server rejected our Client ID Metadata Document (%s) "

@@ -64,7 +64,7 @@ def _truncate(text: str, width: int) -> str:
 def _ident_col(style: str) -> tuple:
     # overflow="fold" keeps the full slug visible (wraps instead of ellipsis-truncating):
     # browse.sh slugs end in a `-XXXXXX` hash that is part of the identifier users must
-    # copy into `hermes skills install`.
+    # copy into `haos skills install`.
     return "Identifier", {"style": style, "overflow": "fold", "no_wrap": False}
 
 
@@ -1317,7 +1317,7 @@ def _tap_cli(args) -> None:
     do_tap(tap_action, repo=getattr(args, "repo", "") or getattr(args, "name", ""))
 
 
-# `hermes skills <action>` -> handler(args). Lambdas late-bind the do_* names so
+# `haos skills <action>` -> handler(args). Lambdas late-bind the do_* names so
 # tests that patch("hermes_cli.skills_hub.do_install") still intercept.
 _CLI_ACTIONS = {
     "browse": lambda a: do_browse(page=a.page, page_size=a.size, source=a.source),

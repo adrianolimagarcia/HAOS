@@ -84,7 +84,7 @@ gh pr create --repo NousResearch/hermes-agent \
 | `713abc992` | feat(haos/ui): auto-track and auto-reveal full agent response in console without clicks |
 | `6fe8ebcfb` | feat(haos): unify HAOS taskboard with Hermes canonical kanban.db and active board |
 | `033271907` | fix(haos): resolve ACP command to hermes-acp binary, handle optional task_id in TaskResult |
-| `1848bb678` | fix(haos): fix hermes chat argv flags ordering and increase ACP planning timeout to 120s |
+| `1848bb678` | fix(haos): fix haos chat argv flags ordering and increase ACP planning timeout to 120s |
 | `34b4ef361` | fix(haos/ui): define renderTaskBadge and renderTaskAction to prevent black screen on console tab |
 | `833356ef0` | fix(haos): pass model_profile in argv and add resilient log fallback to prevent lost output |
 | `0c115809c` | fix(haos): enable real agent runtime workers in live server and preserve HERMES_HOME |

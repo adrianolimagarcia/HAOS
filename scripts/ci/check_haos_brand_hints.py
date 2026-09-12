@@ -22,6 +22,9 @@ CALIBRACAO (para nao barrar caso legitimo):
   comeca com a palavra hermes nao casa: "the hermes install dir", "hermes
   config.yaml" (o arquivo, barrado pelo ``(?!\.)``) e "hermes agent" (nome do
   projeto, nao subcomando) passam.
+- Varre tambem COMENTARIOS (token COMMENT): texto de dev citando o binario do
+  upstream envelhece igual. Aqui o marcador entra na propria linha do comentario
+  (ou na anterior), ex.: ``# haos auth ... # haos-brand: historico``.
 - ``tests/``, ``website/``, ``docs/``, ``optional-skills/`` ficam fora: fixture,
   documentacao e skill de terceiro podem citar o nome upstream a vontade.
 - Caso INTENCIONAL (ler um alias legado que guarda "hermes <cmd>", comparar com o
@@ -39,8 +42,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -116,6 +121,25 @@ def scan() -> tuple[list[str], list[str]]:
             if not match:
                 continue
             lineno = node.lineno
+            text = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else ""
+            context = (lines[lineno - 1] if 0 < lineno <= len(lines) else "") + "\n" + (
+                lines[lineno - 2] if lineno >= 2 else ""
+            )
+            entry = f"{rel}:{lineno}: {text} (hint: {match.group(0)!r})"
+            (allowed if MARKER_RE.search(context) else offenders).append(entry)
+
+        # Comentarios: nao aparecem na AST, entao vao por tokenize.
+        try:
+            toks = tokenize.generate_tokens(io.StringIO(source).readline)
+        except (tokenize.TokenError, IndentationError, OSError):
+            toks = []
+        for t in toks:
+            if t.type != tokenize.COMMENT:
+                continue
+            match = PATTERN.search(t.string)
+            if not match:
+                continue
+            lineno = t.start[0]
             text = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else ""
             context = (lines[lineno - 1] if 0 < lineno <= len(lines) else "") + "\n" + (
                 lines[lineno - 2] if lineno >= 2 else ""

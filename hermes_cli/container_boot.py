@@ -101,7 +101,7 @@ def reconcile_profile_gateways(
     profiles_root = hermes_home / "profiles"
     if profiles_root.is_dir():
         for entry in sorted(profiles_root.iterdir()):
-            # SOUL.md (seeded by `hermes profile create`) is the "real profile" marker.
+            # SOUL.md (seeded by `haos profile create`) is the "real profile" marker.
             if not entry.is_dir() or not (entry / "SOUL.md").exists():
                 continue
             # "default" is reserved for the root profile slot above.

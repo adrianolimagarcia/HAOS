@@ -148,8 +148,8 @@ def _cmd_login(args) -> int:
     return 0
 
 
-# Default (None/"") is the one-shot onboarding (alias for `hermes auth add nous --type oauth` /
-# `hermes setup --portal`). `status` kept as a back-compat alias for `info`.
+# Default (None/"") is the one-shot onboarding (alias for `haos auth add nous --type oauth` /
+# `haos setup --portal`). `status` kept as a back-compat alias for `info`.
 _SUBCOMMANDS = {
     None: _cmd_login,
     "": _cmd_login,
@@ -187,7 +187,7 @@ def add_parser(subparsers) -> None:
     )
     portal_sub = portal_parser.add_subparsers(dest="portal_command")
 
-    # `status` is a hidden (no help) back-compat alias; registration order = `hermes portal -h` order.
+    # `status` is a hidden (no help) back-compat alias; registration order = `haos portal -h` order.
     for name, help_text in (
         ("login", "Log in to Nous Portal + set it up (default; one-shot onboarding)"),
         ("info", "Show Portal auth + Tool Gateway routing summary"),

@@ -686,7 +686,7 @@ def connect(db_path: Optional[Path] = None, *, board: Optional[str] = None) -> s
 
     # Fast path: once THIS process has initialized this path, skip the
     # cross-process init lock. Taking it on every connect let a single stalled
-    # holder (e.g. an external `hermes kanban list` mid-integrity-probe) block
+    # holder (e.g. an external `haos kanban list` mid-integrity-probe) block
     # the gateway dispatcher's next-tick connect() forever, and steady-state has
     # nothing for it to protect (no schema/migration writes).
     resolved = str(path.resolve())

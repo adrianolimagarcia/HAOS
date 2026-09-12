@@ -42,7 +42,7 @@ try:
     from fastapi.responses import JSONResponse
 except ImportError:
     # First try lazy-installing the dashboard extras. Only the user actually
-    # running `hermes dashboard` needs fastapi+uvicorn; lazy install keeps
+    # running `haos dashboard` needs fastapi+uvicorn; lazy install keeps
     # them out of every other install path. After install, re-import.
     try:
         from tools.lazy_deps import ensure as _lazy_ensure
@@ -146,7 +146,7 @@ async def _lifespan(app: "FastAPI"):
     app.state.chat_argv_lock = asyncio.Lock()
 
     # Bring state.db schema current BEFORE the first session-list poll
-    # (#79531/#80037): a store left behind by `hermes update` otherwise 500s
+    # (#79531/#80037): a store left behind by `haos update` otherwise 500s
     # every poll while the read-probe heal loses to sibling lock contention.
     # Daemon thread so a locked store never delays the socket (Desktop
     # ready-probe times out at 10s, GH-73083).
@@ -162,7 +162,7 @@ async def _lifespan(app: "FastAPI"):
     _warm_gateway_module()
 
     # Snapshot the checkout revision so lazy-import paths (model picker) can
-    # refuse with "restart required" after `hermes update` replaced the code
+    # refuse with "restart required" after `haos update` replaced the code
     # (#86207); the update flow does not reliably restart the dashboard.
     from gateway.code_skew import record_boot_fingerprint
 
@@ -1232,7 +1232,7 @@ def _on_server_started(
     # ledger + spawner provably dead); anything alive or unprovable is untouched.
     _best_effort("orphan MCP helper reap", _reap_mcp_helpers)
 
-    # No-op for standalone `hermes serve` (no HERMES_PARENT_PID).
+    # No-op for standalone `haos serve` (no HERMES_PARENT_PID).
     _start_parent_death_watchdog()
     # SSH-isolated backends are detached from any parent on purpose (#91668); their liveness signal
     # is "does a client still hold a WebSocket" (#101626).
@@ -1249,7 +1249,7 @@ def _on_server_started(
 
     # Positive process identity in the machine spawn ledger (+ Windows
     # kill-on-close job). Registered AFTER the bind so the entry carries the
-    # ACTUAL port — what lets `hermes update` relaunch a manually-started serve
+    # ACTUAL port — what lets `haos update` relaunch a manually-started serve
     # on its real endpoint (#63206).
     def _register_identity() -> None:
         from hermes_cli.process_identity import attach_self_to_kill_on_close_job, register_self

@@ -205,9 +205,9 @@ def _api_key_lines(show_keys: bool) -> list[str]:
         # shell, so it likely can't see this key — flag it so support doesn't chase a phantom "configured".
         if val and env_var not in dotenv_keys:
             display += " (shell only — not in .env; managed/desktop backend may not see it)"
-        # `hermes auth add openrouter` credentials live in the pool, not env — don't read "not set".
-        # A credential added via `hermes auth add openrouter` lives in the credential pool, not as an env
-        # var — surface it so the dump doesn't misleadingly read "not set" while `hermes auth list` shows it
+        # `haos auth add openrouter` credentials live in the pool, not env — don't read "not set".
+        # A credential added via `haos auth add openrouter` lives in the credential pool, not as an env
+        # var — surface it so the dump doesn't misleadingly read "not set" while `haos auth list` shows it
         # (#42130).
         if not val and label == "openrouter":
             try:

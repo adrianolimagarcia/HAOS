@@ -35,7 +35,7 @@ _CUA_INSTALLER_TIMEOUT = 660
 # immediately, so this costs nothing in the normal case; it only caps how long a failed one can stall the
 # update. See #87703.
 _CUA_INSTALLER_DRAIN_GRACE = 15
-# Quiet ``hermes update`` refreshes stay bounded even when upstream waits on Read-Host / a consent
+# Quiet ``haos update`` refreshes stay bounded even when upstream waits on Read-Host / a consent
 # prompt (explicit ``install --upgrade`` keeps the full ceiling); safe because the lock/network
 # preflights make a legitimate long wait impossible here.
 _CUA_BACKGROUND_UPDATE_TIMEOUT = 120
@@ -265,7 +265,7 @@ def install_cua_driver(upgrade: bool = False, require_confirmed_update: bool = F
     old/incomplete one and installs when missing; ``upgrade=True`` always refreshes."""
     system = platform.system()
     if system not in ("Darwin", "Windows", "Linux"):
-        if not upgrade:  # silent under `hermes update`, which calls this for every user
+        if not upgrade:  # silent under `haos update`, which calls this for every user
             _print_warning(
                 "    Computer Use (cua-driver) is unsupported on this platform; skipping.")
         return False
@@ -738,8 +738,8 @@ def _run_cua_driver_installer(label: str = "Installing", verbose: bool = True,
     # See #58762.
     _clear_stale_cua_install_lock()
 
-    # Unattended refreshes (installer_timeout set by `hermes update`) preflight and may skip.
-    # Unattended refreshes (installer_timeout set by `hermes update`) fail FAST on the two conditions that
+    # Unattended refreshes (installer_timeout set by `haos update`) preflight and may skip.
+    # Unattended refreshes (installer_timeout set by `haos update`) fail FAST on the two conditions that
     # otherwise consume the whole ceiling: 1. Install lock held by a live process — upstream would poll it
     # for up to LOCK_STALE_AFTER_SECONDS=600 before probing the holder. That is the 11-minute silent hang
     # class (#87703; observed live 2026-08-25: "cua-driver refreshing timed out after 660s"). 2. Release

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _RECEIPT_KEEP = 20  # keep the last N receipts per profile home
 COMMAND_BOUNDARY_STOP_REASON = "completed at command boundary"
 
-# ``hermes update`` is a single-threaded CLI command; a module singleton lets the 7k-line updater
+# ``haos update`` is a single-threaded CLI command; a module singleton lets the 7k-line updater
 # record steps from any depth without threading a handle through every helper.
 _current: Optional["UpdateReceipt"] = None
 
@@ -97,7 +97,7 @@ class UpdateReceipt:
             persisted["skipped"] = _str_records(
                 fresh_recovery.get("skipped", []), ("profile", "kind", "supervisor", "reason")
             )
-            # ``hermes serve`` hosts tui_gateway and is not a gateway profile, so neither the
+            # ``haos serve`` hosts tui_gateway and is not a gateway profile, so neither the
             # per-profile buckets above nor the fleet-version matrix can describe it. Persist its
             # unit outcomes and any process that survived on the pre-update generation, or the
             # receipt keeps claiming a clean recovery the operator's box contradicts.

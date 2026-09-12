@@ -253,7 +253,7 @@ def _get_env_vars_sync(profile: Optional[str] = None):
             # Keys/Env page hides it rather than duplicate the richer UI.
             "channel_managed": var_name in channel_keys,
             # Provider grouping from the unified catalog, so the desktop groups
-            # by the SAME provider identity the CLI `hermes model` picker uses.
+            # by the SAME provider identity the CLI `haos model` picker uses.
             "provider": cat_meta.get("provider", ""),
             "provider_label": cat_meta.get("provider_label", ""),
             # True for a .env key in no catalog at all — an arbitrary/custom var

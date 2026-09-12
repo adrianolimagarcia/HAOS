@@ -35,7 +35,7 @@ _MAX_LOG_BYTES = 512_000  # per log file for upload (paste.rs caps at ~1 MB)
 _AUTO_DELETE_SECONDS = 21600  # 6 hours
 
 # Pending-deletion tracking: the gateway cron ticker calls ``_sweep_expired_pastes`` hourly and
-# ``hermes debug`` sweeps on entry (CLI-only users). Replaced a fork-and-sleep subprocess that
+# ``haos debug`` sweeps on entry (CLI-only users). Replaced a fork-and-sleep subprocess that
 # leaked ~20 MB per share.
 
 
@@ -57,7 +57,7 @@ def _save_pending(entries: list[dict]) -> None:
     try:
         atomic_json_write(_pending_file(), entries)
     except OSError:
-        pass  # non-fatal — worst case the user runs ``hermes debug delete`` manually
+        pass  # non-fatal — worst case the user runs ``haos debug delete`` manually
 
 
 def _sweep_expired_pastes(now: Optional[float] = None) -> tuple[int, int]:

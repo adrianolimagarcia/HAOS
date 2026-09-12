@@ -593,7 +593,7 @@ class CLIModelSwitchMixin:
                 self._close_model_picker()
                 return
             provider_data = providers[selected]
-            # Curated list (same as `hermes model` / gateway pickers); live catalog only when
+            # Curated list (same as `haos model` / gateway pickers); live catalog only when
             # it is empty (user-defined endpoints).
             model_list = provider_data.get("models", [])
             if not model_list:

@@ -387,7 +387,7 @@ def _restart_killed_backends(
     pid_cmdline: dict[int, list[str]], pid_home: dict[int, str | None]) -> list[int]:
     """Update path: restart systemd units, respawn manual argv (detached, headless, logged to
     logs/dashboard-restart.log; one per profile, no ``--port 0``). Returns PIDs not brought back."""
-    # Two categories: Without this, a remote backend (hermes serve) under Restart=on-failure never comes
+    # Two categories: Without this, a remote backend (haos serve) under Restart=on-failure never comes
     # back after our clean SIGTERM, and the Desktop can't reconnect (#68934). Filtered so Desktop
     # ``serve|dashboard --port 0`` backends are not resurrected and duplicates collapse to one per profile
     # (#78821).
@@ -527,7 +527,7 @@ def _process_ppid(pid: int) -> int | None:
 
 
 # SSH remote-backend lock ownership: ``backend.lock.json`` is written by the Desktop SSH runtime
-# (apps/desktop/electron/remote-lifecycle.ts) for every ``hermes serve`` it spawns. Such a backend
+# (apps/desktop/electron/remote-lifecycle.ts) for every ``haos serve`` it spawns. Such a backend
 # is legitimate even at ppid 1 (sshd exited); the reap must NEVER kill a PID a valid lock claims
 # — that once killed a production backend. Schema mirrors the writer; mismatches are ignored.
 _LOCKFILE_SCHEMA_VERSION = 2

@@ -14,7 +14,7 @@ from pathlib import Path
 
 __all__ = ["plugin_data_dir", "plugin_db"]
 
-# Mirrors the plugin-name shape `hermes plugins install` accepts (no separators/traversal).
+# Mirrors the plugin-name shape `haos plugins install` accepts (no separators/traversal).
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 
 

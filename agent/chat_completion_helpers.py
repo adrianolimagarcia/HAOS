@@ -2115,7 +2115,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
     if getattr(agent, "suppress_status_output", False):
         # Strict machine-readable mode (-Q, oneshot): keep diagnostics off stdout. quiet_mode is
         # NOT the gate — the interactive CLI runs quiet_mode=True by default and must see this.
-        # Strict machine-readable mode (hermes chat -Q, oneshot, background review): keep diagnostics out of
+        # Strict machine-readable mode (haos chat -Q, oneshot, background review): keep diagnostics out of
         # stdout so wrappers receive only the final assistant content (#93220 class).
         logger.warning(warning)
     else:

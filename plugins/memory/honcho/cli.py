@@ -1758,8 +1758,8 @@ Step 3  Migrate user memory files → Honcho user peer
 """)
     if user_files:
         print(f"  Found: {', '.join(f.name for f in user_files)}")
-        print("""
-  These are picked up automatically the first time you run 'hermes'
+        print(f"""
+  These are picked up automatically the first time you run '{product_cli_name()}'
   with Honcho configured and no prior session history.
   (Hermes calls migrate_memory_files() on first session init.)
 

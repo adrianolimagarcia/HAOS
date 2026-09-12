@@ -495,7 +495,7 @@ class UpdateTaskBody(BaseModel):
     body: Optional[str] = None
     result: Optional[str] = None
     block_reason: Optional[str] = None
-    # Handoff fields forwarded to complete_task on -> 'done' (parity with ``hermes kanban complete``).
+    # Handoff fields forwarded to complete_task on -> 'done' (parity with ``haos kanban complete``).
     summary: Optional[str] = None
     metadata: Optional[dict] = None
     # In a PATCH ``None`` means "field not sent", so ``clear_*=True`` is the explicit clear signal.

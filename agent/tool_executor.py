@@ -510,7 +510,7 @@ class _ConcurrentToolAuthorizationGate:
             # (#65673). Auth failures park here too rather than returning. Returning ends the run task, and
             # with it the only listener on ``_reconnect_event`` — so a 401 on the very first connect left
             # the server unrevivable for the life of the process, even after the user re-authenticated with
-            # ``hermes mcp login``. Parking keeps the task alive so the 300s self-probe (and an explicit
+            # ``haos mcp login``. Parking keeps the task alive so the 300s self-probe (and an explicit
             # /mcp refresh) can pick up fresh tokens.
             logger.warning(
                 "authorization gate lock not acquired after %.1fs "

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Monitor a running video-production kanban. Polls `hermes kanban list` and
+Monitor a running video-production kanban. Polls `haos kanban list` and
 `events` for a tenant and surfaces issues (stuck tasks, missing heartbeats,
 repeated retries, dependency deadlocks).
 
@@ -25,9 +25,13 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from hermes_constants import product_cli_name
+
 
 def hermes_available() -> bool:
-    return shutil.which("hermes") is not None
+    # Nome do CLI resolvido pelo produto: no appliance HAOS e "haos" (nao existe
+    # binario "hermes" no PATH, entao a checagem antiga sempre dava False).
+    return shutil.which(product_cli_name()) is not None
 
 
 def kanban_list(tenant: str) -> list[dict]:
@@ -42,9 +46,9 @@ def kanban_list(tenant: str) -> list[dict]:
             return json.loads(out.stdout)
     except (FileNotFoundError, json.JSONDecodeError):
         pass
-    # Fallback: textual parse of `hermes kanban list`
+    # Fallback: textual parse of `haos kanban list`
     out = subprocess.run(
-        ["hermes", "kanban", "list", "--tenant", tenant],
+        [product_cli_name(), "kanban", "list", "--tenant", tenant],
         capture_output=True, text=True, encoding='utf-8', errors='replace', check=False,
     )
     rows = []
@@ -172,7 +176,7 @@ def main():
     args = ap.parse_args()
 
     if not hermes_available():
-        print("ERROR: 'hermes' CLI not found in PATH", file=sys.stderr)
+        print(f"ERROR: '{product_cli_name()}' CLI not found in PATH", file=sys.stderr)
         sys.exit(1)
 
     if args.once:

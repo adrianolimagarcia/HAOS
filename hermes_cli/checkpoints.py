@@ -186,7 +186,7 @@ def cmd_clear_legacy(args: argparse.Namespace) -> int:
 
 def register_cli(parser: argparse.ArgumentParser) -> None:
     """Wire subcommands onto the ``haos checkpoints`` parser."""
-    parser.set_defaults(func=cmd_status)  # bare `hermes checkpoints` → status
+    parser.set_defaults(func=cmd_status)  # bare `haos checkpoints` → status
     subs = parser.add_subparsers(dest="checkpoints_command", metavar="COMMAND")
 
     p_status = subs.add_parser("status", help="Show total size, project count, and per-project breakdown")

@@ -244,7 +244,7 @@ def _post_setup_pip(spec: dict) -> None:
 
 
 def _post_setup_spotify() -> None:
-    # Full `hermes auth spotify` flow: no client_id yet → interactive wizard (persists to ~/.hermes/.env)
+    # Full `haos auth spotify` flow: no client_id yet → interactive wizard (persists to ~/.hermes/.env)
     # then PKCE; existing app → OAuth only.
     from types import SimpleNamespace
     try:
@@ -427,7 +427,7 @@ def _module_installed(module_name: str) -> bool:
         return False
 
 
-# Python deps installed via ``hermes tools`` aren't in the managed runtime's locked ``all`` sync, so a
+# Python deps installed via ``haos tools`` aren't in the managed runtime's locked ``all`` sync, so a
 # runtime replacement snapshots this static allowlist before the old site-packages disappears and
 # restores it afterward. Derived from the pip hooks (minus ``--quiet``) so install args can't drift.
 _RESTORABLE_PYTHON_TOOL_DEPENDENCIES: dict[str, tuple[str, tuple[str, ...]]] = {

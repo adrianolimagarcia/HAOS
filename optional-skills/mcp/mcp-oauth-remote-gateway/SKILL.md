@@ -78,8 +78,8 @@ gateway/bot where `/reload-mcp` triggers the flow with nobody at a prompt.
 ## Preferred Front Door: the Hermes Dashboard (try this BEFORE manual token surgery)
 
 A remote Hermes gateway often also runs the **dashboard** web UI as a SEPARATE
-process (e.g. `hermes dashboard --host 0.0.0.0 --port <port>`; check with
-`ps aux | grep 'hermes dashboard'`). It exposes a connector/MCP console —
+process (e.g. `haos dashboard --host 0.0.0.0 --port <port>`; check with
+`ps aux | grep 'haos dashboard'`). It exposes a connector/MCP console —
 endpoints like `/api/mcp/servers`, `/api/mcp/status`, and `/connectors` (all
 login-gated; a cookieless curl returning 401/302 confirms they exist).
 

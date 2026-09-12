@@ -1134,7 +1134,7 @@ def _verify_core_dependencies_installed(
     if not applicable:
         return
     # Probe inside the venv Python — sys.executable may be the outer Python that drove
-    # ``hermes update``; the install prefix/env encode which environment we targeted.
+    # ``haos update``; the install prefix/env encode which environment we targeted.
     venv_python = _resolve_install_target_python(install_cmd_prefix, env)
     if venv_python is None:
         return

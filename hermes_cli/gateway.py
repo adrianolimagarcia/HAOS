@@ -303,7 +303,7 @@ def _wait_for_pid_exit(pid: int, timeout: float, *, on_progress=None) -> bool:
 
 # --- Wedged-gateway detection + bounded escalation ---------------------------
 # A gateway whose asyncio loop is stalled cannot handle SIGTERM/SIGUSR1, so the drain wait burns
-# its full budget and `hermes update` can deadlock. Two witnesses classify the loop BEFORE any
+# its full budget and `haos update` can deadlock. Two witnesses classify the loop BEFORE any
 # drain wait: the heartbeat file ``state/gateway.heartbeat`` (rewritten every 30s on a thread, so
 # staleness alone is not proof) and the loop-tick socket ``state/gateway.loop-tick.<pid>.sock``
 # answered by the loop itself; the payload records whether the socket is armed (``loop_tick_socket``).
@@ -317,7 +317,7 @@ def _wait_for_pid_exit(pid: int, timeout: float, *, on_progress=None) -> bool:
 # --- Wedged-gateway detection + bounded escalation (#81642) ----------------- A gateway whose asyncio loop
 # is stalled (e.g. an in-loop compression pass, #72707) cannot process SIGTERM/SIGUSR1 shutdown: the drain
 # wait then burns the full drain budget (180s by default), warns "still running after 180.0s — restart may
-# fail", and `hermes update` can deadlock behind it. The loop publishes a liveness signal precisely for this
+# fail", and `haos update` can deadlock behind it. The loop publishes a liveness signal precisely for this
 # case: an asyncio task rewrites ``state/gateway.heartbeat`` every 30s (#66892), so a frozen loop stops
 # refreshing the file while a busy-but-alive loop keeps refreshing it. Since #90502 the heartbeat write runs
 # on a thread (a stalling filesystem must not be able to block the loop the watchdog watches), which costs
@@ -569,7 +569,7 @@ def _scan_gateway_pids(
     exclude_pids: set[int], all_profiles: bool = False, include_restart_managers: bool = False
 ) -> list[int]:
     """Best-effort process-table scan for gateway PIDs (backs up a stale/missing PID file; ``--all`` sweeps)."""
-    # Exclude the entire ancestor chain so the CLI process that invoked this scan (e.g. ``hermes gateway
+    # Exclude the entire ancestor chain so the CLI process that invoked this scan (e.g. ``haos gateway
     # status``) is never mistaken for a running gateway. See #13242.
     exclude_pids = exclude_pids | _get_ancestor_pids()
     pids: list[int] = []
@@ -680,7 +680,7 @@ def _windows_process_listing() -> str | None:
     hides the console window this windowless pythonw backend would flash."""
     # Prefer wmic when present (fast, stable output format). On modern Windows 11 / Win 10 late builds, wmic
     # has been removed as part of the WMIC deprecation — fall back to PowerShell's Get-CimInstance. A spawn
-    # failure or timeout (result is None) trips the fallback. ``hermes update`` hung exactly there on
+    # failure or timeout (result is None) trips the fallback. ``haos update`` hung exactly there on
     # slow-WMI machines where the full Win32_Process scan exceeds its budget (#87134). bounded_probe_run
     # also hides the console window: this scan runs inside the windowless pythonw.exe gateway/desktop
     # backend, so a bare wmic/powershell spawn would flash a conhost window on every watchdog probe.
@@ -3618,7 +3618,7 @@ _LAUNCHD_JOB_UNLOADED_EXIT_CODES = frozenset({3, 113, 125})
 # services (macOS 26+). Only when the retry ALSO fails do callers degrade to a detached process.
 # launchctl returns 5 ("Input/output error") or a persistent 125 in two very different situations, so exit 5
 # is NOT on its own proof the domain is broken: 1. See #42914. 2. Here launchd cannot supervise the gateway
-# at all and we degrade to a detached background process (the `nohup hermes gateway run` workaround). See
+# at all and we degrade to a detached background process (the `nohup haos gateway run` workaround). See
 # #23387.
 _LAUNCHCTL_DOMAIN_UNSUPPORTED_CODES = frozenset({5, 125})
 
@@ -4168,7 +4168,7 @@ def _launchd_ok(message: str) -> None:
 def launchd_stop():
     target = f"{_launchd_domain()}/{get_launchd_label()}"
     _mark_planned_stop()
-    # bootout unloads the definition so KeepAlive doesn't respawn; `hermes gateway start` re-bootstraps.
+    # bootout unloads the definition so KeepAlive doesn't respawn; `haos gateway start` re-bootstraps.
     try:
         # Captured: an already-unloaded job (3/113/125) is handled below, so launchctl's own
         # "Boot-out failed: 3" must not print around the ✓ line; e.stderr stays on the raised error.
@@ -4247,7 +4247,7 @@ def launchd_restart():
             return
         if pid is not None and probe_gateway_loop_liveness(pid) == GATEWAY_LOOP_WEDGED:
             # Event loop provably dead: it can't process a graceful shutdown, so a full drain wait
-            # only stalls the restart (and `hermes update`). Bounded SIGTERM → SIGKILL, ~10s.
+            # only stalls the restart (and `haos update`). Bounded SIGTERM → SIGKILL, ~10s.
             print(f"⚠ Gateway PID {pid} event loop is unresponsive — " "skipping drain and forcing a bounded stop...")
             _escalate_wedged_gateway(pid)
             pid = None
@@ -4752,7 +4752,7 @@ def run_gateway(verbose: int = 0, quiet: bool = False, replace: bool = False, fo
         _ensure_user_systemd_env()
 
     # Refresh the systemd unit on every boot so restart settings stay current even after an
-    # exit-code-75 respawn (stale-code or /restart), which bypasses `hermes gateway restart`.
+    # exit-code-75 respawn (stale-code or /restart), which bypasses `haos gateway restart`.
     if supports_systemd_services():
         try:
             refresh_systemd_unit_if_needed(system=False)
@@ -6306,7 +6306,7 @@ def _cmd_restart(args):
     run_gateway(verbose=0, force=force)
 
 
-# ``hermes gateway status`` hints for a manually-run / stopped gateway, keyed by host kind.
+# ``haos gateway status`` hints for a manually-run / stopped gateway, keyed by host kind.
 _STATUS_RUNNING_HINTS = {
     "termux": ("Termux note:", "  Android may stop background jobs when Termux is suspended"),
     "wsl": (

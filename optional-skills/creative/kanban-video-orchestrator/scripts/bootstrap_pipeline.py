@@ -7,7 +7,7 @@ Reads a plan.json describing the team + brief, expands templates from
 initial kanban task.
 
 Profile-config patching, SOUL.md-per-profile, TEAM.md task-graph convention,
-and the `hermes kanban create --workspace dir:` initial-task pattern are
+and the `haos kanban create --workspace dir:` initial-task pattern are
 adapted from alt-glitch's NousResearch/kanban-video-pipeline.
 
 Usage:
@@ -56,6 +56,7 @@ function. A minimal example:
     }
 """
 from __future__ import annotations
+from hermes_constants import product_command
 
 import argparse
 import json
@@ -342,7 +343,7 @@ def render_setup_sh(plan: dict, brief_md: str, team_md: str) -> str:
     profile_creates = []
     for t in plan["team"]:
         profile_creates.append(
-            f'hermes profile create {t["profile"]} --clone 2>/dev/null || true'
+            f'{product_command("profile")} create {t["profile"]} --clone 2>/dev/null || true'
         )
 
     # Profile config — emit JSON arrays so the bash function can pass them

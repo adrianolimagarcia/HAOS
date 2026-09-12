@@ -316,7 +316,7 @@ def _migrate_to_21(results: Dict[str, Any], quiet: bool) -> None:
 
 def _migrate_to_23(results: Dict[str, Any], quiet: bool) -> None:
     # 22 → 23: seed curator defaults + create logs/curator/. Older configs never wrote the curator
-    # section; deep-merge made it work but users could not see/edit it and `hermes curator status`
+    # section; deep-merge made it work but users could not see/edit it and `haos curator status`
     # had no stable logs dir. Only keys the user hasn't set are written.
     _c = _cfg()
     DEFAULT_CONFIG = _c.DEFAULT_CONFIG

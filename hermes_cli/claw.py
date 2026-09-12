@@ -29,7 +29,7 @@ _OPENCLAW_DIR_NAMES = (".openclaw", ".clawdbot", ".moltbot")
 # pgrep -f ERE anchored on a node interpreter as argv[0] (``node /usr/local/bin/openclaw gateway``).
 _OPENCLAW_NODE_CMDLINE_RE = r"^(\S*/)?node(js)?\s.*(openclaw|clawd)"
 
-# `hermes claw migrate` flags/defaults. Secrets are never included implicitly: --migrate-secrets
+# `haos claw migrate` flags/defaults. Secrets are never included implicitly: --migrate-secrets
 # is required even under --preset full (OpenClaw's two-phase posture); no silent API-key import.
 _MIGRATE_ARG_DEFAULTS = (
     ("source", None), ("dry_run", False), ("preset", "full"), ("overwrite", False),
@@ -288,7 +288,7 @@ def _cmd_migrate(args):
                 non_tty=("Non-interactive session — preview only.",
                          "To execute, re-run with: " + product_command("claw") + " migrate --yes")):
         _apply_migration(run_migrator, opts)
-    # Source directory is left untouched — archiving is `hermes claw cleanup`'s job.
+    # Source directory is left untouched — archiving is `haos claw cleanup`'s job.
 
 
 def _load_migrator(script_path: Path, opts: SimpleNamespace) -> Optional[Callable[[bool], dict]]:

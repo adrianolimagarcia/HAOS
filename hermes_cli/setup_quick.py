@@ -119,7 +119,7 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
         save_config(config)
     else:
         # Messaging skipped — still install/start the gateway service so cron jobs run and
-        # platforms come alive as soon as tokens are added later (e.g. via `hermes import`).
+        # platforms come alive as soon as tokens are added later (e.g. via `haos import`).
         from hermes_cli.gateway import ensure_gateway_service
         ensure_gateway_service(context="setup")
     print()
@@ -259,7 +259,7 @@ def _run_blank_slate_setup(config: dict, hermes_home, is_existing: bool):
         _blank_slate_walkthrough(config, hermes_home)
         return
     save_config(config)
-    # Blank Slate means no bundled skills; record the opt-out so future `hermes update` runs
+    # Blank Slate means no bundled skills; record the opt-out so future `haos update` runs
     # don't re-inject them.
     _set_bundled_skills_opt_out(True, "skill opt-out")
     _blank_slate_done(config, hermes_home, "  Enable tools:        " + product_command("tools"), "  Enable plugins:      " + product_command("plugins"),

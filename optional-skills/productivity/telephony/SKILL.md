@@ -140,8 +140,8 @@ If `SCRIPT` is empty, the skill is not installed yet.
 This is an official optional skill, so install it from the Skills Hub:
 
 ```bash
-hermes skills search telephony
-hermes skills install official/productivity/telephony
+haos skills search telephony
+haos skills install official/productivity/telephony
 ```
 
 ## Provider setup

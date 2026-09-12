@@ -681,7 +681,7 @@ def cmd_mcp_remove(args):
     _remove_mcp_server(name)
     _success(f"Removed '{name}' from config")
     # Route OAuth cleanup through MCPOAuthManager so any provider cached in this process (e.g. from
-    # an earlier `hermes mcp test`) is evicted too.
+    # an earlier `haos mcp test`) is evicted too.
     try:
         from tools.mcp_oauth_manager import get_manager
         get_manager().remove(name)
@@ -809,7 +809,7 @@ def _reauth_oauth_server(name: str, server_config: dict, *, flow: str | None = N
 
     # The probe triggers the OAuth flow (browser redirect + callback capture). Honor the configured
     # connect_timeout, floored at 315s (the 300s OAuth callback window + headroom) — matching the GUI
-    # re-auth path in web_server.py. force_interactive_oauth: `hermes mcp login` is explicitly
+    # re-auth path in web_server.py. force_interactive_oauth: `haos mcp login` is explicitly
     # user-initiated even when stdin isn't a TTY (desktop / agent-spawned terminals), where
     # _is_interactive() alone would refuse to open a browser.
     try:
@@ -1060,7 +1060,7 @@ def mcp_command(args):
     if handler:
         handler(args)
         return
-    # No subcommand — drop the user into the catalog picker (same UX as `hermes plugin`).
+    # No subcommand — drop the user into the catalog picker (same UX as `haos plugin`).
     from hermes_cli.mcp_picker import run_picker
     run_picker()
     print(color("  Commands:", Colors.CYAN))

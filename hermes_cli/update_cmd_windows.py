@@ -88,7 +88,7 @@ def _self_and_non_gateway_ancestor_pids(psutil) -> set[int]:
     gracefully; a detached child survives on Windows); interactive ancestry is never a blocker."""
     _is_gw = None
     with suppress(Exception):
-        # Never return ourselves or our own ancestry: a CLI ``hermes update`` runs from the venv python and
+        # Never return ourselves or our own ancestry: a CLI ``haos update`` runs from the venv python and
         # would otherwise nominate itself. Same #87594 carve-out as _detect_venv_python_processes: a GATEWAY
         # ancestor is not "our own ancestry" in the interactive sense — it is the process the pause
         # machinery must see (the /update-from-gateway topology makes the updater the gateway's child).
@@ -1238,7 +1238,7 @@ def _clear_windows_venv_holders_or_exit(args, gateway_mode: bool, _windows_gatew
     ):
         if holders and (backends := classifier(holders)):
             holders = _reap_and_rescan(f"  ⚠ {len(backends)} {message}; stopping their trees", backends)
-    # Manual serve/dashboard rung (e.g. `hermes serve --host <ip>` for a REMOTE Desktop): ledger identity
+    # Manual serve/dashboard rung (e.g. `haos serve --host <ip>` for a REMOTE Desktop): ledger identity
     # only (spawner dead; Desktop-owned keep the refusal). Stop and register an idempotent atexit relaunch
     # on the SAME host/port/profile — success or failure.
     if holders and (serve_entries := _m()._ledger_manual_serve_holders(holders)):

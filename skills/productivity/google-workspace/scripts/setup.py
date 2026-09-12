@@ -22,6 +22,7 @@ Agent workflow:
 """
 
 from __future__ import annotations  # allow PEP 604 `X | None` on Python 3.9+
+from hermes_constants import product_command
 
 import argparse
 import json
@@ -178,7 +179,7 @@ def install_deps():
         "On environments without pip (e.g. Nix, or the Hermes Docker image's "
         "uv-managed venv), install the optional extra instead:"
     )
-    print("  hermes setup")
+    print("  " + product_command("setup"))
     print(f"Or manually: {sys.executable} -m pip install {' '.join(REQUIRED_PACKAGES)}")
     return False
 

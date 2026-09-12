@@ -324,7 +324,7 @@ def refresh_xai_oauth_pure(
         # 403 is almost always a tier/entitlement gate; re-login won't fix it, so use a separate
         # code and format_auth_error skips the re-authenticate hint.
         # ``403`` from xAI's token endpoint is almost always a tier / entitlement gate (the OAuth grant
-        # exists but the account isn't on the allowlist for API access). Re-running ``hermes model`` won't
+        # exists but the account isn't on the allowlist for API access). Re-running ``haos model`` won't
         # fix that — surface a separate error code so ``format_auth_error`` doesn't append a misleading
         # re-authenticate hint, and point users at the ``XAI_API_KEY`` fallback. See #26847.
         if response.status_code == 403:
@@ -397,7 +397,7 @@ def _quarantine_xai_oauth_tokens(exc: AuthError) -> None:
         tokens.pop("refresh_token", None)
         # Capture the previous singleton tokens BEFORE overwriting them. The pool-sync step uses this to
         # distinguish legacy singleton-aliases (which should be refreshed) from independent accounts that
-        # ``hermes auth add openai-codex`` created (which must not be overwritten — see #39236).
+        # ``haos auth add openai-codex`` created (which must not be overwritten — see #39236).
         state["tokens"] = tokens
         state["last_auth_error"] = _last_auth_error_marker(
             "xai-oauth", exc, reason="runtime_refresh_failure", default_code="xai_refresh_failed",
@@ -495,7 +495,7 @@ def _login_xai_oauth(args, pconfig: ProviderConfig, *, force_new_login: bool = F
         auth_mode="oauth_device_code",
     )
     # Explicit re-login re-enables the credential: clear the ``device_code`` suppression marker left
-    # by ``hermes auth remove xai-oauth``. Deliberately NOT inside _save_xai_oauth_tokens — the
+    # by ``haos auth remove xai-oauth``. Deliberately NOT inside _save_xai_oauth_tokens — the
     # refresh hot path shares that helper and must never mutate suppression state.
     unsuppress_credential_source("xai-oauth", "device_code")
     config_path = _update_config_for_provider("xai-oauth", creds.get("base_url", DEFAULT_XAI_OAUTH_BASE_URL))

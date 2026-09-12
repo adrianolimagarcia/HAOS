@@ -25,7 +25,7 @@ UPDATE_MARKER_MAX_AGE_SECONDS = 20 * 60
 MARKER_NAME = ".hermes-update-in-progress"
 
 # Set by an orchestrating updater (Tauri `hermes-setup --update`) to its own pid before
-# spawning `hermes update` as a child stage; the parent holds the marker for its whole run,
+# spawning `haos update` as a child stage; the parent holds the marker for its whole run,
 # so without this the child would refuse its own parent's lock. Keep in sync with
 # update_child_env in apps/bootstrap-installer/src-tauri/src/update.rs.
 HANDOFF_PID_ENV = "HERMES_UPDATE_HANDOFF_PID"

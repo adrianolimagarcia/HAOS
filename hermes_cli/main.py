@@ -11,8 +11,8 @@ from hermes_constants import product_command
 
 # hermes_bootstrap must be the very first import — it sets up UTF-8 stdio on
 # Windows (no-op on POSIX). Guarded: after a ``git pull`` / interrupted
-# ``hermes update`` the editable install's ``.pth`` may not list it yet; crashing
-# here would block ``hermes update``.
+# ``haos update`` the editable install's ``.pth`` may not list it yet; crashing
+# here would block ``haos update``.
 try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
@@ -37,7 +37,7 @@ if _bootstrap_root not in sys.path:
 from hermes_cli import _startup_fast  # noqa: E402
 
 # Early venv self-heal — MUST run before any third-party import below. A prior
-# ``hermes update`` may have left a recovery marker with a core package wiped;
+# ``haos update`` may have left a recovery marker with a core package wiped;
 # the hermes_cli.config/env_loader imports further down would then crash before
 # main() reaches _recover_from_interrupted_install(). ``_early_recovery`` is
 # stdlib-only (safe on a corrupted venv) and repairs just enough to finish this
@@ -513,7 +513,7 @@ def _apply_profile_override() -> None:
     # points at a specific profile dir ("profiles" as immediate parent). If it
     # points at the hermes root (systemd hardcodes HERMES_HOME=/root/.hermes)
     # we must still read active_profile — the user may have run
-    # `hermes profile use` and the gateway should honour it (#22502).
+    # `haos profile use` and the gateway should honour it (#22502).
     hermes_home_env = os.environ.get("HERMES_HOME", "")
     if profile_name is None and hermes_home_env and Path(hermes_home_env).parent.name == "profiles":
         return
@@ -559,7 +559,7 @@ _apply_profile_override()
 
 # Windows launcher self-heal — the ``hermes`` command is a COPY of the venv
 # console script staged into the managed bin dir (outside the checkout, since
-# ``hermes update``'s autostash once swept ``<checkout>\bin`` copies off disk;
+# ``haos update``'s autostash once swept ``<checkout>\bin`` copies off disk;
 # venv\Scripts must stay off PATH as it shadows the user's ``python``).
 # Re-staging at process start reaches already-broken installs via the desktop
 # app's ``python -m hermes_cli.main`` spawn. Gates fail toward inaction. Sits
@@ -567,7 +567,7 @@ _apply_profile_override()
 # profiles resolve; the helper anchors on the DEFAULT root, so profile
 # sessions heal the same shared dir.
 # That dir lives OUTSIDE the git checkout precisely because an earlier layout staged the copies at
-# ``<checkout>\bin``, where ``hermes update``'s autostash (``git stash push --include-untracked``) swept
+# ``<checkout>\bin``, where ``haos update``'s autostash (``git stash push --include-untracked``) swept
 # them off disk; with the desktop updater's ``--keep-stash`` nothing restored them and ``hermes`` stopped
 # resolving in every new terminal (venv\Scripts itself must stay off PATH — it shadows the user's
 # ``python``, #83797). Costs a few stat calls when healthy; gates fail toward inaction so source checkouts
@@ -843,7 +843,7 @@ def _read_git_revision_fingerprint(repo_root: Path) -> str | None:
                 return f"git:{ref}:{packed_sha}"
             # Ref name is known but unresolved — still stable across launches,
             # and the version/release fallback in the caller will invalidate
-            # after `hermes update`.
+            # after `haos update`.
             return f"git:{ref}:unresolved"
         return f"git:HEAD:{head}"
     except OSError:
@@ -1765,7 +1765,7 @@ def cmd_chat(args):
         # here — e.g. missing resolve_turn_limit / split_model_config_default
         # (#96900). The agent-setup mixin prints this hint too late: HermesCLI
         # construction already failed. Fast-chat launch also goes through
-        # cmd_chat, so this one catch covers `hermes` / `hermes chat`.
+        # cmd_chat, so this one catch covers `hermes` / `haos chat`.
         from hermes_constants import emit_partial_update_hint
 
         if emit_partial_update_hint(e):
@@ -2398,7 +2398,7 @@ def _dashboard_lifecycle_flags(args, token_file) -> None:
         if not _find_stale_dashboard_pids():
             print("No " + product_command("dashboard") + " processes running.")
             sys.exit(0)
-        # Reuse the same SIGTERM-grace-SIGKILL path used after `hermes update`;
+        # Reuse the same SIGTERM-grace-SIGKILL path used after `haos update`;
         # it prints outcomes itself. Exit 1 only if every pid was unkillable.
         from hermes_cli.dashboard_procs import _kill_stale_dashboard_processes
 
@@ -2408,7 +2408,7 @@ def _dashboard_lifecycle_flags(args, token_file) -> None:
 
 def _dashboard_validate_serve_args(args, headless_backend, token_file):
     """Headless-serve argument checks -> ssh_owner_nonce (or None)."""
-    # `hermes serve` is headless/non-interactive: fail closed on a corrupt
+    # `haos serve` is headless/non-interactive: fail closed on a corrupt
     # config.yaml instead of silently starting on defaults where provider
     # auto-detection can adopt unnamed .env credentials (issue #81952).
     # Same policy + escape hatch as _guard_noninteractive_user_config.
@@ -2731,7 +2731,7 @@ def _is_tui_chat_launch(args) -> bool:
         return True
     # The chat path decides TUI-vs-classic via _resolve_use_tui (--cli/--tui
     # flags, TTY gate, HERMES_TUI env, display.interface config). Bare
-    # `hermes`/`hermes chat` with a TUI display config was previously missed
+    # `hermes`/`haos chat` with a TUI display config was previously missed
     # here, so the wrapper pre-warmed its own MCP discovery while the TUI
     # gateway (spawned moments later) ran a second one — an idle stdio MCP
     # server copy held dead for the whole session. Only chat commands can
@@ -3210,7 +3210,7 @@ def _build_cli_parser():
     build_worktree_parser(subparsers)
     build_browser_parser(subparsers)
     build_secrets_parser(subparsers)
-    # OUTBOUND egress firewall; ``hermes proxy`` (gateway group) is the INBOUND one.
+    # OUTBOUND egress firewall; ``haos proxy`` (gateway group) is the INBOUND one.
     build_egress_parser(subparsers)
     build_migrate_parser(subparsers)
     build_gateway_parser(
@@ -3377,11 +3377,11 @@ def main():
     # process resolves fresh source against old bytecode. Never raises.
     _sweep_stale_bytecode_if_checkout_changed()
 
-    # Self-heal a venv left half-built by an interrupted ``hermes update``, and
+    # Self-heal a venv left half-built by an interrupted ``haos update``, and
     # hint (never restart) about a fleet the interrupted update never
     # restarted. Both skipped while the user is *running* update — that flow
     # owns its marker and a recovery install must not race the real one. The
-    # substring match is deliberately loose: over-matching (``hermes skills
+    # substring match is deliberately loose: over-matching (``haos skills
     # install update``) only defers recovery one launch; under-matching
     # (``hermes -p work update``) would race. Never raises.
     # See #95294.

@@ -748,7 +748,7 @@ def start_proxy(
     env[_HERMES_IRON_PROXY_NONCE_ENV] = _proxy_nonce
     log_path = _proxy_state_dir() / "iron-proxy.log"
     proc = _spawn_daemon(bin_path, cfg, env, log_path)
-    # Pidfile BEFORE the listening poll so `hermes egress stop` can clean an orphan if the parent dies mid-poll.
+    # Pidfile BEFORE the listening poll so `haos egress stop` can clean an orphan if the parent dies mid-poll.
     pidfile = _pidfile()
     try:
         _write_pidfile_safely(pidfile, proc.pid)

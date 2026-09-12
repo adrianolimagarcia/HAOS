@@ -62,7 +62,7 @@ monitoring:
 Check the posture any time:
 
 ```bash
-hermes monitoring status
+haos monitoring status
 ```
 
 The OpenTelemetry SDK is an optional extra (`pip install 'hermes-agent[otlp]'`),
@@ -72,7 +72,7 @@ off the hot path, while terminal cron events make one bounded fail-open flush
 attempt of up to one second so the final state is less likely to be lost.
 
 Works identically under systemd/launchd/s6 supervision, containers, tmux, or
-a plain `hermes gateway run`: the exporter lives in the gateway process, so
+a plain `haos gateway run`: the exporter lives in the gateway process, so
 no sidecar, agent, or collector is required on the host.
 
 ## Collecting into DataDog
@@ -285,7 +285,7 @@ emitter attribute allowlist, and any collector allowlist each drop unlisted
 values with no error:
 
 ```bash
-hermes monitoring status                 # posture
+haos monitoring status                 # posture
 python scripts/observability/gateway_health_export_probe.py \
   --endpoint http://127.0.0.1:4318/v1/traces \
   --log /tmp/cap.jsonl --wait 8          # drive the real exporter
@@ -297,7 +297,7 @@ allowlist entries and re-verify against the backend, not just the local capture.
 
 ## Boundaries and roadmap
 
-The `hermes monitoring` CLI intentionally exposes `status` only. This first
+The `haos monitoring` CLI intentionally exposes `status` only. This first
 release covers only Hermes Agent-owned service-health and operational-diagnostic
 signals, including Hermes Agent-owned Relay transport health. Team Gateway's
 authoritative shared connector/platform state is explicitly out of scope, as

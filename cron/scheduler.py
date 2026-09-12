@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Callable, List, Optional, Protocol
 
 # Must precede repo-level imports: standalone invocations (e.g. module reload after
-# `hermes update`) otherwise fail with ModuleNotFoundError for hermes_time et al.
+# `haos update`) otherwise fail with ModuleNotFoundError for hermes_time et al.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hermes_constants import get_hermes_home, product_command
@@ -323,7 +323,7 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     # (message unchanged); no_agent jobs excluded via the same mode gate (a fresh subprocess
     # resolves imports against disk, so its ImportError is the script's own problem).
     # Import-class failures (#95294 part 3): a long-lived gateway whose checkout was updated underneath it
-    # (interrupted `hermes update`, manual git pull) serves MIXED modules — old entries frozen in
+    # (interrupted `haos update`, manual git pull) serves MIXED modules — old entries frozen in
     # sys.modules, new files loaded by lazy imports — and every agent cron job then dies with `cannot import
     # name X` / ModuleNotFoundError. The error itself reads like a code bug, so operators debug the wrong
     # thing (2 days on the reporting incident, 15 missed jobs).
@@ -3634,7 +3634,7 @@ def _maybe_reap_dead_owners() -> None:
     """Dead-owner reclaim: a run that died mid-flight would leave its row 'claimed' forever. Only
     rows whose owner process is proved gone are touched (_owner_is_live). Throttled."""
     # Dead-owner claim reclaim (#86721): execution rows carry their owner pid + process start time, but
-    # recovery previously ran only at scheduler STARTUP. A one-shot `hermes cron run` that claimed a job and
+    # recovery previously ran only at scheduler STARTUP. A one-shot `haos cron run` that claimed a job and
     # died mid-run (its runner thread lived in the exiting CLI process) left the row 'claimed' forever while
     # the long-lived gateway ticker kept running — blocking every future run of that job. Reap provably-dead
     # owners periodically so stale claims auto-clear without a gateway restart. Throttled so idle 60s ticks
@@ -3850,7 +3850,7 @@ def tick(
         return 0
 
     try:
-        # `hermes pause` ESTOP: skip dispatch, never touch in-flight runs; check_paused logs once.
+        # `haos pause` ESTOP: skip dispatch, never touch in-flight runs; check_paused logs once.
         with contextlib.suppress(ImportError):
             from agent.estop import check_paused as _estop_check_paused
             if _estop_check_paused("cron", logger):

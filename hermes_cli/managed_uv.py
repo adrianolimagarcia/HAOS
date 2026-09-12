@@ -522,7 +522,7 @@ def _install_safe_python_generation(
     if result is not None:
         return result
     # All patches on the current minor line are vulnerable or rejected. Fall forward to the next
-    # supported minor (e.g. 3.11 → 3.12) so the user isn't stuck on every `hermes update`. The
+    # supported minor (e.g. 3.11 → 3.12) so the user isn't stuck on every `haos update`. The
     # requires-python window (>=3.11,<3.14) and the import smoke-test gate compatibility.
     # See #76106.
     cur_major, cur_minor = current.python_version[:2]

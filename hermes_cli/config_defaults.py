@@ -61,7 +61,7 @@ DEFAULT_CONFIG = {
         "budget_warning_ratio": None,
         # Wall-clock budget (seconds) per run. null = off. When set: one-time wrap-up notice at 80%
         # elapsed; implicit provider stale timeouts capped to remaining budget. CLI equivalent:
-        # `hermes chat --run-budget N`.
+        # `haos chat --run-budget N`.
         "run_budget_seconds": None,
         # Gateway inactivity timeout (seconds). Only fires when the agent is completely idle — not
         # while calling tools or receiving API responses. 0 = unlimited.
@@ -209,12 +209,12 @@ DEFAULT_CONFIG = {
         "session_stall_timeout": 300,
         # Transcript-sanitiser heal escalation: after this many pre-send heal passes within a
         # 10-minute window, log one ERROR and queue a ONE-TIME out-of-band notice pointing at /debug
-        # share or `hermes doctor` (status channel only; prompt cache untouched). 0 = no escalation
+        # share or `haos doctor` (status channel only; prompt cache untouched). 0 = no escalation
         # (per-window WARNINGs still fire).
         # See #96870.
         "sanitizer_heal_escalation_threshold": 3,
         # Seconds of continuous reconnect failure before a platform gets needs_attention flagged in
-        # gateway status (`hermes status` / fleet monitoring). Retries never stop — a signal, not a
+        # gateway status (`haos status` / fleet monitoring). Retries never stop — a signal, not a
         # circuit breaker. 0 = disable.
         "reconnect_attention_after": 7200,
         # Freshness window (seconds) for the auto-continue note. After a crash/restart mid-run the
@@ -367,8 +367,8 @@ DEFAULT_CONFIG = {
         # keyless_fallback is false.
         "keyless_rescue": True,
         # Per-vendor tier for vendors with both a keyless free endpoint and a keyed paid path (exa,
-        # parallel, firecrawl, keenable; tavily is opt-in keyless via `hermes tools`, not a ring
-        # member). Set by the `hermes tools` picker. "free" = always anonymous endpoint even with a
+        # parallel, firecrawl, keenable; tavily is opt-in keyless via `haos tools`, not a ring
+        # member). Set by the `haos tools` picker. "free" = always anonymous endpoint even with a
         # key; "paid" = always keyed (missing key = error; vendor excluded from the ring); unset =
         # keyed when the key is present, else the ring.
         "provider_tier": {},
@@ -416,7 +416,7 @@ DEFAULT_CONFIG = {
         "use_real_profile": False,
         # Windows only: a running Chrome/Edge/Brave locks its cookie DB, so the profile can't be
         # copied. When on, a locked profile still blocks and the agent ASKS first; on approval it
-        # runs `hermes browser close-profile` (kills that profile's browser tree, unsaved tabs lost)
+        # runs `haos browser close-profile` (kills that profile's browser tree, unsaved tabs lost)
         # and retries once; still locked -> stays blocked, no auto-kill. No effect on macOS/Linux
         # (copy-while-running works).
         "real_profile_autoclose": False,
@@ -454,7 +454,7 @@ DEFAULT_CONFIG = {
         "extension_control": {"enabled": False, "developer_mode": False},
     },
     # Filesystem checkpoints: snapshot the working directory once per turn (on the first
-    # write_file/patch call); restore with /rollback. Opt-in via `hermes chat --checkpoints` or
+    # write_file/patch call); restore with /rollback. Opt-in via `haos chat --checkpoints` or
     # enabled=True (most users never use /rollback). Single shared shadow store with real pruning.
     "checkpoints": {
         "enabled": False,
@@ -469,7 +469,7 @@ DEFAULT_CONFIG = {
         # older than retention_days, GCs the shared store, enforces max_total_size_mb, deletes
         # legacy-* archives older than retention_days. It NEVER deletes orphans (workdir missing on
         # disk) — a missing workdir may just be an unmounted volume/VPN, and an unattended sweep
-        # must not guess. Orphans: `hermes checkpoints prune` (`--keep-orphans` to skip).
+        # must not guess. Orphans: `haos checkpoints prune` (`--keep-orphans` to skip).
         "auto_prune": True,
         "retention_days": 7,
         "min_interval_hours": 24,
@@ -739,7 +739,7 @@ DEFAULT_CONFIG = {
         "profile_describer": _aux(60),   # 1-2 sentence profile blurb; short, cheap
         "goal_judge": _aux(60),          # /goal satisfaction + contract drafting; JSON calls
         # Curator skill-usage review can take minutes on reasoning models (umbrellas over hundreds
-        # of skills); route cheaper via `hermes model` → auxiliary → Curator.
+        # of skills); route cheaper via `haos model` → auxiliary → Curator.
         "curator": _aux(600),
         "monitor": _aux(60),   # important-mail 0-10 scorer; high-volume, small model fine
         # Post-turn self-improvement fork (save memory / patch skill). "auto" = main model replaying
@@ -774,7 +774,7 @@ DEFAULT_CONFIG = {
         # continues, Shift+Enter reported distinctly. False restores the c-j submit fallback for
         # POSIX PTYs whose plain Enter arrives as LF.
         "cli_multiline_shortcuts": True,
-        # Interface bare `hermes`/`hermes chat` launches: "cli" (prompt_toolkit REPL) | "tui" (Ink).
+        # Interface bare `hermes`/`haos chat` launches: "cli" (prompt_toolkit REPL) | "tui" (Ink).
         # Flags win: `--cli` forces the REPL, `--tui` / HERMES_TUI=1 forces the TUI.
         "interface": "cli",
         # `hermes --tui` auto-resumes the most recent human-facing session (like `hermes -c`).
@@ -914,7 +914,7 @@ DEFAULT_CONFIG = {
         },
         "copy_shortcut": "auto",  # "auto" (platform default) | ctrl_c | ctrl_shift_c | disabled
         # Petdex animated mascot (github.com/crafter-station/petdex): cosmetic sprite across
-        # CLI/TUI/desktop, managed with `hermes pets`. No effect on prompt caching.
+        # CLI/TUI/desktop, managed with `haos pets`. No effect on prompt caching.
         "pet": {
             "enabled": False,
             "slug": "",   # active pet slug in get_hermes_home()/pets/; empty → first installed
@@ -1355,7 +1355,7 @@ DEFAULT_CONFIG = {
         # highest-precedence tier — ONLY if the root is in trusted_project_dirs. false = no scan, no
         # untrusted-skills notice.
         "project_discovery": True,
-        # Trusted project roots; managed by `hermes skills trust` / `untrust`.
+        # Trusted project roots; managed by `haos skills trust` / `untrust`.
         "trusted_project_dirs": [],
         # Substitute ${HERMES_SKILL_DIR} / ${HERMES_SESSION_ID} in SKILL.md content.
         "template_vars": True,
@@ -1367,7 +1367,7 @@ DEFAULT_CONFIG = {
         # code via terminal() ungated, so it mostly blocks prose with risky keywords. On: a
         # dangerous verdict is a tool error the agent can retry. Hub installs are always scanned.
         "guard_agent_created": False,
-        # Advisory NVIDIA SkillEvaluator Tier 1 scan on `hermes skills install` (alongside the
+        # Advisory NVIDIA SkillEvaluator Tier 1 scan on `haos skills install` (alongside the
         # enforcing built-in guard), only if `skillevaluator` is on PATH (uv tool install
         # "skillevaluator @ git+https://github.com/NVIDIA/SkillEvaluator.git"). Informational, never
         # blocking; secrets-class findings shown red. No-op without it.
@@ -1386,7 +1386,7 @@ DEFAULT_CONFIG = {
     # Curator — background maintenance of AGENT-CREATED skills (never hub-installed): marks
     # long-unused skills stale, archives (never deletes) obsolete ones, optionally consolidates
     # overlaps via a forked aux-model agent. Inactivity-triggered from session start, no cron
-    # daemon. `hermes curator status` shows the last run.
+    # daemon. `haos curator status` shows the last run.
     "curator": {
         "enabled": True,
         "interval_hours": 24 * 7,  # hours between runs
@@ -1394,17 +1394,17 @@ DEFAULT_CONFIG = {
         "stale_after_days": 14,  # mark "stale" after this many unused days
         "archive_after_days": 30,  # move to skills/.archive/ (recoverable) after this many
         # LLM consolidation (umbrella-building) pass. OFF = deterministic inactivity prune only, no
-        # aux-model cost. `hermes curator run --consolidate` overrides once.
+        # aux-model cost. `haos curator run --consolidate` overrides once.
         "consolidate": False,
-        # Also prune bundled built-ins (a suppression list stops `hermes update` restoring them);
+        # Also prune bundled built-ins (a suppression list stops `haos update` restoring them);
         # hub-installed skills are NEVER pruned. A built-in's clock starts when the curator first
         # sees it, so never a mass-prune on the first run. false = keep all.
         "prune_builtins": True,
-        # TTL purge of skills/.archive/: 0 = never; > 0 lets the explicit `hermes curator purge`
+        # TTL purge of skills/.archive/: 0 = never; > 0 lets the explicit `haos curator purge`
         # delete older archived skills (never automatic; logged in the ledger).
         "archive_ttl_days": 0,
         # Before every real (non-dry-run) pass, snapshot ~/.hermes/skills/ to
-        # ~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz (`hermes curator rollback`).
+        # ~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz (`haos curator rollback`).
         "backup": {
             "enabled": True,
             "keep": 5,  # retain last N regular snapshots
@@ -1588,14 +1588,14 @@ DEFAULT_CONFIG = {
     # substitutes it; a bare string is shorthand for append. `replace` wins over `append` if both
     # are given.
     "platform_hints": {},
-    # Plugin system. `enabled`/`disabled` lists are written by `hermes plugins enable|disable` and
+    # Plugin system. `enabled`/`disabled` lists are written by `haos plugins enable|disable` and
     # deliberately omitted here so an empty default never clobbers a user allow-list.
     "plugins": {
         # Wall-clock cap (seconds) for one in-process Python plugin hook callback; shell hooks keep
         # their own per-entry `timeout`. 0 = no cap (sync call on agent thread). Max 600.
         "hook_callback_timeout": 30,
         # Keep loading external plugins that still import pre-decomposition module paths after the
-        # 2026-09-14 removal date (see COMPAT_MANIFEST.md, `hermes plugins compat`). Stopgap only: the
+        # 2026-09-14 removal date (see COMPAT_MANIFEST.md, `haos plugins compat`). Stopgap only: the
         # old paths raise ImportError once the compat layer is actually removed.
         "allow_deprecated_imports": False,
     },
@@ -1623,7 +1623,7 @@ DEFAULT_CONFIG = {
         # suppress, or auto-approve commands outside a correlated human response.
         "approval": {"transport": "builtin", "transport_fallback": "deny"},
         # Writes to agent-instruction files (AGENTS.md/CLAUDE.md/SOUL.md/.cursorrules, project-local
-        # .hermes config) always need human approval, even under yolo. Extra patterns are fnmatch
+        # .haos config) always need human approval, even under yolo. Extra patterns are fnmatch
         # globs on the basename (e.g. "*.mdc").
         "protected_instruction_files": True,
         "protected_instruction_extra_patterns": [],
@@ -1633,7 +1633,7 @@ DEFAULT_CONFIG = {
         "tirith_fail_open": True,
         "website_blocklist": {"enabled": False, "domains": [], "shared_files": []},
         # IDs of supply-chain advisories the user has read and acted on; acked ones stop the startup
-        # banner. Add via `hermes doctor --ack <id>`; remove by editing the list. Catalog:
+        # banner. Add via `haos doctor --ack <id>`; remove by editing the list. Catalog:
         # hermes_cli/security_advisories.py.
         "acked_advisories": [],
         # Lazy-install opt-in backend packages from PyPI when a backend that needs them is first
@@ -1767,7 +1767,7 @@ DEFAULT_CONFIG = {
         # fan-out workflows that would otherwise saturate one profile's local model / API quota / browser
         # pool while leaving other profiles idle. See #21582.
         "max_in_progress_per_profile": None,
-        # Auto-run the decomposer on Triage tasks every tick. False = manual via `hermes kanban
+        # Auto-run the decomposer on Triage tasks every tick. False = manual via `haos kanban
         # decompose <id>` or the dashboard's Decompose button.
         "auto_decompose": True,
         # Max triage tasks decomposed per tick, bounding the aux-LLM burst from a bulk load. Excess
@@ -1860,7 +1860,7 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
         # Disk cache TTL in minutes. The gateway refreshes in the background on this cadence; the
-        # CLI refetches on the next /model or `hermes model` once the cache is older. Network
+        # CLI refetches on the next /model or `haos model` once the cache is older. Network
         # failures silently use the stale cache. Legacy `ttl_hours` is honoured if set.
         "ttl_minutes": 20,
         # Per-provider override URLs for self-hosted curation lists using the same schema, e.g.
@@ -2052,7 +2052,7 @@ DEFAULT_CONFIG = {
         # are never deleted; stale automation sessions whose process died are *closed*, then get a
         # full retention window before removal.
         "auto_prune": True,
-        # Inactive days of ended-session history to keep (= `hermes sessions prune`).
+        # Inactive days of ended-session history to keep (= `haos sessions prune`).
         # When true, prune ENDED sessions inactive for retention_days once per (roughly) min_interval_hours
         # at CLI/gateway/cron startup. Activity is the latest message timestamp, falling back to creation
         # time for empty sessions. Sessions that are still open, pinned, or mid-turn are never deleted — the
@@ -2079,8 +2079,8 @@ DEFAULT_CONFIG = {
         "min_interval_hours": 24,
 
         # Notice about the compact FTS layout (reclaims ~60%+ of state.db). OPT-IN: legacy indexes
-        # stay until `hermes sessions optimize-storage` runs, since the rebuild is disk-heavy on
-        # large DBs. advise = `hermes update` prints a one-line notice with reclaimable size when a
+        # stay until `haos sessions optimize-storage` runs, since the rebuild is disk-heavy on
+        # large DBs. advise = `haos update` prints a one-line notice with reclaimable size when a
         # legacy index is detected; require = shown as a REQUIRED upgrade (tooling may gate on it);
         # off = none.
         "fts_optimize_notice": "advise",
@@ -2097,7 +2097,7 @@ DEFAULT_CONFIG = {
         # once; 0 disables). Max active messages (across the compression lineage) for interactive
         # resume.
         "max_resume_messages": 20000,
-        # Max active messages per session for in-memory export (`hermes sessions export`); checked
+        # Max active messages per session for in-memory export (`haos sessions export`); checked
         # per session, so full-DB backups of small sessions work.
         "max_export_messages": 20000,
     },
@@ -2125,7 +2125,7 @@ DEFAULT_CONFIG = {
     },
 
     "doctor": {
-        # Per-probe timeout (seconds) for `hermes doctor --live` real-call probes.
+        # Per-probe timeout (seconds) for `haos doctor --live` real-call probes.
         "live_probe_timeout": 10,
     },
 
@@ -2134,8 +2134,8 @@ DEFAULT_CONFIG = {
         "check": True,
         # Pre-update backup. quick = snapshot small critical state (pairing JSONs, cron jobs,
         # config.yaml, .env, auth.json, profile DBs) into <HERMES_HOME>/state-snapshots/, skipping
-        # files >1 GiB; restore via ``/snapshot``. full = quick PLUS a ``hermes backup`` zip in
-        # <HERMES_HOME>/backups/ (``hermes import`` restores; slow on large homes; ``--backup``
+        # files >1 GiB; restore via ``/snapshot``. full = quick PLUS a ``haos backup`` zip in
+        # <HERMES_HOME>/backups/ (``haos import`` restores; slow on large homes; ``--backup``
         # forces once). off = none (``--no-backup`` forces once). Legacy booleans: true -> full,
         # false -> off.
         # Pre-update safety backup — ONE consolidated mechanism, three modes: Files over 1 GiB (e.g. a
@@ -2158,9 +2158,9 @@ DEFAULT_CONFIG = {
         # Clean parked branch with unmerged commits: switch = move to the update target, commits
         # stay on the branch (never conflicts). update_in_place = for a maintained custom branch:
         # merge origin/<target> INTO it after leaving a pre-update-<stamp> tag; a conflict stops the
-        # update cleanly. `hermes update --switch-branch` overrides to switch for one run.
+        # update cleanly. `haos update --switch-branch` overrides to switch for one run.
         "parked_branch_strategy": "switch",
-        # Refresh an installed cua-driver during `hermes update` (best-effort, macOS only). Turn off
+        # Refresh an installed cua-driver during `haos update` (best-effort, macOS only). Turn off
         # e.g. on non-admin accounts where /Applications isn't writable.
         "refresh_cua_driver": True,
     },
@@ -2186,7 +2186,7 @@ DEFAULT_CONFIG = {
         "servers": {},
     },
     # X (Twitter) Search via xAI's x_search Responses tool. Registers when xAI creds exist
-    # (SuperGrok OAuth or XAI_API_KEY) AND the toolset is enabled in `hermes tools`.
+    # (SuperGrok OAuth or XAI_API_KEY) AND the toolset is enabled in `haos tools`.
     "x_search": {
         # xAI model for the Responses call; any Grok model with x_search access works.
         "model": "grok-4.5",
@@ -2298,7 +2298,7 @@ DEFAULT_CONFIG = {
     # Egress credential-injection proxy (iron-proxy) for remote terminal sandboxes (Docker today):
     # the sandbox sees opaque tokens and iron-proxy swaps in real credentials at egress, so a
     # compromised sandbox leaks only tokens that work behind the trusted proxy. Configure with
-    # `hermes egress setup`.
+    # `haos egress setup`.
     "proxy": {
         "enabled": False,  # When false, nothing starts, no docker mounts, no binary installs.
         # Tunnel listener port; sandboxes get HTTPS_PROXY=http://<host>:<port>.

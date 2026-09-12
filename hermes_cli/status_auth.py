@@ -101,7 +101,7 @@ def _render_auth_providers(ctx):
     _status._section("Auth Providers")
     import hermes_cli.auth as auth
     try:
-        # Read-only display: the refresh-free snapshot, so `hermes status` never performs an OAuth
+        # Read-only display: the refresh-free snapshot, so `haos status` never performs an OAuth
         # refresh or burns a single-use refresh token.
         nous_status = auth.get_nous_auth_status_local()
         statuses = {getter: getattr(auth, getter)() for _, getter, _, _ in _OAUTH_BLOCKS[:3]}

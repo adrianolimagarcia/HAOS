@@ -48,7 +48,7 @@ _CLONE_ALL_DEFAULT_EXCLUDE_ROOT: frozenset[str] = frozenset({
 })
 
 # Per-profile history excluded from --clone-all for ANY source: SQLite session store
-# (+wal/shm, can reach many GB), session dirs, `hermes backup` archives, quick-backup
+# (+wal/shm, can reach many GB), session dirs, `haos backup` archives, quick-backup
 # snapshots, checkpoints. Inheriting them is never useful (restoring one inside the
 # clone would resurrect the SOURCE profile's state) and can balloon the copy by tens of GB.
 # ``cron`` is scheduled work bound to the source profile and its origin channel: a clone
@@ -59,8 +59,8 @@ _CLONE_ALL_HISTORY_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "cron",
 })
 
-# Marker written by `hermes profile create --no-skills`. When present at a profile root,
-# seed_profile_skills() callers (fresh-create, `hermes update` all-profile sync, the
+# Marker written by `haos profile create --no-skills`. When present at a profile root,
+# seed_profile_skills() callers (fresh-create, `haos update` all-profile sync, the
 # dashboard) skip bundled-skill seeding. Delete the file to opt back in.
 NO_BUNDLED_SKILLS_MARKER = ".no-bundled-skills"
 
@@ -370,7 +370,7 @@ def _migrate_profile_config_if_outdated(profile_dir: Path) -> None:
     profile); otherwise the first desktop/doctor view shows a scary ``v0 -> latest`` warning."""
     if not (profile_dir / "config.yaml").exists():
         return
-    # Creation must not fail over an unmigratable old config; `hermes doctor --fix` surfaces
+    # Creation must not fail over an unmigratable old config; `haos doctor --fix` surfaces
     # the detailed error in the target profile.
     with contextlib.suppress(Exception):
         from hermes_constants import reset_hermes_home_override, set_hermes_home_override
@@ -515,7 +515,7 @@ def _seed_model_config(profile_dir: Path) -> None:
     config_path = profile_dir / "config.yaml"
     if config_path.exists():
         return
-    with contextlib.suppress(Exception):  # creation must not fail over this; `hermes model` sets it later
+    with contextlib.suppress(Exception):  # creation must not fail over this; `haos model` sets it later
         import yaml
         from hermes_constants import get_hermes_home
         from hermes_cli.config import read_user_config_raw
@@ -848,7 +848,7 @@ Either clone strips the source's messaging channels — bot tokens, allowlists, 
         from hermes_cli.default_soul import DEFAULT_SOUL_MD
         _seed_file_if_missing(profile_dir / "SOUL.md", DEFAULT_SOUL_MD)
 
-    # Opt-out marker read by seed_profile_skills() and `hermes update`'s all-profile sync
+    # Opt-out marker read by seed_profile_skills() and `haos update`'s all-profile sync
     # (the feature still works via the empty skills/ dir if this fails).
     if no_skills:
         _seed_file_if_missing(
@@ -865,7 +865,7 @@ Either clone strips the source's messaging channels — bot tokens, allowlists, 
 
     # Description last, so a partial-create failure doesn't strand a description file.
     if description and description.strip():
-        with contextlib.suppress(Exception):  # non-fatal — `hermes profile describe` works later
+        with contextlib.suppress(Exception):  # non-fatal — `haos profile describe` works later
             write_profile_meta(profile_dir, description=description.strip(), description_auto=False)
 
     # Inside a container under s6, register the gateway as a runtime s6 service so

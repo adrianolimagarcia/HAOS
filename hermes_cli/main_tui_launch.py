@@ -812,7 +812,7 @@ def _launch_tui(
                 from cli import _cleanup_worktree
                 _cleanup_worktree(wt_info)
 
-    # Exit code 42 = TUI requested an update. Relaunch as `hermes update`;
+    # Exit code 42 = TUI requested an update. Relaunch as `haos update`;
     # preserve_inherited=False keeps --tui and other flags out of the subcommand.
     if code == 42:
         from hermes_cli.relaunch import relaunch

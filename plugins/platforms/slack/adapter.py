@@ -1554,7 +1554,7 @@ class SlackAdapter(BasePlatformAdapter):
                 (event or {}).get("type", (body or {}).get("event", {}).get("type", "unknown")))
 
         # Every COMMAND_REGISTRY command is a native slash via one regex matcher. Commands must
-        # ALSO be declared in the app manifest (`hermes slack manifest`): Socket Mode won't
+        # ALSO be declared in the app manifest (`haos slack manifest`): Socket Mode won't
         # deliver undeclared commands at all.
         from hermes_cli.commands_platforms import slack_native_slashes
         _slash_names = [name for name, _d, _h in slack_native_slashes()]

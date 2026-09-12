@@ -294,7 +294,7 @@ async def toggle_toolset(name: str, body: ToolsetToggle, profile: Optional[str] 
 
     # Install-on-enable: a provider whose post_setup install predicate is
     # UNSATISFIED (cua-driver binary missing, etc.) gets the same background
-    # install `hermes tools` runs — otherwise the toggle "saves" but the tool
+    # install `haos tools` runs — otherwise the toggle "saves" but the tool
     # never appears.  Best-effort: a spawn failure never fails the toggle.
     post_setup_started: Optional[str] = None
     if body.enabled and name not in _CONFIG_ONLY_TOOLSETS:

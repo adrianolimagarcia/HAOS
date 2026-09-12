@@ -41,7 +41,7 @@ def _cu_status(args) -> int:
     from hermes_cli.tools_config import _cua_version_summary
     version = _cua_version_summary(version)
     # Name the override here too. Without it the operator is told to repair an
-    # install that `hermes computer-use install` will (correctly) refuse to touch,
+    # install that `haos computer-use install` will (correctly) refuse to touch,
     # with nothing pointing at the env var that actually selected the binary.
     origin = " [custom binary from HERMES_CUA_DRIVER_CMD]" if override else ""
     print(f"cua-driver: installed at {path}{origin}" + (f" ({version})" if version else ""))

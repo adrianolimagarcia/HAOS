@@ -64,7 +64,7 @@ def detect_service_manager() -> ServiceManagerKind:
     from hermes_cli.gateway import is_macos, is_windows, supports_systemd_services
     # Gate on _s6_running() alone, NOT is_container(): the latter only detects Docker/Podman/lxc
     # and is False on Fly's Firecracker microVMs even though s6-overlay is PID 1 there — that
-    # made the s6 dispatch inert on Fly, so `hermes gateway start` spawned a foreground gateway
+    # made the s6 dispatch inert on Fly, so `haos gateway start` spawned a foreground gateway
     # competing with the supervised one.
     if _s6_running():
         return "s6"
@@ -217,7 +217,7 @@ def get_service_manager() -> ServiceManager:
 
 # ---------------------------------------------------------------------------
 # S6ServiceManager (container-only). Per-profile gateways are registered dynamically by
-# `hermes profile create` inside the container. Static services (main-hermes, dashboard) live in
+# `haos profile create` inside the container. Static services (main-hermes, dashboard) live in
 # /etc/s6-overlay/s6-rc.d/ as part of the image and are NOT managed here.
 # ---------------------------------------------------------------------------
 
@@ -439,7 +439,7 @@ class S6ServiceManager:
         # hermes_cli.main._apply_profile_override; kept alongside the s6 one for back-compat.
         lines.append("export HERMES_SUPERVISED_CHILD=1")
         # ``--replace`` makes the supervised gateway authoritative for its HERMES_HOME. Without it
-        # a gateway started OUTSIDE s6 (stray ``hermes gateway run``, an agent action, the Open
+        # a gateway started OUTSIDE s6 (stray ``haos gateway run``, an agent action, the Open
         # WebUI helper) grabs the PID lock first; the slot then hits "Another gateway instance is
         # already running", exits non-zero, and s6 restarts it forever — a log-flooding loop that
         # never binds. ``--replace`` reaps the stale holder (marker + SIGTERM→SIGKILL-with-

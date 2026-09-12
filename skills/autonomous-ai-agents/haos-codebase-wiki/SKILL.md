@@ -12,7 +12,7 @@ tags: [haos, codebase, wiki, graph, navigation, architecture]
 # HAOS Codebase Wiki Skill
 
 Navigates the HAOS/ Hermes codebase through the persistent code graph produced by
-`hermes codebase-wiki`. It answers *structural* questions — where a concept lives, what a module
+`haos codebase-wiki`. It answers *structural* questions — where a concept lives, what a module
 depends on, who calls a function, which areas bridge to which — from local, deterministic data.
 It does not answer *semantic* questions (what a function does line by line); those still need
 `read_file` on the actual sources.
@@ -32,7 +32,7 @@ generated yet (generate it first — see Prerequisites).
   Generate or refresh it with `terminal` (re-running is the update; the cache
   re-parses only changed files):
   ```bash
-  hermes codebase-wiki .
+  haos codebase-wiki .
   ```
   Optionally add `--docs` to index `.md` concept nodes too, or `--watch` to
   re-index automatically while editing.
@@ -64,7 +64,7 @@ generated yet (generate it first — see Prerequisites).
 ## Procedure
 
 1. **Generate if missing**: if `~/.hermes/codebase-wiki/index.md` does not exist, run
-   `hermes codebase-wiki .` in the repo root via `terminal`.
+   `haos codebase-wiki .` in the repo root via `terminal`.
 2. **Orient**: `read_file` `index.md` — god nodes tell you the hubs, "Comunidades" links the
    areas, "Pontes" the cross-area seams.
 3. **Dive**: open the community article for the area the question concerns.

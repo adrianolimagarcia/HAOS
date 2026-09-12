@@ -160,7 +160,7 @@ _OAUTH_PROVIDER_CATALOG: tuple[Dict[str, Any], ...] = (
     # Anthropic / Claude entries sit at the bottom. Deliberately flow == "external": an
     # in-dashboard Connect button would let a scriptable HTTP endpoint mint Claude Pro/Max
     # subscription tokens outside Anthropic's own client, against its OAuth usage policies.
-    # Login works via the terminal (`hermes auth add anthropic`) or a plain API key.
+    # Login works via the terminal (`haos auth add anthropic`) or a plain API key.
     {"id": "anthropic", "name": "Anthropic API Key", "flow": "external", "cli_command": product_command("auth") + " add anthropic",
      "docs_url": "https://docs.claude.com/en/api/getting-started", "status_fn": _anthropic_oauth_status},
     {"id": "claude-code", "name": "Anthropic OAuth: Required Extra Usage Credits to Use Subscription",
@@ -425,7 +425,7 @@ def _xai_device_poller(session_id: str, sess: Dict[str, Any]) -> None:
             tokens, discovery=discovery, auth_mode="oauth_device_code", set_active=False,
             last_refresh=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         )
-        # Mirror `hermes auth add xai-oauth`: first credential may become active; never overwrite.
+        # Mirror `haos auth add xai-oauth`: first credential may become active; never overwrite.
         mark_provider_active_if_unset("xai-oauth")
         # The singleton write is the source of truth (the pool load seeds it as the canonical
         # ``device_code`` entry). Do NOT add a parallel ``manual:dashboard_*`` pool entry — it

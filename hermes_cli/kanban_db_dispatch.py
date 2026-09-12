@@ -966,7 +966,7 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
                 # task mutation. Cost rule: every call site short-circuits on has_hook(), so when nothing
                 # subscribes no payload is built and the hot paths (each dispatcher tick, each task write)
                 # pay one dict probe. WHICH PROCESS: worker spawn/exit/stale-claim and the dispatch tick
-                # fire in the DISPATCHER process (gateway-embedded dispatcher or ``hermes kanban
+                # fire in the DISPATCHER process (gateway-embedded dispatcher or ``haos kanban
                 # dispatch``); on_kanban_task_updated fires in whichever process committed the mutation
                 # (CLI, worker, or the gateway-embedded dashboard API). Common kwargs (task-scoped hooks):
                 # task_id: str, profile_name: str, board: str | None, assignee: str | None, run_id: int |
@@ -1525,7 +1525,7 @@ def _dispatch_lane_task(
     guard_reason = check_respawn_guard(conn, task_id, lane=lane)
     if guard_reason is not None:
         result.respawn_guarded.append((task_id, guard_reason))
-        # Event so ``hermes kanban tail`` shows why the task looks stuck.
+        # Event so ``haos kanban tail`` shows why the task looks stuck.
         # Honour kanban.default_assignee: when the dispatcher hits an unassigned ready task and an
         # operator-configured fallback exists, persist the assignment and proceed. This removes the
         # dashboard footgun where a task created without an assignee parks in 'ready' forever even though

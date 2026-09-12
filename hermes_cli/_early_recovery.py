@@ -33,9 +33,9 @@ LAZY_REFRESH_REPAIR_PACKAGES: dict[str, str] = {
     "rich": "rich", "cryptography": "cryptography", "jwt": "PyJWT",
 }
 
-# ``hermes update`` renames the live ``hermes*.exe`` shims aside (``hermes.exe.old.<unix-ms>``) so
+# ``haos update`` renames the live ``hermes*.exe`` shims aside (``hermes.exe.old.<unix-ms>``) so
 # uv can write replacements. Putting them BACK is the safety-critical direction: losing that rename
-# leaves no ``hermes`` on PATH, and the command that would repair it IS ``hermes update``. The
+# leaves no ``hermes`` on PATH, and the command that would repair it IS ``haos update``. The
 # updater, the early-recovery installer and the startup orphan sweep all restore through this one
 # stdlib-only helper so the retry ladder and the recovery wording cannot drift apart again.
 # --- Windows entry-point shim quarantine ----------------------------------- They used to be separate
@@ -377,7 +377,7 @@ def recover_if_needed(project_root: Path | None = None, argv: list[str] | None =
         # WHOLE dependency set is replaced while nothing pins venv .pyd files yet (deferring to
         # main()'s post-import recovery re-locks it on Windows). A live marker owner is another
         # updater inside the marker-to-install window — never race it. A dead owner MUST be
-        # recovered even when this launch is itself `hermes update`: CLI and Desktop retries keep
+        # recovered even when this launch is itself `haos update`: CLI and Desktop retries keep
         # that argv, and skipping solely on argv recreates the self-lock loop.
         # Bounded retries: a persistently failing install must not hammer every launch, so attempts past the
         # ceiling are left for main.py's post-import recovery path (which can safely probe-import after this

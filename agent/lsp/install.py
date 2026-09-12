@@ -58,7 +58,7 @@ INSTALL_RECIPES: Dict[str, Dict[str, Any]] = {
     "clangd": _manual("clangd"),
     "lua-language-server": _manual("lua-language-server"),
     # PowerShellEditorServices is a release-zip bundle driven by pwsh; we probe
-    # the host so `hermes lsp status` reports its presence.
+    # the host so `haos lsp status` reports its presence.
     "powershell": _manual("pwsh"),
 }
 

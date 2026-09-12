@@ -181,7 +181,7 @@ def _render_terminal(ctx):
         _kv("Processes:", "live processes do not survive cleanup, snapshots, or sandbox recreation")
     else:
         # Plugin-registered terminal backends: show availability via the provider's doctor rows
-        # (fail-soft — never break `hermes status`).
+        # (fail-soft — never break `haos status`).
         try:
             from hermes_cli.plugins import discover_plugins
             discover_plugins()
@@ -354,7 +354,7 @@ def _render_footer(ctx):
     print()
 
 
-# Print order of `hermes status`; each renderer takes the shared _StatusContext.
+# Print order of `haos status`; each renderer takes the shared _StatusContext.
 _SECTIONS = (
     _render_header, _render_environment, _render_api_keys, _render_auth_providers, _render_nous_gateway,
     _render_apikey_providers, _render_terminal, _render_platforms, _render_gateway, _render_cron,

@@ -375,7 +375,7 @@ class BackupRequest(BaseModel):
 
 class ImportRequest(BaseModel):
     archive: str
-    # --force: the spawned `hermes import` has stdin=DEVNULL, so its "Continue? [y/N]" prompt would
+    # --force: the spawned `haos import` has stdin=DEVNULL, so its "Continue? [y/N]" prompt would
     # hit EOF and abort; the dashboard confirms in its own modal.
     force: bool = False
 

@@ -597,7 +597,7 @@ def _apply_tool_selection(
         return
     if len(chosen_indices) == len(probed):
         # Clear the filter: tools the server adds later are auto-enabled too. To pin the current set,
-        # re-run `hermes mcp configure <name>` and unselect a tool (switches to include-mode).
+        # re-run `haos mcp configure <name>` and unselect a tool (switches to include-mode).
         _write_tools_filter(name, "include", None)
         _say(
             f"  ✓ All {len(probed)} tools enabled (no filter — new tools "
@@ -631,7 +631,7 @@ def install_entry(entry: CatalogEntry, *, enable: bool = True) -> None:
         _say("  Configure credentials:", Colors.CYAN)
         _prompt_env_vars(entry.auth.env)
     elif entry.auth.type == "oauth" and entry.auth.provider:
-        # Provider-mediated OAuth relies on the existing `hermes auth <provider>` flow; surface
+        # Provider-mediated OAuth relies on the existing `haos auth <provider>` flow; surface
         # guidance rather than auto-running it to keep install decoupled from provider-auth lifecycle.
         _say(
             f"  This MCP uses {entry.auth.provider} OAuth. Run "

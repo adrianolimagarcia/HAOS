@@ -116,13 +116,13 @@ problema, não o resolve).
   Hermes e contra qualquer raiz `.py` local.
 * Persistência em `<HERMES_HOME>/codebase-wiki/` com **cache incremental** por sha256.
 * Saídas: `index.md`, `modules/`, `graph.json`.
-* CLI `hermes codebase-wiki [raiz]` — re-executar o mesmo comando é o "update"
+* CLI `haos codebase-wiki [raiz]` — re-executar o mesmo comando é o "update"
   (cache incremental por sha256: só arquivos mudados são re-parseados).
 
 ### Fase 2 — integração com o agente (sem mudar o schema de tools do core)
 * Skill HAOS (`skills/autonomous-ai-agents/haos-codebase-wiki/SKILL.md`) ensinando o agente a:
   * consultar `index.md` antes de perguntas de arquitetura quando `codebase-wiki/` existir;
-  * rodar `hermes codebase-wiki` de novo após ondas de edição (padrão `graphify update`).
+  * rodar `haos codebase-wiki` de novo após ondas de edição (padrão `graphify update`).
 * Sem tools novas no `_HERMES_CORE_TOOLS`: o acesso é por terminal + leitura de arquivos
   (mesma lógica de exposição por sessão do AGENTS.md).
 
@@ -224,9 +224,9 @@ tests/skills/test_haos_codebase_wiki_skill.py                # (Fase 2)
 ### Uso
 
 ```bash
-hermes codebase-wiki [raiz]                # índice padrão (.py; cache incremental)
-hermes codebase-wiki [raiz] --docs         # + .md como nós de conceito/citações
-hermes codebase-wiki [raiz] --watch        # reindexa ao salvar (Ctrl+C para parar)
-hermes codebase-wiki [raiz] --mcp          # registra codebase-wiki_* no aggregator
-hermes codebase-wiki --out <dir> --json    # saída custom / relatório JSON
+haos codebase-wiki [raiz]                # índice padrão (.py; cache incremental)
+haos codebase-wiki [raiz] --docs         # + .md como nós de conceito/citações
+haos codebase-wiki [raiz] --watch        # reindexa ao salvar (Ctrl+C para parar)
+haos codebase-wiki [raiz] --mcp          # registra codebase-wiki_* no aggregator
+haos codebase-wiki --out <dir> --json    # saída custom / relatório JSON
 ```

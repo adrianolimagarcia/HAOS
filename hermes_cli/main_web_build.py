@@ -447,7 +447,7 @@ def _web_npm_install_context(web_dir: Path) -> tuple[Path, tuple[str, ...]]:
     # with its Electron + node-pty deps) is never resolved here. Without --workspace the root package.json's
     # apps/* glob would pull in desktop on every web build. See #38772. When web/ has its own
     # package-lock.json, _workspace_root() returns web_dir itself and --workspace would fail. See #42973.
-    # When running from the workspace root, this must name the SAME closure as `hermes update`'s
+    # When running from the workspace root, this must name the SAME closure as `haos update`'s
     # _update_node_dependencies() (ui-tui + web + --include-workspace-root): the helper prefers `npm ci`,
     # which deletes node_modules before reifying the requested tree, so a narrower closure here silently
     # prunes everything the update step just installed (root devDependencies and the ui-tui workspace) while

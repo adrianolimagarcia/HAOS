@@ -559,7 +559,7 @@ def _resolve_effective_accept(cfg: Dict[str, Any], accept_hooks_arg: bool) -> bo
     return cfg_val if isinstance(cfg_val, bool) else isinstance(cfg_val, str) and cfg_val.strip().lower() in _TRUTHY
 
 
-# --- Introspection (used by `hermes hooks` CLI) ---
+# --- Introspection (used by `haos hooks` CLI) ---
 
 def allowlist_entry_for(event: str, command: str) -> Optional[Dict[str, Any]]:
     """Return the allowlist record for this pair, if any."""

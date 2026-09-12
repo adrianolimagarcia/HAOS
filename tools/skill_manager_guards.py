@@ -202,7 +202,7 @@ def _background_review_write_guard(
         # side effect: a local skill with no telemetry record passed, the successful write called
         # bump_patch() which created a `created_by: null` record, and the very same write was refused from
         # then on. "Allowed exactly once" is not a policy — it is a race with our own bookkeeping. Fail
-        # closed for both shapes; `hermes curator adopt <name>` is the supported way in. See #67140.
+        # closed for both shapes; `haos curator adopt <name>` is the supported way in. See #67140.
         if not skill_usage._is_curator_managed_record(usage_rec):
             _detail = (f"created_by={usage_rec.get('created_by')!r}" if isinstance(usage_rec, dict)
                        else "no usage record")

@@ -37,7 +37,7 @@ MAX_FAILED_ATTEMPTS = 5             # Failed approvals before lockout
 
 # Default pairing directory override. Deliberately ``None``: an eagerly computed
 # path would freeze the HERMES_HOME/profile context at gateway boot, ignoring later
-# context-local overrides, so the gateway and ``hermes pairing`` CLI wrote different
+# context-local overrides, so the gateway and ``haos pairing`` CLI wrote different
 # directories. ``_default_pairing_dir()`` resolves fresh per call; tests patch this.
 PAIRING_DIR = None
 
@@ -47,7 +47,7 @@ PAIRING_DIR = None
 # computing the path eagerly freezes it to whatever HERMES_HOME/profile context existed at that exact import
 # moment for the rest of the process's lifetime -- even if a context-local override (see
 # hermes_constants.set_hermes_home_override) is established afterward. A freshly-started, short-lived
-# process (e.g. the ``hermes pairing`` CLI) re-imports this module later with the final environment already
+# process (e.g. the ``haos pairing`` CLI) re-imports this module later with the final environment already
 # in place, so it never observes the stale value -- the resulting asymmetry is what made pending pairing
 # codes issued by the gateway unrecoverable while CLI-side writes to the same directory kept working
 # (NousResearch/hermes-agent#93449). ``_default_pairing_dir()`` below resolves this fresh on every call in

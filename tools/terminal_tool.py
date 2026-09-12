@@ -50,7 +50,7 @@ from tools.terminal_tool_config import (
 from tools.terminal_tool_backends import (
     _REQUIREMENT_CHECKERS, _VERCEL_SANDBOX_DEFAULT_CWD, _check_plugin_requirements,
 )
-# display_hermes_home imported lazily at call site (stale-module safety during hermes update)
+# display_hermes_home imported lazily at call site (stale-module safety during haos update)
 from tools.tool_backend_helpers import coerce_modal_mode, managed_nous_tools_enabled
 
 

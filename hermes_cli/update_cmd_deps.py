@@ -580,7 +580,7 @@ def _update_node_dependencies() -> list[str]:
 
     # Best-effort npx cache warm before the lockfile-unchanged early return. Can block
     # ~11s on a cold cache — print first so it doesn't look like a hang.
-    # Runs before the lockfile-unchanged early return below since that's the common `hermes update` case.
+    # Runs before the lockfile-unchanged early return below since that's the common `haos update` case.
     # See #43564.
     print("→ Warming npx cache for agent-browser...")
     with suppress(Exception):
@@ -607,7 +607,7 @@ def _update_node_dependencies() -> list[str]:
 
     # capture_output=False is deliberate: postinstall scripts print download progress and
     # capturing makes a long download look hung.
-    # The chatty npm-deprecation noise during `hermes update` comes from the *desktop* build, not this step;
+    # The chatty npm-deprecation noise during `haos update` comes from the *desktop* build, not this step;
     # that one is captured to update.log. See #18840.
     result = _m()._run_npm_install_deterministic(
         npm, _m().PROJECT_ROOT, extra_args=tuple(install_args), capture_output=False, env=nixos_env)
