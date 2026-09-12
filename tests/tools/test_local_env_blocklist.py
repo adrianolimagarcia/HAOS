@@ -976,8 +976,16 @@ class TestPythonpathSelectiveStrip:
             captured["env"] = kwargs.get("env", {})
             captured["staging"] = os.path.dirname(cmd[1])
             proc = MagicMock()
+            # The real spawn path wires _stdout_reader/_stderr_reader threads to the
+            # child's pipes: they consume the byte-stream contract (read1 -> bytes,
+            # b"" = EOF), not auto-MagicMocks. An unconfigured stdout made the reader
+            # thread crash with "TypeError: '<' not supported between instances of
+            # 'MagicMock' and 'int'" (code_kernel._stdout_reader) — a mock leaking
+            # into production thread code. EOF keeps both reader threads tidy.
             proc.stdout.read.return_value = b""
+            proc.stdout.read1.return_value = b""
             proc.stderr.read.return_value = b""
+            proc.stderr.read1.return_value = b""
             proc.wait.return_value = 0
             proc.returncode = 0
             proc.poll.return_value = 0
