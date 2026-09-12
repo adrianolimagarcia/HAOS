@@ -19,7 +19,6 @@ que o agente usa (``HERMES_HOME/config.yaml``), sem duplicar estado:
 """
 
 from __future__ import annotations
-from hermes_constants import product_command
 
 import datetime as _dt
 import json
@@ -198,6 +197,11 @@ def patch_config(updates: Dict[str, Any], backup_dir: Optional[Path] = None) -> 
     Valores devem já estar tipados (bool/int/float/str/list) ou JSON string
     para campos kind='json'. Nunca remove seções não mencionadas.
     """
+    # Import tardio de propósito: em hermes/platform/ só stdlib + os seams permitidos
+    # ({hermes, hermes_cli, agent}) podem entrar no nível de módulo — o eval
+    # op_stdlib_lint (evals/suites_platform.py) reprova o resto.
+    from hermes_constants import product_command
+
     cfg = _config_seam()
     path = cfg.get_config_path()
     if not path.is_file():

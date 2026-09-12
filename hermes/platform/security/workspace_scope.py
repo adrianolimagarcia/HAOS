@@ -16,7 +16,6 @@ Rules:
 """
 
 from __future__ import annotations
-from hermes_constants import product_command
 
 import os
 from dataclasses import dataclass
@@ -53,6 +52,10 @@ class WorkspaceScope:
             return True, None
 
         if self.is_inside_agent_workspace(target_path):
+            # Import tardio: hermes/platform/ só admite stdlib + seams no nível de módulo
+            # (eval op_stdlib_lint). O irmão resolve_workspace_scope já faz o mesmo com
+            # get_hermes_home.
+            from hermes_constants import product_command
             return False, (
                 f"Refusing to write to Agent Workspace: {target_path}\n"
                 "General file tools are scoped to the Project Workspace and cannot modify " +

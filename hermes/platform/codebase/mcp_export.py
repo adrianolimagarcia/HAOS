@@ -13,7 +13,6 @@ returns the federated tool names that were added.
 """
 
 from __future__ import annotations
-from hermes_constants import product_command
 
 from pathlib import Path
 from typing import Any, Dict, List
@@ -99,6 +98,9 @@ async def wiki_dispatcher(
     try:
         payload = query.load_graph_json(graph_path)
     except FileNotFoundError as exc:
+        # Import tardio: hermes/platform/ só admite stdlib + seams no nível de módulo
+        # (eval op_stdlib_lint em evals/suites_platform.py).
+        from hermes_constants import product_command
         return _error_result(f"Mapa indisponível: {exc} — rode `{product_command('codebase-wiki')}` primeiro.")
     args = arguments or {}
     if tool_name == "wiki_status":
