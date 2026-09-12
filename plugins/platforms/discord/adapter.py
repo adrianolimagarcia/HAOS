@@ -1596,6 +1596,11 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         """Cancel and await the background client.start() task, if running."""
         if self._bot_task and not self._bot_task.done():
             self._bot_task.cancel()
+            # Reap only the CHILD's CancelledError here, never our own: the parents
+            # (connect(), disconnect()) are finite flows and the gateway awaits
+            # disconnect() with a per-adapter timeout, so a stop request swallowed inside
+            # this reap only lets the parent finish its bounded teardown — no loop, no
+            # unbounded join. Not the "swallowed cancellation" defect (buzz 47d92cc6eb).
             try:
                 await self._bot_task
             except (asyncio.CancelledError, Exception):
