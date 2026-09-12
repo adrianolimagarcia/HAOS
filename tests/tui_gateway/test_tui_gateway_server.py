@@ -3548,7 +3548,10 @@ def test_session_resume_deferred_history_acknowledges_and_reuses(monkeypatch):
         def get_resume_conversations(self, target):
             history_calls.append(("resume", target))
             history_started.set()
-            assert release_history.wait(timeout=2.0)
+            # Deadlock valve, not a correctness bound: the test body always releases in
+            # `finally`, and this hydration thread must not give up while a loaded runner
+            # is still executing the main thread's resume/assert work.
+            assert release_history.wait(timeout=30.0)
             return [loaded], [ancestor, loaded]
 
         def get_ancestor_display_prefix(self, target):
@@ -3584,7 +3587,7 @@ def test_session_resume_deferred_history_acknowledges_and_reuses(monkeypatch):
         assert first["result"]["hydrating"] is True
         assert first["result"]["messages"] == []
         assert first["result"]["message_count"] == 1200
-        assert history_started.wait(timeout=1.0)
+        assert history_started.wait(timeout=5.0)
 
         second = server._methods["session.resume"](
             "r2",
@@ -3596,8 +3599,8 @@ def test_session_resume_deferred_history_acknowledges_and_reuses(monkeypatch):
 
         release_history.set()
         sid = first["result"]["session_id"]
-        assert server._sessions[sid]["resume_history_ready"].wait(timeout=1.0)
-        assert build_started.wait(timeout=1.0)
+        assert server._sessions[sid]["resume_history_ready"].wait(timeout=5.0)
+        assert build_started.wait(timeout=5.0)
         assert history_calls == [
             ("resume", "large-session"),
             ("prefix", "large-session"),
@@ -3689,6 +3692,15 @@ def test_session_resume_deferred_history_close_cancels_build(monkeypatch):
     history_started = threading.Event()
     release_history = threading.Event()
     build_started = threading.Event()
+    hydration_threads: list[threading.Thread] = []
+    real_thread = threading.Thread
+
+    class _RecordingThread(real_thread):  # type: ignore[misc,valid-type]
+        """Records the hydration thread so the test can join it instead of sleeping."""
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            hydration_threads.append(self)
 
     class FakeDB:
         def get_session(self, target):
@@ -3702,7 +3714,11 @@ def test_session_resume_deferred_history_close_cancels_build(monkeypatch):
 
         def get_resume_conversations(self, _target):
             history_started.set()
-            assert release_history.wait(timeout=2.0)
+            # Deadlock valve, not a correctness bound: the test body always releases in
+            # `finally`. At 2.0s this expired while a loaded runner was still doing the
+            # main thread's close/assert work, and the AssertionError surfaced as
+            # "resume failed: ..." — the flake this test used to show.
+            assert release_history.wait(timeout=30.0)
             loaded = [{"role": "user", "content": "late"}]
             return loaded, loaded
 
@@ -3717,6 +3733,7 @@ def test_session_resume_deferred_history_close_cancels_build(monkeypatch):
         "_start_agent_build",
         lambda _sid, _session: build_started.set(),
     )
+    monkeypatch.setattr(server.threading, "Thread", _RecordingThread)
 
     response = {}
     try:
@@ -3726,14 +3743,20 @@ def test_session_resume_deferred_history_close_cancels_build(monkeypatch):
         )
         sid = response["result"]["session_id"]
         session = server._sessions[sid]
-        assert history_started.wait(timeout=1.0)
+        assert history_started.wait(timeout=5.0)
 
         assert server._close_session_by_id(sid, end_reason="tui_close") is True
         assert session["resume_history_ready"].is_set()
         assert session["resume_history_error"] == "session resume cancelled"
 
         release_history.set()
-        time.sleep(0.05)
+        # "No build was started" is only a sound claim once the hydration thread has
+        # provably finished, so join it rather than sleeping a fixed 0.05s — a loaded
+        # runner can outlast that sleep, which is the race this assertion used to carry.
+        assert hydration_threads, "hydration thread not recorded; the join below would be a no-op"
+        deadline = time.monotonic() + 10.0
+        for thread in hydration_threads:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
         assert not build_started.is_set()
         assert sid not in server._sessions
     finally:

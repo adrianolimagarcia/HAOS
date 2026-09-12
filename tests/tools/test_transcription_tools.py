@@ -1206,21 +1206,25 @@ class TestRunCommandSttIdleTimeout:
         script.write_text(
             "\n".join([
                 "import sys, time",
-                "for idx in range(4):",
+                "for idx in range(6):",
                 "    print(f'tick {idx}', file=sys.stderr, flush=True)",
-                "    time.sleep(0.04)",
+                "    time.sleep(0.4)",
                 "print('done', flush=True)",
             ]),
             encoding="utf-8",
         )
 
+        # The idle window starts at spawn, so it must also outlast the child's interpreter
+        # startup: measured 23ms idle but 107ms under 8-way CPU load, a 0.1s window killed
+        # live children and made this test flaky on a loaded runner (1 sample in 12 blew the
+        # window). 1.0s keeps ~10x headroom and stays well under the ~2.4s total runtime.
         result = _run_command_stt(
             self._shell_command(sys.executable, "-u", str(script)),
-            timeout=0.1,
+            timeout=1.0,
         )
 
         assert result.returncode == 0
-        assert "tick 3" in result.stderr
+        assert "tick 5" in result.stderr
         assert "done" in result.stdout
 
     def test_silent_stall_still_times_out(self, tmp_path):
@@ -1238,10 +1242,12 @@ class TestRunCommandSttIdleTimeout:
             encoding="utf-8",
         )
 
+        # Same spawn-time window as above: the pre-stall line must land inside it, so a
+        # 0.1s window would drop it whenever interpreter startup ran slow under load.
         with pytest.raises(subprocess.TimeoutExpired) as excinfo:
             _run_command_stt(
                 self._shell_command(sys.executable, "-u", str(script)),
-                timeout=0.1,
+                timeout=1.0,
             )
 
         assert "starting pass 1" in (excinfo.value.stderr or "")
