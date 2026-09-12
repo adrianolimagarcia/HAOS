@@ -169,6 +169,14 @@ class TestMissedSteerRetention:
         parent._delegate_depth = 0
         parent.model = "test-model"
         parent.interactive_mode = False
+        # A bare MagicMock is not None, so _open_child_session_db (delegate_tool.py:96) believes
+        # this fake parent owns a session DB and opens a dedicated child handle at
+        # parent._session_db.db_path — which is just another mock. SessionDB then does
+        # self.db_path.parent.mkdir(parents=True, exist_ok=True) (hermes_state.py:492), so the
+        # mock's name lands on the real filesystem as "MagicMock/mock._session_db.db_path/",
+        # complete with a state DB and its .fts_rebuild.lock, in whatever the CWD is.
+        # This fake parent has no DB: say so, and no handle (and no directory) is opened.
+        parent._session_db = None
 
         with patch("run_agent.AIAgent") as MockAgent:
             mock_child = MagicMock()
@@ -206,6 +214,14 @@ class TestMissedSteerRetention:
         parent._delegate_depth = 0
         parent.model = "test-model"
         parent.interactive_mode = False
+        # A bare MagicMock is not None, so _open_child_session_db (delegate_tool.py:96) believes
+        # this fake parent owns a session DB and opens a dedicated child handle at
+        # parent._session_db.db_path — which is just another mock. SessionDB then does
+        # self.db_path.parent.mkdir(parents=True, exist_ok=True) (hermes_state.py:492), so the
+        # mock's name lands on the real filesystem as "MagicMock/mock._session_db.db_path/",
+        # complete with a state DB and its .fts_rebuild.lock, in whatever the CWD is.
+        # This fake parent has no DB: say so, and no handle (and no directory) is opened.
+        parent._session_db = None
 
         with patch("run_agent.AIAgent") as MockAgent:
             mock_child = MagicMock()
