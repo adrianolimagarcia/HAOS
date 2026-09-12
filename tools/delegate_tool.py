@@ -35,6 +35,7 @@ from tools.delegate_tool_config import (  # noqa: F401
     _subagent_auto_approve, _subagent_auto_deny,
 )
 from tools.delegate_tool_dispatch import _Batch, _announce_batch, _capture_origin, _run_batch
+from tools.delegate_verification_gate import spawn_verification_message
 from tools.delegate_tool_progress import (  # noqa: F401
     DelegateEvent, SUBAGENT_FAILURE_STATUSES, _batch_prefix, _build_child_progress_callback,
     _build_child_system_prompt, _clean_error_text, _emit_parent_console, _quiet, _resolve_workspace_hint,
@@ -432,6 +433,14 @@ def delegate_task(
             "Delegation spawning is paused. Clear the pause via the TUI "
             "(`p` in /agents) or the `delegation.pause` RPC before retrying."
         )
+
+    # Verificação antes de mais agentes (HAOS P9): com
+    # delegation.require_verification_before_spawn: true, o pai não pode
+    # gerar agentes com edições não verificadas no turno (fail-closed).
+    # Aditivo aos caps de profundidade/concorrência §11 — só pode recusar.
+    verification_msg = spawn_verification_message(parent_agent)
+    if verification_msg:
+        return tool_error(verification_msg)
 
     top_role = _normalize_role(role)
     # background applies to single tasks AND batches: a batch is ONE async unit

@@ -1292,6 +1292,12 @@ DEFAULT_CONFIG = {
         # notifications to the PARENT; false suppresses them (the child's result is the
         # deliverable). Async-delegation results are NEVER suppressed.
         "surface_child_process_notifications": False,
+        # Verificação antes de mais agentes (HAOS P9): true recusa NOVOS spawns
+        # enquanto o pai tiver edições não verificadas no turno (fail-closed),
+        # até haver evidência de verificação. false = comportamento atual.
+        # Aditivo aos caps acima (max_concurrent_children/max_spawn_depth):
+        # o gate só pode RECUSAR, nunca afrouxar limite.
+        "require_verification_before_spawn": False,
     },
     # Ephemeral prefill messages file — JSON list of {role, content} dicts injected at the start of
     # every API call for few-shot priming. Never saved to sessions/logs/trajectories.
