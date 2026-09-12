@@ -816,6 +816,10 @@ class GatewayTurnMixin:
             _sid, _skey, _agent = session_entry.session_id, session_key, attempt.agent
 
             def _hyg_adopt_or_space_retry(_fut, _gw=self, _sid=_sid, _skey=_skey, _agent=_agent):
+                # Done-callback on the already-finished worker future: no await, no parent
+                # task whose cancel could land here, so this is not the "swallowed
+                # cancellation" defect class. The tuple is required: Future.exception()
+                # raises CancelledError (a BaseException) for cancelled futures.
                 try:
                     _exc = _fut.exception()
                 except (asyncio.CancelledError, Exception):
