@@ -208,3 +208,53 @@ vez de derivar o home; o guard de root do `local_embedded` do hindsight não tem
 `tools/code_kernel.py:492` emite `TypeError: '<' not supported between instances of 'MagicMock'
 and 'int'` numa thread `_stdout_reader` durante o teardown de
 `TestPythonpathSelectiveStrip` (aviso, não falha — mock vazando para a thread).
+
+## Atualização 2026-09-13 — baseline FECHADO: 0 falhas
+
+```
+=== Summary: 3901 files, 46416 tests passed, 0 failed, 422 skipped (100% complete) in 1800.7s (16 workers) ===
+```
+
+Ponto de partida: 3901 arquivos, 46386 passando, **26 falhando**, 422 pulados. Agora **0
+falhando** e 46416 passando (+30 testes que antes nunca rodavam, porque o cap de 300s matava os
+arquivos antes de chegarem neles). Este era o pré-requisito da Etapa 1: com o baseline vermelho,
+nenhum gate das etapas seguintes valia nada.
+
+Mesmo assim o run fechou com **3 arquivos FLAKY** (falharam na 1ª tentativa, passaram na
+repetição). Pela política do repo isso é bug, não ruído, e os três foram fechados — cada um com
+prova de duas armas, isto é, com a falha reproduzida deterministicamente em vez de "não
+reproduzi":
+
+1. `test_slash_worker_mcp_discovery.py` — **era bug de produção, não de teste.** O slash worker
+   chamava `wait_for_mcp_discovery()` sem argumento, ou seja o bound de 1.5s
+   (`mcp_discovery_timeout`), mas o `HermesCLI` é construído UMA vez antes do `while True`, então
+   o snapshot de ferramentas é congelado: um servidor MCP de perfil que perdesse a corrida de
+   1.5s nunca aparecia no `/tools` daquele worker, por toda a vida dele. O bound de 15s
+   (`mcp_single_query_discovery_timeout`) existe exatamente para o caso "sem segundo turno para
+   recuperar", que é o caso do snapshot. Atrasando o servidor do próprio teste em 3.0s: o código
+   antigo FALHA com a assinatura exata do flake (`Total: 51 tools`, sem a ferramenta MCP); com o
+   fix PASSA. Isso corrige também a hipótese errada do commit `0ffde0bd17`, que subira o bound do
+   `output.get` de 10 para 60s — aquele `queue.Empty` era outro sintoma do mesmo atraso.
+2. `test_update_zip_two_phase.py::test_no_open_coded_venv_layout_remains_in_hermes_cli` — o frame
+   do traceback é `pathlib.py:938`, que nesta CPython é `return os.scandir(self)` dentro de
+   `_scandir()`, o método que o próprio pathlib documenta como base do `glob()`. Isto é: a exceção
+   veio do CAMINHANTE do `pkg.rglob("*.py")` entrando num diretório que desapareceu no meio
+   (`hermes_cli/__pycache__`, o diretório mais mutado durante um run de 16 workers), não da leitura
+   de um arquivo. Trocado por `os.walk(..., onerror=...)` podando `__pycache__`, que não tem fonte
+   `.py` nenhum — cobertura idêntica, sem a corrida.
+3. `test_zombie_process_cleanup.py::test_timed_out_child_keeps_relay_session_until_its_turn_exits`
+   — o log da própria suite deu a linha (515) e a prova: `Subagent 0 timed out after 0.1s` seguido
+   de `where is_set = <threading.Event ...: unset>`. O teste fixava o timeout do filho em 0.1s e
+   assertava que o filho tinha começado; sob carga o thread não era escalonado a tempo, o pai
+   estourava primeiro, e o invariante do teste nem era exercitado. Forçando o timeout a `0.000001`
+   a falha volta determinística na MESMA asserção; com 3.0s passa.
+
+Os três são da mesma família dos anteriores: **um limite de relógio mais curto que o mecanismo que
+ele espera**. Fica como regra para escrever teste aqui: o bound tem de ultrapassar o orçamento do
+que está sendo esperado (join > drain, timeout > spawn, varredura tolerante a corrida de FS).
+
+**Deploy:** 16 commits (25 arquivos) empurrados em lockstep para `haos-standalone` e `main`
+(`728f72ee03..e9d10eefaa`), árvore de instalação do host atualizada e VM `/opt/haos` por `tar`+`cp`.
+Verificado no appliance, não só transferido: `is_container()` = **False** na VM com
+`systemd-detect-virt --container` = **none** — o falso positivo corrigido nesta sessão
+comportando-se corretamente lá.
