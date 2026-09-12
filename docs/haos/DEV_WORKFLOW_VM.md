@@ -385,6 +385,14 @@ haos-fetch https://example.com --text   # lazy-install + fetch OK
   exposto durante o teste. `GET /api/state` responde 200 **sem credencial** (2862
   bytes de payload real), ou seja expor a porta é expor o PTY remoto. Acesso remoto
   autenticado continua sendo o daemon Rust `haos-edge` (login de operador).
+- **`/opt/haos` na VM NÃO é clone do histórico do fork (12/09/2026)**: o HEAD lá é
+  um import independente (`92708cf`, um commit único com a árvore inteira) e o
+  working tree carrega ~651 arquivos diferentes dele. Consequências práticas:
+  `git pull`/`--ff-only` **nunca** funciona na VM (não há ancestral comum útil), o
+  deploy é sempre por arquivo (`tar` + `cp`) — que é justamente o que o método faz —
+  e o `local <sha>` do `haos --version` se refere a esse import, não ao commit do
+  fork. Não "conserte" isso com `git checkout`/`reset` no appliance: são 651 arquivos
+  de estado local e o ganho é só cosmético.
 - **`haos-dns` (Rust) — build e deploy (12/09/2026)**: o daemon não vem do pip; o
   binário sai de `cargo build --release` em `packages/haos-dns` (cargo 1.98 no host)
   e é instalado em `/usr/local/bin/haos-dns` (unit `haos-dns.service`, `ExecStart`
