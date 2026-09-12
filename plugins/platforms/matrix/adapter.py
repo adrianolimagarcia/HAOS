@@ -1315,6 +1315,11 @@ class MatrixAdapter(BasePlatformAdapter):
         self._closing = True
         if self._sync_task and not self._sync_task.done():
             self._sync_task.cancel()
+            # Reap only the CHILD's CancelledError here, never our own: the sync loop
+            # returns on CancelledError and the parent disconnect() is a finite flow that
+            # the gateway awaits with a per-adapter timeout — a swallowed stop request only
+            # lets the bounded teardown finish, no loop, no unbounded join. The sibling
+            # invite/redaction reap below already uses gather(return_exceptions=True).
             try:
                 await self._sync_task
             except (asyncio.CancelledError, Exception):
