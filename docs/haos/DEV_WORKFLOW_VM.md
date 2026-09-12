@@ -385,6 +385,19 @@ haos-fetch https://example.com --text   # lazy-install + fetch OK
   exposto durante o teste. `GET /api/state` responde 200 **sem credencial** (2862
   bytes de payload real), ou seja expor a porta é expor o PTY remoto. Acesso remoto
   autenticado continua sendo o daemon Rust `haos-edge` (login de operador).
+- **`haos-dns` (Rust) — build e deploy (12/09/2026)**: o daemon não vem do pip; o
+  binário sai de `cargo build --release` em `packages/haos-dns` (cargo 1.98 no host)
+  e é instalado em `/usr/local/bin/haos-dns` (unit `haos-dns.service`, `ExecStart`
+  sem args). Guarde o anterior antes de trocar (`sudo cp -a
+  /usr/local/bin/haos-dns /usr/local/bin/haos-dns.bak-<data>`) — o resolver do nó
+  depende dele. O transporte dos upstreams (UDP/DoT/DoH) vem de
+  `/etc/haos/dns.toml`, cuja fonte de verdade é
+  `distro/haos-linux/config/includes.chroot/etc/haos/dns.toml` (o rsync da ISO pega
+  `/etc` por exclusão, então o arquivo viaja nos dois caminhos). Verificação:
+  `sudo systemctl restart haos-dns`, consulta UDP para `127.0.0.1:53` e
+  `getent hosts example.com`; para provar um transporte, deixe SÓ ele no config
+  (só-DoT resolve, só-DoH resolve). **Cuidado com `pkill -f`**: o padrão casa com o
+  próprio shell — use `pkill -x haos-dns`.
 - `haos-edge` é o **servidor do Standalone WebUI** (axum/tokio): /api/terminal/*
   (PTY remoto), /api/tasks, /health, e o SPA (chat/terminal/taskboard/scheduler).
   Mesmo binário também é CLI (`status`, `team`, `doc search`, `doctor`) e shim

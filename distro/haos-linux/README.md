@@ -337,6 +337,21 @@ A VM de aceitação é o checkout de desenvolvimento:
   `config/includes.chroot/`) — o pacote continua instalado porque é o resolver do
   chroot durante o **build**. Validado com reboot: `systemctl is-system-running`
   = `running`, 0 units failed.
+- **`haos-dns` com upstream cifrado (DoT/DoH) — 12/09/2026**: o resolver do nó
+  falava UDP puro com os quatro resolvedores públicos, ou seja, o ISP via toda
+  consulta. Agora o transporte de saída é configurável em `/etc/haos/dns.toml`
+  (trackeado em `config/includes.chroot/etc/haos/`): DoT (RFC 7858) e DoH
+  (RFC 8484) com UDP puro como último recurso. **Invariante**: todo upstream
+  carrega o IP explicitamente — DoT valida o certificado pelo `#server_name`
+  (`9.9.9.9@853#dns.quad9.net`) e DoH pelo `#ip` fixado na URL
+  (`https://cloudflare-dns.com/dns-query#1.1.1.1`), então o daemon nunca precisa
+  resolver o nome do próprio upstream (seria circular: ele É o resolvedor do nó).
+  Sem o arquivo valem os quatro upstreams UDP de sempre. Verificado na VM com um
+  transporte por vez: só-DoT resolve, só-DoH resolve, e o `getent hosts` do nó
+  segue funcionando. O mesmo commit corrigiu um vazamento de memória: o cache era
+  um `HashMap` sem evicção (nada removia chave vencida) e virou `LruCache` com
+  teto de 10 000 entradas; a resposta de upstream com `query id` diferente do
+  pedido agora é descartada em vez de repassada.
 - **`haos-gateway`/`haos-mesh` nascem em `failed`/`activating`** até o `haos-setup`
   preencher o venv e reiniciar os daemons (unidades habilitadas na imagem com
   ExecStart no venv, que só existe de verdade depois do setup — "ovo e galinha"
