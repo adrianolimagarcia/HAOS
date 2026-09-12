@@ -479,7 +479,13 @@ class TestDelegationCleanup:
         parent._active_children.append(child)
         relay_host = MagicMock()
         monkeypatch.setattr(relay_runtime, "get_runtime", lambda **_kwargs: relay_host)
-        monkeypatch.setattr("tools.delegate_tool._get_child_timeout", lambda: 0.1)
+        # This test's invariant is "a child that times out MID-TURN keeps its relay session", so the
+        # turn must actually have started. At 0.1s the parent's timeout could fire before the child
+        # thread was even scheduled, and then `child_started.is_set()` was False — measured in a
+        # full 16-worker run: `WARNING ... Subagent 0 timed out after 0.1s` followed by
+        # `assert False` at line 515 (`where is_set = <threading.Event ...: unset>`). 3.0s leaves
+        # the thread spawn (~ms) far outside the timeout window without slowing the test down.
+        monkeypatch.setattr("tools.delegate_tool._get_child_timeout", lambda: 3.0)
 
         def run_conversation(**kwargs):
             lease = relay_runtime.SESSION_COORDINATOR.acquire_conversation(
