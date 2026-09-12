@@ -123,6 +123,10 @@ class HAOSDoctor:
 
         haos_home_str = str(self.haos_home.resolve())
         explicit = (os.environ.get("HERMES_HOME") or "").strip()
+        # HAOS_HOME também é fonte legítima: get_process_hermes_home() a honra, então um processo
+        # com HAOS_HOME definida e HERMES_HOME ausente NÃO está em fallback — sem esta variável o
+        # check acusaria um falso positivo.
+        haos_env = (os.environ.get("HAOS_HOME") or "").strip()
         resolved = str(Path(get_process_hermes_home()).expanduser().resolve())
 
         details = {
@@ -132,11 +136,24 @@ class HAOSDoctor:
             "HAOS_HOME": haos_home_str,
         }
 
-        # O sinal de contaminação é o home EFETIVO divergir de HAOS_HOME — não o nome dele
-        # conter ".hermes". A cláusula antiga (".hermes" in resolved) só acusava o default do
-        # upstream e ficava cega quando o processo resolvia para o home do próprio fork, que é
-        # exatamente o caso que este check existe para pegar (docstring acima).
+        # Contaminação não é só divergência de caminho. Um home resolvido por FALLBACK — sem
+        # HERMES_HOME nem HAOS_HOME explícitas — é o caso mais comum de serviço lendo o home
+        # errado: a unit não define a variável e o processo cai no default. Hoje o caminho pode
+        # até coincidir com HAOS_HOME, mas basta o default da plataforma ou a unit mudarem para
+        # o processo passar a ler outro home sem nenhum aviso. O check antigo detectava isso
+        # exigindo a string ".hermes" no caminho; a troca do nome do produto cegou o check.
+        # O sinal correto é a origem, não o nome do diretório.
         if resolved != haos_home_str:
+            motivo = f"Home efetivo ({resolved}) difere de HAOS_HOME ({haos_home_str})"
+        elif not (explicit or haos_env):
+            motivo = (
+                f"Home efetivo ({resolved}) veio de FALLBACK, não de variável explícita — "
+                f"coincide com HAOS_HOME hoje, mas qualquer mudança de default ou de unit "
+                f"faz o processo ler outro home sem aviso"
+            )
+        else:
+            motivo = ""
+        if motivo:
             origem = (
                 f"HERMES_HOME={explicit}"
                 if explicit
@@ -145,10 +162,7 @@ class HAOSDoctor:
             return CheckResult(
                 name="env_isolation",
                 status="WARN",
-                message=(
-                    f"Home efetivo ({resolved}) difere de HAOS_HOME "
-                    f"({haos_home_str}) [{origem}]. Pode haver leitura de configurações de outro home."
-                ),
+                message=f"{motivo} [{origem}]. Pode haver leitura de configurações de outro home.",
                 details=details,
             )
 
