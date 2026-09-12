@@ -790,7 +790,47 @@ def case_limite_vault_sync():
         td.cleanup()
 
 
+# --------------------------------------------------------------------------- #
+# G. Topo da recuperacao (P4) e A/B de fusao (P7) — medicao, nao mudanca
+# --------------------------------------------------------------------------- #
+def case_topo_recuperacao():
+    """Pergunta: o topo da recuperacao (top-1/MRR) e mensuravel de forma
+    reprodutivel sobre o corpus rotulado (harness P4)?"""
+    from evals.graphrag_lite.measure_topo import (
+        build_scenarios,
+        run_measurement,
+    )
+
+    scenarios = build_scenarios()
+    if len(scenarios) < 5:
+        fail(f"harness com {len(scenarios)} cenarios (< 5)")
+    first = run_measurement(scenarios)
+    second = run_measurement(scenarios)
+    if first != second:
+        fail(f"medicao nao-deterministica entre passadas: {first} != {second}")
+    agg1 = first["aggregate"]
+    for key in ("top1_hit_rate", "mean_mrr"):
+        v = agg1.get(key)
+        if not (isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0):
+            fail(f"metrica {key!r} fora de [0,1]: {v!r}")
+    hits = sum(1 for s in first["scenarios"] if s["top1_hit"])
+    misses = len(first["scenarios"]) - hits
+    if hits < 1 or misses < 1:
+        fail(f"ruler nao discrimina (hits={hits}, misses={misses})")
+    report = [
+        f"top-1 hit rate={agg1['top1_hit_rate']:.3f} "
+        f"MRR={agg1['mean_mrr']:.3f} ({hits} hits / {misses} misses em "
+        f"{len(scenarios)} cenarios)",
+    ]
+    for s in first["scenarios"]:
+        report.append(f"  [{s['id']}] top1={'SIM' if s['top1_hit'] else 'nao'} "
+                      f"mrr={s['mrr']:.3f} top={s['top_doc']!r}")
+    print("PASS: " + "\n".join(report))
+    return None
+
+
 _CASES = {
+    "topo-recuperacao": case_topo_recuperacao,
     "graphrag-extrai-relacoes-linha": case_graphrag_extrai_relacoes_linha,
     "graphrag-extrai-entidades": case_graphrag_extrai_entidades,
     "graphrag-extrai-idempotente": case_graphrag_extrai_idempotente,

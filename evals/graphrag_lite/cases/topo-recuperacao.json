@@ -1,0 +1,11 @@
+{
+  "id": "topo-recuperacao",
+  "pergunta": "O topo da recuperacao (top-1/MRR) e mensuravel de forma reprodutivel sobre o corpus do gold set?",
+  "descricao": "Harness de medicao do TOPO da recuperacao (backlog HAOS P4 — Etapa 4): corpus rotulado deterministico contra a maquinaria real (RAGFlowStore.hybrid_search), metrica definida (top-1 hit rate e Mean Reciprocal Rank), resultado REPORTADO e reprodutivel (duas passadas identicas). Nenhuma mudanca de algoritmo: medir e o entregavel. O caso falha se o harness nao existir, se os cenarios nao rodarem todos pela API real, se as metricas sairem fora de [0,1] ou se a segunda passada divergir (nao-determinismo).",
+  "tags": ["topo", "medicao", "p4"],
+  "timeout": 120,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('topo-recuperacao')"
+  }
+}
