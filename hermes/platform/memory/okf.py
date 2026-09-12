@@ -149,6 +149,11 @@ class OKFStore:
                 matches.append(doc)
         return matches
 
+    def documents(self) -> List[OKFDocument]:
+        """Todos os documentos OKF carregados, sem filtro de consulta."""
+        self.load()
+        return list(self._cache.values())
+
     def save_document(
         self,
         title: str,
@@ -157,16 +162,21 @@ class OKFStore:
         tags: Optional[List[str]] = None,
         owner: str = "",
         folder: str = "",
+        filename: Optional[str] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> OKFDocument:
-        """Create or update an OKF markdown document locally."""
+        """Create or update an OKF markdown document locally.
+
+        ``filename`` fixa o nome do arquivo (default: slug derivado do título);
+        ``extra_metadata`` acrescenta chaves ao frontmatter (proveniência, destino,
+        confiança) sem alterar o contrato dos demais chamadores.
+        """
         target_dir = self.bundle_dir / folder if folder else self.bundle_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 
         slug = re.sub(r"[^a-zA-Z0-9_\-]+", "-", title.lower()).strip("-")
-        filename = f"{slug}.md"
+        filepath = target_dir / (filename or f"{slug}.md")
         import yaml  # function-level: o lint A6 de hermes/platform só permite stdlib no topo
-
-        filepath = target_dir / filename
 
         metadata = {
             "title": title,
@@ -174,6 +184,8 @@ class OKFStore:
             "tags": tags or [],
             "owner": owner,
         }
+        if extra_metadata:
+            metadata.update(extra_metadata)
         yaml_frontmatter = yaml.safe_dump(metadata, sort_keys=False).strip()
         full_content = f"---\n{yaml_frontmatter}\n---\n\n{content.strip()}\n"
 

@@ -73,3 +73,36 @@ def test_instincts_tool_interaction(tmp_path: Path):
     res_list = instincts_tool("list", project_scope="default")
     assert '"success": true' in res_list.lower()
     assert "sempre compilar antes de testar" in res_list.lower()
+
+
+def test_instinct_id_for_eh_o_id_usado_pelo_record(tmp_path: Path):
+    """Contrato: record_instinct usa exatamente o id determinístico de instinct_id_for."""
+    store = InstinctStore(root_dir=tmp_path)
+    rule = "Regra unica de teste"
+    ins = store.record_instinct(rule, category="workflow", project_scope="proj")
+    assert ins.id == InstinctStore.instinct_id_for(rule)
+
+    reforco = store.record_instinct(rule, project_scope="proj")
+    assert reforco.id == ins.id  # reforço NÃO cria segundo registro
+    assert set(store.load_instincts("proj")) == {ins.id}
+
+
+def test_peek_confidence_preve_o_proximo_reforco_sem_escrever(tmp_path: Path):
+    """peek_confidence é o dry-run do reforço: prevê a confiança pós-reforço sem tocar no disco."""
+    store = InstinctStore(root_dir=tmp_path)
+    rule = "Sempre validar o comando antes de rodar"
+
+    # Sem ocorrência nenhuma: prevê a confiança inicial
+    assert store.peek_confidence(rule, "proj") == 0.3
+    # Instanciar o store e fazer peek não cria nem o diretório
+    assert not (tmp_path / "proj.json").exists()
+
+    ins = store.record_instinct(rule, project_scope="proj")
+    assert ins.confidence == 0.3
+    # A partir daqui, o PRÓXIMO reforço daria 0.5
+    assert store.peek_confidence(rule, "proj") == 0.5
+
+    before = (tmp_path / "proj.json").read_text(encoding="utf-8")
+    store.peek_confidence(rule, "proj")
+    after = (tmp_path / "proj.json").read_text(encoding="utf-8")
+    assert before == after  # peek não persiste

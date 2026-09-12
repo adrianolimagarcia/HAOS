@@ -153,7 +153,8 @@ class TestMemoryCandidatesAndRouting(unittest.TestCase):
         self.assertEqual(cand_valid.status, "consolidated")
         self.assertEqual(len(provider.saved), 1)
 
-        # Low confidence candidate rejection
+        # Low confidence candidate: degrau de staging (P11) — vira "pending"
+        # PERSISTIDO (proveniência + confiança), NÃO "rejected"/descartado.
         cand_low = router.route_fact(
             "User likes maybe blue",
             source_uri="turn://2",
@@ -161,7 +162,13 @@ class TestMemoryCandidatesAndRouting(unittest.TestCase):
         )
         success_low = router.process_candidate(cand_low, provider)
         self.assertFalse(success_low)
-        self.assertEqual(cand_low.status, "rejected")
+        self.assertEqual(cand_low.status, "pending")
+        self.assertEqual(len(provider.saved), 1)  # nada gravado no provedor
+
+        pending = router.staging_store.list_pending()
+        self.assertEqual(len(pending), 1)
+        self.assertIn("turn://2", pending[0]["provenance"])
+        self.assertAlmostEqual(pending[0]["confidence"], 0.5)
 
 
 if __name__ == "__main__":

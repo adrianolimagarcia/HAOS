@@ -6,10 +6,22 @@ Ported in spirit from HKUDS/nanobot's Dream + GitStore:
 - Automatically records a local Git commit over the memory stores where the commit
   message reflects the actual filesystem diff (ground-truth audit trail).
 - Supports deterministic rollback via 'revert(sha)' or 'revert_last()'.
+
+P11 — gate de staging:
+- Cada lição extraída vira um ``MemoryCandidate`` via ``MemoryRouter.route_fact``
+  (classificação determinística por regex, nunca por substring solta no preview cru).
+- A confiança do candidato vem do ``InstinctStore`` (0.3 na 1ª aparição; +0.2 por
+  recorrência ENTRE sessões; limiar de promoção 0.8).
+- A lição só chega à árvore canônica (<home>/okf) quando PROMOVIDA, i.e. quando
+  ``MemoryRouter.process_candidate`` consolida (confiança >= 0.85 e sem conflito).
+- Abaixo disso o candidato fica PERSISTIDO como ``pending`` no
+  ``MemoryStagingStore`` (<home>/memory/staging), com proveniência (id da sessão)
+  e confiança — nada é descartado nem promovido por impulso.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import time
@@ -17,7 +29,29 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
+from hermes.platform.context.memory.candidate import MemoryCandidate
+from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
+from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
+from hermes.platform.memory.instincts import InstinctStore
 from hermes.platform.memory.reconciler import MemoryReconciler
+
+logger = logging.getLogger(__name__)
+
+# Escopo de projeto dos instintos do dream: o MESMO lido por
+# hermes_cli/haos_cmd.py:391 (get_eligible_promotions("default")) e pela tool
+# tools/haos_instinct_tool — reforço e promoção conversam no mesmo namespace.
+INSTINCT_PROJECT_SCOPE = "default"
+
+# Categoria do instinto derivada do destino determinístico do MemoryRouter
+# (tabela, não if/elif em cadeia — ver Code Shape Rules).
+_CATEGORY_BY_DESTINATION: Dict[str, str] = {
+    "skill": "workflow",
+    "core_agent": "workflow",
+    "working": "workflow",
+    "obsidian": "domain",
+    "core_user": "domain",
+    "task": "domain",
+}
 
 
 class DreamError(RuntimeError):
@@ -137,6 +171,60 @@ class DreamGitStore:
         return res.returncode == 0
 
 
+class _CanonicalLessonWriter:
+    """Destination writer do MemoryConsolidator: materializa a lição promovida no OKF canônico.
+
+    Só é chamado depois que o candidato passou pelo gate de confiança do
+    ``MemoryRouter.process_candidate``. Escreve via ``OKFStore`` — o mesmo writer
+    canônico usado por tools/haos_memory_tools — e expõe as lições já canônicas
+    (get_existing_facts) para a detecção de conflito do ``MemoryConsolidator``.
+    """
+
+    def __init__(self, okf_dir: Path, session_id: str, title: str):
+        self.okf_dir = Path(okf_dir)
+        self.session_id = session_id
+        self.session_title = title
+        self.last_written: Optional[Path] = None
+
+    def get_existing_facts(self, destination: str) -> List[Dict[str, str]]:
+        from hermes.platform.memory.okf import OKFStore
+
+        store = OKFStore(self.okf_dir)
+        return [
+            {"id": doc.relative_path, "content": doc.body}
+            for doc in store.documents()
+        ]
+
+    def write_candidate(self, candidate: MemoryCandidate) -> bool:
+        from hermes.platform.memory.okf import OKFStore
+
+        store = OKFStore(self.okf_dir)
+        # Idempotência por CONTEÚDO: se a lição já está canônica (ex.: o staging ou
+        # os instintos foram perdidos/restaurados e a lição voltou a ser promovida),
+        # aponta para o documento existente em vez de duplicar a lição na árvore.
+        for existing in store.documents():
+            if existing.body.strip() == candidate.fact.strip():
+                self.last_written = existing.filepath
+                return True
+
+        doc = store.save_document(
+            title=f"Licao da Sessao {self.session_id[:8]}",
+            content=candidate.fact,
+            doc_type="concept",
+            tags=["session", "dream", "auto-extracted", "promoted"],
+            filename=f"lesson_{self.session_id[-6:]}.md",
+            extra_metadata={
+                "source_session": self.session_id,
+                "session_title": self.session_title,
+                "destination": candidate.proposed_destination,
+                "confidence": candidate.confidence,
+                "provenance": list(candidate.provenance),
+            },
+        )
+        self.last_written = doc.filepath
+        return True
+
+
 class DreamConsolidator:
     """Orchestrates memory consolidation across recent sessions."""
 
@@ -156,6 +244,11 @@ class DreamConsolidator:
         self.git_store = DreamGitStore(self.memory_dir)
         self.reconciler = MemoryReconciler(self.memory_dir / "reconciled_memories.db")
 
+        # Pipeline de memória (P11): staging persistente + roteamento determinístico.
+        self.staging_store = MemoryStagingStore(self.memory_dir / "staging")
+        self.router = MemoryRouter(staging_store=self.staging_store)
+        self.instinct_store = InstinctStore(self.memory_dir / "instincts")
+
     def get_cursor(self) -> float:
         """Timestamp of last consolidated session."""
         if self.cursor_file.exists():
@@ -170,9 +263,20 @@ class DreamConsolidator:
         self.cursor_file.write_text(str(ts), encoding="utf-8")
 
     def run_dream(self, dry_run: bool = False) -> Dict[str, Any]:
-        """Consolidate unconsolidated sessions since last cursor."""
-        self.okf_dir.mkdir(parents=True, exist_ok=True)
-        self.vault_adrs_dir.mkdir(parents=True, exist_ok=True)
+        """Consolidate unconsolidated sessions since last cursor.
+
+        P11 — gate de staging: cada lição extraída vira um ``MemoryCandidate``
+        (MemoryRouter.route_fact → classificação determinística) com confiança
+        derivada do InstinctStore (0.3 na primeira aparição, +0.2 por recorrência
+        entre sessões). A lição só chega à árvore canônica (okf/) quando PROMOVIDA:
+        confiança >= MemoryCandidate.is_high_confidence() (0.85, via
+        MemoryRouter.process_candidate). Abaixo disso ela fica PERSISTIDA como
+        ``pending`` no MemoryStagingStore, com proveniência (id da sessão) e
+        confiança. ``dry_run=True`` não escreve absolutamente nada.
+        """
+        if not dry_run:
+            self.okf_dir.mkdir(parents=True, exist_ok=True)
+            self.vault_adrs_dir.mkdir(parents=True, exist_ok=True)
 
         from hermes_state import SessionDB
         db = SessionDB(read_only=True)
@@ -194,10 +298,14 @@ class DreamConsolidator:
                 "status": "idle",
                 "message": "No new sessions to consolidate",
                 "consolidated_count": 0,
+                "staged_count": 0,
+                "promoted_count": 0,
                 "commit": None,
             }
 
         consolidated = 0
+        staged = 0
+        promoted = 0
         reconciliation_stats = {"ADD": 0, "UPDATE": 0, "SUPERSEDE": 0, "NOOP": 0}
         max_ts = last_cursor
 
@@ -222,37 +330,65 @@ class DreamConsolidator:
             if len(preview) < 20:
                 continue
 
-            # Deterministic extraction of OKF lesson or ADR note
-            slug = sid[-6:]
-            doc_file = self.okf_dir / f"lesson_{slug}.md"
-            if not doc_file.exists():
-                content = (
-                    f"---\ntitle: \"Lição da Sessão {sid[:8]}\"\ntype: concept\ntags: [session, dream, auto-extracted]\n"
-                    f"source_session: \"{sid}\"\n---\n\n"
-                    f"# {title}\n\n{preview}\n"
+            # Extração determinística da lição: primeiro período do preview (mesma
+            # evidência estrutural de antes — frase completa; SEM gate por palavra-
+            # chave solta no preview cru, que sumiu com o P11).
+            lesson = preview.split(".")[0].strip()[:140]
+            if len(lesson) <= 15:
+                continue
+
+            session_uri = f"session://{sid}"
+            key = candidate_key(lesson)
+
+            # Reforço é recorrência ENTRE sessões: a mesma sessão reprocessada não
+            # reforça, e lição já promovida não é re-ingerida.
+            existing = self.staging_store.get(key)
+            if existing is not None:
+                if existing.get("status") == PROMOTED or session_uri in (existing.get("provenance") or []):
+                    continue
+
+            # Destino determinístico (MemoryRouter.classify_destination) — usado para
+            # a categoria do instinto e para a metadata da lição promovida.
+            destination = self.router.classify_destination(lesson)
+
+            if not dry_run:
+                instinct = self.instinct_store.record_instinct(
+                    rule=lesson,
+                    category=_CATEGORY_BY_DESTINATION.get(destination, "workflow"),
+                    project_scope=INSTINCT_PROJECT_SCOPE,
+                    tags=["dream-distilled"],
                 )
-                if not dry_run:
-                    doc_file.write_text(content, encoding="utf-8")
-                consolidated += 1
+                confidence = instinct.confidence
+            else:
+                # Dry-run: prevê a confiança do próximo reforço sem escrever nada.
+                confidence = self.instinct_store.peek_confidence(
+                    rule=lesson, project_scope=INSTINCT_PROJECT_SCOPE
+                )
 
-                # ECC Instinct extraction from session: if session recorded learnings/heuristics
-                if not dry_run and ("sempre" in preview.lower() or "nunca" in preview.lower() or "erro" in preview.lower()):
-                    try:
-                        from hermes.platform.memory.instincts import InstinctStore
-                        instinct_store = InstinctStore(self.memory_dir / "instincts")
-                        rule_summary = preview.split(".")[0].strip()[:140]
-                        if len(rule_summary) > 15:
-                            instinct_store.record_instinct(
-                                rule=rule_summary,
-                                category="workflow",
-                                project_scope="default",
-                                tags=["dream-distilled"],
-                            )
-                    except Exception as _ins_err:
-                        logger.debug("Dream instinct distillation failed: %s", _ins_err)
+            candidate = self.router.route_fact(
+                fact=lesson,
+                source_uri=session_uri,
+                confidence=confidence,
+                scope="project",
+            )
+            consolidated += 1
 
-                # Mem0-inspired declarative memory reconciliation
-                if not dry_run and any(k in preview.lower() for k in ("preferência", "preferencia", "usando", "migramos", "banco", "framework", "agora usamos", "não usamos")):
+            if dry_run:
+                continue
+
+            writer = _CanonicalLessonWriter(okf_dir=self.okf_dir, session_id=sid, title=title)
+            if self.router.process_candidate(candidate, writer):
+                # Acumula a proveniência da sessão da promoção ANTES de marcar,
+                # para o registro refletir todas as sessões que viram a lição.
+                self.staging_store.stage_candidate(candidate, reason="recurrence_promotion")
+                promoted += 1
+                self.staging_store.mark_promoted(
+                    key, doc_path=str(writer.last_written) if writer.last_written else None
+                )
+
+                # Mem0-inspired declarative memory reconciliation (apenas no que é
+                # promovido, como antes: o stats espelha conhecimento canônico).
+                if any(k in preview.lower() for k in ("preferência", "preferencia", "usando", "migramos", "banco", "framework", "agora usamos", "não usamos")):
                     try:
                         fact_candidate = preview.split(".")[0].strip()[:180]
                         if len(fact_candidate) > 10:
@@ -271,11 +407,19 @@ class DreamConsolidator:
                                 reconciliation_stats[rec_res.action] += 1
                     except Exception as _rec_err:
                         logger.debug("Dream memory reconciliation failed: %s", _rec_err)
+            else:
+                staged += 1
+                if candidate.status == "rejected":
+                    # Conflito com conhecimento canônico: nada é descartado — o
+                    # candidato volta para o staging até reforçar/resolver.
+                    self.router.stage_candidate(candidate, reason=STAGE_REASON_CONFLICT)
 
         if dry_run:
             return {
                 "status": "dry_run",
                 "consolidated_count": consolidated,
+                "staged_count": staged,
+                "promoted_count": promoted,
                 "reconciliation": reconciliation_stats,
                 "commit": None,
             }
@@ -288,6 +432,8 @@ class DreamConsolidator:
         return {
             "status": "success",
             "consolidated_count": consolidated,
+            "staged_count": staged,
+            "promoted_count": promoted,
             "reconciliation": reconciliation_stats,
             "commit": commit_info.sha if commit_info else None,
             "timestamp": commit_info.timestamp if commit_info else None,

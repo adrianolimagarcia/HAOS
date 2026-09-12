@@ -68,7 +68,27 @@ class InstinctStore:
         from hermes_constants import get_hermes_home  # function-level: lint A6
 
         self.root = root_dir or (get_hermes_home() / "memory" / "instincts")
-        self.root.mkdir(parents=True, exist_ok=True)
+        # NOTA: mkdir é lazy (em save_instincts) — instanciar o store não escreve,
+        # para o dry-run do dream poder ler o estado sem tocar no disco.
+
+    @staticmethod
+    def instinct_id_for(rule: str) -> str:
+        """Id determinístico de uma regra (mesma normalização em todas as chamadas)."""
+        h = hashlib.sha256(rule.strip().lower().encode("utf-8")).hexdigest()[:12]
+        return f"ins-{h}"
+
+    def peek_confidence(self, rule: str, project_scope: str = "global") -> float:
+        """Confiança que a regra teria APÓS o próximo reforço, sem persistir nada.
+
+        Lê o estado corrente (load_instincts) e aplica a mesma fórmula do
+        ``Instinct.reinforce`` (min(1.0, conf + CONFIDENCE_BOOST)). Usado pelo
+        dry-run do dream para prever o desfecho sem escrever arquivo.
+        """
+        instincts = self.load_instincts(project_scope)
+        ins = instincts.get(self.instinct_id_for(rule))
+        if ins is None:
+            return INITIAL_CONFIDENCE
+        return min(1.0, round(ins.confidence + CONFIDENCE_BOOST, 2))
 
     def _project_file(self, project_scope: str) -> Path:
         safe_scope = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in project_scope)
@@ -87,6 +107,7 @@ class InstinctStore:
 
     def save_instincts(self, project_scope: str, instincts: Dict[str, Instinct]) -> None:
         pf = self._project_file(project_scope)
+        self.root.mkdir(parents=True, exist_ok=True)  # mkdir lazy: só na primeira escrita
         serialized = {k: v.to_dict() for k, v in instincts.items()}
         pf.write_text(json.dumps(serialized, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -99,8 +120,7 @@ class InstinctStore:
     ) -> Instinct:
         """Create or reinforce an atomic instinct."""
         instincts = self.load_instincts(project_scope)
-        h = hashlib.sha256(rule.strip().lower().encode("utf-8")).hexdigest()[:12]
-        instinct_id = f"ins-{h}"
+        instinct_id = self.instinct_id_for(rule)
 
         if instinct_id in instincts:
             instinct = instincts[instinct_id]

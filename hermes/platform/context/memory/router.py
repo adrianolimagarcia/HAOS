@@ -16,6 +16,15 @@ from typing import Any, Dict, List, Optional
 
 from hermes.platform.context.memory.candidate import DestinationType, MemoryCandidate, ScopeType
 from hermes.platform.context.memory.consolidation import MemoryConsolidator
+from hermes.platform.context.memory.staging import MemoryStagingStore
+
+# Razões de staging persistidas no MemoryStagingStore (gate auditável).
+STAGE_REASON_LOW_CONFIDENCE = "below_confidence_threshold"
+STAGE_REASON_CONFLICT = "conflict_with_canonical"
+
+# O limiar de consolidação direta vive em MemoryCandidate.is_high_confidence()
+# (>= 0.85, candidate.py) — o router só o aplica via process_candidate; o reforço
+# por recorrência entre sessões (InstinctStore no dream) eleva o candidato até ele.
 
 
 class MemoryRouter:
@@ -47,8 +56,16 @@ class MemoryRouter:
         re.IGNORECASE,
     )
 
-    def __init__(self, consolidator: Optional[MemoryConsolidator] = None):
+    def __init__(
+        self,
+        consolidator: Optional[MemoryConsolidator] = None,
+        staging_store: Optional[MemoryStagingStore] = None,
+    ):
         self.consolidator = consolidator or MemoryConsolidator()
+        # Degrau de staging (P11): onde o candidato de baixa confiança espera
+        # persistido até ser promovido. Passe staging_store=None para não persistir
+        # (o candidato ainda vira "pending", mas nada é gravado).
+        self.staging_store = staging_store if staging_store is not None else MemoryStagingStore()
 
     def classify_destination(self, fact: str) -> DestinationType:
         """Classifica o fato segundo as regras de negócio."""
@@ -98,12 +115,39 @@ class MemoryRouter:
             status="pending",
         )
 
+    def stage_candidate(self, candidate: MemoryCandidate, reason: str = "") -> bool:
+        """Degrau de staging: o candidato espera PERSISTIDO como ``pending``.
+
+        O modelo de dados já previa ``status="pending"``; sem este degrau o roteador
+        descartava (``rejected``) candidatos abaixo do limiar de
+        ``MemoryCandidate.is_high_confidence()``. Nada é descartado: o candidato fica
+        no store com proveniência e confiança até ser promovido (o reforço por
+        recorrência entre sessões eleva a confiança até o limiar). Retorna True se
+        ficou persistido.
+        """
+        candidate.status = "pending"
+        if self.staging_store is None:
+            return False
+        self.staging_store.stage_candidate(candidate, reason=reason)
+        return True
+
     def process_candidate(self, candidate: MemoryCandidate, memory_provider: Any) -> bool:
-        """Processa o candidato aplicando verificações de conflito e consolidação no memory_provider."""
-        # Se confiança for muito baixa para consolidação direta, não consolida
+        """Processa o candidato aplicando verificações de conflito e consolidação no memory_provider.
+
+        Contrato:
+        - confiança abaixo do limiar de ``MemoryCandidate.is_high_confidence()`` (0.85):
+          o candidato NÃO é descartado — vira ``status="pending"`` e é PERSISTIDO no
+          staging store (degrau de staging, P11). Retorna False (não consolidou).
+        - confiança alta mas conflito com item existente: ``status="rejected"`` e False;
+          o chamador decide o que fazer (no dream, o candidato volta para o staging).
+        - confiança alta, sem conflito: consolida no memory_provider e retorna True.
+        """
+        # Degrau de staging: candidato abaixo do limiar espera em vez de ser jogado fora.
+        # A promoção vem de fora: recorrência entre sessões (InstinctStore no dream)
+        # eleva a confiança até este limiar. Retorno False = não consolidou (o chamador
+        # discrimina pelo status do candidato: "pending" = estagiado).
         if not candidate.is_high_confidence():
-            # Apenas aceita se explicitamente forçado ou rejeita
-            candidate.status = "rejected"
+            self.stage_candidate(candidate, reason=STAGE_REASON_LOW_CONFIDENCE)
             return False
 
         # Verifica conflitos com itens existentes se o provedor expuser método para consulta
