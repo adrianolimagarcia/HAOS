@@ -1247,6 +1247,10 @@ class SlackAdapter(BasePlatformAdapter):
         try:
             exc = task.exception()
         except (asyncio.CancelledError, Exception):  # pragma: no cover
+            # Done-callback on the finished watchdog task: no await, no parent task whose
+            # cancel could land here, so this is NOT the "swallowed cancellation" defect.
+            # The tuple is required: Task.exception() raises CancelledError (a
+            # BaseException) for cancelled tasks, which `except Exception` would not catch.
             exc = None
         if exc is not None:
             logger.warning(
