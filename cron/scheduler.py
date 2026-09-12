@@ -3187,6 +3187,25 @@ def _wait_for_external_cron_worker(
                 pass
 
 
+def _restart_safe_scope_policy() -> str:
+    """``require`` (default) or ``prefer`` for an unavailable restart-safe scope.
+
+    ``require`` keeps the upstream contract: a managed gateway that cannot mint the
+    transient scope fails the run, because falling back would recreate the restart
+    interruption the handoff exists to prevent. ``prefer`` degrades to the in-process
+    path with a warning — the only way a scheduled job ever runs on a host where the
+    scope is permanently unreachable (a systemd node without ``pam_systemd``, so
+    ``systemd --user`` never starts). Unknown values behave as ``require``.
+    """
+    try:
+        cfg = load_config() or {}
+    except Exception:
+        return "require"
+    cron_cfg = cfg.get("cron") if isinstance(cfg, dict) else None
+    policy = str((cron_cfg or {}).get("restart_safe_scope") or "require").strip().lower()
+    return policy if policy in {"require", "prefer"} else "require"
+
+
 def _launch_external_cron_worker(job: dict) -> bool:
     """Launch *job* outside the managed gateway process when required.
 
@@ -3225,17 +3244,42 @@ def _launch_external_cron_worker(job: dict) -> bool:
     )
 
     try:
-        require_restart_safe_scope = bool(
-            (load_config_readonly().get("cron") or {}).get("require_restart_safe_scope", False)
-        )
+        cron_cfg = (load_config_readonly() or {}).get("cron") or {}
+        cron_cfg = cron_cfg if isinstance(cron_cfg, dict) else {}
+        if "require_restart_safe_scope" in cron_cfg:
+            # Upstream key (new dispatch API): an explicit value wins over the fork policy.
+            require_restart_safe_scope = bool(cron_cfg.get("require_restart_safe_scope"))
+        else:
+            require_restart_safe_scope = _restart_safe_scope_policy() == "require"
     except Exception:
-        require_restart_safe_scope = False
+        require_restart_safe_scope = True
     multiplex_active = is_multiplex_active()
-    dispatch = restart_safe_gateway_child_argv(
-        command,
-        unit_suffix=f"cron-{job_id}-exec-{execution_id}",
-        require_restart_safe_scope=require_restart_safe_scope,
-    )
+    try:
+        dispatch = restart_safe_gateway_child_argv(
+            command,
+            unit_suffix=f"cron-{job_id}-exec-{execution_id}",
+            require_restart_safe_scope=require_restart_safe_scope,
+        )
+    except RuntimeError as scope_error:
+        if _restart_safe_scope_policy() != "prefer":
+            raise
+        logger.warning(
+            "cron: restart-safe scope unavailable (%s) — running job '%s' inside the "
+            "gateway cgroup; a gateway restart mid-run will interrupt it. Set "
+            "cron.restart_safe_scope: require to fail closed instead.",
+            scope_error,
+            job_id,
+        )
+        return False
+    if dispatch.mode == "degraded" and _restart_safe_scope_policy() == "prefer":
+        # Fork prefer: a run a gateway restart may interrupt is strictly better than none.
+        logger.warning(
+            "cron: restart-safe scope unavailable — running job '%s' inside the "
+            "gateway cgroup; a gateway restart mid-run will interrupt it. Set "
+            "cron.restart_safe_scope: require to fail closed instead.",
+            job_id,
+        )
+        return False
     if dispatch.mode == "in_process":
         return False
 

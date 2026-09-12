@@ -1681,6 +1681,15 @@ DEFAULT_CONFIG = {
             # tokens (never an unsigned decode).
             "nas_jwks_url": "",
         },
+        # Política do handoff "restart-safe" de um worker de cron num gateway gerenciado pelo
+        # systemd. "require" (default) FALHA o run quando o scope transiente não pode ser
+        # criado: cair para o caminho in-process recriaria justamente a interrupção por
+        # restart que o handoff existe para evitar. "prefer" degrada com aviso e roda o job
+        # dentro do cgroup do gateway — necessário onde o scope é permanentemente
+        # inalcançável (nó sem user manager: systemd --user sem pam_systemd), onde "require"
+        # significa que o job agendado NUNCA roda. Um restart do gateway no meio do run
+        # interrompe o worker no modo "prefer".
+        "restart_safe_scope": "require",
         # Wrap delivered cron responses with a task-name header and "The agent cannot see this
         # message" footer. False = clean output.
         "wrap_response": True,
