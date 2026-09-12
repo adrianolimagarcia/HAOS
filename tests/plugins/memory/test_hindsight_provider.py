@@ -374,6 +374,48 @@ class TestConfig:
         assert captured["llm_provider"] == "openai"
 
 
+class TestEmbeddedDaemonRootGuard:
+    """Contract for the local_embedded root guard.
+
+    PostgreSQL's initdb refuses root, so ``_start_embedded_daemon`` must refuse
+    to spawn the daemon thread when euid == 0 (disabling the mode so the caller
+    sees a deterministic state) and start it otherwise. The euid is fed as data
+    (the branch's only input); ``_context_thread`` is stubbed so the worker
+    never really runs — the invariant is the *decision*: thread requested or not.
+    """
+
+    def _provider_and_recorder(self, monkeypatch, euid):
+        provider = HindsightMemoryProvider()
+        provider._mode = "local_embedded"
+        started = []
+
+        class _FakeThread:
+            def __init__(self, name):
+                self.name = name
+
+            def start(self):
+                started.append(self.name)
+
+        monkeypatch.setattr("plugins.memory.hindsight.os.geteuid", lambda: euid)
+        monkeypatch.setattr(
+            "plugins.memory.hindsight._context_thread",
+            lambda target, name: _FakeThread(name),
+        )
+        return provider, started
+
+    @pytest.mark.parametrize("euid, expected_mode, expected_threads", [
+        (0, "disabled", []),                                    # root: refuse
+        (1000, "local_embedded", ["hindsight-daemon-start"]),   # non-root: start
+    ])
+    def test_root_guard_decides_daemon_start(self, monkeypatch, euid, expected_mode, expected_threads):
+        provider, started = self._provider_and_recorder(monkeypatch, euid)
+
+        provider._start_embedded_daemon()
+
+        assert provider._mode == expected_mode
+        assert started == expected_threads
+
+
 class TestPostSetup:
     def test_setup_cancel_at_mode_picker_writes_nothing(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / "hermes-home"
