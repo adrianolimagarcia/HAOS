@@ -558,6 +558,7 @@ requests = false
 rich = false
 ruamel-yaml = false
 ruff = false
+scrapling = false
 sentencepiece = false
 setuptools = false
 setuptools-rust = false

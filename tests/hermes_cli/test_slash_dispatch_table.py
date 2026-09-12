@@ -24,6 +24,10 @@ OLD_CHAIN_COMMANDS = [
     "export", "import", "stop", "agents", "journey", "bg", "btw", "queue",
     "steer", "goal", "heartbeat", "refine", "review", "loop", "plan", "moa",
     "subgoal", "skin", "voice", "wake", "busy", "indicator",
+    # Fork HAOS: no branch in the old chain, but the CLI dispatches it inline, so the
+    # registry-parity assertion in test_registry_names_resolve_into_the_table requires it
+    # here too. This list is the canonical set of inline-dispatched commands.
+    "haos",
 ]
 
 
