@@ -36,6 +36,15 @@ curl -fsSL https://raw.githubusercontent.com/adrianolimagarcia/hermes-agent/haos
 
 *(Se já tiver o repositório clonado localmente, basta rodar `./scripts/install_haos.sh`).*
 
+### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
+
+*(O instalador nativo do Windows vive em `scripts/install.ps1` — o fluxo acima, com
+`install_haos.sh`, cobre Linux, WSL2 e macOS.)*
+
 O instalador automático:
 1. Instala pacotes essenciais do sistema (`git`, `curl`, `socat`, compiladores).
 2. Provisiona o `uv` e cria um ambiente virtual isolado Python 3.11.

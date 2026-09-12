@@ -210,7 +210,14 @@ class TestGuidanceNeverNamesLiveDb:
             gateway_run.GatewayRunner._send_session_db_warning_notifications
         )
         assert LIVE_DB_SALVAGE_COMMAND not in body
-        assert "sessions recover --source" in body
+        # O fork monta o comando com o nome do produto ativo, então o literal
+        # "sessions recover --source" não existe na fonte (e não pode existir: hint fixo
+        # em "hermes" é proibido por scripts/ci/check_haos_brand_hints.py). O contrato é
+        # o comando de recuperação existir e ser construído com esse nome.
+        assert "recover --source" in body
+        assert "product_command" in body, (
+            "o comando de recuperação deve usar product_command (nome do produto ativo)"
+        )
         assert "--inspect-only" in body
         assert "--output" in body
         assert "do NOT" in body

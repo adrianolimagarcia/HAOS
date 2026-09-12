@@ -91,6 +91,10 @@ class TestAbiStamp:
         assert stamp.read_text().strip() == ld._python_abi_tag()
 
 
+    @pytest.mark.skipif(
+        os.name == "posix" and os.geteuid() == 0,
+        reason="root ignora o bit de escrita do diretório (0o500 continua gravável)",
+    )
     def test_readonly_target_reports_error(self, tmp_path):
         # A path under a non-writable parent should surface a clean error,
         # not raise.
