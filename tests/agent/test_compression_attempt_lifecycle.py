@@ -101,15 +101,18 @@ class TestWorkerTeardownOnCeiling:
             worker=cooperative_worker,
             messages=original,
             system_prompt_fallback="fallback",
-            # Keep idle expiry out of this total-ceiling test under runner load.
-            idle_timeout_seconds=2.0,
-            # The join grace is capped by the ceiling, so a 0.2s ceiling left
-            # only 2.5x room over the 0.08s unwind and a loaded runner (16 files
-            # in parallel) overshot it: the host timed the join out and returned
-            # with the worker still unwinding — a flake, not the teardown bug
-            # this test guards. The worker touches progress every 0.01s, so idle
-            # never fires and only the total ceiling expires: same path.
-            total_ceiling_seconds=0.6,
+            idle_timeout_seconds=0.1,
+            # The join grace is capped by the ceiling, so the ceiling IS the headroom the
+            # worker's 0.08s unwind gets. History: 0.2s (2.5x) flaked, 0.6s (7.5x) STILL
+            # flaked once in a full 3901-file run at 16 workers on 8 cores, so the host
+            # timed the join out and returned with the worker still unwinding — a flake,
+            # not the teardown bug this test guards. 2.0s is 25x the unwind. Raising the
+            # ceiling does not weaken the sabotage check (removing _join_cancelled_worker
+            # must still leave worker_done unset at return): the discrimination is the
+            # unwind vs the host's post-ceiling path, a ratio both sides dilate together.
+            # The worker touches progress every 0.01s, so idle never fires and only the
+            # total ceiling expires: same path.
+            total_ceiling_seconds=2.0,
             fence=fence,
             stall_fallback=False,
         )
