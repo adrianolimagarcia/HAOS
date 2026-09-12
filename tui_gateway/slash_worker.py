@@ -46,11 +46,21 @@ def _prepare_slash_worker_runtime() -> None:
     """Start bounded MCP discovery before HermesCLI snapshots tools: each slash_worker child is its
     own process — the parent ``haos serve`` discovery thread does not populate this registry.
 
+    ``single_query=True`` is about the SNAPSHOT, not the process: this worker is long-lived
+    (``while True`` over stdin), but ``HermesCLI`` is built once below and its tool list is frozen
+    at that moment, so a server that misses the wait has no second turn to recover on — exactly
+    the case ``mcp_single_query_discovery_timeout`` (15s vs the 1.5s ``mcp_discovery_timeout``)
+    exists for. With the 1.5s default a profile-local MCP server (a cold ``sys.executable``
+    subprocess doing initialize + tools/list) lost the race under load and its tools were absent
+    from ``/tools`` for the worker's entire life — measured as a flaky
+    tests/tui_gateway/test_slash_worker_mcp_discovery.py (assertion on a 51-tool list, not a
+    timeout). The join returns the instant discovery completes, so a fast server still pays ~0.
+
     See #61891.
     """
     from hermes_cli.mcp_startup import start_background_mcp_discovery, wait_for_mcp_discovery
     start_background_mcp_discovery(logger=logger, thread_name="slash-worker-mcp-discovery")
-    wait_for_mcp_discovery()
+    wait_for_mcp_discovery(single_query=True)
 
 
 def _start_parent_death_watchdog(original_ppid) -> None:
