@@ -42,6 +42,20 @@ def _make_adapter(extra=None):
     return adapter
 
 
+async def _cancel_and_join(task, *, timeout=2.0):
+    """Cancel *task* and wait (bounded) for it to actually finish.
+
+    Returns True when it terminated. A swallowed cancellation used to leave
+    ``_websocket_loop`` reconnecting forever, and an unbounded ``await task``
+    then blocked for the runner's whole 900s per-file cap, which SIGKILLs the
+    process tree and leaves no traceback. Bounding the join turns that hang into
+    a failing assertion.
+    """
+    task.cancel()
+    _done, pending = await asyncio.wait({task}, timeout=timeout)
+    return not pending
+
+
 # ── nostr_auth: BIP-340 / NIP-42 ──────────────────────────────────────────
 
 
@@ -163,20 +177,18 @@ async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, capl
     monkeypatch.setattr(_ws_mod, "connect", fake_connect)
 
     task = asyncio.create_task(adapter._websocket_loop())
+    terminated = True
     try:
         deadline = time.monotonic() + 5.0
         while len(sockets) < 2 and time.monotonic() < deadline:
             await asyncio.sleep(0.02)
     finally:
-        task.cancel()
-        try:
-            await asyncio.wait_for(task, 5.0)
-        except (asyncio.CancelledError, asyncio.TimeoutError):
-            pass
+        terminated = await _cancel_and_join(task)
 
     assert len(sockets) >= 2, "idle read watchdog did not force a reconnect"
     assert sockets[0].exited, "the silent connection was not closed before reconnecting"
     assert any("went silent" in record.message for record in caplog.records)
+    assert terminated, "the read-idle watchdog loop ignored cancellation and kept reconnecting"
 
 
 @pytest.mark.asyncio
@@ -330,11 +342,7 @@ async def test_websocket_loop_drops_restricted_channel_without_reconnect():
     )
     assert not task.done(), "websocket_loop must not exit/reconnect on a restricted CLOSED"
 
-    task.cancel()
-    try:
-        await task
-    except (asyncio.CancelledError, Exception):
-        pass
+    assert await _cancel_and_join(task), "websocket_loop ignored cancellation and kept reconnecting"
 
 
 @pytest.mark.asyncio
@@ -399,11 +407,7 @@ async def test_websocket_loop_reconnects_on_non_restricted_closed():
         "non-restricted CLOSED must not add channel to _restricted_channels"
     )
 
-    task.cancel()
-    try:
-        await task
-    except (asyncio.CancelledError, Exception):
-        pass
+    assert await _cancel_and_join(task), "websocket_loop ignored cancellation and kept reconnecting"
 
 
 def test_restricted_channels_skipped_during_subscribe():
@@ -559,11 +563,7 @@ async def test_closed_membership_phrases_prune_without_reconnect(detail):
     assert CHANNEL not in adapter._channel_state
     assert not task.done(), "membership rejection must not reconnect the socket"
 
-    task.cancel()
-    try:
-        await task
-    except (asyncio.CancelledError, Exception):
-        pass
+    assert await _cancel_and_join(task), "websocket_loop ignored cancellation and kept reconnecting"
 
 
 @pytest.mark.asyncio
@@ -622,17 +622,15 @@ async def test_ws_discovery_loop_subscribes_newly_discovered_conversation(monkey
     ws = _Ws()
     subscriptions = {"hermes-buzz-0": CHANNEL}
     task = asyncio.create_task(adapter._ws_discovery_loop(ws, subscriptions))
+    terminated = True
     try:
         deadline = time.monotonic() + 5.0
         while not ws.sent and time.monotonic() < deadline:
             await asyncio.sleep(0.02)
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        terminated = await _cancel_and_join(task)
 
+    assert terminated, "the discovery sweep ignored cancellation"
     assert new_dm in subscriptions.values(), "sweep did not subscribe the new conversation"
     req = ws.sent[0]
     assert req[0] == "REQ" and req[2]["#h"] == [new_dm]
@@ -680,3 +678,58 @@ async def test_ws_discovery_task_cancelled_when_connection_exits(monkeypatch):
 
     assert started, "discovery task was never started with the connection"
     assert all(t.done() for t in started), "discovery task outlived its connection"
+
+
+@pytest.mark.asyncio
+async def test_websocket_loop_terminates_when_cancelled_during_discovery_reap(monkeypatch):
+    """A stop request that lands while the loop reaps its discovery task must end the loop.
+
+    Regression: the reap was ``try: await discovery_task / except
+    (asyncio.CancelledError, Exception): pass``. The read loop reaches that
+    ``finally`` through ConnectionError, not through cancellation, so a cancel
+    aimed at the loop that arrived inside the reap was swallowed there and the
+    ``while True`` opened another connection. The task then could not be stopped:
+    ``_cancel_task`` awaits it with no timeout, so ``disconnect()`` hung forever
+    and a test awaiting the task burned the runner's 900s cap.
+
+    The discovery task's cancellation cleanup is deliberately not instantaneous,
+    which is what puts the cancel inside the reap window deterministically.
+    """
+    adapter = _make_adapter()
+    adapter._channel_state = {CHANNEL: {"chat_type": "group", "last_ts": 1, "seen": {}}}
+
+    reap_started = asyncio.Event()
+
+    async def slow_cancel_discovery(websocket, subscriptions):
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            reap_started.set()
+            await asyncio.sleep(0.3)
+            raise
+
+    monkeypatch.setattr(adapter, "_ws_discovery_loop", slow_cancel_discovery)
+
+    async def closed_anext():
+        raise StopAsyncIteration
+
+    def fake_connect(*args, **kwargs):
+        return _ScriptedWebSocket(closed_anext)
+
+    import websockets as _ws_mod
+
+    monkeypatch.setattr(_ws_mod, "connect", fake_connect)
+
+    task = asyncio.create_task(adapter._websocket_loop())
+    try:
+        # The loop is now suspended inside the reap; cancel while it is there.
+        await asyncio.wait_for(reap_started.wait(), 5.0)
+        terminated = await _cancel_and_join(task)
+    finally:
+        for _ in range(3):
+            if task.done():
+                break
+            task.cancel()
+            await asyncio.wait({task}, timeout=1.0)
+
+    assert terminated, "cancelling the loop during the discovery reap was swallowed"

@@ -497,6 +497,28 @@ _MEDIA_KIND_PRIORITY = (("image", MessageType.PHOTO), ("audio", MessageType.AUDI
 _ATTACHMENT_KIND_TYPES = {"image": MessageType.PHOTO, "video": MessageType.VIDEO, "audio": MessageType.AUDIO, "document": MessageType.DOCUMENT}
 
 
+def _raise_if_cancelled() -> None:
+    """Honour a cancellation that ``asyncio.wait_for`` dropped or remapped.
+
+    The read-idle watchdog awaits ``asyncio.wait_for(..., timeout=...)``, whose
+    cancellation handling is not transparent: when the cancel lands in the same
+    step as the inner read completing, wait_for returns that read as if nothing
+    had happened; when it races the timeout it is reported as ``TimeoutError``.
+    Either way this transport reads the outcome as a frame or as "the relay went
+    silent" and reconnects, so the ``while True`` loop keeps running while the
+    task still carries an outstanding cancel request — and every later watchdog
+    tick remaps that same request again. The loop then cannot be stopped:
+    ``_cancel_task`` awaits the task with no timeout, so ``disconnect()`` and
+    gateway shutdown hang on it forever.
+
+    A pending cancel request is never a reconnect signal, so make it fatal to
+    the loop wherever a read or a reconnect attempt returns.
+    """
+    task = asyncio.current_task()
+    if task is not None and task.cancelling():
+        raise asyncio.CancelledError()
+
+
 class BuzzAdapter(BasePlatformAdapter):
     """Buzz adapter (WebSocket push with poll fallback) for the BasePlatformAdapter interface."""
 
@@ -1088,6 +1110,9 @@ class BuzzAdapter(BasePlatformAdapter):
         import websockets
         backoff = 1.0
         while True:
+            # A stop requested while a failed connect/auth was being reported must not
+            # buy another connection attempt (see _raise_if_cancelled).
+            _raise_if_cancelled()
             try:
                 async with websockets.connect(
                     self._websocket_url(), open_timeout=_WS_AUTH_TIMEOUT, close_timeout=5,
@@ -1103,10 +1128,13 @@ class BuzzAdapter(BasePlatformAdapter):
                         await self._ws_read_loop(websocket, subscriptions)
                     finally:
                         discovery_task.cancel()
-                        try:
-                            await discovery_task
-                        except (asyncio.CancelledError, Exception):
-                            pass
+                        # Reap the child WITHOUT swallowing our own cancellation: the old
+                        # `except (asyncio.CancelledError, Exception): pass` around
+                        # `await discovery_task` also caught the CancelledError aimed at THIS
+                        # loop when it arrived during the reap (the read loop normally reaches
+                        # this finally through ConnectionError, not through cancellation), and
+                        # the `while True` then reconnected forever.
+                        await asyncio.gather(discovery_task, return_exceptions=True)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -1123,7 +1151,14 @@ class BuzzAdapter(BasePlatformAdapter):
             except StopAsyncIteration:
                 return
             except asyncio.TimeoutError:
+                # wait_for reports a cancellation that races the idle timeout as
+                # TimeoutError; without this check the loop would reconnect instead of
+                # stopping (see _raise_if_cancelled).
+                _raise_if_cancelled()
                 raise ConnectionError(f"no WebSocket frame for {_WS_READ_IDLE_TIMEOUT:.0f}s; assuming the connection went silent") from None
+            # wait_for returns the completed read when a cancel lands in the same step,
+            # so re-check before treating it as ordinary traffic.
+            _raise_if_cancelled()
             try:
                 message = json.loads(raw)
             except (ValueError, TypeError):
