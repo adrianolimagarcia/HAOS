@@ -99,10 +99,20 @@ def _make_agent(tmp_path: Path) -> AIAgent:
 
 
 def _tool_call(call_id: str):
+    """One ``web_extract`` call, with arguments derived from the id.
+
+    Not ``arguments="{}"`` for every call: two of these in one assistant message would then be
+    byte-identical, which is exactly what ``agent.loop_hygiene.RepeatToolGuard`` flags as the
+    2nd consecutive identical call. The guard appends its warning to the second result, pushing
+    a short payload past ``_UNTRUSTED_WRAP_MIN_CHARS``, so the untrusted-content wrapper lands
+    too — and a test asserting the raw content fails for a reason it never meant to exercise.
+    """
     return SimpleNamespace(
         id=call_id,
         type="function",
-        function=SimpleNamespace(name="web_extract", arguments="{}"),
+        function=SimpleNamespace(
+            name="web_extract", arguments=json.dumps({"url": f"https://example.com/{call_id}"})
+        ),
     )
 
 

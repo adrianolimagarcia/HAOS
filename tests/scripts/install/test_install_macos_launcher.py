@@ -63,6 +63,12 @@ def test_venv_launcher_bypasses_uv_console_script_that_requires_realpath(tmp_pat
             'get_command_link_display_dir() { printf "%s" "$COMMAND_LINK_DIR"; }',
             "log_info() { :; }",
             "log_success() { :; }",
+            # setup_path's PATH tail warns when no shell config is detectable (and errors on
+            # other paths). Every log helper it can reach needs a stub: with ``set -e`` a
+            # missing one aborts the harness with exit 127, which surfaces as a confusing
+            # CalledProcessError instead of the assertion this test is actually making.
+            "log_warn() { :; }",
+            "log_error() { :; }",
             _setup_path_function(),
             "setup_path",
         ]
