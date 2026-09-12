@@ -9,6 +9,7 @@ Prova os dois defeitos que a verificação do appliance expôs:
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -103,3 +104,36 @@ def test_dream_sem_state_db_e_idle_nao_erro(tmp_path, monkeypatch):
 
     assert result["status"] == "idle", result
     assert not (home / "memory" / "reconciled_memories.db").exists()
+
+
+def test_plan_roda_skill_evolution_e_memory_governance(tmp_path, monkeypatch, capsys):
+    """Etapa 3 (P2+P5): o plano noturno ganha os passos skill_evolution (propostas
+    lição→skill) e memory_governance (TTL + integridade) — cada um executado e
+    reportado, na ordem, sem quebrar os passos antigos."""
+    home = tmp_path / ".haos"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    module = _load_populate_module()
+
+    calls = []
+
+    def _fake(name):
+        def fn(_home):
+            calls.append(name)
+            return {"status": "ok"}
+        return fn
+
+    for name in ("index_vault_rag", "build_graphrag_store", "run_dream",
+                 "run_skill_evolution", "run_memory_governance"):
+        monkeypatch.setattr(module, name, _fake(name))
+
+    # main() lê sys.argv (argparse) — isola dos argumentos do pytest
+    monkeypatch.setattr(sys, "argv", ["haos_memory_populate.py"])
+
+    rc = module.main()
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "skill_evolution" in out, out
+    assert "memory_governance" in out, out
+    assert calls == ["index_vault_rag", "build_graphrag_store", "run_dream",
+                     "run_skill_evolution", "run_memory_governance"]

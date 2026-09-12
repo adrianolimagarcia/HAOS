@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 PENDING = "pending"
 PROMOTED = "promoted"
+# P5 — TTL: candidato demovido por validade/obsolescência (nunca apagado).
+EXPIRED = "expired"
 STAGING_FILENAME = "pending_candidates.json"
 
 
@@ -129,6 +131,32 @@ class MemoryStagingStore:
         rec["promoted_at"] = time.time()
         self._save(records)
         return True
+
+    def expire(self, now: Optional[float] = None, ttl_days: int = 30) -> int:
+        """Política de TTL (P5, memory_governance): demove candidatos ``pending``
+        para ``expired``.
+
+        Um candidato expira quando (a) ``valid_to`` está vencido ou (b) fica
+        ``ttl_days`` (default 30) sem reforço — ``last_seen_at`` antigo, o proxy
+        de acesso do staging. Demover NUNCA apaga: o registro permanece com
+        status ``expired`` (e ``expired_at``) como trilha de auditoria, e sai de
+        ``list_pending``. Retorna quantos foram demovidos.
+        """
+        now = time.time() if now is None else float(now)
+        records = self.load()
+        expired = 0
+        for rec in records.values():
+            if rec.get("status") != PENDING:
+                continue
+            valid_to = rec.get("valid_to")
+            ttl_passed = (now - float(rec.get("last_seen_at") or 0.0)) > ttl_days * 86400
+            if (isinstance(valid_to, (int, float)) and float(valid_to) < now) or ttl_passed:
+                rec["status"] = EXPIRED
+                rec["expired_at"] = now
+                expired += 1
+        if expired:
+            self._save(records)
+        return expired
 
     def list_pending(self) -> List[Dict[str, Any]]:
         return [r for r in self.load().values() if r.get("status") == PENDING]

@@ -9,6 +9,11 @@ Três passos, cada um independente (uma falha não impede os outros):
      (ADR-008) a partir das notas, pela mesma cadeia que o dashboard usa
      (ObsidianAdapter → GraphRAGAdapter → IncrementalGraphRAGUpdater).
   3. Dream       — consolida sessões em memórias reconciliadas + lições OKF.
+  4. Skill evolution (Etapa 3/P2) — lições canônicas classificadas como "skill"
+     viram PROPOSTA de skill (gate g7: proposta, nunca aplicação automática).
+  5. Memory governance (Etapa 3/P5) — TTL (demote de candidatos/lições
+     obsoletos) + integridade (baseline SHA-256, detecção de mudança fora de
+     banda).
 
 O home é resolvido por ``HERMES_HOME``/``HAOS_HOME`` e, na ausência dos dois,
 cai em ``~/.haos`` com aviso. Isso é deliberado: ``get_hermes_home()`` sem env
@@ -111,6 +116,34 @@ def run_dream(home: Path) -> dict:
     }
 
 
+def run_skill_evolution(home: Path) -> dict:
+    """Passo 4 (Etapa 3/P2): lições canônicas → propostas de skill (g7)."""
+    from hermes.platform.memory.skill_promotion import LessonSkillPromoter
+
+    promoter = LessonSkillPromoter(home=home)
+    counts = promoter.run()
+    return {
+        "status": "ok",
+        "proposed": counts.get("proposed", 0),
+        "ignored": counts.get("ignored", 0),
+        "deduped": counts.get("deduped", 0),
+    }
+
+
+def run_memory_governance(home: Path) -> dict:
+    """Passo 5 (Etapa 3/P5): TTL + integridade da memória canônica."""
+    from hermes.platform.memory.dream import DreamConsolidator
+
+    consolidator = DreamConsolidator(hermes_home=home)
+    res = consolidator.run_memory_governance()
+    return {
+        "status": res.get("status"),
+        "expired": res.get("expired", 0),
+        "obsoleted": res.get("obsoleted", 0),
+        "violations": len((res.get("integrity") or {}).get("violations", [])),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Popula a memória canônica do HAOS")
     parser.add_argument("--home", default=None, help="HAOS_HOME (default: env ou ~/.haos)")
@@ -136,6 +169,10 @@ def main() -> int:
     ]
     if not args.skip_dream:
         plan.append(("dream", lambda: run_dream(home)))
+    # Etapa 3 (P2+P5): os passos novos são fases próprias (não dependem do dream
+    # desta rodada — varrem o que já existe em okf/ e no staging).
+    plan.append(("skill_evolution", lambda: run_skill_evolution(home)))
+    plan.append(("memory_governance", lambda: run_memory_governance(home)))
 
     for name, fn in plan:
         try:

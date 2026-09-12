@@ -26,6 +26,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
@@ -180,10 +181,17 @@ class _CanonicalLessonWriter:
     (get_existing_facts) para a detecção de conflito do ``MemoryConsolidator``.
     """
 
-    def __init__(self, okf_dir: Path, session_id: str, title: str):
+    def __init__(self, okf_dir: Path, session_id: str, title: str,
+                 model: str = "", evidence_span: str = "",
+                 extracted_at: Optional[str] = None,
+                 provenance: Optional[List[str]] = None):
         self.okf_dir = Path(okf_dir)
         self.session_id = session_id
         self.session_title = title
+        self.model = model
+        self.evidence_span = evidence_span
+        self.extracted_at = extracted_at
+        self.provenance = provenance
         self.last_written: Optional[Path] = None
 
     def get_existing_facts(self, destination: str) -> List[Dict[str, str]]:
@@ -218,11 +226,31 @@ class _CanonicalLessonWriter:
                 "session_title": self.session_title,
                 "destination": candidate.proposed_destination,
                 "confidence": candidate.confidence,
-                "provenance": list(candidate.provenance),
+                "provenance": list(self.provenance if self.provenance is not None else candidate.provenance),
+                # P5 — proveniência por escrita: instante da extração, modelo da
+                # sessão e o trecho literal do transcript que originou a lição.
+                "extracted_at": self.extracted_at or datetime.now(timezone.utc).isoformat(),
+                "model": self.model,
+                "evidence_span": self.evidence_span,
+                # P2/MAP — a skill afetada (slug determinístico da lição quando o
+                # destino é "skill"); as demais ficam órfãs de evolução.
+                "skill_afetada": self._skill_afetada(candidate),
             },
         )
         self.last_written = doc.filepath
         return True
+
+    @staticmethod
+    def _skill_afetada(candidate: MemoryCandidate) -> Optional[str]:
+        """P2/MAP: a skill afetada da lição. O dream não sabe qual SKILL.md a
+        sessão usou; o sinal determinístico in-repo é o destino do roteador:
+        lição procedural (destino "skill") afeta a skill de slug determinístico
+        da lição — o nome que a promoção P2 propõe. Demais destinos: None."""
+        if candidate.proposed_destination != "skill":
+            return None
+        from hermes.platform.memory.skill_promotion import skill_name_from_lesson  # function-level
+
+        return skill_name_from_lesson(candidate.fact)
 
 
 class DreamConsolidator:
@@ -332,8 +360,11 @@ class DreamConsolidator:
 
             # Extração determinística da lição: primeiro período do preview (mesma
             # evidência estrutural de antes — frase completa; SEM gate por palavra-
-            # chave solta no preview cru, que sumiu com o P11).
-            lesson = preview.split(".")[0].strip()[:140]
+            # chave solta no preview cru, que sumiu com o P11). A frase completa
+            # (sem o truncamento de 140 chars) é o evidence_span do P5: o trecho
+            # literal do transcript que originou a lição.
+            first_sentence = preview.split(".")[0].strip()
+            lesson = first_sentence[:140]
             if len(lesson) <= 15:
                 continue
 
@@ -376,7 +407,15 @@ class DreamConsolidator:
             if dry_run:
                 continue
 
-            writer = _CanonicalLessonWriter(okf_dir=self.okf_dir, session_id=sid, title=title)
+            # P5 — proveniência acumulada: TODAS as sessões que viram a lição
+            # (o staging já acumula; a lição canônica reflete o mesmo contrato).
+            prior_sessions = list((existing.get("provenance") or []) if existing else [])
+            writer = _CanonicalLessonWriter(
+                okf_dir=self.okf_dir, session_id=sid, title=title,
+                model=s.get("model") or "", evidence_span=first_sentence,
+                extracted_at=datetime.now(timezone.utc).isoformat(),
+                provenance=[*prior_sessions, session_uri],
+            )
             if self.router.process_candidate(candidate, writer):
                 # Acumula a proveniência da sessão da promoção ANTES de marcar,
                 # para o registro refletir todas as sessões que viram a lição.
@@ -425,6 +464,12 @@ class DreamConsolidator:
             }
 
         self.set_cursor(max_ts)
+        # P5 — integridade: as escritas deste turno (lições okf, staging, cursor)
+        # são registradas no baseline no MESMO turno do fluxo de escrita (senão o
+        # gate de integridade viraria falso positivo crônico na rodada seguinte).
+        from hermes.platform.memory.memory_governance import MemoryIntegrityChecker  # function-level
+
+        MemoryIntegrityChecker(home=self.home).register_write()
         commit_info = self.git_store.commit_changes(
             subject=f"dream: consolidate {consolidated} session(s) [reconciled: +{reconciliation_stats['ADD']} ~{reconciliation_stats['UPDATE']} !{reconciliation_stats['SUPERSEDE']}]"
         )
@@ -437,4 +482,51 @@ class DreamConsolidator:
             "reconciliation": reconciliation_stats,
             "commit": commit_info.sha if commit_info else None,
             "timestamp": commit_info.timestamp if commit_info else None,
+        }
+
+    def evolve_lessons_to_skills(self) -> Dict[str, Any]:
+        """P2 — passo determinístico de evolução: lições canônicas de okf/ que o
+        MemoryRouter classificou como "skill" viram PROPOSTA de skill (gate g7:
+        proposta, nunca aplicação automática no parque). Registro em
+        <home>/memory/skill_proposals/proposals.json com proveniência completa;
+        o instinto da lição sai do radar do Ouroboros (mark_promoted). Idempotente.
+        """
+        from hermes.platform.memory.skill_promotion import LessonSkillPromoter  # function-level
+
+        promoter = LessonSkillPromoter(
+            home=self.home, okf_dir=self.okf_dir,
+            instinct_store=self.instinct_store,
+            instinct_project_scope=INSTINCT_PROJECT_SCOPE,
+        )
+        counts = promoter.run()
+        return {"status": "ok", **counts}
+
+    def run_memory_governance(
+        self, now: Optional[float] = None, ttl_days: int = 30
+    ) -> Dict[str, Any]:
+        """P5 — governança de memória num passo único e determinístico:
+        (1) integridade ANTES de qualquer escrita desta rodada (detecção de
+        mudança fora de banda + checagens estruturais do contrato);
+        (2) TTL — demove candidatos pending sem reforço/vencidos (staging) e
+        lições canônicas com valid_to vencido (okf, demote com obsolete: true);
+        (3) registra as escritas desta rodada no baseline (o fluxo de escrita
+        registra, senão o gate vira falso positivo crônico).
+        """
+        from hermes.platform.memory.memory_governance import (  # function-level
+            MemoryIntegrityChecker,
+            demote_obsolete_lessons,
+        )
+
+        checker = MemoryIntegrityChecker(home=self.home)
+        out_of_band = checker.verify()
+        structural = checker.validate_json_index() + checker.validate_canonical_documents()
+        expired = self.staging_store.expire(now=now, ttl_days=ttl_days)
+        obsoleted = demote_obsolete_lessons(self.okf_dir, now=now)
+        checker.register_write()
+        return {
+            "status": "ok",
+            "expired": expired,
+            "obsoleted": obsoleted,
+            "ttl_days": ttl_days,
+            "integrity": {"out_of_band": out_of_band, "violations": out_of_band + structural},
         }
