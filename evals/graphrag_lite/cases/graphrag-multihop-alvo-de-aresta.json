@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-multihop-alvo-de-aresta",
+  "pergunta": "Entidade que so aparece como ALVO de aresta e descobrivel?",
+  "descricao": "Contrato de visibilidade reversa: entidade que existe apenas como target de uma relacao e recuperavel pelo nome, e a aresta ENTRANTE aparece no resultado superficiando a origem. Sem isto, metade do grafo (quem e citado mas nao cita) ficaria invisivel — o mesmo problema que o caso externo graphrag-graph-seed atacava (sessoes so alcancaveis pelo grafo).",
+  "tags": ["graphrag", "recall", "grafo"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-multihop-alvo-de-aresta')"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-multihop-comunidade-drift",
+  "pergunta": "Consulta DRIFT expande a entidade com o relatorio da comunidade?",
+  "descricao": "Contrato da consulta DRIFT do GraphRAGAdapter: query_drift(entidade) devolve o item local da entidade MAIS o relatorio da sua comunidade; query_global filtra relatorios por substring do termo. Mede a capacidade de expansao holistica do grafo alem da vizinhanca imediata.",
+  "tags": ["graphrag", "recall", "comunidade"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-multihop-comunidade-drift')"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-recall-semantico",
+  "pergunta": "Um termo que so existe na DESCRICAO alcanca a entidade?",
+  "descricao": "Contrato de recall do GraphRAGClient (sqlite mode): a busca casa termos contra nome + descricao + community_id da entidade — um termo presente apenas na descricao recupera a entidade. A descricao da entidade primaria trunca em 150 chars (contrato real do updater), entao o termo discriminante foi colocado no inicio do corpo. O caso externo graphrag-graph-seed protegia termo alcancavel so pelo grafo; aqui o equivalente e o termo alcancavel so pela descricao.",
+  "tags": ["graphrag", "recall", "semantico"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-recall-semantico')"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "limite-fail-closed",
+  "pergunta": "Sem modo, sem store ou sem CSV o client falha de forma fechada?",
+  "descricao": "Contrato fail-closed do GraphRAGClient: (1) sem nenhum modo configurado o construtor levanta GraphRAGError; (2) store_path sem arquivo reporta unavailable e a query levanta; (3) index_dir sem entities.csv idem. Sem isto, o agente inventaria resposta sobre grafo inexistente. Porta in-repo do caso externo graphrag-grafo-vivo (detectar colapso do pipeline — aqui, ausencia total).",
+  "tags": ["limite", "fail-closed", "contrato"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('limite-fail-closed')"
+  }
+}

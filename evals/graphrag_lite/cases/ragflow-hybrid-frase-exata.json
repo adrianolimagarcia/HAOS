@@ -1,0 +1,11 @@
+{
+  "id": "ragflow-hybrid-frase-exata",
+  "pergunta": "Chunk com a frase exata da pergunta vence o overlap parcial?",
+  "descricao": "Contrato do hybrid_search do RAGFlowStore: chunk contendo a frase exata da pergunta recebe boost (+1.0) e sai na frente de chunk com overlap parcial; o limite de resultados e respeitado; busca vazia devolve [] sem crash; determinismo entre execucoes. Mede o rerank por fusao BM25+lexical em acao.",
+  "tags": ["ragflow", "rerank", "hybrid-search"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('ragflow-hybrid-frase-exata')"
+  }
+}

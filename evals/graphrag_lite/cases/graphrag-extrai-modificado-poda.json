@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-extrai-modificado-poda",
+  "pergunta": "Editar uma nota remove a entidade que ela deixou de citar?",
+  "descricao": "Contrato de NOTE_MODIFIED: quando a mesma URI deixa de citar uma entidade e ninguem mais a alega, o updater poda a entidade do store (write-through) e persiste a nova. Sem poda, o grafo acumularia entidades orfas a cada edicao.",
+  "tags": ["graphrag", "extracao", "ciclo-de-vida"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-extrai-modificado-poda')"
+  }
+}

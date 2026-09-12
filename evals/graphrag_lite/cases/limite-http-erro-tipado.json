@@ -1,0 +1,11 @@
+{
+  "id": "limite-http-erro-tipado",
+  "pergunta": "Erro HTTP do servico vira erro TIPADO (boundary do retry)?",
+  "descricao": "Contrato da borda de retry do modo servico: POST /query 5xx levanta GraphRAGRemoteError com status (o caller pode retentar com backoff — base do P6); URLError no transporte vira GraphRAGError (nunca sucesso silencioso); HTTPError vira (status, body) para o _query decidir. Porta in-repo do caso externo graphrag-retry-preso: o que la era 'nenhum chunk preso em retry', aqui e 'erro tipado na borda para o retry funcionar'.",
+  "tags": ["limite", "retry", "http"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('limite-http-erro-tipado')"
+  }
+}

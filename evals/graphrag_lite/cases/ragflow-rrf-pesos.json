@@ -1,0 +1,11 @@
+{
+  "id": "ragflow-rrf-pesos",
+  "pergunta": "Pesos reordenam a fusao (lista de maior peso domina)?",
+  "descricao": "Contrato de pesos do RRF: com weights=[10,1], o item rank-1 da lista de peso 10 sai na frente mesmo quando rank-1 tambem na outra lista; score fechado 11/61 (10/(k+1) + 1/(k+1)). Mede que a fusao nao e um OR-ing cego — e uma combinacao ponderada deterministica.",
+  "tags": ["ragflow", "rerank", "pesos"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('ragflow-rrf-pesos')"
+  }
+}

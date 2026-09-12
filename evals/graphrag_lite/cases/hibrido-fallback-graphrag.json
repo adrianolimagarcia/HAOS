@@ -1,0 +1,11 @@
+{
+  "id": "hibrido-fallback-graphrag",
+  "pergunta": "Sem OKF, o grafo responde; mode okf ignora o grafo; sem grafo nao quebra?",
+  "descricao": "Contrato de fallback e fail-safe do HybridKnowledgeRouter: (1) pergunta sem doc OKF cai no GraphRAG com a entidade do grafo no resultado; (2) mode='okf' NUNCA consulta o grafo (NONE para o mesmo termo); (3) grafo ausente nao crasha — cai em OKF_BROAD_MATCH quando o corpo casa e NONE quando nada casa. Mede os limites da fusao hibrida na ausencia de cada camada.",
+  "tags": ["hibrido", "fallback", "fail-safe"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('hibrido-fallback-graphrag')"
+  }
+}

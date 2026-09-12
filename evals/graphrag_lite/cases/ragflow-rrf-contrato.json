@@ -1,0 +1,11 @@
+{
+  "id": "ragflow-rrf-contrato",
+  "pergunta": "O RRF premia presenca em mais listas e so seleciona do pool?",
+  "descricao": "Contrato do ReciprocalRankFusion (ADR-002 no espirito): score fechado w/(k+rank) somado por lista — item presente em 2 listas vence item presente em 1; ids fundidos sao exatamente os ids dos pools de entrada (nada fora do pool); determinismo entre execucoes. Porta in-repo do caso externo graphrag-rerank-contrato: o CENARIO do ADR-002 e coberto pelo RRF real, sem o query.py externo nem GRAPHRAG_RERANK_WEIGHTS.",
+  "tags": ["ragflow", "rerank", "contrato"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('ragflow-rrf-contrato')"
+  }
+}

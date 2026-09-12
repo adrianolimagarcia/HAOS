@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-extrai-idempotente",
+  "pergunta": "Reprocessar o mesmo fato nao duplica; deletar remove so o proprio?",
+  "descricao": "Contrato de idempotencia do store (upsert por PK, ADR-008): reprocessar o mesmo KnowledgeEvent nao altera as contagens; NOTE_DELETED remove apenas as entidades/arestas que a URI alegava em exclusivo, preservando o que outras URIs alegam. Protege contra a duplicacao de fato que o caso externo graphrag-retry-preso combatia no index.py (reprocessamento infinito).",
+  "tags": ["graphrag", "extracao", "idempotencia"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-extrai-idempotente')"
+  }
+}

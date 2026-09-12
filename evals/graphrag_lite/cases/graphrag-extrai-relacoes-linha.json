@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-extrai-relacoes-linha",
+  "pergunta": "O grafo persiste relacoes extraidas de linhas do texto?",
+  "descricao": "Contrato de extracao da stack A (incremental_graphrag): 'X depends on Y' vira aresta (X, depends_on, Y) e 'X connects to Y' vira (X, connects_to, Y) no store canonico. Porta in-repo do caso externo graphrag-rerank-contrato (que mediava o recall por relacoes do query.py externo): aqui a relacao e verificada contra o GraphRAGStore real, sem instalacao viva.",
+  "tags": ["graphrag", "extracao", "contrato"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-extrai-relacoes-linha')"
+  }
+}

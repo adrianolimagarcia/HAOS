@@ -1,0 +1,11 @@
+{
+  "id": "hibrido-okf-deterministico",
+  "pergunta": "O contrato OKF vence a busca probabilistica quando casa?",
+  "descricao": "Contrato de precedencia do HybridKnowledgeRouter: quando a pergunta casa um documento OKF deterministico, a resposta e OKF_CANONICAL mesmo que o grafo tambem tenha candidatos por termo; termo que SO o grafo conhece cai em RAG_PROBABILISTIC com a entidade. Porta in-repo do caso externo graphrag-corpus-okf (okf tem de estar alcancavel) — aqui verificado como precedencia no router real.",
+  "tags": ["hibrido", "okf", "precedencia"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('hibrido-okf-deterministico')"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-extrai-supersessao",
+  "pergunta": "Um fato que supersede outro marca o ponteiro temporal (ADR-008)?",
+  "descricao": "Contrato de supersessao temporal: evento com metadata.supersedes=['ADR-001'] faz o store marcar ADR-001.superseded_by = ADR-002 — o fato obsoleto permanece legivel com o ponteiro, nunca e apagado nem duplicado. Semantica do ADR-008 documentada no graphrag_store.",
+  "tags": ["graphrag", "extracao", "supersessao"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-extrai-supersessao')"
+  }
+}

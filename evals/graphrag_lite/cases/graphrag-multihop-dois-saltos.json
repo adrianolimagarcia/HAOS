@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-multihop-dois-saltos",
+  "pergunta": "Cadeia A->B->C e alcancavel em 2 consultas encadeadas?",
+  "descricao": "Contrato de multihop via chamadas reais: a consulta em A devolve A e a aresta A->B (1 salto; C NAO aparece); a consulta em B devolve a aresta B->C. O fechamento da cadeia A->B->C e alcancavel encadeando duas chamadas — mede a capacidade real do client e documenta o limite (1 salto por chamada) que a skill ensina a contornar.",
+  "tags": ["graphrag", "recall", "multihop"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-multihop-dois-saltos')"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-extrai-entidades",
+  "pergunta": "Componentes, tecnologias, wikilinks e ADRs viram entidades tipadas?",
+  "descricao": "Contrato de extracao por heuristica deterministica: XxxAdapter/Service vira Component, palavras da lista de tecnologias viram Technology, [[Wikilink]] vira Concept e mencoes a ADR-xxx viram ADR — cada uma com o relation_type correspondente (mentions_component, uses_technology, links_to, references_adr). Sem rede, sem LLM: a extracao e um contrato verificavel.",
+  "tags": ["graphrag", "extracao", "entidades"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-extrai-entidades')"
+  }
+}

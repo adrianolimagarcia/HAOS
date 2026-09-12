@@ -1,0 +1,11 @@
+{
+  "id": "hibrido-memoria-reconciliada",
+  "pergunta": "Memoria reconciliada ativa vence o OKF e esconde supersedidas?",
+  "descricao": "Contrato de higiene de prompt do router: memoria ativa reconciliada sobre o topico vence o documento OKF (RECONCILED_MEMORY primeiro); apos SUPERSEDE, somente o conteudo novo e devolvido e o fato supersedido nao vaza para a resposta (WHERE status='active'). Protege contra resposta stale — o mesmo objetivo do reconciler (Mem0-style) documentado no modulo.",
+  "tags": ["hibrido", "memoria", "supersessao"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('hibrido-memoria-reconciliada')"
+  }
+}

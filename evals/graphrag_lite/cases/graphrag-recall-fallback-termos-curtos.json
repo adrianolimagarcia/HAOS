@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-recall-fallback-termos-curtos",
+  "pergunta": "Pergunta so com palavras curtas nao quebra — cai no fallback?",
+  "descricao": "Contrato de robustez do client: palavras de ate 2 chars sao filtradas dos termos de busca; uma pergunta sem nenhum termo real cai no fallback documentado (list_entities) e devolve todas as entidades, sem excecao. Mede que o toolchain nao explode com entrada degenerada — o mesmo espirito do caso externo que exigia resposta sem crash.",
+  "tags": ["graphrag", "recall", "robustez"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-recall-fallback-termos-curtos')"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "graphrag-recall-um-salto",
+  "pergunta": "A consulta devolve a entidade e as relacoes que a tocam (1 salto)?",
+  "descricao": "Contrato de 1 salto do GraphRAGClient: o resultado traz as entidades casadas e APENAS as relacoes que tocam alguma entidade casada — relacao entre duas entidades nao casadas nao vaza. O field method ecoa o modo pedido (local/global). Este e o alicerce do multihop: a skill documenta que cada chamada fecha 1 salto.",
+  "tags": ["graphrag", "recall", "grafo"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('graphrag-recall-um-salto')"
+  }
+}

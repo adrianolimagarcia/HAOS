@@ -1,0 +1,11 @@
+{
+  "id": "limite-reconciliador",
+  "pergunta": "O reconciliador classifica ADD/NOOP/UPDATE/SUPERSEDE e esconde supersedidas?",
+  "descricao": "Contrato do MemoryReconciler: fato novo -> ADD; duplicata exata -> NOOP; refinamento (Jaccard 0.35-0.85 e conteudo maior) -> UPDATE; marcador de transicao ('agora usamos') -> SUPERSEDE; topic normalizado em minusculas como chave; get_active_memories so devolve status='active' e respeita limit. Mede o ciclo de vida da memoria declarativa que alimenta o router.",
+  "tags": ["limite", "reconciliador", "memoria"],
+  "timeout": 60,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('limite-reconciliador')"
+  }
+}

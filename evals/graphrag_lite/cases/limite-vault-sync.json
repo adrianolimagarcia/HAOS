@@ -1,0 +1,11 @@
+{
+  "id": "limite-vault-sync",
+  "pergunta": "Nota nova no vault vira grafo + deepdoc NA HORA (sync imediato)?",
+  "descricao": "Contrato E2E do sync imediato (haos_memory_sync.sync_note): escrever uma nota no vault espelha NA HORA no store canonico do grafo (entities/relations) e no RAGFlow (chunks); o GraphRAGClient e a ferramenta graphrag_query (toolset memory) leem o MESMO store e devolvem a entidade nova. Porta in-repo do caso externo graphrag-vault-adr: la era 'ADR-001 indexado no grafo' contra a instalacao viva; aqui e o caminho vault->grafo verificado de ponta a ponta, sem depender da rotina noturna.",
+  "tags": ["limite", "vault", "sync", "e2e"],
+  "timeout": 90,
+  "grader": {
+    "type": "python",
+    "code": "from evals.graphrag_lite.impl import run_case; run_case('limite-vault-sync')"
+  }
+}
