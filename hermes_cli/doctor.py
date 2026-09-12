@@ -62,6 +62,10 @@ _PROVIDER_ENV_HINTS = (
     "MINIMAX_CN_API_KEY", "KILOCODE_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "HF_TOKEN",
     "AI_GATEWAY_API_KEY", "OPENCODE_ZEN_API_KEY", "OPENCODE_GO_API_KEY", "COMMANDCODE_API_KEY", "XIAOMI_API_KEY",
     "TOKENHUB_API_KEY", "TOKENPLAN_API_KEY",
+    # A6API — provider padrão do appliance HAOS. Os dois nomes são reais: o plugin do
+    # distro declara A6API_API_KEY, enquanto o instalador grava A6_API_KEY no .env e o
+    # aponta como `providers.a6api.key_env` no config.yaml.
+    "A6API_API_KEY", "A6_API_KEY",
 )
 
 

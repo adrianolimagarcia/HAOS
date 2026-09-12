@@ -1,5 +1,6 @@
 """Tests for the Command Installation check in hermes doctor."""
 
+import os
 import sys
 import types
 from argparse import Namespace
@@ -148,4 +149,30 @@ class TestDoctorCommandInstallation:
         out = _run_doctor(fix=False)
         assert "Command Installation" in out
         assert "$PREFIX/bin" in out
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Symlink check is Unix-only")
+    def test_cli_on_path_is_a_complete_installation(self, monkeypatch, tmp_path):
+        """Appliance install: the distro ships /usr/local/bin/haos.
+
+        A CLI resolvable on PATH works outside the venv, so doctor must report OK and must NOT
+        demand — nor create — a ~/.local/bin link, a directory the appliance does not put on PATH.
+        The check is brand-aware: with HAOS_HOME set the name under test is `haos`, not `hermes`.
+        """
+        home, project, _ = _setup_doctor_env(monkeypatch, tmp_path)
+
+        bindir = tmp_path / "sysbin"
+        bindir.mkdir()
+        cli_path = bindir / "haos"
+        cli_path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        cli_path.chmod(0o755)
+
+        monkeypatch.setenv("HAOS_HOME", str(home))
+        monkeypatch.setenv("PATH", str(bindir) + os.pathsep + os.environ.get("PATH", ""))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        out = _run_doctor(fix=True)
+
+        assert "haos resolvable on PATH" in out
+        assert str(cli_path) in out
+        assert not (tmp_path / ".local" / "bin" / "haos").exists()
 

@@ -436,40 +436,52 @@ def _check_gateway_supervision(should_fix: bool, f: Finding) -> None:
 
 @doctor_check()
 def _check_command_installation(should_fix: bool, f: Finding) -> None:
-    """Venv entry point and the ~/.local/bin (or $PREFIX/bin) symlink; skipped on Windows."""
+    """Venv entry point and the ~/.local/bin (or $PREFIX/bin) symlink; skipped on Windows.
+
+    Brand-aware: the CLI is ``haos`` on the appliance and ``hermes`` on a plain install
+    (``product_cli_name``). A CLI already resolvable on PATH is a complete installation — the
+    appliance ships ``/usr/local/bin/haos`` from the distro, so the ``~/.local/bin`` link is not
+    demanded (the old hardcoded check both demanded it and created a ``hermes`` link there, in a
+    directory the appliance does not even put on PATH).
+    """
     from hermes_cli.doctor import PROJECT_ROOT
+    from hermes_constants import product_cli_name
     if sys.platform == "win32":
         return
+    cli = product_cli_name()
     _section("Command Installation")
-    venv_bin = next((c for c in (PROJECT_ROOT / n / "bin" / "hermes" for n in ("venv", ".venv")) if c.exists()), None)
+    on_path = shutil.which(cli)
+    if on_path:
+        return check_ok(f"{cli} resolvable on PATH", f"({on_path})")
+    venv_bin = next((c for c in (PROJECT_ROOT / n / "bin" / cli for n in ("venv", ".venv")) if c.exists()), None)
     if venv_bin is None:
-        check_warn("Venv entry point not found", "(hermes not in venv/bin/ or .venv/bin/ — reinstall with pip install -e '.[all]')")
+        check_warn("Venv entry point not found", f"({cli} not in venv/bin/ or .venv/bin/ — reinstall with pip install -e '.[all]')")
         return f.manual_issues.append(f"Reinstall entry point: cd {PROJECT_ROOT} && source venv/bin/activate && pip install -e '.[all]'")
     check_ok(f"Venv entry point exists ({venv_bin.relative_to(PROJECT_ROOT)})")
     # Expected command link directory (mirrors install.sh logic).
     prefix = os.environ.get("PREFIX", "")
     termux = prefix and (os.environ.get("TERMUX_VERSION") or "com.termux/files/usr" in prefix)
     link_dir, display = (Path(prefix) / "bin", "$PREFIX/bin") if termux else (Path.home() / ".local" / "bin", "~/.local/bin")
-    link = link_dir / "hermes"
+    link = link_dir / cli
     if link.is_symlink():
         target, expected = link.resolve(), venv_bin.resolve()
         if target == expected:
-            return check_ok(f"{display}/hermes → correct target")
-        check_warn(f"{display}/hermes points to wrong target", f"(→ {target}, expected → {expected})")
+            return check_ok(f"{display}/{cli} → correct target")
+        check_warn(f"{display}/{cli} points to wrong target", f"(→ {target}, expected → {expected})")
         if not should_fix:
-            return f.issues.append(f"Broken symlink at {display}/hermes — run '{product_command('doctor')} --fix'")
+            return f.issues.append(f"Broken symlink at {display}/{cli} — run '{product_command('doctor')} --fix'")
         link.unlink()
         verb = "Fixed"
     elif link.exists():  # regular file (wrapper script), not a symlink
-        return check_ok(f"{display}/hermes exists (non-symlink)")
+        return check_ok(f"{display}/{cli} exists (non-symlink)")
     else:
-        check_fail(f"{display}/hermes not found", "(hermes command may not work outside the venv)")
+        check_fail(f"{display}/{cli} not found", f"({cli} command may not work outside the venv)")
         if not should_fix:
-            return f.issues.append(f"Missing {display}/hermes symlink — run '{product_command('doctor')} --fix'")
+            return f.issues.append(f"Missing {display}/{cli} symlink — run '{product_command('doctor')} --fix'")
         link_dir.mkdir(parents=True, exist_ok=True)
         verb = "Created"
     link.symlink_to(venv_bin)
-    check_ok(f"{verb} symlink: {display}/hermes → {venv_bin}")
+    check_ok(f"{verb} symlink: {display}/{cli} → {venv_bin}")
     f.fixed += 1
     if verb == "Created" and str(link_dir) not in os.environ.get("PATH", "").split(os.pathsep):
         check_warn(f"{display} is not on your PATH", "(add it to your shell config: export PATH=\"$HOME/.local/bin:$PATH\")")
