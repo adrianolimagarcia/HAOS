@@ -95,7 +95,9 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
    `home/haos/.gitconfig`, `home/haos/.config/gh`, `etc/resolv.conf`,
    `home/haos/.haos/{state.db*,kanban.db*,cron/executions.db*,config.yaml,.env,
    sessions,logs,memories}`, `var/lib/haos/antigravity/*`.
-   **Preservado**: hostname, kernel, venv cheio (165 pkgs), chave de update
+   **Preservado**: hostname, kernel, venv cheio (92 pacotes — `ls -d
+   /opt/haos/venv/lib/python3.13/site-packages/*.dist-info | wc -l`; a contagem
+   antiga de "165 pkgs" era de outra métrica/estado), chave de update
    `/etc/haos/keys` + `/home/haos/.haos/keys`, wrapper-antigravity, Chromium.
    Também: `mkdir -p chroot/var/cache/apt/archives` (o lb copia debs para lá —
    sem isso: `E: An unexpected failure occurred`).
@@ -155,6 +157,55 @@ mexa no venv enquanto uma suíte está em execução (foi assim que uma mediçã
 O CI **não** é afetado: os dois diretórios são git-ignorados, então um checkout
 limpo nunca os tem.
 
+### 5.2 Armadilha: `PLAYWRIGHT_BROWSERS_PATH` obsoleto quebra o browser em silêncio
+
+Sintoma: a tool `browser`, o stealth do `haos-fetch` e o `google_meet` falham
+("Executable doesn't exist") enquanto `haos doctor` segue mostrando
+`✓ Playwright Chromium (browser engine)`.
+
+Causa medida (2026-09-12): o `haos-gateway.service` e o wrapper `haos` exportavam
+`PLAYWRIGHT_BROWSERS_PATH=/opt/haos/.playwright` — diretório que **nunca existiu**
+(o Chromium assado vive em `/home/haos/.cache/ms-playwright`, 656 MB). Uma vez
+setada, a variável manda o Playwright resolver o browser **só** sob aquele
+caminho, mas o predicado de presença do doctor (`_chromium_search_roots`) também
+varre o cache default e por isso dava verde. Prova, com o stack Node que o
+agent-browser usa:
+
+```bash
+PW=$(ls -d /home/haos/.npm/_npx/*/node_modules/playwright-core | head -n 1)
+node -e "console.log(require('$PW').chromium.executablePath())"
+# sem a variável  -> /home/haos/.cache/ms-playwright/chromium-1234/... (existe)
+# com o valor antigo -> /opt/haos/.playwright/chromium-1234/...      (não existe)
+```
+
+Correção: a variável saiu do service (o `HOME` do nó já é o certo) e no wrapper
+`haos`/`haos-fetch` só é passada quando `${HOME}/.cache/ms-playwright` existe. O
+doctor passou a acusar o estado obsoleto:
+`⚠ PLAYWRIGHT_BROWSERS_PATH=<path> has no Chromium build`.
+
+**Regra:** nenhum unit/wrapper pode setar `PLAYWRIGHT_BROWSERS_PATH` para um
+caminho sem Chromium. Se precisar apontar, aponte para o cache assado — ou não
+sete nada.
+
+### 5.3 Divergência de provisionamento: `haos-fetch` só existia no caminho pip/venv
+
+A árvore do distro entregava 6 wrappers (`haos`, `haos-dns`, `haos-edge`,
+`haos-hostname-set`, `haos-setup`, `haos-storage-init`) e o `install_haos.sh`
+entregava 5, incluindo `haos-fetch` — então a VM instalada pela ISO **não tinha**
+`haos-fetch` nem Scrapling (`command not found`). O extra `fetch` **não** é um
+esquecimento do `[all]`: a política de 2026-05-12 manda backend opt-in viver em
+`LAZY_DEPS` e resolver no primeiro uso — o que faltava era a entrada
+`LAZY_DEPS["fetch.scrapling"]` (adicionada em 2026-09-12), o wrapper no distro e
+o pin exato igual nos dois lugares (`scrapling[fetchers]==0.4.15`).
+
+Verificação E2E (o caminho que importa): remover o Scrapling do venv e chamar o
+wrapper — ele se recupera sozinho no primeiro uso:
+
+```bash
+uv pip uninstall --python /opt/haos/venv/bin/python scrapling
+haos-fetch https://example.com --text   # lazy-install + fetch OK
+```
+
 ## 6. Estado validado da VM (golden — 10/09/2026)
 
 - Hostname **`haosagent`**: garantido pelo oneshot `haos-hostname.service`
@@ -164,10 +215,17 @@ limpo nunca os tem.
   instalado e bootado na VM. ISO-clássica = 6.12.107; ISO-da-VM = 6.18.15 real.
 - **Playwright Chromium assado**: `~/.cache/ms-playwright/` (chromium-1234 +
   headless-shell + ffmpeg, ~656 MB). Doctor: `✓ Playwright Chromium (browser
-  engine)`, tool `browser` disponível offline.
-- Serviços `active`: `haos-gateway`, `haos-mesh` (127.0.0.1:9120), `haos-dns`,
-  `haos-antigravity`. Venv `/opt/haos/venv`: Python 3.13.5, 165 pkgs,
-  SQLite **3.53.4** (FTS5/RTREE) no caminho real do agente (`state.db`).
+  engine)`, tool `browser` disponível offline. `PLAYWRIGHT_BROWSERS_PATH` **não**
+  é setado por unit/wrapper desde 12/09/2026 (§5.2) — o launch resolve o cache
+  default, e o stealth do `haos-fetch` foi validado de ponta a ponta.
+- **`haos-fetch` + Scrapling**: wrapper em `/usr/local/bin/haos-fetch` (distro) e
+  `scrapling 0.4.15` + `playwright 1.62.0` + `patchright 1.62.3` + `curl-cffi
+  0.16.3` no venv (§5.3). `haos-fetch <url>` funciona via `http` e via `stealth`.
+- Serviços `active`: `haos-gateway`, `haos-mesh` (127.0.0.1:9120), `haos-edge`
+  (WebUI 127.0.0.1:8788), `haos-dns`,
+  `haos-antigravity`. Venv `/opt/haos/venv`: Python 3.13.5, 92 pacotes
+  (`.dist-info`; inclui o backend do fetch), SQLite **3.53.4** (FTS5/RTREE) no
+  caminho real do agente (`state.db`).
 - **Sistema `running` com 0 units failed**: `unbound` mascarado e `haos-dns`
   dono de `127.0.0.1:53` (validado com reboot).
 - `A6API_API_KEY` (do host) no `.env` da VM para teste de chat — **escovada na
