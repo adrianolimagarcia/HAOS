@@ -715,7 +715,16 @@ class TestPrefetchServerRetainVisibility:
 
         provider.queue_prefetch("next turn query")
         if provider._prefetch_thread:
-            provider._prefetch_thread.join(timeout=5.0)
+            # The bound must OUTLAST the mechanism it waits on: the production drain budget is
+            # prefetch_retain_drain_timeout = 10.0s (hindsight/__init__.py:433,759) and the op
+            # poll interval is 0.5s. A 5.0s join was shorter than the budget, so a loaded runner
+            # could expire the bound while the drain was still legitimately inside its own
+            # allowance — indistinguishable from "recall never ran" (this failed in a full
+            # 16-worker run, twice). 30s = 3x the budget.
+            provider._prefetch_thread.join(timeout=30.0)
+            assert not provider._prefetch_thread.is_alive(), (
+                "prefetch thread still running after 3x the production drain budget"
+            )
 
         # Recall ran, the op was polled to completion, and the pending set
         # was cleared (so a later prefetch won't re-poll it).
