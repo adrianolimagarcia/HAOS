@@ -249,6 +249,12 @@ set_node_provider() {
     # nenhuma manutenção agendada roda. Com "prefer" o job degrada para o caminho in-process
     # com aviso no log (o custo é um restart do gateway no meio do run interromper o worker).
     _haos_set_cfg cron.restart_safe_scope prefer
+    # Diretório de trabalho do agente. Sem esta chave a resolução cai na árvore de instalação
+    # e o prompt builder avisa a cada turno: "working-directory resolution fell back to the
+    # Hermes install tree (/opt/haos) — set terminal.cwd to your project directory". O problema
+    # não é o aviso: é o agente operando com cwd dentro de /opt/haos, o código que o mantém.
+    # O diretório é criado pelo hook 05-create-haos-user.chroot.
+    _haos_set_cfg terminal.cwd /home/haos/workspace
     return 0
 }
 

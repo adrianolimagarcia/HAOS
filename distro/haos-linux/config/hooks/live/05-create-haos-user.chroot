@@ -37,4 +37,10 @@ mkdir -p /opt/haos /var/lib/haos
 mkdir -p /var/lib/haos/antigravity
 chown -R haos:haos /opt/haos /var/lib/haos 2>/dev/null || true
 
+# Diretório de trabalho do agente (terminal.cwd, gravado por haos-setup). Precisa existir já na
+# imagem: sem ele a resolução de cwd cai na árvore de instalação (/opt/haos) e o agente passa a
+# operar dentro do próprio código que o mantém.
+mkdir -p /home/haos/workspace
+chown haos:haos /home/haos/workspace 2>/dev/null || true
+
 echo "[HAOS Hook] Usuário 'haos' configurado com sucesso!"
