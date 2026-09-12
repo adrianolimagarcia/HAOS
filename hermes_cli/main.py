@@ -7,16 +7,20 @@ Usage:
     hermes --version           # Show version and update status
     hermes <cmd> --help        # Per-command help
 """
-from hermes_constants import product_command
-
 # hermes_bootstrap must be the very first import — it sets up UTF-8 stdio on
 # Windows (no-op on POSIX). Guarded: after a ``git pull`` / interrupted
 # ``haos update`` the editable install's ``.pth`` may not list it yet; crashing
-# here would block ``haos update``.
+# here would block ``haos update``. It has to precede EVERY other import,
+# including ``hermes_constants``: the ordering is the whole point — it is what
+# guarantees UTF-8 stdio is configured before any other module can write to
+# stdout. A rebrand edit had pushed it below ``hermes_constants``, and the guard
+# test in tests/test_hermes_bootstrap.py caught exactly that.
 try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
     pass
+
+from hermes_constants import product_command
 
 # Windows: neutralize CPython's ``platform._syscmd_ver`` before anything else
 # imports — it shells out ``cmd /c ver`` and flashes a console when this

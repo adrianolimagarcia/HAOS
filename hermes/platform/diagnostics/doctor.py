@@ -132,7 +132,11 @@ class HAOSDoctor:
             "HAOS_HOME": haos_home_str,
         }
 
-        if resolved != haos_home_str and ".hermes" in resolved:
+        # O sinal de contaminação é o home EFETIVO divergir de HAOS_HOME — não o nome dele
+        # conter ".hermes". A cláusula antiga (".hermes" in resolved) só acusava o default do
+        # upstream e ficava cega quando o processo resolvia para o home do próprio fork, que é
+        # exatamente o caso que este check existe para pegar (docstring acima).
+        if resolved != haos_home_str:
             origem = (
                 f"HERMES_HOME={explicit}"
                 if explicit
@@ -142,8 +146,8 @@ class HAOSDoctor:
                 name="env_isolation",
                 status="WARN",
                 message=(
-                    f"Home efetivo ({resolved}) aponta para .hermes em vez de HAOS_HOME "
-                    f"({haos_home_str}) [{origem}]. Pode haver leitura de configurações upstream."
+                    f"Home efetivo ({resolved}) difere de HAOS_HOME "
+                    f"({haos_home_str}) [{origem}]. Pode haver leitura de configurações de outro home."
                 ),
                 details=details,
             )
