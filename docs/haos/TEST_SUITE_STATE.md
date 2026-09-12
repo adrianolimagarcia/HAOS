@@ -258,3 +258,62 @@ que está sendo esperado (join > drain, timeout > spawn, varredura tolerante a c
 Verificado no appliance, não só transferido: `is_container()` = **False** na VM com
 `systemd-detect-virt --container` = **none** — o falso positivo corrigido nesta sessão
 comportando-se corretamente lá.
+
+## Atualização 2026-09-13 (b) — `MagicMock/` na raiz: causa raiz encontrada
+
+Um diretório `MagicMock/` aparecia na raiz do repo depois de runs longos, com um state DB e um
+`.fts_rebuild.lock` dentro. Ficou meses sem explicação porque só nascia em suite completa.
+
+A bisseção de 143 arquivos que mockam `_session_db` NÃO reproduziu — e o motivo é o próprio
+diagnóstico: o arquivo culpado não menciona `_session_db`. A captura veio de uma armadilha em
+`os.mkdir`/`os.makedirs` instalada via `sitecustomize` no venv (roda em todo subprocesso do
+runner, registra a pilha completa e não altera comportamento). Cadeia capturada:
+
+```
+tests/tools/test_subagent_steer.py:190 -> delegate_task -> _build_children
+  -> _build_child_preserving_parent_tools -> _build_child_agent
+  -> _open_child_session_db (delegate_tool.py:102) -> hermes_state_registry.acquire
+  -> SessionDB(db_path=...) (hermes_state.py:477) -> _open_writer
+  -> self.db_path.parent.mkdir(parents=True, exist_ok=True)   (hermes_state.py:492)
+```
+
+`parent = MagicMock()` não é `None`, então `_open_child_session_db` (delegate_tool.py:96-98)
+conclui que o pai tem session DB e abre um filho dedicado em `parent._session_db.db_path` — que é
+outro mock. O `SessionDB` materializa esse nome no filesystem real, no CWD (a raiz do repo sob o
+runner), junto com o lock do FTS.
+
+Correção no TESTE, não na produção: em produção `_session_db` é `SessionDB`/`AsyncSessionDB` ou
+`None`, nunca um mock — um guard novo em produção seria defense-in-depth, que o AGENTS.md rejeita.
+O pai falso passa a declarar `parent._session_db = None` (dois testes) e `_open_child_session_db`
+retorna cedo, sem handle e sem diretório.
+
+Prova de duas armas, no mesmo arquivo e comando:
+- arma B (código antigo): `MagicMock/mock._session_db.db_path/140098970850384.fts_rebuild.lock`
+  criado em **4.1s** — 30 testes passando apesar do lixo.
+- arma A (com fix): `1 files, 30 tests passed, 0 failed`, nenhum diretório criado, armadilha com
+  0 mkdirs.
+
+A armadilha foi removida do venv depois da captura. Commit `75781911d9`.
+
+## Atualização 2026-09-13 (c) — suite v4 com o P11 e estado real dos flakes
+
+```
+=== Summary: 3901 files, 46423 tests passed, 0 failed, 422 skipped (100% complete) in 1752.9s (16 workers) ===
+```
+
+O P11 responde por +25 testes. **0 falhas**, mas 2 arquivos FLAKY — e o relatório do runner tem um
+ponto cego que vale registrar: um arquivo morto pelo cap de 900s nas DUAS tentativas aparece no
+sumário como "0 failed" e, no run anterior, nem na lista de FLAKY; os testes dele simplesmente não
+rodam. Só a seção `Failed:`/`FLAKY` do log mostra. Ao ler um resumo deste runner, sempre confira
+essas duas seções e a contagem de testes contra o run anterior.
+
+1. `tests/gateway/test_buzz_websocket.py` — travou 2 vezes em 2 suites (`900s exceeded`, 911.66s na
+   lista de durações) e passa sozinho em ~9s (3 execuções, 18 testes). Não usa porta fixa nem rede
+   real (`wss://relay.example` + websockets mockados) e não toca `slash_worker`. É trava sob carga;
+   a captura exige pilha antes do cap, já que o runner mata com SIGKILL e não deixa rastro.
+2. `tests/test_tui_gateway_server.py` — `RuntimeError: dictionary changed size during iteration` no
+   teardown de `test_prompt_submit_row_id_real_sessiondb_unknown_refuses_despite_ordinal`, e o
+   `AssertionError: previous item was not torn down properly` no teste seguinte é dano colateral do
+   pytest (`SetupState.teardown_exact`), não um segundo bug. O teste usa `monkeypatch, tmp_path` e
+   roda um turno real do gateway; o `AttributeError: 'types.SimpleNamespace' object has no attribute
+   'run_conversation'` no log é o agente falso do teste e é esperado.
