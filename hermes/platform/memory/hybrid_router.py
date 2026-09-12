@@ -64,13 +64,20 @@ class HybridKnowledgeRouter:
         """Retrieve active facts only (superseded facts are never returned)."""
         return self.reconciler.get_active_memories(topic=topic, category=category, limit=limit)
 
-    def query(self, query_str: str, mode: str = "hybrid") -> Dict[str, Any]:
+    def query(self, query_str: str, mode: str = "hybrid",
+              retrieval_budget: "Optional[int]" = None) -> Dict[str, Any]:
         """Perform routed query.
 
         1. Reconciled Memory path: Match active memories for the topic/query.
         2. Deterministic path: Check OKF store.
         3. Probabilistic path: Fallback to GraphRAG if no deterministic match is found.
         4. OKF broad fuzzy search fallback.
+
+        ``retrieval_budget`` (P6 — kill-switch por orçamento) é repassado ao
+        RAGFlowStore.hybrid_search como ``max_candidates``: limita a avaliação
+        de candidatos na passada léxica; o disparo fica em
+        ``ragflow_store.last_search_budget``. ``None`` mantém o comportamento
+        original.
         """
         clean_q = query_str.strip().lower()
 
@@ -110,7 +117,9 @@ class HybridKnowledgeRouter:
         # Step 2: Document index retrieval via RAGFlow (Breadcrumbs + RRF)
         if self.ragflow_store:
             try:
-                rag_chunks = self.ragflow_store.hybrid_search(query_str, limit=3)
+                rag_chunks = self.ragflow_store.hybrid_search(
+                    query_str, limit=3, max_candidates=retrieval_budget,
+                )
                 if rag_chunks:
                     formatted_content = "\n\n---\n\n".join(c.formatted_for_llm() for c in rag_chunks)
                     top_c = rag_chunks[0]

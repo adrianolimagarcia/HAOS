@@ -201,6 +201,48 @@ class ReciprocalRankFusion:
         return sorted_items
 
 
+class RetrievalBudget:
+    """Kill-switch por orçamento (backlog HAOS P6 — Etapa 4).
+
+    Interpretação documentada (a spec só diz "kill-switch por orçamento"):
+    um orçamento de avaliação de candidatos que INTERROMPE a recuperação
+    quando é atingido — o custo da busca fica limitado e o disparo fica
+    registrado para quem chamou. ``consume()`` permite até ``limit``
+    avaliações e devolve False na tentativa que EXCEDE o limite (o switch
+    dispara: ``tripped``), fazendo o laço de avaliação PARAR — nunca avalia
+    além do orçamento. ``used`` conta as avaliações feitas. ``limit=None``
+    = sem orçamento (comportamento original; nunca dispara).
+    """
+
+    def __init__(self, limit: Optional[int] = None):
+        self._limit = None if limit is None else max(0, int(limit))
+        self._used = 0
+        self._tripped = False
+
+    @property
+    def limit(self) -> Optional[int]:
+        return self._limit
+
+    @property
+    def used(self) -> int:
+        return self._used
+
+    @property
+    def tripped(self) -> bool:
+        return self._tripped
+
+    def consume(self) -> bool:
+        """Registra uma avaliação; False = orçamento esgotado (kill-switch)."""
+        if self._limit is None:
+            self._used += 1
+            return True
+        if self._used >= self._limit:
+            self._tripped = True
+            return False
+        self._used += 1
+        return True
+
+
 class RAGFlowStore:
     """SQLite WAL-backed RAG engine with FTS5 lexical search and RRF fusion."""
 
@@ -336,12 +378,24 @@ class RAGFlowStore:
         query_str: str,
         limit: int = 5,
         k_rrf: int = 60,
+        max_candidates: Optional[int] = None,
     ) -> List[DocumentChunk]:
-        """Executes hybrid retrieval combining FTS5 BM25 and substring/token coverage with RRF."""
+        """Executa a busca híbrida (FTS5 BM25 + overlap léxico) com RRF.
+
+        ``max_candidates`` (P6 — kill-switch por orçamento) limita quantos
+        candidatos são avaliados na passada léxica; quando o orçamento
+        esgota a avaliação PARA e o disparo fica registrado em
+        ``self.last_search_budget = {evaluated, hit, limit}``. ``None``
+        mantém o comportamento original (sem limite, nunca dispara).
+        """
         clean_q = query_str.strip()
+        self.last_search_budget = {
+            "evaluated": 0, "hit": False, "limit": max_candidates,
+        }
         if not clean_q:
             return []
 
+        budget = RetrievalBudget(max_candidates)
         fts_query = self._sanitize_fts_query(clean_q)
         tokens = [t.lower() for t in re.findall(r"\b\w+\b", clean_q)]
 
@@ -361,7 +415,7 @@ class RAGFlowStore:
                 except Exception as exc:
                     logger.warning("FTS5 query failed (%s): %s", fts_query, exc)
 
-            # 2. Token Overlap & Semantic Breadcrumb Ranking
+            # 2. Token Overlap & Semantic Breadcrumb Ranking (orçamentada — P6)
             all_chunks_rows = conn.execute("""
                 SELECT id, doc_path, header_path, content FROM haos_rag_chunks
                 ORDER BY created_at DESC LIMIT 200;
@@ -369,6 +423,8 @@ class RAGFlowStore:
 
             lexical_candidates: List[Tuple[str, float]] = []
             for r in all_chunks_rows:
+                if not budget.consume():
+                    break  # kill-switch: orçamento esgotado — para de avaliar
                 cid = r["id"]
                 text_blob = f"{r['doc_path']} {r['header_path']} {r['content']}".lower()
                 matches = sum(1 for t in tokens if t in text_blob)
@@ -387,6 +443,10 @@ class RAGFlowStore:
             top_ids = [cid for cid, _ in fused[:limit]]
 
             if not top_ids:
+                self.last_search_budget = {
+                    "evaluated": budget.used, "hit": budget.tripped,
+                    "limit": max_candidates,
+                }
                 return []
 
             # Fetch final chunks in fused order
@@ -412,4 +472,8 @@ class RAGFlowStore:
                 for r in chunk_rows
             }
 
+            self.last_search_budget = {
+                "evaluated": budget.used, "hit": budget.tripped,
+                "limit": max_candidates,
+            }
             return [chunks_by_id[cid] for cid in top_ids if cid in chunks_by_id]
