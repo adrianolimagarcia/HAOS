@@ -474,6 +474,59 @@ class TestIsContainer:
         monkeypatch.setattr(os.path, "exists", lambda p: False)
         assert is_container() is True
 
+    # Real mountinfo shapes. The host case is the false positive these guard: Docker with the
+    # containerd snapshotter exposes SIBLING containers' rootfs mounts in this namespace while
+    # our own root stays a plain filesystem.
+    _HOST_MOUNTINFO = (
+        "39 1 0:33 /@ / rw,noatime shared:1 - btrfs /dev/sda2 rw,compress=zstd:3,ssd\n"
+        "155 39 0:81 / /var/lib/docker/rootfs/overlayfs/d2c19c2f rw,relatime shared:477 - "
+        "overlay overlay rw,lowerdir=/var/lib/containerd/io.containerd.snapshotter.v1."
+        "overlayfs/snapshots/496/fs,upperdir=/var/lib/containerd/io.containerd.snapshotter.v1."
+        "overlayfs/snapshots/497/fs,index=off\n"
+    )
+    _CONTAINER_MOUNTINFO = (
+        "36 35 0:31 / / rw,relatime - overlay overlay rw,lowerdir=/var/lib/containerd/"
+        "io.containerd.snapshotter.v1.overlayfs/snapshots/12/fs\n"
+    )
+
+    def test_sibling_container_mounts_do_not_mark_us_as_a_container(self):
+        """A host running Docker/containerd must not read as containerized.
+
+        Matching every mountinfo line answered True on a bare host (PID 1 = systemd, ``/`` on
+        btrfs, ``systemd-detect-virt --container`` = none) purely because sibling containers'
+        rootfs mounts mention containerd — which then disabled voice-mode audio and changed
+        CLI/dashboard behaviour on a machine that is not containerized at all.
+        """
+        assert hermes_constants._root_mountinfo_has_marker(
+            self._HOST_MOUNTINFO, hermes_constants._CONTAINER_MOUNT_MARKERS
+        ) is False
+
+    def test_our_own_root_overlay_is_detected(self):
+        """Our OWN root as a containerd-backed overlay still marks us as containerized."""
+        assert hermes_constants._root_mountinfo_has_marker(
+            self._CONTAINER_MOUNTINFO, hermes_constants._CONTAINER_MOUNT_MARKERS
+        ) is True
+
+    @pytest.mark.parametrize(
+        "content,expected",
+        [(_HOST_MOUNTINFO, False), (_CONTAINER_MOUNTINFO, True)],
+        ids=["host_with_sibling_containers", "our_root_is_overlay"],
+    )
+    def test_detect_container_mountinfo_fallback(self, monkeypatch, tmp_path, content, expected):
+        """The cgroup-v2 fallback end-to-end, over a synthetic mountinfo (no host dependency).
+
+        ``_proc_file_has_marker`` is stubbed because the cgroup probe is a separate signal
+        covered by its own tests above; this isolates the mountinfo branch.
+        """
+        self._reset_cache(monkeypatch)
+        monkeypatch.setattr(os.path, "exists", lambda p: False)
+        monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+        monkeypatch.setattr(hermes_constants, "_proc_file_has_marker", lambda path, markers: False)
+        info = tmp_path / "mountinfo"
+        info.write_text(content, encoding="utf-8")
+        monkeypatch.setattr(hermes_constants, "_MOUNTINFO_PATH", str(info))
+        assert hermes_constants._detect_container() is expected
+
 
 class TestParseReasoningEffort:
     """Tests for parse_reasoning_effort() — string → reasoning config dict."""

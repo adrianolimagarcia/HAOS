@@ -1178,6 +1178,44 @@ def _proc_file_has_marker(path: str, markers: tuple[str, ...]) -> bool:
     return any(marker in content for marker in markers)
 
 
+#: Read for the cgroup-v2 container fallback. A module constant so tests can point it at a
+#: synthetic mountinfo instead of depending on the host's own mounts.
+_MOUNTINFO_PATH = "/proc/self/mountinfo"
+
+_CONTAINER_MOUNT_MARKERS = ("kubepods", "containerd", "crio")
+
+
+def _root_mountinfo_has_marker(content: str, markers: tuple[str, ...]) -> bool:
+    """True when the mount entry for ``/`` itself mentions a container runtime.
+
+    ONLY the root entry counts. Scanning every line misfires on an ordinary host that runs
+    Docker/containerd: other containers' rootfs mounts are visible in this namespace as
+    ``/var/lib/docker/rootfs/overlayfs/<id>`` with ``lowerdir=/var/lib/containerd/...``, so a
+    substring match over the file answered "inside a container" on a bare host (verified:
+    ``systemd-detect-virt --container`` = none, PID 1 = systemd, ``/`` on btrfs). The root
+    entry is what identifies OUR runtime; a false positive here is not cosmetic, because
+    ``is_container()`` gates voice-mode audio, CLI config behaviour and dashboard file serving.
+    Kubernetes pods stay covered by ``KUBERNETES_SERVICE_HOST``, which every pod sets.
+    """
+    for line in content.splitlines():
+        fields = line.split(" ")
+        # mountinfo: id parent major:minor root mountpoint options [...] - fstype source superopts
+        if len(fields) < 5 or fields[4] != "/":
+            continue
+        if any(marker in line for marker in markers):
+            return True
+    return False
+
+
+def _root_mount_mentions_container() -> bool:
+    try:
+        with open(_MOUNTINFO_PATH, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        return False
+    return _root_mountinfo_has_marker(content, _CONTAINER_MOUNT_MARKERS)
+
+
 def _detect_container() -> bool:
     if (
         os.path.exists("/.dockerenv")
@@ -1186,11 +1224,9 @@ def _detect_container() -> bool:
         or _proc_file_has_marker("/proc/1/cgroup", ("docker", "podman", "/lxc/", "kubepods", "containerd", "crio"))
     ):
         return True
-    # cgroup v2: /proc/1/cgroup is just "0::/"; the runtime still shows in mountinfo — but ONLY on
-    # the root ("/") mount line. A host that merely *runs* containers exposes every container's
-    # overlay lowerdir (``lowerdir=/var/lib/containerd/...``) at non-root mount points, which a
-    # whole-file scan misread as "inside a container" and flipped subprocess HOME (#58135).
-    return _root_mount_has_marker("/proc/self/mountinfo", ("kubepods", "containerd", "crio"))
+    # cgroup v2: /proc/1/cgroup is just "0::/"; the runtime still shows in the ROOT mount's
+    # options. Only that entry is consulted — see _root_mountinfo_has_marker.
+    return _root_mount_mentions_container()
 
 
 def _root_mount_has_marker(path: str, markers: tuple[str, ...]) -> bool:
