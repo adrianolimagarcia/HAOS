@@ -33,7 +33,11 @@ def test_full_repo_scan_has_no_unsuppressed_windows_footguns():
         [sys.executable, str(SCRIPT), "--all"],
         capture_output=True,
         text=True,
-        timeout=60,
+        # Measured: the scan itself is 12.27s idle (1493 files, rc=0) but exceeded the old 60s
+        # bound in a full run — 16 workers on 8 cores dilates it ~5x, and the cost grows with the
+        # repo, so 60s was a bound on repo size, not on correctness. 300s is 24x the idle
+        # measurement: a real regression still fails, a loaded runner no longer does.
+        timeout=300,
         stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, (
