@@ -153,10 +153,14 @@ class PtySession:
         self.alive = False
         if self._drain_task is not None:
             self._drain_task.cancel()
-            try:
-                await self._drain_task
-            except (asyncio.CancelledError, Exception):
-                pass
+            # Reap the drain task WITHOUT swallowing our own cancellation: the old
+            # `except (asyncio.CancelledError, Exception): pass` around
+            # `await self._drain_task` also caught a CancelledError aimed at THIS
+            # task when it landed during the reap. run_reaper() (a `while True`
+            # loop, "cancelled on shutdown") can be suspended exactly there, so the
+            # stop request was lost and the reaper never stopped (same defect class
+            # as the Buzz websocket, fixed in 47d92cc6eb).
+            await asyncio.gather(self._drain_task, return_exceptions=True)
         try:
             # bridge.close() joins the child — blocking; keep it off the event loop.
             # See #53227.
