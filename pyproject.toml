@@ -403,6 +403,11 @@ requires = ["setuptools==83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
+# Dois nomes para o MESMO alvo, de propósito: `product_cli_name()`
+# (hermes_constants) devolve "haos" dentro do appliance e "hermes" fora dele, e
+# `product_command()` monta as dicas do usuário com esse nome — um hint que diz
+# `hermes doctor` precisa ser executável numa instalação comum. O contrato (os dois
+# nomes apontando para o mesmo alvo) é testado em tests/test_project_metadata.py.
 haos = "hermes_cli.main:main"
 haos-agent = "run_agent:main"
 haos-acp = "acp_adapter.entry:main"

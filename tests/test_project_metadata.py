@@ -290,3 +290,29 @@ def test_huggingface_hub_lazy_pin_inside_transformers_window():
         "range (>=1.5.0,<2). The lazy refresh would downgrade the shared "
         "package and break Hindsight local embeddings (#60783)."
     )
+
+
+def _load_project_scripts():
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        return tomllib.load(handle)["project"]["scripts"]
+
+
+def test_console_scripts_cover_every_product_name():
+    """Both brand names must resolve, because the brand is decided at runtime.
+
+    ``product_cli_name()`` returns ``"haos"`` under HAOS and ``"hermes"`` everywhere else, and
+    ``product_command()`` builds user-facing hints with that name — so a hint printed on a plain
+    install ("run `hermes doctor`") has to be executable. Each name must point at the SAME target:
+    the pair exists for branding, never for a second implementation.
+    """
+    scripts = _load_project_scripts()
+
+    for suffix in ("", "-agent", "-acp"):
+        haos, hermes = f"haos{suffix}", f"hermes{suffix}"
+        assert haos in scripts, f"pyproject is missing the console script {haos}"
+        assert hermes in scripts, f"pyproject is missing the console script {hermes}"
+        assert scripts[haos] == scripts[hermes], (
+            f"{haos} and {hermes} must share one target, got "
+            f"{scripts[haos]!r} vs {scripts[hermes]!r}"
+        )
