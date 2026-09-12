@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -130,15 +131,19 @@ def _resolve_acp_command() -> Optional[List[str]]:
     if _acp_explicitly_configured:
         return None
     import shutil
-    hermes_acp = shutil.which("hermes-acp")
+
+    from hermes_constants import product_cli_name  # noqa: PLC0415
+
+    # `hermes-acp` fixo não existe no appliance (lá o binário é `haos-acp`), e o caminho
+    # /usr/local/lib/hermes-agent/venv não existe no HAOS (o venv é /opt/haos/venv) —
+    # por isso o binário do produto ativo vem primeiro e o fallback é o interpretador
+    # que já está rodando este plugin.
+    hermes_acp = shutil.which(f"{product_cli_name()}-acp")
     if hermes_acp:
         return [hermes_acp]
-    venv_python = Path("/usr/local/lib/hermes-agent/venv/bin/python")
-    if venv_python.is_file():
-        return [str(venv_python), "-m", "acp_adapter"]
-    import sys  # noqa: PLC0415
     try:
         import acp_adapter  # noqa: PLC0415, F401
+
         return [sys.executable, "-m", "acp_adapter"]
     except Exception:
         return None
@@ -596,18 +601,30 @@ if _HAS_FASTAPI and APIRouter is not None:
 
             body = body or {}
             prompt = body.get("prompt") or f"Execute and resolve task {task_id} with full tests"
-            script_path = Path("skills/autonomous-ai-agents/google-jules/scripts/jules_worker.py")
-            if not script_path.exists():
+            # Ancorado na raiz do repo: o caminho relativo só funcionava com o CWD na raiz
+            # (o dashboard roda de qualquer diretório), com o CWD como fallback.
+            repo_root = Path(__file__).resolve().parents[3]
+            rel = Path("skills/autonomous-ai-agents/google-jules/scripts/jules_worker.py")
+            script_path = next((p for p in (repo_root / rel, rel) if p.exists()), None)
+            if script_path is None:
                 raise HTTPException(status_code=404, detail="Jules worker script not found")
 
             # Invoca o CLI worker do Jules com dispatch assíncrono (--no-wait)
             cmd = [
-                "/usr/local/lib/hermes-agent/venv/bin/python",
+                sys.executable,
                 str(script_path),
                 "dispatch",
                 "--prompt", prompt,
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            # stdin=DEVNULL: o worker não lê entrada e não pode disputar o TTY do agente.
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+            )
             if res.returncode != 0:
                 raise RuntimeError(f"Jules dispatch failed: {res.stderr.strip() or res.stdout.strip()}")
 
