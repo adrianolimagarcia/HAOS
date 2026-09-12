@@ -4043,6 +4043,10 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         task = self._typing_tasks.pop(chat_id, None)
         if task:
             task.cancel()
+            # Reap only the CHILD's CancelledError here, never our own: the typing loop
+            # ends promptly on cancel (it returns on CancelledError) and the parents are
+            # finite turn tasks whose flow after stop_typing is bounded — a swallowed stop
+            # request cannot wedge shutdown. Not the "swallowed cancellation" defect.
             try:
                 await task
             except (asyncio.CancelledError, Exception):
