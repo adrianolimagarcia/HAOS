@@ -217,26 +217,39 @@ read -rp "Opção [1-3]: " opt_provider
 # instalações antigas e grave a chave real abaixo.
 sed -i '/^HAOS_DEFAULT_PROVIDER=/d' "${ENV_FILE}" 2>/dev/null || true
 
-# Grava model.provider no config.yaml do nó via o próprio CLI (hermes_cli.main).
-# HERMES_SUPERVISED_CHILD=1 impede o CLI de seguir um profile sticky e escrever
-# no store errado; HAOS_HOME aponta sempre para o config do nó.
+# Grava model.provider E model.default no config.yaml do nó via o próprio CLI
+# (hermes_cli.main). HERMES_SUPERVISED_CHILD=1 impede o CLI de seguir um profile
+# sticky e escrever no store errado; HAOS_HOME aponta sempre para o config do nó.
+#
+# O model.default é OBRIGATÓRIO: sem ele o agente monta a requisição com
+# "model": "" e o provider responde HTTP 400 (payload inválido) — o CLI do nó fica
+# inutilizável e o erro não diz o que falta. O install_haos.sh já gravava os dois;
+# este caminho (usado pela imagem) gravava só o provider.
 set_node_provider() {
-    local provider="$1"
+    local provider="$1" model="$2"
     if [ ! -x "${INSTALL_DIR}/venv/bin/python" ]; then
         echo "(!) Aviso: runtime Python ainda não instalado — rode depois:"
         echo "    sudo -u haos -H env HAOS_HOME=${CONFIG_DIR} ${INSTALL_DIR}/venv/bin/python -m hermes_cli.main config set model.provider ${provider} --force"
+        if [ -n "${model}" ]; then
+            echo "    sudo -u haos -H env HAOS_HOME=${CONFIG_DIR} ${INSTALL_DIR}/venv/bin/python -m hermes_cli.main config set model.default ${model} --force"
+        fi
         return
     fi
-    HAOS_HOME="${CONFIG_DIR}" HERMES_SUPERVISED_CHILD=1 \
-        "${INSTALL_DIR}/venv/bin/python" -m hermes_cli.main \
-        config set model.provider "${provider}" --force 2>/dev/null \
-        || echo "(!) Aviso: falha ao gravar model.provider=${provider} em ${CONFIG_DIR}/config.yaml"
+    _haos_set_cfg() {
+        HAOS_HOME="${CONFIG_DIR}" HERMES_SUPERVISED_CHILD=1 \
+            "${INSTALL_DIR}/venv/bin/python" -m hermes_cli.main \
+            config set "$1" "$2" --force 2>/dev/null \
+            || echo "(!) Aviso: falha ao gravar $1=$2 em ${CONFIG_DIR}/config.yaml"
+    }
+    _haos_set_cfg model.provider "${provider}"
+    [ -n "${model}" ] && _haos_set_cfg model.default "${model}"
+    return 0
 }
 
 case "${opt_provider}" in
     1)
         echo "Configurando Antigravity como provider principal..."
-        set_node_provider "antigravity"
+        set_node_provider "antigravity" "gemini-3.7-flash-low"
         # Chave local do wrapper OAuth (127.0.0.1:8790); o proxy valida via OAuth,
         # qualquer valor de chave de cliente serve — mas precisa existir.
         if ! grep -q '^ANTIGRAVITY_API_KEY=' "${ENV_FILE}"; then
@@ -264,7 +277,7 @@ case "${opt_provider}" in
         echo "Configurando A6API como provider principal..."
         read -rsp "Insira sua A6API_API_KEY (ou deixe vazio para pular): " a6_key
         echo ""
-        set_node_provider "a6api"
+        set_node_provider "a6api" "deepseek-v4-flash"
         if [ -n "${a6_key}" ] && ! grep -q '^A6API_API_KEY=' "${ENV_FILE}"; then
             echo "A6API_API_KEY=${a6_key}" >> "${ENV_FILE}"
             echo -e "${GREEN}✓ Chave da A6API salva com segurança.${RESET}"

@@ -375,9 +375,16 @@ haos-fetch https://example.com --text   # lazy-install + fetch OK
     integridade. Limitação: não há tool de EXCLUIR nota, então remoção manual de
     um `.md` deixa chunk/entidade órfãos até um reindex (o `index_directory` não
     limpa chunks de arquivos que sumiram).
-- **Pendencia aberta**: o `haos web` (WebUI Python, doc STANDALONE_WEBUI.md) e
-  uma superficie separada e nao tem unit no appliance; verificar auth antes de
-  expor.
+- **`haos web` (WebUI Python, doc STANDALONE_WEBUI.md) — verificado em 12/09/2026**:
+  é superfície separada e **não tem unit no appliance** (as units presentes são
+  gateway/mesh/edge/dns/antigravity/storage-init/hostname), então não está exposta.
+  **Não tem login por design**: o bind default é `127.0.0.1:8788` (medido com
+  `ss -ltnp`: `local=127.0.0.1:8799`) e um bind não-loopback (`--host`/`HAOS_HOST`)
+  emite aviso explícito em stderr — `hermes/platform/webui/standalone.py:1392-1398`,
+  verificado com `--host 10.255.255.1`: o aviso sai ANTES do bind, então nada é
+  exposto durante o teste. `GET /api/state` responde 200 **sem credencial** (2862
+  bytes de payload real), ou seja expor a porta é expor o PTY remoto. Acesso remoto
+  autenticado continua sendo o daemon Rust `haos-edge` (login de operador).
 - `haos-edge` é o **servidor do Standalone WebUI** (axum/tokio): /api/terminal/*
   (PTY remoto), /api/tasks, /health, e o SPA (chat/terminal/taskboard/scheduler).
   Mesmo binário também é CLI (`status`, `team`, `doc search`, `doctor`) e shim
@@ -385,8 +392,44 @@ haos-fetch https://example.com --text   # lazy-install + fetch OK
 - Daemons gateway/mesh nascem `failed/activating` antes do primeiro `haos-setup`
   (venv vazio — ovo e galinha).
 - Doctor: `browser-cdp`/`browser-use` "system dependency not met" (deps npm
-  opcionais, não bloqueiam); advisories npm de tooling (build-time).
-- A checagem "API key" do doctor não reconhece `A6API_API_KEY` (cosmético).
+  opcionais, não bloqueiam).
+- Advisories npm (12/09/2026): raiz e escopo `web` estavam com 1 high + 1 moderate
+  (browserslist <=4.28.6 / baseline-browser-mapping <2.11.0). O bump de lockfile
+  (browserslist 4.28.8, baseline-browser-mapping 2.11.20) zerou a raiz — medido na
+  VM: `npm audit --workspaces=false` passou de `{moderate:1, high:1}` para `{}` — e
+  o doctor agora imprime as três linhas verdes (`✓ … deps`). Restam apenas
+  moderates de tooling de teste em `web` (4: vitest/@vitest/mocker, colord,
+  sanitize-html) e `ui-tui` (2), que o doctor reporta como linha verde.
+- A checagem "API key" do doctor passou a reconhecer `A6API_API_KEY` e `A6_API_KEY`
+  (o plugin do distro declara a primeira; o instalador grava a segunda no `.env` e
+  a aponta como `providers.a6api.key_env`) — na VM a linha virou
+  `✓ API key or custom endpoint configured`.
+- **Sites legado `~/.hermes` — revisados em 12/09/2026** (guarda
+  `scripts/ci/check_legacy_hermes_home.py --list`): 10 ocorrências, todas
+  intencionais e marcadas com `haos-legacy-path:` — detecção de migração
+  (`diagnostics/doctor.py`), candidatos legado de leitura (`haos_delegation_bridge`,
+  `webui/controlplane`, `webui/standalone`), guarda do store real do operador
+  (`hermes_cli/auth.py`), baseline do remap sob sudo (`gateway.py`), contrato do
+  Desktop client (`main_dashboard.py`, #69551) e o `.hermes/skills` **relativo ao
+  projeto** (`agent/skill_utils.py`). Nenhuma é default novo de HOME.
+- **`model.default` é obrigatório no config do nó (achado e corrigido em
+  12/09/2026)**: o `haos-setup` do distro gravava só `model.provider`, então o nó
+  ficava com `model: {provider: a6api}` e **sem default** — o agente monta a
+  requisição com `"model": ""` e o provider responde
+  `HTTP 400 请求参数不正确`. Sintoma: `haos -z "..."` falha na primeira chamada e o
+  erro não diz o que falta. Prova: com `model.default: deepseek-v4-flash` o mesmo
+  one-shot responde `OK`; o payload foi capturado interceptando `httpx` (49 KB,
+  `"model": ""`). O `install_haos.sh` já gravava os dois — a divergência era só o
+  caminho da imagem. Corrigido em `haos-setup` (`set_node_provider <provider>
+  <model>` grava os dois) e no config do nó.
+  - Sintaxe do CLI: `-m` vai **verbatim** para o payload, então `-m
+    a6api/deepseek-v4-flash` envia o nome qualificado e também dá 400. Use
+    `--provider a6api -m deepseek-v4-flash` (verificado: ambos os payloads com
+    `model='deepseek-v4-flash'` e resposta `OK`).
+  - Tarefas auxiliares (`auxiliary.*`, ex. `title_generation`) têm `model: ''` no
+    default e não herdam o modelo principal: sem `-m`/default elas também levam
+    `model: ""`. Com modelo resolvido, herdam (`payload-02` com
+    `model='deepseek-v4-flash'`).
 
 ## 8. Comandos úteis
 
