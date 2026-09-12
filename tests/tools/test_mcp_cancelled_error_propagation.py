@@ -18,7 +18,10 @@ without hanging the reconnect loop.
 from __future__ import annotations
 
 import asyncio
+import time
 from unittest.mock import patch
+
+import pytest
 
 
 
@@ -89,3 +92,70 @@ class TestCancelledErrorPropagation:
 
         done = asyncio.run(drive())
         assert done, "MCPServerTask did not finish after cancel — #9930 regression"
+
+    @pytest.mark.asyncio
+    async def test_run_terminates_when_cancelled_during_lifecycle_reap(self, monkeypatch):
+        """A stop request that lands while ``run()`` reaps its lifecycle-event waiters must
+        end the loop.
+
+        Same "swallowed cancellation" defect class as the Buzz websocket (fixed in
+        commit 47d92cc6eb): ``_cancel_waiters`` reaped each waiter with ``task.cancel();
+        try: await task / except (asyncio.CancelledError, Exception): pass``. When the run
+        task's OWN cancel arrives while it is suspended inside that reap, ``Task.cancel()``
+        cancels the waiter (the child) and returns WITHOUT setting ``_must_cancel``; the
+        CancelledError born at the await point is then swallowed by the except. The
+        ``while True`` loop in ``run()`` reconnects and the stop request is lost — an
+        unbounded ``await task`` (``shutdown()``'s post-timeout fallback, or a test join)
+        hangs forever.
+
+        The shutdown-waiter's cancellation is deliberately not instantaneous so the cancel
+        lands inside the reap window deterministically; the reconnect-waiter completes
+        immediately so the lifecycle wait breaks and actually enters the reap.
+        """
+        from tools.mcp_tool import MCPServerTask
+
+        server = MCPServerTask("reap-cancel-test")
+        reap_started = asyncio.Event()
+
+        async def slow_shutdown_wait():
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                reap_started.set()
+                await asyncio.sleep(0.3)
+                raise
+
+        async def fast_reconnect_wait():
+            await asyncio.sleep(0.01)
+
+        def fake_event_waiters():
+            return (asyncio.create_task(slow_shutdown_wait()),
+                    asyncio.create_task(fast_reconnect_wait()))
+
+        async def fake_transport(self, config):
+            # Real lifecycle wait (and its reap) instead of a real stdio/HTTP run.
+            return await server._wait_for_lifecycle_event()
+
+        monkeypatch.setattr(server, "_event_waiters", fake_event_waiters)
+        monkeypatch.setattr(MCPServerTask, "_run_stdio", fake_transport)
+        monkeypatch.setattr(MCPServerTask, "_is_http", lambda self: False)
+
+        task = asyncio.create_task(server.run({"command": "fake", "keepalive_interval": 5}))
+        try:
+            # The run loop is now suspended inside the reap of the lifecycle waiters.
+            await asyncio.wait_for(reap_started.wait(), 5.0)
+            task.cancel()
+            _done, pending = await asyncio.wait({task}, timeout=2.0)
+            assert not pending, (
+                "MCPServerTask.run ignored a cancellation that landed during the "
+                "lifecycle-event reap and kept reconnecting — swallowed-cancel regression"
+            )
+        finally:
+            # Kill the run task even when a swallowed cancel left it reconnecting: keep
+            # cancelling (bounded, tight cadence) until it stops, so the failing assertion
+            # reports instead of the pytest-asyncio Runner teardown hanging on the wedged
+            # task (runner teardown runs `_cancel_all_tasks` + an unbounded gather).
+            deadline = time.monotonic() + 6.0
+            while not task.done() and time.monotonic() < deadline:
+                task.cancel()
+                await asyncio.wait({task}, timeout=0.01)

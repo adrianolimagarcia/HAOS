@@ -33,10 +33,14 @@ class MCPServerRunMixin:
         for t in tasks:
             if not t.done():
                 t.cancel()
-                try:
-                    await t
-                except (asyncio.CancelledError, Exception):
-                    pass
+                # Reap the child WITHOUT swallowing our own cancellation: the old
+                # `except (asyncio.CancelledError, Exception): pass` around `await t`
+                # also caught a CancelledError aimed at THIS task when it arrived
+                # during the reap. run() is a `while True` reconnect loop whose
+                # `except asyncio.CancelledError: raise` guarantees a stop request
+                # always wins; a swallowed one left it reconnecting forever (same
+                # defect class as the Buzz websocket, fixed in 47d92cc6eb).
+                await asyncio.gather(t, return_exceptions=True)
 
     def _event_waiters(self) -> tuple:
         """Fresh ``(shutdown, reconnect)`` wait tasks; cancel them via ``_cancel_waiters``."""
