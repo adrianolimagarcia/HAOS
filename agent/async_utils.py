@@ -43,7 +43,14 @@ def safe_schedule_threadsafe(
 def consume_detached_task_result(task: "asyncio.Future[Any]") -> None:
     """``add_done_callback`` for cancelled-and-detached tasks: observe the exception so the
     loop does not log "exception was never retrieved"; cancellation and terminal errors
-    are swallowed because the task's owner already gave up on it."""
+    are swallowed because the task's owner already gave up on it.
+
+    Not the "swallowed cancellation" defect: this is a done-callback on an already-finished
+    task, there is no ``await`` and no parent task whose cancel could land inside this
+    block. The ``(asyncio.CancelledError, Exception)`` tuple is required, not redundant:
+    ``Task.exception()`` raises CancelledError (a BaseException) for cancelled tasks, which
+    a bare ``except Exception`` would not catch.
+    """
     try:
         task.exception()
     except (asyncio.CancelledError, Exception):
