@@ -31,11 +31,19 @@ class _SlowUnwindingChild:
 
     def run_conversation(self, **_kwargs):
         self.started.set()
-        assert self.interrupted.wait(timeout=1)
+        assert self.interrupted.wait(timeout=5), "parent never signalled the timed-out child to stop"
         # Model the real child turn's finally path: it still performs session
         # activity/SQLite cleanup after the parent requests interruption.
         self.unwinding.set()
-        assert self.allow_finish.wait(timeout=2)
+        # Generous on purpose: this gate only has to outlast the PARENT's teardown, and that
+        # path imports model_tools cold inside cleanup() — measured 2.4s of
+        # discover_builtin_tools() module imports under scripts/run_tests.sh (free in
+        # production, where model_tools is imported long before any delegation). A 2s budget
+        # lost that race, so this assert fired, the Future completed with the exception, and
+        # the deferred close callback correctly closed the child before the parent's check —
+        # failing the test for a reason it never meant to exercise. The parent releases the
+        # gate in its finally block, so a large budget costs nothing when it passes.
+        assert self.allow_finish.wait(timeout=30), "test never released the unwinding child"
         self.finished.set()
         return {
             "final_response": "",
