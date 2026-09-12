@@ -3668,7 +3668,7 @@ def test_session_resume_deferred_history_failure_can_retry(monkeypatch):
             {"session_id": "retry-session", "defer_history": True},
         )
         first_sid = first["result"]["session_id"]
-        assert first_released.wait(timeout=1.0)
+        assert first_released.wait(timeout=5.0)
         assert first_sid not in server._sessions
 
         second = server._methods["session.resume"](
@@ -3677,8 +3677,8 @@ def test_session_resume_deferred_history_failure_can_retry(monkeypatch):
         )
         second_sid = second["result"]["session_id"]
         assert second_sid != first_sid
-        assert server._sessions[second_sid]["resume_history_ready"].wait(timeout=1.0)
-        assert build_started.wait(timeout=1.0)
+        assert server._sessions[second_sid]["resume_history_ready"].wait(timeout=5.0)
+        assert build_started.wait(timeout=5.0)
     finally:
         for sid, session in list(server._sessions.items()):
             if session.get("session_key") == "retry-session":
@@ -4853,7 +4853,9 @@ def test_session_close_releases_resume_lock_before_slow_teardown(monkeypatch):
     def _slow_teardown(_session, *, end_reason="tui_close"):
         assert end_reason == "tui_close"
         teardown_started.set()
-        assert release_teardown.wait(timeout=2.0)
+        # Deadlock valve, not a correctness bound: the test always releases in `finally`,
+        # so it must not expire while a loaded runner works through the main thread.
+        assert release_teardown.wait(timeout=30.0)
 
     monkeypatch.setattr(server, "_teardown_session", _slow_teardown)
     server._sessions["slow-close"] = _session()
@@ -4873,7 +4875,7 @@ def test_session_close_releases_resume_lock_before_slow_teardown(monkeypatch):
     thread.start()
     acquired = False
     try:
-        assert teardown_started.wait(timeout=1.0)
+        assert teardown_started.wait(timeout=5.0)
         assert "slow-close" not in server._sessions
         acquired = server._session_resume_lock.acquire(timeout=0.2)
         assert acquired, "slow teardown kept the global resume lock held"
@@ -4897,7 +4899,8 @@ def test_session_close_settles_active_turn_before_teardown(monkeypatch):
 
     def _turn():
         turn_started.set()
-        assert release_turn.wait(timeout=2.0)
+        # Deadlock valve, not a correctness bound: released in `finally` (twice).
+        assert release_turn.wait(timeout=30.0)
 
     def _teardown(_session, *, end_reason="tui_close"):
         if end_reason == "tui_close":
@@ -4926,7 +4929,7 @@ def test_session_close_settles_active_turn_before_teardown(monkeypatch):
     run_thread.start()
     close_thread.start()
     try:
-        assert turn_started.wait(timeout=1.0)
+        assert turn_started.wait(timeout=5.0)
         assert not teardown_started.wait(timeout=0.1)
         release_turn.set()
         close_thread.join(timeout=2.0)
@@ -5260,7 +5263,8 @@ def test_ws_orphan_reap_releases_resume_lock_before_slow_teardown(monkeypatch):
     def _slow_teardown(_session, *, end_reason="tui_close"):
         assert end_reason == "ws_orphan_reap"
         teardown_started.set()
-        assert release_teardown.wait(timeout=2.0)
+        # Deadlock valve, not a correctness bound: the test always releases in `finally`.
+        assert release_teardown.wait(timeout=30.0)
 
     monkeypatch.setattr(server, "_WS_ORPHAN_REAP_GRACE_S", 0.01)
     monkeypatch.setattr(server.threading, "Timer", _Timer)
@@ -5275,7 +5279,7 @@ def test_ws_orphan_reap_releases_resume_lock_before_slow_teardown(monkeypatch):
     thread.start()
     acquired = False
     try:
-        assert teardown_started.wait(timeout=1.0)
+        assert teardown_started.wait(timeout=5.0)
         assert "slow-orphan" not in server._sessions
         acquired = server._session_resume_lock.acquire(timeout=0.2)
         assert acquired, "orphan teardown kept the global resume lock held"
@@ -7629,7 +7633,8 @@ def test_run_prompt_submit_rejects_worker_when_close_wins_publication(
     def _blocking_emit(event, *_args, **_kwargs):
         if event == "message.start":
             emit_entered.set()
-            assert release_emit.wait(timeout=2.0)
+            # Deadlock valve, not a correctness bound: released in `finally` (twice).
+            assert release_emit.wait(timeout=30.0)
 
     monkeypatch.setattr(server, "_emit", _blocking_emit)
     server._sessions[sid] = session
@@ -7641,7 +7646,7 @@ def test_run_prompt_submit_rejects_worker_when_close_wins_publication(
 
     try:
         dispatch_thread.start()
-        assert emit_entered.wait(timeout=1.0)
+        assert emit_entered.wait(timeout=5.0)
         popped.append(server._pop_session_by_id(sid))
         assert popped == [session]
         release_emit.set()
@@ -14793,7 +14798,7 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
     assert resp.get("result"), f"got error: {resp.get('error')}"
     sid = resp["result"]["session_id"]
     own_key = resp["result"]["stored_session_id"]
-    assert build_entered.wait(timeout=1.0), "deferred build did not start"
+    assert build_entered.wait(timeout=5.0), "deferred build did not start"
 
     # Wait until the (deferred) build thread has actually entered
     # _make_agent — otherwise session.close pops _sessions[sid] before
@@ -19248,8 +19253,9 @@ def test_close_sessions_for_transport_skips_session_rebound_before_claim(
 
                 thread = threading.Thread(target=_resume_rebind)
                 thread.start()
-                assert rebound.wait(timeout=1)
-                thread.join(timeout=1)
+                # Waiting on a just-spawned thread: 1s was a quiet-runner assumption.
+                assert rebound.wait(timeout=10)
+                thread.join(timeout=10)
             return False
 
     monkeypatch.setattr(server, "_sessions_lock", _SnapshotInterlock())
