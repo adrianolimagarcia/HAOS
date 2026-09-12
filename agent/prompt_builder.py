@@ -25,7 +25,8 @@ from agent.runtime_cwd import resolve_agent_cwd
 from agent.skill_utils import (
     EXCLUDED_SKILL_DIRS, ORG_ACTIVE_MARKER, ORG_MIRROR_DIR_NAME, ORG_PROVENANCE_FILE, SKILL_SUPPORT_DIRS,
     extract_skill_conditions, extract_skill_description, get_all_skills_dirs, get_disabled_skill_names,
-    get_skill_loadout_limit, get_skill_loadout_pins, iter_skill_index_files, parse_frontmatter,
+    get_skill_loadout_limit, get_skill_loadout_max_per_category, get_skill_loadout_pins,
+    iter_skill_index_files, parse_frontmatter,
     read_active_org_id, select_skill_loadout, skill_matches_environment,
     skill_matches_platform, skill_matches_platform_list,
 )
@@ -1394,18 +1395,23 @@ def _render_skills_index(
 
 
 def _apply_skill_loadout(
-    skills_by_category: dict[str, list[tuple[str, str]]], *, limit: int, prioritized: "tuple[str, ...]",
+    skills_by_category: dict[str, list[tuple[str, str]]], *, limit: int,
+    prioritized: "tuple[str, ...]", max_per_category: "int | None" = None,
 ) -> dict[str, list[tuple[str, str]]]:
-    """Cut the always-on index to the loadout budget (P3).
+    """Cut the always-on index to the loadout budget (P3) + teto per-item (P8).
 
     Deterministic: essential (hermes-agent) first, then ``skills.loadout_pin`` names, then
     alphabetical by (category, name) — the same stable order the renderer already uses, so a
-    budget above the park size changes nothing. Skills beyond the cap are NOT removed from
-    disk: they remain installed and load via skill_view/skills_list (the cap is a prompt
-    budget, not a library prune).
+    budget above the park size changes nothing. ``max_per_category`` (P8) limita quantos
+    itens de uma MESMA categoria entram (essenciais/pinned nunca saem); 0/None = sem teto
+    por item (comportamento do P3 intacto). Skills beyond the caps are NOT removed from
+    disk: they remain installed and load via skill_view/skills_list (the caps are prompt
+    budgets, not a library prune).
     """
     flat = [(cat, name, desc) for cat in sorted(skills_by_category) for name, desc in skills_by_category[cat]]
-    selected = select_skill_loadout(flat, limit=limit, prioritized=prioritized)
+    selected = select_skill_loadout(
+        flat, limit=limit, prioritized=prioritized, max_per_category=max_per_category,
+    )
     regrouped: dict[str, list[tuple[str, str]]] = {}
     for cat, name, desc in selected:
         regrouped.setdefault(cat, []).append((name, desc))
@@ -1421,16 +1427,17 @@ def _build_skills_system_prompt_inner(
     _platform_hint = _current_session_platform_hint()
     disabled = get_disabled_skill_names(_platform_hint or None)
     project_dirs = project_dirs or []
-    # Loadout budget + pins are session-stable (config), so they belong in the cache key:
-    # changing the cap must re-render, exactly like changing the disabled list.
+    # Loadout budget + pins + teto per-item are session-stable (config), so they belong in
+    # the cache key: changing a cap must re-render, exactly like changing the disabled list.
     loadout_limit = get_skill_loadout_limit()
     loadout_pins = get_skill_loadout_pins()
+    loadout_per_cat = get_skill_loadout_max_per_category()
     cache_key = (
         str(skills_dir), tuple(str(d) for d in external_dirs), tuple(str(d) for d in project_dirs),
         tuple(sorted(str(t) for t in (available_tools or set()))),
         tuple(sorted(str(ts) for ts in (available_toolsets or set()))),
         _platform_hint, tuple(sorted(disabled)), tuple(sorted(compact_categories or ())),
-        ("loadout", loadout_limit, loadout_pins),
+        ("loadout", loadout_limit, loadout_pins, loadout_per_cat),
     )
     with _SKILLS_PROMPT_CACHE_LOCK:
         cached = _SKILLS_PROMPT_CACHE.get(cache_key)
@@ -1488,10 +1495,15 @@ def _build_skills_system_prompt_inner(
         for cat, cat_desc in _read_category_descriptions(ext_dir, "Could not read external skill description %s: %s").items():
             category_descriptions.setdefault(cat, cat_desc)
 
-    # Loadout cap (P3): the always-on index ships at most `loadout_limit` skills; the rest of
-    # the park stays installed and loads via skill_view/skills_list. Budget 0 disables the cap.
-    if loadout_limit:
-        skills_by_category = _apply_skill_loadout(skills_by_category, limit=loadout_limit, prioritized=loadout_pins)
+    # Loadout caps (P3 total + P8 per-item): the always-on index ships at most
+    # `loadout_limit` skills and no more than `loadout_max_per_category` per
+    # category; the rest of the park stays installed and loads via
+    # skill_view/skills_list. Budget 0 disables the cap it names.
+    if loadout_limit or loadout_per_cat:
+        skills_by_category = _apply_skill_loadout(
+            skills_by_category, limit=loadout_limit, prioritized=loadout_pins,
+            max_per_category=loadout_per_cat or None,
+        )
 
     result = _render_skills_index(skills_by_category, category_descriptions, compact_categories, available_tools)
     with _SKILLS_PROMPT_CACHE_LOCK:

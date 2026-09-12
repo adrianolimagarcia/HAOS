@@ -787,9 +787,29 @@ def get_skill_loadout_pins() -> Tuple[str, ...]:
     return tuple(sorted(_normalize_string_set(_skills_cfg_get("loadout_pin"))))
 
 
+def get_skill_loadout_max_per_category() -> int:
+    """``skills.loadout_max_per_category`` (HAOS P8) — teto PER-ITEM do loadout:
+    nenhuma categoria contribui mais de N skills ao índice always-on.
+
+    Interpretação documentada (a spec só diz "tetos de loadout"; o P3 já cobre
+    o teto total): o teto per-item = por CATEGORIA (cada item do loadout
+    pertence a uma categoria; o teto limita quantos itens da MESMA categoria
+    entram), evitando domínio de uma única categoria. 0 = sem teto por item
+    (comportamento do P3 intacto). Essenciais/pinned nunca saem (mesma
+    garantia do teto total).
+    """
+    raw = _skills_cfg_get("loadout_max_per_category")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
+
+
 def select_skill_loadout(
     entries, *, limit: "Optional[int]" = None, essential: "frozenset[str]" = ESSENTIAL_SKILLS,
     prioritized: "tuple[str, ...] | list[str] | set[str]" = (),
+    max_per_category: "Optional[int]" = None,
 ):
     """Deterministic loadout selection from ``(category, name, payload)`` entries.
 
@@ -797,12 +817,34 @@ def select_skill_loadout(
     by (category, name) — the same stable order the index renderer uses today, so a large
     budget changes nothing. ``limit`` <= 0 or None keeps every entry (no cap). Never raises
     and never drops an entry from disk: it only decides what the always-on index lists.
+
+    ``max_per_category`` (HAOS P8 — teto per-item): nenhuma categoria contribui mais de N
+    itens ao loadout; essenciais/pinned NUNCA saem (contam para o teto, mas nunca são
+    cortados por ele). ``None``/<=0 = sem teto por item (comportamento do P3 intacto).
+    Determinístico: mesma entrada, mesma seleção.
     """
     prioritized_set = set(prioritized or ())
-    ordered = sorted(entries, key=lambda e: (e[1] not in essential, e[1] not in prioritized_set, e[0], e[1]))
-    if limit is None or limit <= 0:
-        return ordered
-    return ordered[:limit]
+    essential_set = set(essential or ())
+    ordered = sorted(entries, key=lambda e: (e[1] not in essential_set, e[1] not in prioritized_set, e[0], e[1]))
+
+    per_cat = max_per_category if max_per_category is not None and max_per_category > 0 else None
+    if per_cat is None:
+        if limit is None or limit <= 0:
+            return ordered
+        return ordered[:limit]
+
+    selected = []
+    counts: Dict[str, int] = {}
+    for entry in ordered:
+        cat, name, _payload = entry
+        pinned = name in essential_set or name in prioritized_set
+        if not pinned and counts.get(cat, 0) >= per_cat:
+            continue
+        if limit is not None and limit > 0 and len(selected) >= limit:
+            break
+        selected.append(entry)
+        counts[cat] = counts.get(cat, 0) + 1
+    return selected
 
 
 def iter_skill_index_files(skills_dir: Path, filename: str):

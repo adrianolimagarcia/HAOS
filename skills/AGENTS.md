@@ -74,7 +74,7 @@ never deletes — archive is the maximum; pinned skills are exempt from every au
 the LLM review; `skill_manage(action="delete")` refuses pinned skills while patch/edit/write_file/
 remove_file still work so the agent can keep improving them.
 
-## Loadout cap + auditor (HAOS P3)
+## Loadout cap + auditor (HAOS P3) e teto per-item (HAOS P8)
 
 The always-on skills index is a budget, not a catalog: at most `skills.loadout_limit` (default 20 —
 the literature's ≤20 tools/agent ceiling) skills are listed in the system prompt. Over-limit skills
@@ -83,3 +83,7 @@ deterministic: ESSENTIAL (`hermes-agent`) first, then `skills.loadout_pin` names
 by (category, name). `skills.loadout_limit: 0` disables the cap. `scripts/audit_skills.py` is the
 deterministic park auditor (real skill count + frontmatter/name/size/description rules) used in CI;
 run `python scripts/audit_skills.py`.
+
+Per-item ceiling (HAOS P8): `skills.loadout_max_per_category` (default 0 = off) caps how many
+skills of the SAME category enter the loadout, so no single category dominates the always-on index;
+essential/pinned names never leave, and the total `loadout_limit` still applies on top.

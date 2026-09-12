@@ -1388,6 +1388,10 @@ DEFAULT_CONFIG = {
         # Names that always stay in the loadout regardless of the cap (beyond the essential
         # hermes-agent). Selection priority: essential -> pins -> alphabetical (category, name).
         "loadout_pin": [],
+        # Teto PER-ITEM do loadout (HAOS P8): nenhuma categoria contribui mais de N skills ao
+        # índice always-on (evita domínio de uma única categoria). 0 = sem teto por item.
+        # Essenciais/pinned nunca saem. O teto total `loadout_limit` continua valendo junto.
+        "loadout_max_per_category": 0,
     },
 
     # Curator — background maintenance of AGENT-CREATED skills (never hub-installed): marks

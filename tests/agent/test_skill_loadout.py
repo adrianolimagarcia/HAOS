@@ -15,6 +15,7 @@ import pytest
 from agent.skill_utils import (
     ESSENTIAL_SKILLS,
     get_skill_loadout_limit,
+    get_skill_loadout_max_per_category,
     get_skill_loadout_pins,
     select_skill_loadout,
 )
@@ -100,6 +101,69 @@ def test_loadout_pins_config_contract(monkeypatch, tmp_path):
     assert get_skill_loadout_pins() == ("also-me", "keep-me")  # sorted, deterministic
 
 
+# ── Per-category ceiling (HAOS P8 — tetos per-item) ──────────────────────────
+
+def test_loadout_per_category_cap_contract():
+    """``max_per_category``: nenhuma categoria contribui mais de N itens ao
+    loadout (essenciais/pinned continuam sempre dentro — a garantia do P3);
+    0/None = sem teto por item (comportamento do P3 intacto)."""
+    entries = [
+        ("cat-a", "a-1", "d"), ("cat-a", "a-2", "d"), ("cat-a", "a-3", "d"),
+        ("cat-b", "b-1", "d"), ("cat-b", "b-2", "d"),
+        ("cat-c", "c-1", "d"),
+    ]
+    capped = select_skill_loadout(entries, max_per_category=2)
+    counts = {}
+    for cat, _name, _desc in capped:
+        counts[cat] = counts.get(cat, 0) + 1
+    assert counts == {"cat-a": 2, "cat-b": 2, "cat-c": 1}
+    assert len(capped) == 5  # a-3 saiu SÓ pelo teto por item
+    # Sem teto (0/None): os 6 entram — o teto total do P3 continua intacto.
+    assert len(select_skill_loadout(entries, max_per_category=0)) == 6
+    assert len(select_skill_loadout(entries, max_per_category=None)) == 6
+    # Determinístico.
+    assert capped == select_skill_loadout(list(entries), max_per_category=2)
+
+
+def test_loadout_per_category_respeita_pins_e_total():
+    """O teto por item nunca derruba essential/pinned; o teto total continua
+    valendo junto (o menor limite vence)."""
+    entries = [
+        ("cat-a", "a-1", "d"), ("cat-a", "a-2", "d"),
+        ("cat-a", "pinned-a", "d"),
+        ("cat-b", "b-1", "d"), ("cat-b", "b-2", "d"),
+    ]
+    selected = select_skill_loadout(entries, max_per_category=2, prioritized=("pinned-a",))
+    names = [name for _, name, _ in selected]
+    assert "pinned-a" in names  # pin nunca sai
+    counts = {}
+    for cat, name, _ in selected:
+        counts[cat] = counts.get(cat, 0) + 1
+    assert counts["cat-a"] == 2  # pinned + 1 alfabético de cat-a
+    assert counts["cat-b"] == 2
+    # Teto total ainda vale sobre o teto por item.
+    assert len(select_skill_loadout(entries, limit=3, max_per_category=2)) == 3
+
+
+def test_loadout_per_category_config_contract(monkeypatch, tmp_path):
+    """``skills.loadout_max_per_category``: ausente -> 0 (sem teto por item),
+    setado -> honrado, lixo -> 0. Contrato: o valor que a seleção usa é o
+    valor que o config expõe."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    from agent import skill_utils
+    skill_utils._raw_config_cache_clear()
+
+    assert get_skill_loadout_max_per_category() == 0  # default: sem teto por item
+    (tmp_path / "config.yaml").write_text(
+        "skills:\n  loadout_max_per_category: 2\n", encoding="utf-8"
+    )
+    assert get_skill_loadout_max_per_category() == 2
+    (tmp_path / "config.yaml").write_text(
+        "skills:\n  loadout_max_per_category: abc\n", encoding="utf-8"
+    )
+    assert get_skill_loadout_max_per_category() == 0  # lixo -> sem teto
+
+
 # ── Rendered-prompt contract (E2E over the real builder) ────────────────────
 
 class TestLoadoutRenderedIndex:
@@ -167,6 +231,30 @@ class TestLoadoutRenderedIndex:
         assert len(lines) == 1
         assert "hermes-agent" in lines[0]
         assert ESSENTIAL_SKILLS == {"hermes-agent"}  # the contract above depends on this
+
+    def test_per_category_cap_limits_index_per_category(self, monkeypatch, tmp_path):
+        """loadout_max_per_category: 1 com loadout_limit: 0 (sem teto total)
+        limita o índice a 1 skill por categoria — o teto per-item (P8) é
+        observável no prompt renderizado."""
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        (tmp_path / "config.yaml").write_text(
+            "skills:\n  loadout_limit: 0\n  loadout_max_per_category: 1\n",
+            encoding="utf-8",
+        )
+        for cat in ("alpha", "beta"):
+            for name in (f"{cat}-1", f"{cat}-2"):
+                d = tmp_path / "skills" / cat / name
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "SKILL.md").write_text(
+                    f"---\nname: {name}\ndescription: Does {name}.\n---\n# {name}\nbody\n",
+                    encoding="utf-8",
+                )
+        from agent.prompt_builder import build_skills_system_prompt
+        lines = self._index_skill_lines(build_skills_system_prompt())
+        # Nome da skill = campo antes de ':' na linha do índice (a descrição
+        # também cita o nome; contar substrings contaria os dois).
+        name_parts = [ln.strip().lstrip("- ").split(":")[0].strip() for ln in lines]
+        assert name_parts == ["alpha-1", "beta-1"], name_parts
 
 
 # ── prompt-size diagnostic exposes the cap ──────────────────────────────────
