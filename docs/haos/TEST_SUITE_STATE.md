@@ -317,3 +317,59 @@ essas duas seções e a contagem de testes contra o run anterior.
    pytest (`SetupState.teardown_exact`), não um segundo bug. O teste usa `monkeypatch, tmp_path` e
    roda um turno real do gateway; o `AttributeError: 'types.SimpleNamespace' object has no attribute
    'run_conversation'` no log é o agente falso do teste e é esperado.
+   **Corrigido na raiz — ver a atualização (d).**
+
+## Atualização 2026-09-12 (d) — flake do loggerDict: causa raiz medida e corrigida
+
+O item 2 da seção (c) está corrigido na raiz. **A causa não é o `tui_gateway`**: é o walk *sem
+snapshot* que o plugin de logging do pytest faz no registro GLOBAL de loggers, no início de CADA
+fase (setup/call/teardown):
+
+```
+_pytest/logging.py, catching_logs.__enter__:
+    for logger in root_logger.manager.loggerDict.values():
+```
+
+`logging.Logger.manager.loggerDict` é global do processo e cresce sempre que QUALQUER thread importa
+um módulo com logger de módulo (ou chama `getLogger` com nome novo) — `Manager.getLogger` insere sob
+`logging._lock`, e o walk do pytest NÃO toma esse lock. Uma thread de fundo registrando um logger no
+meio do walk mata a thread PRINCIPAL com `RuntimeError: dictionary changed size during iteration`.
+Como o erro cai na fase de teardown, o `SetupState.teardown_exact` nunca roda: a pilha de setup fica
+suja e o teste SEGUINTE morre com `previous item was not torn down properly` — exatamente o par de
+erros registrado em (c), e por isso o dano colateral é do pytest, não um segundo bug.
+
+Medições (`tests/test_tui_gateway_server.py`, 637 testes):
+
+- `_pytest/logging.py:359` é o ÚNICO ponto do pytest — e de todo o `site-packages` — que itera
+  `loggerDict`; a única outra iteração do stdlib (`Manager._clear_cache`) já toma o lock.
+- No teardown do teste que falha, `server._sessions` está VAZIO e há threads vivas
+  (`Thread-2 (_loop)` = idle reaper do `tui_gateway`, `Thread-62 (_monitor)`): nenhum finalizer de
+  fixture itera dict nesse caminho, então a rota "finalizer de fixture" está descartada.
+- Em 1 run sem forçar nada (49,6s) threads de fundo registraram **65 nomes novos** de logger:
+  18+18+18 de três threads `run` (import tardio de módulos de plugin — os nomes sintetizados embutem
+  o hash do HERMES_HOME por teste, logo são novos em TODO teste), 3 de `asyncio_0`, 1 de `Thread-1`
+  e 1 de `Thread-6 (_build)`.
+
+Correção (`tests/conftest.py`): o registro global é religado a um `dict` cuja iteração devolve
+snapshot (`values`/`keys`/`items`/`__iter__`), instalado no import do conftest — antes de qualquer
+módulo de teste. Nada in-tree lê `loggerDict`, e todo leitor quer "os loggers que existem agora": é o
+`list(...)` que faltava, aplicado no único ponto que o repo controla (o walk é código de terceiro).
+
+Prova de duas armas (mesmo comando, com a carga forçada: thread registrando 40000 nomes novos
+enquanto a fase de teardown começa):
+
+- arma B (`tests/conftest.py` original, `registry_type=dict`): `ERROR at teardown of
+  test_alpha_bulk_loggers` + `RuntimeError: dictionary changed size during iteration` e, no teste
+  seguinte, `ERROR at setup ... AssertionError: previous item was not torn down properly` —
+  **6/6 runs vermelhos**.
+- arma A (com o fix, `registry_type=_SnapshotIteratingDict`, 100044 entradas, 40000 registros da
+  thread): `2 tests passed, 0 failed` — **6/6 runs verdes**.
+- Medição determinística do contrato, mesmo objeto real nos dois braços: sem o fix
+  (`registry=dict`) → `RuntimeError: dictionary changed size during iteration`; com o fix
+  (`registry=_SnapshotIteratingDict`) → walk sobrevive.
+
+Regressão determinística: `tests/test_conftest_logger_registry.py` (6 testes) — iniciar o walk e
+registrar um nome novo no meio levanta `RuntimeError` no registro original e sobrevive nos quatro
+acessores com o fix. Nenhuma asserção depende de timing.
+
+`tests/test_tui_gateway_server.py` com o fix: `1 files, 637 tests passed, 0 failed in 47.2s`.

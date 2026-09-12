@@ -13,6 +13,11 @@ Hermetic-test invariants enforced here (see AGENTS.md for rationale):
 3. **Deterministic runtime.** TZ=UTC, LANG=C.UTF-8, PYTHONHASHSEED=0.
 4. **No HERMES_SESSION_* inheritance** — the agent's current gateway
    session must not leak into tests.
+5. **Iteration-safe logger registry.** The process-global
+   ``logging.Logger.manager.loggerDict`` is rebound to a mapping whose
+   iteration hands back a snapshot, so a background thread registering a
+   logger cannot break pytest's unsnapshotted walk of it (see the block
+   below for the failure it used to cause).
 
 These invariants make the local test run match CI closely. Gaps that
 remain (CPU count, xdist worker count) are addressed by the canonical
@@ -22,6 +27,7 @@ test runner at ``scripts/run_tests.sh``.
 import asyncio
 import atexit
 import importlib
+import logging
 import os
 import shutil
 import sqlite3
@@ -35,6 +41,63 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+
+# ── Iteration-safe logger registry (installed before anything imports) ──────
+# ``logging.Logger.manager.loggerDict`` is process-global and grows whenever ANY
+# thread imports a module that declares a module-level logger, or calls
+# ``logging.getLogger`` with a name that does not exist yet. pytest's logging
+# plugin walks that registry UNSNAPSHOTTED at the start of every setup/call/
+# teardown phase:
+#
+#     _pytest/logging.py, catching_logs.__enter__:
+#         for logger in root_logger.manager.loggerDict.values():
+#
+# It is the only place in pytest that touches ``loggerDict``, and it does not
+# hold ``logging._lock`` while iterating — while ``Manager.getLogger`` inserts
+# new names under exactly that lock. So a background thread registering a logger
+# during that walk kills the MAIN thread with ``RuntimeError: dictionary changed
+# size during iteration``.
+#
+# This suite runs real gateway threads, and a turn thread that lazily imports a
+# plugin module registers dozens of fresh logger names in one burst (the
+# synthesized module names embed the per-test HERMES_HOME, so they are new in
+# every test). When the crash lands in the teardown phase,
+# ``SetupState.teardown_exact`` never runs, the setup stack stays dirty, and the
+# NEXT test dies with ``AssertionError: previous item was not torn down
+# properly`` — the two-error flake in docs/haos/TEST_SUITE_STATE.md.
+#
+# Handing iterators a snapshot is what every reader of this registry wants (they
+# all walk "the loggers that exist right now") and removes the race without
+# changing what the mapping holds. No in-tree code reads ``loggerDict``; the
+# stdlib's own iteration (``Manager._clear_cache``) already takes the lock.
+class _SnapshotIteratingDict(dict):
+    """``dict`` whose iteration methods hand back a snapshot, not a live view."""
+
+    def values(self):
+        return list(dict.values(self))
+
+    def keys(self):
+        return list(dict.keys(self))
+
+    def items(self):
+        return list(dict.items(self))
+
+    def __iter__(self):
+        return iter(list(dict.keys(self)))
+
+
+def _install_snapshot_iterating_logger_registry() -> None:
+    """Rebind the process-global logger registry to an iteration-safe mapping.
+
+    Idempotent: a repeated install (or a conftest reload) is a no-op.
+    """
+    manager = logging.Logger.manager
+    if not isinstance(manager.loggerDict, _SnapshotIteratingDict):
+        manager.loggerDict = _SnapshotIteratingDict(manager.loggerDict)
+
+
+_install_snapshot_iterating_logger_registry()
 
 
 # ── Sandbox HERMES_HOME before ANY test module is imported ──────────────────
