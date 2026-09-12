@@ -1718,10 +1718,22 @@ class TestMultiplexBackgroundScope:
         p._writer_thread.join(timeout=5)
         assert created == ["p1-secret"]
 
-    def test_daemon_start_thread_resolves_profile_secret(self, scoped_embedded):
+    def test_daemon_start_thread_resolves_profile_secret(self, scoped_embedded, monkeypatch):
         created, home = scoped_embedded
+        # The suite may run as root, and local_embedded deliberately refuses to start as root
+        # (PostgreSQL's initdb does): _start_embedded_daemon then logs, sets _mode="disabled"
+        # and returns WITHOUT spawning the daemon-start thread this test is about — measured:
+        # after initialize() only MainThread existed, even a second later, and created stayed [].
+        # Pin a non-root euid so the path is reachable; the root guard is separate behaviour.
+        monkeypatch.setattr("plugins.memory.hindsight.os.geteuid", lambda: 1000)
         p = HindsightMemoryProvider()
         p.initialize(session_id="s1", hermes_home=str(home), platform="cli")
+        # The worker is an ordinary thread, so by the time we enumerate it may not be listed
+        # yet (or may already have finished): wait for its first observable effect instead of
+        # racing thread creation. The join below then covers its remaining work (the log line).
+        deadline = time.monotonic() + 5
+        while not created and time.monotonic() < deadline:
+            time.sleep(0.01)
         for t in threading.enumerate():
             if t.name == "hindsight-daemon-start":
                 t.join(timeout=5)
