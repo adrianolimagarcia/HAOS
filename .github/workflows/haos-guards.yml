@@ -8,6 +8,9 @@ name: HAOS guards
 # 2. O contrato do default de home do fork fica verde (testes de comportamento).
 # 3. Nenhum hint user-facing pode citar `hermes <cmd>` — o CLI é `haos`; use
 #    product_command(). Sites intencionais levam `# haos-brand: <motivo>`.
+#    Cobre código (string e comentário) e o markdown que o agente executa.
+# 4. `uv.lock` em sincronia com `pyproject.toml`: todo job que usa
+#    `uv sync --locked` morre quando o lock fica para trás.
 
 on:
   push:
@@ -54,6 +57,26 @@ jobs:
 
       - name: Forbid user-facing hints naming the upstream CLI
         run: python scripts/ci/check_haos_brand_hints.py
+
+  lock-check:
+    name: uv.lock em sincronia com pyproject.toml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          version: "0.9.28"
+
+      - name: Lockfile must match pyproject.toml
+        # `uv sync --locked` (tests.yml, tests-os.yml, docker.yml, e2e-desktop.yml,
+        # este arquivo) falha em TODO job quando o lock fica para tras — foi o que
+        # aconteceu no bump 0.21.2 + extra `fetch`. Checar aqui custa segundos e
+        # aponta a causa em vez de deixar o erro aparecer no install de cada job.
+        run: uv lock --check
 
   home-contract-tests:
     name: Contrato do home do fork
