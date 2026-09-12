@@ -675,6 +675,12 @@ class LSPClient:
             task = getattr(self, attr, None)
             if task is not None and not task.done():
                 task.cancel()
+                # Reap only the CHILD's CancelledError here, never our own: the parent
+                # tasks (_drive, _shutdown_coro) are not cancelled from outside while
+                # inside this reap — the loop-thread final sweep cancels pending tasks
+                # only after _drive returned, and everything after this point is bounded
+                # (wait_for timeouts, process kill). A swallowed stop request therefore
+                # cannot wedge shutdown, so no gather/return_exceptions change is needed.
                 try:
                     await task
                 except (asyncio.CancelledError, Exception):
