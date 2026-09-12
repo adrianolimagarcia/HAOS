@@ -66,21 +66,23 @@ def test_preprocess_context_references_unknown_session(tmp_path: Path, monkeypat
     assert any("not found" in w.lower() for w in res.warnings)
 
 
-def test_session_autocomplete_yields_session_completions(tmp_path: Path, monkeypatch):
+def test_session_autocomplete_yields_session_completions():
     pytest.importorskip("prompt_toolkit")
     from hermes_cli.commands_completion import SlashCommandCompleter
 
-    home = tmp_path / ".hermes"
-    home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(home))
-
-    db = SessionDB(db_path=home / "state.db")
+    # Argless on purpose: the completer opens ``SessionDB(read_only=True)``, which resolves
+    # through ``hermes_state._default_db_path()``. An explicit ``db_path`` here would write to a
+    # different file whenever the suite fixture has re-pinned ``DEFAULT_DB_PATH`` (it wins over a
+    # later ``HERMES_HOME`` override), leaving the completer an empty DB. Same resolution = same file.
+    db = SessionDB()
     db.ensure_session(
         session_id="20260908_sess_auto_1",
         source="cli",
         model="gemini-test",
-        title="Sessão de Autocomplete",
     )
+    # Naming is a separate step by design (hermes_state_titles owns the provenance ladder);
+    # create_session/ensure_session never take a title.
+    db.set_session_title("20260908_sess_auto_1", "Sessão de Autocomplete")
     db.close()
 
     completer = SlashCommandCompleter.__new__(SlashCommandCompleter)
