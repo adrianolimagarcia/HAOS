@@ -110,6 +110,51 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
 5. Validação do squashfs (hostname, TODOS os `vmlinuz-*`, venv via
    `usr/bin/python3.13`, ausência de machine-id/chaves) + rename do ISO.
 
+### 5.1 Armadilha: artefatos ignorados do distro travam o build Python (já pago em sangue)
+
+Sintoma: `uv sync`, `uv lock` ou qualquer `pip install -e .` **não termina** —
+fica minutos (medido: >23 min) queimando CPU em
+`setuptools.build_meta.get_requires_for_build_editable`.
+
+Causa (medida, não suposta): o `pyproject.toml` usa descoberta por varredura
+(`packages.find`). Em `setuptools/discovery.py`, `PEP420PackageFinder._looks_like_package`
+devolve `True` para **todo** diretório (sem poda) e o walk roda com
+`followlinks=True`. Os artefatos **git-ignorados** do distro contêm symlinks
+**absolutos** que saem do repo:
+
+- `distro/haos-linux/cache/bootstrap/var/run -> /run`
+- `distro/haos-linux/cache/bootstrap/dev/fd -> /proc/self/fd`
+
+Com isso a descoberta atravessa o filesystem inteiro e volta ao próprio repo,
+recursivamente. Números do diagnóstico: `find -type d` conta **5.864** diretórios
+reais, enquanto o walk visitou **368.351** em 25 s e seguia subindo; removidos os
+artefatos, `find_namespace_packages` caiu de **>360 s sem terminar** para
+**0,09 s** (227 pacotes, `hermes.platform` incluso).
+
+Correção: apagar `distro/haos-linux/cache/` e `distro/haos-linux/chroot/` — os
+dois são git-ignorados e regenerados (`chroot/` pelo `iso-from-vm.sh`, que faz
+`rm -rf` + rsync quando ele não existe; `cache/` é resto de debootstrap manual).
+Diagnóstico rápido — a assinatura da armadilha é symlink de diretório com alvo
+**absoluto** (ou seja, que sai do repo):
+
+```bash
+find . -path ./.git -prune -o -type l -xtype d -print | while read l; do
+  t=$(readlink "$l"); case "$t" in /*) echo "$l -> $t";; esac
+done
+```
+
+Ambiente saudável não imprime nada (os únicos links legítimos, `.venv/lib64`, são
+relativos).
+
+**Não use `uv run` neste repo para diagnosticar:** `uv run` re-sincroniza o `.venv`
+com as dependências default e **remove o pytest** (que vem de `--extra dev`),
+quebrando a suíte logo depois. Use `.venv/bin/python` direto — e nunca rode nada que
+mexa no venv enquanto uma suíte está em execução (foi assim que uma medição de
+2.353 testes saiu no lugar de 9.066 e virou resultado inválido).
+
+O CI **não** é afetado: os dois diretórios são git-ignorados, então um checkout
+limpo nunca os tem.
+
 ## 6. Estado validado da VM (golden — 10/09/2026)
 
 - Hostname **`haosagent`**: garantido pelo oneshot `haos-hostname.service`
