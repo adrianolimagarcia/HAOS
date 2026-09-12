@@ -195,8 +195,11 @@ anthropic = ["anthropic==0.87.0"]  # CVE-2026-34450, CVE-2026-34452
 exa = ["exa-py==2.10.2"]
 firecrawl = ["firecrawl-py==4.17.0"]
 # Cloudflare/anti-bot bypass fetch — `haos-fetch` (scripts/haos_fetch_cf.py).
-# Install with: uv pip install "scrapling[fetchers]>=0.4.15,<0.5"
-fetch = ["scrapling[fetchers]>=0.4.15,<0.5"]
+# Lazy-covered backend (policy 2026-05-12): it must NOT be in [all], and the pin is the
+# security-current source of truth mirrored by LAZY_DEPS["fetch.scrapling"] — the two must
+# stay identical (tests/test_project_metadata.py::test_pyproject_pins_match_lazy_deps_pins).
+# Manual install: uv pip install "scrapling[fetchers]==0.4.15"
+fetch = ["scrapling[fetchers]==0.4.15"]
 parallel-web = ["parallel-web==0.4.2"]
 # Image generation backends
 fal = ["fal-client==0.13.1"]

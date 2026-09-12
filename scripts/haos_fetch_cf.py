@@ -137,8 +137,41 @@ def _to_text(html: str) -> str:
     return "\n".join(lines).strip()
 
 
+_INSTALL_HINT = 'uv pip install "scrapling[fetchers]==0.4.15"'
+
+
+def _import_fetchers():
+    """Scrapling's fetchers, lazy-installing the ``fetch.scrapling`` backend on first use.
+
+    The extra is deliberately NOT in ``[all]`` (policy 2026-05-12: opt-in backends resolve at
+    first use), so a runtime venv that skipped the installer's best-effort pre-install gets it
+    here instead of dying with a bare ModuleNotFoundError.
+    """
+    try:
+        from scrapling.fetchers import Fetcher, StealthyFetcher
+        return Fetcher, StealthyFetcher
+    except ImportError:
+        pass
+    try:
+        from tools.lazy_deps import ensure
+        ensure("fetch.scrapling", prompt=False)
+    except Exception as exc:  # noqa: BLE001 — surface the install hint, never a raw traceback
+        raise SystemExit(
+            f"✗ haos-fetch precisa do Scrapling e o lazy-install não resolveu ({exc}).\n"
+            f"  Instale manualmente: {_INSTALL_HINT}"
+        ) from exc
+    try:
+        from scrapling.fetchers import Fetcher, StealthyFetcher
+        return Fetcher, StealthyFetcher
+    except ImportError as exc:
+        raise SystemExit(
+            f"✗ Scrapling presente mas 'scrapling.fetchers' não importa ({exc}).\n"
+            f"  Reinstale: {_INSTALL_HINT}"
+        ) from exc
+
+
 def fetch(url: str, strategy: str = "auto", cookies: dict[str, str] | None = None) -> tuple[str, str]:
-    from scrapling.fetchers import Fetcher, StealthyFetcher
+    Fetcher, StealthyFetcher = _import_fetchers()
 
     bp = _browsers_path()
     if bp:

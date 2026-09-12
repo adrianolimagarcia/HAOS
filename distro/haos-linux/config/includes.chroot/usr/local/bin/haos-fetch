@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# haos-fetch — busca páginas atrás de Cloudflare/anti-bot (Scrapling).
+#
+# Roda scripts/haos_fetch_cf.py no venv de runtime: estratégia http (curl_cffi com
+# impersonação de navegador) e, se o corpo vier vazio/desafio, stealth (browser
+# headless via Playwright). Uso:
+#   haos-fetch <url> [-o out.md|out.html|out.txt] [--strategy http|stealth|auto] [--text]
+#
+# Mesmo invariante de dono do wrapper `haos`: invocação como root cai para o usuário
+# `haos`, para que o cache de browser e o HAOS_HOME sejam os mesmos dos daemons.
+#
+# O backend Scrapling NÃO está em [all] (política 2026-05-12: backend opt-in resolve no
+# primeiro uso). O script faz lazy-install de LAZY_DEPS["fetch.scrapling"] na primeira
+# execução; o instalador também pré-instala (SKIP_FETCH_EXTRA=1 desativa). Manual:
+#   uv pip install "scrapling[fetchers]==0.4.15"
+# ==============================================================================
+set -euo pipefail
+
+HAOS_USER="haos"
+HAOS_NODE_HOME="/home/${HAOS_USER}"
+VENV_DIR="/opt/haos/venv"
+FETCH_SCRIPT="/opt/haos/scripts/haos_fetch_cf.py"
+
+# Store do nó: root operador -> home do usuário haos; senão $HOME.
+if [ "$(id -u)" -eq 0 ] && getent passwd "${HAOS_USER}" >/dev/null 2>&1; then
+    NODE_HOME="$(getent passwd "${HAOS_USER}" | cut -d: -f6)"
+    NODE_HOME="${NODE_HOME:-${HAOS_NODE_HOME}}"
+else
+    NODE_HOME="${HOME:-${HAOS_NODE_HOME}}"
+fi
+export HAOS_HOME="${HAOS_HOME:-${NODE_HOME}/.haos}"
+export HERMES_HOME="${HAOS_HOME}"
+
+if [ ! -f "${FETCH_SCRIPT}" ]; then
+    echo "✗ ${FETCH_SCRIPT} não encontrado — instalação do HAOS incompleta em /opt/haos." >&2
+    exit 1
+fi
+
+# Cache de browsers do Playwright: só passa quando o nó realmente tem um. Uma vez setada,
+# o Playwright resolve o browser SÓ nesse caminho — valor obsoleto quebra todo launch
+# enquanto o `haos doctor` segue verde (o check dele também varre o cache default).
+PW_ENV=()
+if [ -d "${NODE_HOME}/.cache/ms-playwright" ]; then
+    PW_ENV=(PLAYWRIGHT_BROWSERS_PATH="${NODE_HOME}/.cache/ms-playwright")
+fi
+
+# Root (não já o usuário haos): derruba privilégio; runuser reseta HOME/USER/LOGNAME.
+if [ "$(id -u)" -eq 0 ] && [ "$(id -un)" != "${HAOS_USER}" ] && getent passwd "${HAOS_USER}" >/dev/null 2>&1; then
+    if command -v runuser >/dev/null 2>&1; then
+        exec runuser -u "${HAOS_USER}" -- env -u PYTHONPATH -u PYTHONHOME \
+            HOME="${NODE_HOME}" \
+            USER="${HAOS_USER}" \
+            LOGNAME="${HAOS_USER}" \
+            HAOS_HOME="${HAOS_HOME}" \
+            HERMES_HOME="${HAOS_HOME}" \
+            "${PW_ENV[@]}" \
+            PATH="${VENV_DIR}/bin:/usr/local/bin:/usr/bin:/bin" \
+            "${VENV_DIR}/bin/python" "${FETCH_SCRIPT}" "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        exec sudo -u "${HAOS_USER}" -H env -u PYTHONPATH -u PYTHONHOME \
+            HAOS_HOME="${HAOS_HOME}" \
+            HERMES_HOME="${HAOS_HOME}" \
+            "${PW_ENV[@]}" \
+            PATH="${VENV_DIR}/bin:/usr/local/bin:/usr/bin:/bin" \
+            "${VENV_DIR}/bin/python" "${FETCH_SCRIPT}" "$@"
+    fi
+    # Sem ferramenta de troca de usuário: segue como root contra o store do nó.
+fi
+
+export PATH="${VENV_DIR}/bin:${PATH}"
+if [ "${#PW_ENV[@]}" -gt 0 ]; then
+    export PLAYWRIGHT_BROWSERS_PATH="${NODE_HOME}/.cache/ms-playwright"
+fi
+
+exec "${VENV_DIR}/bin/python" "${FETCH_SCRIPT}" "$@"

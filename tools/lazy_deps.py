@@ -50,6 +50,12 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     "search.firecrawl": ("firecrawl-py==4.17.0",),
     "search.parallel": ("parallel-web==0.4.2",),
 
+    # ─── Anti-bot fetch ────────────────────────────────────────────────────
+    # `haos-fetch` (scripts/haos_fetch_cf.py): Scrapling + curl_cffi/Playwright stealth.
+    # Opt-in backend, so it resolves at first use instead of bloating [all] (policy
+    # 2026-05-12). The pin mirrors the `fetch` extra and the two must stay identical.
+    "fetch.scrapling": ("scrapling[fetchers]==0.4.15",),
+
     # ─── Monitoring ─────────────────────────────────────────────────────────
     # OTLP export; tracks the `otlp` extra.
     "export.otlp": (

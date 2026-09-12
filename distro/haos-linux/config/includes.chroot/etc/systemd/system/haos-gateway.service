@@ -10,7 +10,11 @@ Group=haos
 WorkingDirectory=/opt/haos
 Environment="HAOS_HOME=/home/haos/.haos"
 Environment="PYTHONUNBUFFERED=1"
-Environment="PLAYWRIGHT_BROWSERS_PATH=/opt/haos/.playwright"
+# Do NOT set PLAYWRIGHT_BROWSERS_PATH here. Once set, Playwright resolves the browser ONLY under
+# that path — an explicit path that does not exist breaks every launch, while the doctor's presence
+# check also scans the default cache and keeps reporting "Playwright Chromium" green (it did, with
+# /opt/haos/.playwright, which never existed). Unset => $HOME/.cache/ms-playwright, exactly where
+# the ISO bakes Chromium (iso-from-vm.sh --include='/home/haos/.cache/ms-playwright/').
 Environment="PATH=/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="LD_PRELOAD=/usr/local/lib/libsqlite3.so.0"
 ExecStart=/opt/haos/venv/bin/python /opt/haos/gateway/run.py

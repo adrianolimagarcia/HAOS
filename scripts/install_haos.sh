@@ -278,9 +278,11 @@ if command -v uv >/dev/null 2>&1; then
         log_info "Installing HAOS + extras [$HAOS_EXTRAS] via uv..."
     fi
     install_haos_into_venv
-    # Optional: Scrapling (Cloudflare-bypass fetch p/ haos-fetch). Desativável com SKIP_FETCH_EXTRA=1.
+    # Optional: Scrapling (backend do haos-fetch). Desativável com SKIP_FETCH_EXTRA=1.
+    # Pré-instalar aqui é conveniência do appliance (funciona offline); se falhar, o
+    # haos-fetch resolve no primeiro uso via tools/lazy_deps (fetch.scrapling).
     if [ "${SKIP_FETCH_EXTRA:-0}" != "1" ]; then
-        VIRTUAL_ENV="$VENV_DIR" uv pip install --quiet "scrapling[fetchers]>=0.4.15,<0.5" || log_warn "scrapling opcional não instalado (haos-fetch usará só HTTP)."
+        VIRTUAL_ENV="$VENV_DIR" uv pip install --quiet "scrapling[fetchers]==0.4.15" || log_warn "scrapling (backend do haos-fetch) não pré-instalado — o haos-fetch resolve no primeiro uso via lazy_deps, ou instale com: uv pip install 'scrapling[fetchers]==0.4.15'"
     fi
 else
     log_warn "uv not found, falling back to python3 -m venv..."
@@ -289,7 +291,7 @@ else
     "$PYTHON" -m pip install --upgrade pip
     install_haos_into_venv
     if [ "${SKIP_FETCH_EXTRA:-0}" != "1" ]; then
-        "$PYTHON" -m pip install --quiet "scrapling[fetchers]>=0.4.15,<0.5" || log_warn "scrapling opcional não instalado (haos-fetch usará só HTTP)."
+        "$PYTHON" -m pip install --quiet "scrapling[fetchers]==0.4.15" || log_warn "scrapling (backend do haos-fetch) não pré-instalado — o haos-fetch resolve no primeiro uso via lazy_deps, ou instale com: uv pip install 'scrapling[fetchers]==0.4.15'"
     fi
 fi
 

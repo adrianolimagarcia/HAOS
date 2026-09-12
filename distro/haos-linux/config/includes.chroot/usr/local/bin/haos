@@ -40,6 +40,16 @@ if [ -f /usr/local/lib/libsqlite3.so.0 ]; then
     LD_LIB="/usr/local/lib/libsqlite3.so.0"
 fi
 
+# Playwright's browser cache: pass it ONLY when the node actually has one. Once set,
+# Playwright resolves the browser exclusively under that path, so a stale value (the old
+# hardcoded /opt/haos/.playwright, which never existed) breaks every browser launch while
+# `haos doctor` keeps reporting "Playwright Chromium" green — its presence check also scans the
+# default cache. Unset => $HOME/.cache/ms-playwright, where the ISO bakes Chromium.
+PW_ENV=()
+if [ -d "${NODE_HOME}/.cache/ms-playwright" ]; then
+    PW_ENV=(PLAYWRIGHT_BROWSERS_PATH="${NODE_HOME}/.cache/ms-playwright")
+fi
+
 # Root (not already the haos user): drop privileges so files land with the
 # daemons' owner. runuser resets HOME/USER/LOGNAME; re-export the exact node
 # environment explicitly. sudo is the fallback when runuser is absent.
@@ -50,14 +60,14 @@ if [ "$(id -u)" -eq 0 ] && [ "$(id -un)" != "${HAOS_USER}" ] && getent passwd "$
             USER="${HAOS_USER}" \
             LOGNAME="${HAOS_USER}" \
             HAOS_HOME="${HAOS_HOME}" \
-            PLAYWRIGHT_BROWSERS_PATH="/opt/haos/.playwright" \
+            "${PW_ENV[@]}" \
             PATH="/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin" \
             LD_PRELOAD="${LD_LIB}" \
             "${HAOS_ENTRY[@]}" "$@"
     elif command -v sudo >/dev/null 2>&1; then
         exec sudo -u "${HAOS_USER}" -H env \
             HAOS_HOME="${HAOS_HOME}" \
-            PLAYWRIGHT_BROWSERS_PATH="/opt/haos/.playwright" \
+            "${PW_ENV[@]}" \
             PATH="/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin" \
             LD_PRELOAD="${LD_LIB}" \
             "${HAOS_ENTRY[@]}" "$@"
@@ -66,7 +76,9 @@ if [ "$(id -u)" -eq 0 ] && [ "$(id -un)" != "${HAOS_USER}" ] && getent passwd "$
     # store (HAOS_HOME above); ownership is the caller's responsibility.
 fi
 
-export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/haos/.playwright}"
+if [ "${#PW_ENV[@]}" -gt 0 ]; then
+    export PLAYWRIGHT_BROWSERS_PATH="${NODE_HOME}/.cache/ms-playwright"
+fi
 export PATH="/opt/haos/venv/bin:${PATH}"
 if [ -n "${LD_LIB}" ]; then
     export LD_PRELOAD="${LD_LIB}${LD_PRELOAD:+:$LD_PRELOAD}"

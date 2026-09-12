@@ -306,6 +306,20 @@ def _termux_browser_hints(*lines: str, node_installed: bool) -> None:
         check_info(step)
 
 
+def _stale_browsers_path() -> str | None:
+    """``PLAYWRIGHT_BROWSERS_PATH`` when it is set but holds no Chromium build, else ``None``.
+
+    Playwright resolves the browser ONLY under that variable once it is set, while
+    ``_chromium_installed()`` also scans the per-OS default cache — so a stale value keeps the
+    "Playwright Chromium" row green while every launch looks for an executable that isn't there.
+    """
+    env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    if not env_path or env_path == "0":
+        return None
+    from tools.browser_tool_install import _has_chromium_build
+    return None if _has_chromium_build(env_path) else env_path
+
+
 def _check_chromium() -> None:
     """Playwright Chromium presence, using the exact predicate browser_tool uses to hide browser_* tools.
 
@@ -327,6 +341,11 @@ def _check_chromium() -> None:
                       ("Playwright Chromium not installed", "(browser_* tools will be hidden from the agent)")):
         with_deps = "" if sys.platform == "win32" else "--with-deps "
         check_info(f"Install with: cd {PROJECT_ROOT} && npx playwright install {with_deps}chromium")
+        return
+    stale = _stale_browsers_path()
+    if stale:
+        check_warn(f"PLAYWRIGHT_BROWSERS_PATH={stale} has no Chromium build",
+                   "(browser launches resolve ONLY that path; unset it or point it at the installed cache)")
 
 
 def _check_lightpanda() -> None:

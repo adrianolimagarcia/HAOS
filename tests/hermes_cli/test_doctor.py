@@ -1783,3 +1783,62 @@ def test_docker_daemon_probe_uses_version_not_info(monkeypatch):
     doctor_tools._check_docker_backend("docker", False, [])
 
     assert calls and calls[0][:2] == ["docker", "version"]
+
+
+class TestStalePlaywrightBrowsersPath:
+    """``PLAYWRIGHT_BROWSERS_PATH`` set to a directory without a Chromium build.
+
+    Playwright resolves the browser ONLY under that path once it is set, while
+    ``_chromium_installed()`` also scans the default cache — so the row reported "Playwright
+    Chromium" green while every launch looked for an executable that wasn't there. The HAOS
+    distro shipped exactly that (/opt/haos/.playwright, which never existed) in the ``haos``
+    wrapper and in ``haos-gateway.service``.
+    """
+
+    def test_detects_env_path_without_chromium(self, monkeypatch, tmp_path):
+        from hermes_cli import doctor_tools
+
+        stale = tmp_path / "no-browsers"
+        stale.mkdir()
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(stale))
+
+        assert doctor_tools._stale_browsers_path() == str(stale)
+
+    def test_silent_when_env_path_holds_chromium(self, monkeypatch, tmp_path):
+        from hermes_cli import doctor_tools
+
+        good = tmp_path / "browsers"
+        (good / "chromium-1234").mkdir(parents=True)
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(good))
+
+        assert doctor_tools._stale_browsers_path() is None
+
+    def test_silent_when_unset_or_zero(self, monkeypatch):
+        from hermes_cli import doctor_tools
+
+        monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+        assert doctor_tools._stale_browsers_path() is None
+
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", "0")
+        assert doctor_tools._stale_browsers_path() is None
+
+    def test_chromium_row_warns_on_stale_path(self, monkeypatch, tmp_path, capsys):
+        """The row must not stay silently green: a stale path is a real launch failure."""
+        from hermes_cli import doctor_tools
+        from tools import browser_tool, browser_tool_cdp, browser_tool_cloud, browser_tool_install
+        from tools import browser_tool_lightpanda_fallback
+
+        stale = tmp_path / "no-browsers"
+        stale.mkdir()
+        monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(stale))
+        monkeypatch.setattr(browser_tool, "_is_camofox_mode", lambda: False)
+        monkeypatch.setattr(browser_tool_cdp, "_get_cdp_override_raw", lambda: "")
+        monkeypatch.setattr(browser_tool_cloud, "_get_cloud_provider", lambda: None)
+        monkeypatch.setattr(browser_tool_install, "_chromium_installed", lambda: True)
+        monkeypatch.setattr(browser_tool_lightpanda_fallback, "_using_lightpanda_engine", lambda: False)
+
+        doctor_tools._check_chromium()
+
+        out = capsys.readouterr().out
+        assert "has no Chromium build" in out
+        assert str(stale) in out

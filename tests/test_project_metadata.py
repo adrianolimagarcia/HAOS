@@ -74,6 +74,7 @@ def test_lazy_installable_extras_excluded_from_all():
         "honcho", "hindsight",
         "supermemory", "mem0",
         "mistral",  # mistralai — Voxtral STT/TTS, lazy-installed (stt.mistral / tts.mistral)
+        "fetch",  # scrapling — haos-fetch anti-bot fetch, lazy-installed (fetch.scrapling)
     }
     all_extra_specs = optional_dependencies["all"]
     for extra in lazy_covered_extras:
