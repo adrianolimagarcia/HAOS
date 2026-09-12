@@ -25,8 +25,10 @@ CALIBRACAO (para nao barrar caso legitimo):
 - Varre tambem COMENTARIOS (token COMMENT): texto de dev citando o binario do
   upstream envelhece igual. Aqui o marcador entra na propria linha do comentario
   (ou na anterior), ex.: ``# haos auth ... # haos-brand: historico``.
-- ``tests/``, ``website/``, ``docs/``, ``optional-skills/`` ficam fora: fixture,
-  documentacao e skill de terceiro podem citar o nome upstream a vontade.
+- ``tests/`` e ``website/`` ficam fora: fixture e o site de documentacao publica
+  (nao embarcado no appliance). ``skills/``, ``optional-skills/`` e ``docs/`` ENTRAM:
+  o agente EXECUTA o comando que a skill manda rodar, entao hint velho ali quebra
+  a tarefa, nao e cosmetica.
 - Caso INTENCIONAL (ler um alias legado que guarda "hermes <cmd>", comparar com o
   CLI upstream numa deteccao de migracao) leva ``# haos-brand: <motivo>`` na propria
   linha ou na anterior; o marcador e a unica forma de silenciar este guard.
@@ -77,6 +79,10 @@ COMMANDS = (
     "uninstall|update|verify|webhook|whatsapp|whatsapp-cloud|worktree|models|plugin|skins"
 )
 
+# Conteudo markdown que o agente executa (skill) + docs do fork.
+CONTENT_DIRS = ("skills", "optional-skills", "docs")
+CONTENT_SUFFIXES = (".md", ".mdx")
+
 PATTERN = re.compile(r"\bhermes (?:%s)\b(?!\.)" % COMMANDS)
 MARKER = "haos-brand:"
 MARKER_RE = re.compile(re.escape(MARKER) + r"\s*\S")
@@ -91,6 +97,37 @@ def _iter_files():
             if set(path.parts) & {"__pycache__", ".venv", "venv", "node_modules", "target"}:
                 continue
             yield path
+
+
+def _iter_content_files():
+    for d in CONTENT_DIRS:
+        root = REPO_ROOT / d
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.suffix not in CONTENT_SUFFIXES:
+                continue
+            if set(path.parts) & {"__pycache__", "node_modules", "target"}:
+                continue
+            yield path
+
+
+def _scan_content(offenders: list[str], allowed: list[str]) -> None:
+    """Markdown: linha a linha (comentario/lista nao tem AST). O marcador vale na
+    propria linha ou na anterior, igual ao caso do codigo."""
+    for path in _iter_content_files():
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        for i, line in enumerate(lines):
+            match = PATTERN.search(line)
+            if not match:
+                continue
+            context = line + "\n" + (lines[i - 1] if i else "")
+            entry = f"{rel}:{i + 1}: {line.strip()[:140]} (hint: {match.group(0)!r})"
+            (allowed if MARKER_RE.search(context) else offenders).append(entry)
 
 
 def scan() -> tuple[list[str], list[str]]:
@@ -146,6 +183,8 @@ def scan() -> tuple[list[str], list[str]]:
             )
             entry = f"{rel}:{lineno}: {text} (hint: {match.group(0)!r})"
             (allowed if MARKER_RE.search(context) else offenders).append(entry)
+
+    _scan_content(offenders, allowed)
     return offenders, allowed
 
 
@@ -165,6 +204,7 @@ def main() -> int:
         print("FAIL: hint user-facing citando o CLI upstream 'hermes' (o CLI deste fork e 'haos').")
         print("Use: \"texto `\" + product_command(\"auth\") + \"` texto\"  (from hermes_constants import product_command).")
         print("Em docstring (nao pode ser f-string) escreva 'haos auth' literal.")
+        print("Em markdown de skill/doc escreva 'haos auth' literal.")
         print(f"Se a mencao for intencional, adicione '{MARKER} <motivo>' na linha ou na anterior.\n")
         for item in offenders:
             print(f"  {item}")
