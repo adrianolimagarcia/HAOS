@@ -81,3 +81,36 @@ Conclusão: **o lixo não é criado pelo pytest**. Vem de invocação direta —
 executado fora do runner. Próximo passo, em vez de varrer a suíte: vigiar a raiz com
 `inotifywait -m -e create .` enquanto se roda cada comando suspeito, e olhar o `strace -f -e trace=mkdir`
 do processo que criar o diretório.
+
+## Atualização 2026-09-12 — triagem das 17 falhas restantes (21 arquivos, 50.3s)
+
+Base: re-run dos 21 arquivos que falhavam, `--tb=line`. 1770 passam, 17 falham. Famílias:
+
+**A. BUGS REAIS de produção (2 — prioridade máxima, são TypeErrors em código de produção):**
+- `hermes_state_sessions.py:369` TypeError, atingido por `test_haos_session_mention.py`
+  (autocomplete de sessão).
+- `plugins/platforms/telegram/adapter.py:2307` TypeError "not all arguments converted
+  during string formatting", atingido por `test_telegram_conflict.py`.
+
+**B. Guarda de isolamento (1 — relevância de segurança):**
+- `test_live_db_isolation_guard.py:174`: filho sem HERMES_HOME NÃO foi recusado. O contrato
+  do guard falhou.
+
+**C. Contratos/drift (4):**
+- `test_slash_dispatch_table.py:51` — nomes de registry não resolvem na tabela de dispatch.
+- `test_packaging_metadata.py:317` — isenção de `exclude_newer` para deps pinned exatas.
+- `test_hermes_state.py:936` (`assert 0 == 1`) — projeção FTS5 esperava ≥1 consulta com
+  enriquecimento de contexto, veio 0.
+- `test_termux_api_detection.py:194` — expectativa de detecção de áudio no fallback Termux.
+
+**D. Skills violando a própria regra (2 — baratas):**
+- `test_authoring_standards.py:91` — `skills/development/ponytail` e `ponytail-review` falham
+  o frontmatter obrigatório do HARDLINE. Skills embarcadas fora do contrato do repo.
+
+**E. E2E/caminho real (6 — precisam de mergulho por arquivo):**
+- `test_evals_real.py` ×2 (as "14 cases" da pesquisa: uma é o gate stdlib-only, outra roda as
+  suítes reais), `test_browser_real_profile.py`, `test_sequential_tool_timeout.py`,
+  `test_hindsight_provider.py`, `test_user_providers_model_switch.py` ×2,
+  `test_install_macos_launcher.py` (traceback em subprocess — ambiente).
+
+Ordem de ataque sugerida: A (bugs reais) → B (segurança) → D (skills, barato) → C (drift) → E.
