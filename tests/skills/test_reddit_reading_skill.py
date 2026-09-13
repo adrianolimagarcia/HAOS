@@ -1,4 +1,4 @@
-"""Tests for optional-skills/social-media/reddit-reading/scripts/reddit.py — backend selection and throttle handling."""
+"""Tests for skills/social-media/reddit-reading/scripts/reddit.py — backend selection and throttle handling."""
 
 import io
 import sys
@@ -8,7 +8,15 @@ from unittest import mock
 
 import pytest
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "optional-skills" / "social-media" / "reddit-reading" / "scripts"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = next(
+    (
+        REPO_ROOT / root / "social-media" / "reddit-reading" / "scripts"
+        for root in ("skills", "optional-skills")
+        if (REPO_ROOT / root / "social-media" / "reddit-reading" / "scripts").is_dir()
+    ),
+    None,
+)
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import reddit  # noqa: E402

@@ -1,4 +1,4 @@
-"""Tests for optional-skills/research/rss-feeds/scripts/feed.py — parsing and discovery contracts."""
+"""Tests for skills/research/rss-feeds/scripts/feed.py — parsing and discovery contracts."""
 
 import sys
 from pathlib import Path
@@ -6,7 +6,15 @@ from unittest import mock
 
 import pytest
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "optional-skills" / "research" / "rss-feeds" / "scripts"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPTS_DIR = next(
+    (
+        REPO_ROOT / root / "research" / "rss-feeds" / "scripts"
+        for root in ("skills", "optional-skills")
+        if (REPO_ROOT / root / "research" / "rss-feeds" / "scripts").is_dir()
+    ),
+    None,
+)
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import feed  # noqa: E402
