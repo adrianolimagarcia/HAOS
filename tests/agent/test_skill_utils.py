@@ -1,5 +1,6 @@
 """Tests for agent/skill_utils.py."""
 
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -409,4 +410,48 @@ class TestBOMToleranceSiblingSites:
         fm = _split_frontmatter("\ufeff---\nname: bp\n---\nbody")
         assert fm is not None
         assert fm.get("name") == "bp"
+
+
+class TestParseFrontmatterPyYamlRequired:
+    """PyYAML is a pinned runtime dependency; when it is missing, frontmatter
+    parsing must fail loudly — the line-split fallback silently corrupts the
+    nested YAML the park actually uses (a nested ``description:`` under
+    ``required_credential_files`` replaced the skill's real description,
+    producing 71-char false audit violations on hosts without PyYAML)."""
+
+    NESTED_FM = (
+        "---\n"
+        "name: demo\n"
+        'description: "Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python."\n'
+        "required_credential_files:\n"
+        "  - path: google_token.json\n"
+        "    description: Google OAuth2 token (created by setup script)\n"
+        "  - path: google_client_secret.json\n"
+        "    description: Google OAuth2 client credentials (downloaded from gcloud)\n"
+        "metadata:\n"
+        "  hermes:\n"
+        "    tags: [Google, Gmail]\n"
+        "---\n"
+        "Body\n"
+    )
+
+    def test_missing_pyyaml_raises_instead_of_line_splitting(self, monkeypatch):
+        import agent.skill_utils as su
+
+        monkeypatch.setattr(su, "_yaml_load_fn", None)
+        monkeypatch.setitem(sys.modules, "yaml", None)  # `import yaml` fails
+        with pytest.raises(ImportError, match="PyYAML is required"):
+            su.parse_frontmatter(self.NESTED_FM)
+
+    def test_nested_yaml_keeps_top_level_description_and_tags(self):
+        fm, _ = parse_frontmatter(self.NESTED_FM)
+        assert fm["description"] == "Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python."
+        assert fm["metadata"]["hermes"]["tags"] == ["Google", "Gmail"]
+
+    def test_malformed_yaml_with_pyyaml_keeps_line_split_fallback(self):
+        # Documented contract: with PyYAML present, malformed YAML still falls back to
+        # key:value line splitting (no dependency missing here — a genuine parse error).
+        content = "---\nname: demo\nplatforms: [unclosed\n---\nBody\n"
+        fm, _ = parse_frontmatter(content)
+        assert fm.get("name") == "demo"
 

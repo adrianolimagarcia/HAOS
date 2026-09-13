@@ -192,7 +192,12 @@ def main(argv: "Optional[List[str]]" = None) -> int:
             print(f"::error::audit_skills: root does not exist: {r}", file=sys.stderr)
         return 2
 
-    results = [audit_root(r, max_md_bytes=args.max_md_bytes) for r in roots]
+    results = []
+    try:
+        results = [audit_root(r, max_md_bytes=args.max_md_bytes) for r in roots]
+    except ImportError as e:
+        print(f"::error::audit_skills environment: {e}", file=sys.stderr)
+        return 2
     flag_duplicate_names(results)
     total_skills = sum(len(r["skills"]) for r in results)
     violations = [v for r in results for s in r["skills"] for v in s["violations"]]

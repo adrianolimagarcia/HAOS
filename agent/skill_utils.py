@@ -93,11 +93,24 @@ _yaml_load_fn = None
 
 
 def yaml_load(content: str):
-    """Parse YAML with lazy import and CSafeLoader preference."""
+    """Parse YAML with lazy import and CSafeLoader preference.
+
+    PyYAML is a pinned runtime dependency (pyproject.toml: ``pyyaml==6.0.3``); when it is
+    missing we fail loudly instead of letting ``parse_frontmatter`` line-split nested
+    frontmatter — the park's SKILL.md files use real nested YAML (``metadata.hermes.tags``,
+    ``required_credential_files``), and the split fallback overwrote top-level fields with
+    nested ones (a false audit violation: the description became an OAuth2 credential string).
+    """
     global _yaml_load_fn
     if _yaml_load_fn is None:
-        import functools
-        import yaml
+        try:
+            import functools
+            import yaml
+        except ImportError as exc:
+            raise ImportError(
+                "PyYAML is required to parse skill frontmatter (pyproject pins pyyaml); "
+                "refusing to line-split nested YAML"
+            ) from exc
         _yaml_load_fn = functools.partial(yaml.load, Loader=getattr(yaml, "CSafeLoader", None) or yaml.SafeLoader)
     return _yaml_load_fn(content)
 
@@ -117,6 +130,8 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
         parsed = yaml_load(yaml_content)
         if isinstance(parsed, dict):
             frontmatter = parsed
+    except ImportError:
+        raise
     except Exception:
         for line in yaml_content.strip().split("\n"):
             if ":" in line:
