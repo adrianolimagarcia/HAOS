@@ -22,7 +22,7 @@ from hermes_cli.sizefmt import format_bytes
 
 # --------------------------------------------------------------------------- Plugin context-reference
 # provider API (Issue #26193) ---------------------------------------------------------------------------
-BUILTIN_PREFIXES = frozenset({"diff", "staged", "file", "folder", "git", "url"})
+BUILTIN_PREFIXES = frozenset({"diff", "staged", "file", "folder", "git", "url", "session"})
 
 _context_reference_providers: dict[str, "ContextReferenceProvider"] = {}
 
@@ -74,7 +74,7 @@ def get_context_reference_providers() -> dict[str, ContextReferenceProvider]:
 
 _QUOTED_REFERENCE_VALUE = r'(?:`[^`\n]+`|"[^"\n]+"|\'[^\'\n]+\')'
 REFERENCE_PATTERN = re.compile(
-    rf"(?<![\w/])@(?:(?P<simple>diff|staged)\b|(?P<kind>file|folder|git|url):(?P<value>{_QUOTED_REFERENCE_VALUE}(?::\d+(?:-\d+)?)?|\S+))"
+    rf"(?<![\w/])@(?:(?P<simple>diff|staged)\b|(?P<kind>file|folder|git|url|session):(?P<value>{_QUOTED_REFERENCE_VALUE}(?::\d+(?:-\d+)?)?|\S+))"
 )
 # Plugin fallback: any @<word>:<value> the built-in regex did not claim.
 _PLUGIN_REFERENCE_PATTERN = re.compile(
@@ -253,6 +253,8 @@ async def _expand_reference(
             if not content:
                 return f"{ref.raw}: no content extracted", None
             return None, f"🌐 {ref.raw} ({estimate_tokens_rough(content)} tokens)\n{content}"
+        if ref.kind == "session":
+            return _expand_session_reference(ref)
     except Exception as exc:
         return f"{ref.raw}: {exc}", None
     provider = _context_reference_providers.get(ref.kind)
@@ -316,6 +318,76 @@ def _expand_git_reference(ref: ContextReference, cwd: Path, args: list[str], lab
         return f"{ref.raw}: {(result.stderr or '').strip() or 'git command failed'}", None
     content = result.stdout.strip() or "(no output)"
     return None, f"🧾 {label} ({estimate_tokens_rough(content)} tokens)\n```diff\n{content}\n```"
+
+
+def _expand_session_reference(ref: ContextReference) -> Expansion:
+    target = (ref.target or "").strip().strip("'\"`") or "last"
+    try:
+        from hermes_state import SessionDB
+        db = SessionDB(read_only=False)
+    except Exception as exc:
+        return f"{ref.raw}: failed to open session database: {exc}", None
+
+    try:
+        session = None
+        if target.lower() in ("last", "prev", "previous"):
+            recent = db.list_recent_sessions_bounded(limit=5)
+            if not recent:
+                return f"{ref.raw}: no past sessions found in database", None
+            session = recent[0]
+        else:
+            session = db.get_session(target)
+            if not session:
+                candidates = db.search_sessions_by_id(target)
+                if len(candidates) == 1:
+                    session = candidates[0]
+                elif len(candidates) > 1:
+                    return f"{ref.raw}: ambiguous session ID prefix ({len(candidates)} matches)", None
+                else:
+                    return f"{ref.raw}: session not found", None
+
+        sid = session.get("id", target)
+        title = session.get("title") or "Untitled Session"
+        started = session.get("started_at")
+        started_str = ""
+        if started:
+            try:
+                from datetime import datetime
+                started_str = datetime.fromtimestamp(float(started)).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                started_str = str(started)
+
+        summary = session.get("summary")
+        if not summary:
+            msgs = db.get_messages(sid)
+            for m in reversed(msgs):
+                content = m.get("content") or ""
+                if content.lstrip().startswith(("[CONTEXT COMPACTION", "[CONTEXT SUMMARY]:")):
+                    summary = content
+                    break
+            if not summary and msgs:
+                user_msgs = [m.get("content", "") for m in msgs if m.get("role") == "user" and m.get("content")]
+                asst_msgs = [m.get("content", "") for m in msgs if m.get("role") == "assistant" and m.get("content")]
+                preview_parts = []
+                if user_msgs:
+                    preview_parts.append(f"Goal: {user_msgs[0][:300]}")
+                if asst_msgs:
+                    preview_parts.append(f"Outcome: {asst_msgs[-1][:400]}")
+                summary = "\n".join(preview_parts) if preview_parts else session.get("preview") or "(empty transcript)"
+
+        summary_text = (summary or session.get("preview") or "(no summary available)").strip()
+        tokens = estimate_tokens_rough(summary_text)
+        header = f"💬 @session:{sid[:8]} — {title}"
+        if started_str:
+            header += f" ({started_str})"
+        return None, f"{header} ({tokens} tokens)\n{summary_text}"
+    except Exception as exc:
+        return f"{ref.raw}: {exc}", None
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 async def _fetch_url_content(url: str, *, url_fetcher: UrlFetcher = None) -> str:

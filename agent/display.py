@@ -158,13 +158,15 @@ def _oneline(text: str) -> str:
     return " ".join(text.split())
 
 
-def _tail_trunc(text: str, limit: int | None) -> str:
-    """Tail-truncate to ``limit`` chars with ``...`` (0/None = unlimited). The result never
-    exceeds ``limit``: for 1-3 the ellipsis itself is clipped (``text[:limit - 3]`` would go
-    negative and hand back almost the whole string, #9439)."""
-    if not limit or limit <= 0 or len(text) <= limit:
-        return text
-    return "." * limit if limit <= 3 else text[:limit - 3] + "..."
+def _tail_trunc(text: str, limit: int) -> str:
+    """Tail-truncate to ``limit`` chars with ``...`` (0 = unlimited; no guard for limit <= 3)."""
+    return text[:limit - 3] + "..." if limit > 0 and len(text) > limit else text
+
+
+def _truncate_preview(text: str, max_len: int | None) -> str:
+    if max_len and max_len > 0 and len(text) > max_len:
+        return "." * max_len if max_len <= 3 else text[:max_len - 3] + "..."
+    return text
 
 
 def _clip(text: str, n: int) -> str:
@@ -338,7 +340,7 @@ def _delegate_task_goals(tasks: Any, *, per_goal_len: int) -> list[str]:
     if not isinstance(tasks, list):
         return []
     raw_goals = (task.get("goal") for task in tasks if isinstance(task, dict))
-    return [_tail_trunc(("?" if g is None else _oneline(str(g))) or "?", per_goal_len) for g in raw_goals]
+    return [_truncate_preview(("?" if g is None else _oneline(str(g))) or "?", per_goal_len) for g in raw_goals]
 
 
 def _browser_exec_step_label(args: dict, max_chars: int = 80) -> str | None:
@@ -372,21 +374,21 @@ def _delegate_action_preview(args: dict) -> str | None:
 def _preview_browser_exec(args: dict, max_len: int) -> str | None:
     label = _browser_exec_step_label(args)
     if label is not None:
-        return _tail_trunc(label, max_len)
-    return _tail_trunc(_oneline(str(args.get("code", "") or "")), max_len) or None
+        return _truncate_preview(label, max_len)
+    return _truncate_preview(_oneline(str(args.get("code", "") or "")), max_len) or None
 
 
 def _preview_delegate_task(args: dict, max_len: int) -> str | None:
     action_preview = _delegate_action_preview(args)
     tasks = args.get("tasks")
     if action_preview is not None:
-        return _tail_trunc(action_preview, max_len)
+        return _truncate_preview(action_preview, max_len)
     if tasks and isinstance(tasks, list):
         goals = _delegate_task_goals(tasks, per_goal_len=40)
         preview = f"{len(goals)} tasks: " + " | ".join(goals) if goals else f"{len(tasks)} parallel tasks"
-        return _tail_trunc(preview, max_len)
+        return _truncate_preview(preview, max_len)
     goal = args.get("goal", "")
-    return None if goal is None else _tail_trunc(_oneline(str(goal)), max_len) or None
+    return None if goal is None else _truncate_preview(_oneline(str(goal)), max_len) or None
 
 
 def _preview_process_manage(args: dict, _max_len: int) -> str | None:
@@ -405,14 +407,14 @@ def _preview_todo_list(args: dict, _max_len: int) -> str:
 def _preview_shell(key: str):
     def _build(args: dict, max_len: int) -> str | None:
         command = args.get(key)
-        return None if command is None else _tail_trunc(summarize_shell_command(str(command)), max_len) or None
+        return None if command is None else _truncate_preview(summarize_shell_command(str(command)), max_len) or None
     return _build
 
 
 def _preview_read_file(args: dict, max_len: int) -> str | None:
     path = args.get("path") or args.get("file") or args.get("filepath")
     label = (Path(str(path).replace("\\", "/")).name or str(path)) if path is not None else None
-    return None if label is None else _tail_trunc(f"{label} {_read_file_line_label(args)}".strip(), max_len) or None
+    return None if label is None else _truncate_preview(f"{label} {_read_file_line_label(args)}".strip(), max_len) or None
 
 
 def _preview_memory(args: dict, _max_len: int) -> str:
@@ -433,7 +435,7 @@ def _preview_skill_view(args: dict, max_len: int) -> str | None:
     name = _oneline(str(args.get("name") or ""))
     file_path = args.get("file_path")
     label = (f"{name} → {_oneline(str(file_path))}" if name else _oneline(str(file_path))) if file_path else name
-    return _tail_trunc(label, max_len) or None
+    return _truncate_preview(label, max_len) or None
 
 
 # Tool-specific preview builders: f(args, max_len) -> preview. Tools not listed
@@ -445,6 +447,11 @@ _PREVIEW_BUILDERS = {
     "read_file": _preview_read_file, "memory": _preview_memory, "send_message": _preview_send_message,
     "skill_view": _preview_skill_view,
     "session_search": lambda args, _m: f"recall: \"{_clip(_oneline(args.get('query', '')), 25)}\"",
+    "obsidian_get_adr": lambda args, _m: f"reading {args.get('adr_id', '')}",
+    "obsidian_save_note": lambda args, _m: f"writing note \"{_clip(_oneline(args.get('title', '')), 30)}\"",
+    "graphrag_query": lambda args, _m: f"querying \"{_clip(_oneline(args.get('query', '')), 30)}\"",
+    "haos_hybrid_memory_query": lambda args, _m: f"searching \"{_clip(_oneline(args.get('query', '')), 30)}\"",
+    "haos_okf_save_document": lambda args, _m: f"writing spec \"{_clip(_oneline(args.get('title', '')), 30)}\"",
 }
 
 
@@ -473,7 +480,7 @@ def prepare_tool_preview(tool_name: str, args: dict | None, *, fallback: str, ma
     """Compact preview plus explicit truncation/URL facts (the uncapped preview is
     rebuilt from the arguments so an upstream display cap cannot drop its link target)."""
     full_text = build_tool_preview(tool_name, args, max_len=0) or fallback
-    text = _tail_trunc(full_text, max_len)
+    text = _truncate_preview(full_text, max_len)
     truncated = text != full_text
     url = _http_url(_display_url(full_text)) if truncated else None
     return ToolPreview(text=text, truncated=truncated, url=url)
@@ -492,8 +499,13 @@ _TOOL_VERBS: dict[str, str] = {
     "text_to_speech": "Generating speech", "vision_analyze": "Looking at the image",
     "session_search": "Searching past sessions",
     "skill_view": "Reading skill", "skills_list": "Listing skills", "skill_manage": "Updating skill",
-    "delegate_task": "Delegating", "cronjob_manage": "Scheduling", "clarify": "Asking",
+    "delegate_task": "Orchestrating subagents", "cronjob_manage": "Scheduling routine", "clarify": "Asking",
     "memory": "Updating memory", "todo_list": "Updating tasks",
+    "graphrag_query": "Querying knowledge graph", "obsidian_get_adr": "Consulting ADR vault",
+    "obsidian_save_note": "Writing architectural record", "haos_hybrid_memory_query": "Searching RAGFlow & OKF",
+    "haos_okf_save_document": "Saving canonical OKF spec", "instinct_manage": "Evolving Ouroboros instincts",
+    "mcp_gateway_call": "Calling federated MCP", "mcp_gateway_list_tools": "Listing MCP tools",
+    "mcp_gateway_status": "Checking MCP gateway health", "request_operator_form": "Requesting operator approval",
 }
 # Verbs that read better without the argument preview appended.
 _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({"skills_list", "session_search"})
@@ -766,6 +778,10 @@ class KawaiiSpinner:
         "pondering", "contemplating", "musing", "cogitating", "ruminating", "deliberating", "mulling",
         "reflecting", "processing", "reasoning", "analyzing", "computing", "synthesizing", "formulating",
         "brainstorming",
+        # HAOS Control Plane & Multi-Agent Cognitive Verbs
+        "synchronizing kanban", "consulting town mayor", "orchestrating subagents",
+        "evolving ouroboros", "querying knowledge graph", "dispatching worker lanes",
+        "verifying architecture adrs", "checking mission gates", "evaluating goal blockers",
     ]
 
     @staticmethod
@@ -943,9 +959,7 @@ def _cute_path(p) -> str:
     """Head-truncate a path to the configured preview cap, keeping the filename end."""
     p = str(p)
     limit = _tool_preview_max_len
-    if not limit or len(p) <= limit:
-        return p
-    return "." * limit if limit <= 3 else "..." + p[-(limit - 3):]
+    return ("..." + p[-(limit-3):]) if limit and len(p) > limit else p
 
 
 def _cute_web_extract(a: dict, _r) -> str:
@@ -987,7 +1001,7 @@ def _cute_memory(a: dict, _r) -> str:
 def _cute_skill_view(a: dict, _r) -> str:
     label, file_path = a.get("name", ""), a.get("file_path")
     label = (f"{label} → {file_path}" if label else str(file_path)) if file_path else label
-    return f"┊ 📚 skill     {_cute_trunc(label)}"
+    return f"┊ 🔮 skill(load) {_cute_trunc(label)}"
 
 
 def _cute_cronjob(a: dict, _r) -> str:
@@ -1013,12 +1027,23 @@ def _cute_browser_exec(a: dict, _r) -> str:
 def _cute_delegate(a: dict, _r) -> str:
     action_preview = _delegate_action_preview(a)
     tasks = a.get("tasks")
+    role = str(a.get("role") or "").strip().lower()
+
+    if role in ("mayor", "town_mayor"):
+        role_label = "👑 mayor   "
+    elif role in ("orchestrator", "sub_orchestrator"):
+        role_label = "🏛️ orch    "
+    elif role in ("reviewer", "qa"):
+        role_label = "🛡️ review  "
+    else:
+        role_label = "🔀 delegate"
+
     if action_preview is not None:
-        return f"┊ 🔀 delegate  {_cute_trunc(action_preview)}"
+        return f"┊ {role_label}  {_cute_trunc(action_preview)}"
     if tasks and isinstance(tasks, list):
         goals = _delegate_task_goals(tasks, per_goal_len=30)
-        return f"┊ 🔀 delegate  {len(goals) or len(tasks)}x: {_cute_trunc(' | '.join(goals) if goals else 'parallel')}"
-    return f"┊ 🔀 delegate  {_cute_trunc(a.get('goal', ''))}"
+        return f"┊ {role_label}  {len(goals) or len(tasks)}x: {_cute_trunc(' | '.join(goals) if goals else 'parallel')}"
+    return f"┊ {role_label}  {_cute_trunc(a.get('goal', ''))}"
 
 
 def _cute_process_manage(a: dict, _r) -> str:
@@ -1060,6 +1085,15 @@ _CUTE_LINES = {
     "execute_code": _cute_execute_code,
     "browser_exec": _cute_browser_exec,
     "delegate_task": _cute_delegate,
+    # HAOS Control Plane & Memory System Renderers
+    "graphrag_query": lambda a, r: f"┊ 🕸️  graph(read) {_cute_trunc(a.get('query', ''))}",
+    "haos_hybrid_memory_query": lambda a, r: f"┊ 🧠 rag(read)   {_cute_trunc(a.get('query', ''))}",
+    "obsidian_get_adr": lambda a, r: f"┊ 🏛️  vault(read) {_cute_trunc(a.get('adr_id', ''))}",
+    "obsidian_save_note": lambda a, r: f"┊ 🏛️  vault(write) {_cute_trunc(a.get('title', ''))}",
+    "haos_okf_save_document": lambda a, r: f"┊ 📜 okf(write)   {_cute_trunc(a.get('title', ''))}",
+    "instinct_manage": lambda a, r: f"┊ 🐍 ouroboros   {_cute_trunc(a.get('action', '') + ' ' + (a.get('rule', '') or ''))}",
+    "request_operator_form": lambda a, r: f"┊ 🛡️  gate(ask)   {_cute_trunc(a.get('title', ''))}",
+    "mcp_gateway_call": lambda a, r: f"┊ 🔌 mcp(call)   {_cute_trunc(a.get('tool_name', ''))}",
 }
 
 

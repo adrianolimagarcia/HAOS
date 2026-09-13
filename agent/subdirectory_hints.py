@@ -52,29 +52,31 @@ def _first_hint_file(directory: Path):
     return None
 
 
-_NAV_COMMANDS = frozenset({"cd", "pushd"})
-_SHELL_OPERATORS = frozenset({"&&", "||", "|", ";", "&", ";;", "|&", "(", ")"})
-
-
-def _nav_targets(cmd: str) -> list:
-    """Operands of `cd` / `pushd` that begin a shell segment. `cd -` and bare `cd` yield nothing."""
-    lexer = shlex.shlex(cmd, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
+def _matches_rule_pattern(rel_path: str, pattern: str) -> bool:
+    """Test if rel_path matches a glob pattern, supporting ** zero-directory collapse."""
+    from pathlib import PurePath
+    import fnmatch
+    norm_rel = rel_path.replace("\\", "/")
+    norm_pat = pattern.replace("\\", "/")
     try:
-        tokens = list(lexer)
-    except ValueError:
-        return []
-    targets, segment_start = [], True
-    for idx, token in enumerate(tokens):
-        if token in _SHELL_OPERATORS:
-            segment_start = True
-            continue
-        if segment_start and token in _NAV_COMMANDS:
-            operand = next((t for t in tokens[idx + 1:] if t in _SHELL_OPERATORS or not t.startswith("-")), None)
-            if operand and operand not in _SHELL_OPERATORS:
-                targets.append(operand)
-        segment_start = False
-    return targets
+        if PurePath(norm_rel).match(norm_pat):
+            return True
+    except Exception:
+        pass
+    if fnmatch.fnmatch(norm_rel, norm_pat):
+        return True
+    if fnmatch.fnmatch(norm_rel.split("/")[-1], norm_pat):
+        return True
+    if "/**/" in norm_pat:
+        collapsed = norm_pat.replace("/**/", "/")
+        try:
+            if PurePath(norm_rel).match(collapsed):
+                return True
+        except Exception:
+            pass
+        if fnmatch.fnmatch(norm_rel, collapsed):
+            return True
+    return False
 
 
 class SubdirectoryHintTracker:
@@ -84,11 +86,7 @@ class SubdirectoryHintTracker:
     and append the returned text to the tool result.
     """
 
-    def __init__(self, working_dir: Optional[str] = None, *, enabled: bool = True):
-        # ``enabled=False`` mirrors ``skip_context_files``: a session that opted out of
-        # AGENTS.md/CLAUDE.md injection at startup must not get the same files spliced into
-        # tool results later — cron jobs relaying exact stdout leaked them to chat (#9441).
-        self.enabled = enabled
+    def __init__(self, working_dir: Optional[str] = None):
         self.working_dir = Path(working_dir or os.getcwd()).resolve()
         # The working dir is pre-marked loaded (startup context handles it).
         self._loaded_dirs: Set[Path] = {self.working_dir}
@@ -96,16 +94,102 @@ class SubdirectoryHintTracker:
         # symlinks/hardlinks/copies is never re-sent. Seeded with the CWD hint
         # file prompt_builder already loaded.
         self._loaded_digests: Set[str] = set()
+        self._loaded_rules: Set[Path] = set()
         found = _first_hint_file(self.working_dir)
         if found and found[1]:
             self._loaded_digests.add(_digest(found[1]))
 
     def check_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
-        """Return formatted hint text for newly visited directories, or None."""
-        if not self.enabled:
-            return None
+        """Return formatted hint and modular rule text for newly visited directories/files, or None."""
         all_hints = [h for d in self._extract_directories(tool_name, tool_args) if (h := self._load_hints_for_directory(d))]
-        return "\n\n" + "\n\n".join(all_hints) if all_hints else None
+        rule_hints = self._check_path_rules(tool_name, tool_args)
+        combined = all_hints + rule_hints
+        return "\n\n" + "\n\n".join(combined) if combined else None
+
+    def _check_path_rules(self, tool_name: str, tool_args: Dict[str, Any]) -> list:
+        """Check .haos/rules/*.md and .claude/rules/*.md with path matchers."""
+        rule_dirs = [self.working_dir / ".haos" / "rules", self.working_dir / ".claude" / "rules"]
+        existing_dirs = [d for d in rule_dirs if d.is_dir()]
+        if not existing_dirs:
+            return []
+
+        # Collect touched paths
+        touched_paths: Set[str] = set()
+        for key in _PATH_ARG_KEYS:
+            val = tool_args.get(key)
+            if isinstance(val, str) and val.strip():
+                try:
+                    p = Path(val).expanduser()
+                    if not p.is_absolute():
+                        p = self.working_dir / p
+                    p = p.resolve()
+                    if self._within_working_dir(p):
+                        touched_paths.add(str(p.relative_to(self.working_dir)).replace("\\", "/"))
+                except Exception:
+                    pass
+
+        cmd = tool_args.get("command", "") if tool_name in _COMMAND_TOOLS else None
+        if isinstance(cmd, str):
+            try:
+                tokens = shlex.split(cmd)
+            except ValueError:
+                tokens = cmd.split()
+            for token in tokens:
+                if not token.startswith(("-", "http://", "https://", "git@")) and ("/" in token or "." in token):
+                    try:
+                        p = Path(token).expanduser()
+                        if not p.is_absolute():
+                            p = self.working_dir / p
+                        p = p.resolve()
+                        if self._within_working_dir(p):
+                            touched_paths.add(str(p.relative_to(self.working_dir)).replace("\\", "/"))
+                    except Exception:
+                        pass
+
+        from agent.skill_utils import parse_frontmatter
+        import fnmatch
+        from pathlib import PurePath
+
+        matched_rules = []
+        for rdir in existing_dirs:
+            try:
+                for rule_file in sorted(rdir.glob("*.md")):
+                    if rule_file in self._loaded_rules or not rule_file.is_file():
+                        continue
+                    content = (_read_text_with_timeout(rule_file) or "").strip()
+                    if not content:
+                        continue
+                    fm, body = parse_frontmatter(content)
+                    patterns = fm.get("paths") or fm.get("path") or fm.get("globs")
+                    is_match = False
+                    if patterns:
+                        pat_list = [str(pat).strip() for pat in (patterns if isinstance(patterns, list) else [patterns])]
+                        for tp in touched_paths:
+                            for pat in pat_list:
+                                norm_pat = pat.replace("\\", "/")
+                                if _matches_rule_pattern(tp, norm_pat):
+                                    is_match = True
+                                    break
+                            if is_match:
+                                break
+                    else:
+                        # Unconditional rule in project: fires on first tool touch
+                        is_match = True
+
+                    if is_match:
+                        self._loaded_rules.add(rule_file)
+                        digest = _digest(content)
+                        if digest in self._loaded_digests:
+                            continue
+                        self._loaded_digests.add(digest)
+                        rel_path = self._display_path(rule_file)
+                        body_clean = _scan_context_content(body, rule_file.name)
+                        body_truncated = _truncate_content(body_clean, rule_file.name, max_chars=_MAX_HINT_CHARS, read_path=rel_path)
+                        matched_rules.append(f"[Rule context discovered: {rel_path}]\n{body_truncated.strip()}")
+            except Exception as _r_err:
+                logger.debug("Error checking path rules in %s: %s", rdir, _r_err)
+
+        return matched_rules
 
     def _extract_directories(self, tool_name: str, args: Dict[str, Any]) -> list:
         """Extract directory paths from tool call arguments."""
@@ -147,12 +231,6 @@ class SubdirectoryHintTracker:
             tokens = shlex.split(cmd)
         except ValueError:
             tokens = cmd.split()
-        # `cd backend && ls`: a bare directory name has no `/` or `.`, so the generic filter below drops
-        # it; the operand of a navigation command is a path by construction (#11032). Only a `cd` at the
-        # START of a shell segment counts (`echo cd backend` is prose); punctuation-aware tokenizing keeps
-        # a quoted `'backend;'` literal while splitting bare `backend;ls` at the operator.
-        for target in _nav_targets(cmd):
-            self._add_path_candidate(target, candidates)
         for token in tokens:
             if token.startswith(("-", "http://", "https://", "git@")) or ("/" not in token and "." not in token):
                 continue

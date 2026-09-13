@@ -1,0 +1,2751 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HAOS Standalone — Task Engine</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #12161f; --panel2: #0f131b; --border: #232a37;
+    --text: #d7dde7; --muted: #8a94a6; --accent: #4fd1c5; --accent2: #7aa2ff;
+    --ok: #3fb950; --warn: #d29922; --err: #f85149; --info: #58a6ff;
+    --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 14px 22px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #10141d, #0b0e14);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header .logo { font-weight: 800; letter-spacing: 1.5px; color: #fff; font-size: 1.05rem; }
+  header .logo span { color: var(--accent); }
+  .chip { font-size: .72rem; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); background: var(--panel2); white-space: nowrap; }
+  .chip.ok { color: var(--ok); border-color: #2d5a33; }
+  .chip.err { color: var(--err); border-color: #5a2d30; }
+  .spacer { flex: 1; }
+  nav { display: flex; gap: 4px; padding: 8px 22px; border-bottom: 1px solid var(--border); background: var(--panel2); overflow-x: auto; }
+  nav button {
+    background: transparent; border: 1px solid transparent; color: var(--muted);
+    padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: .9rem; white-space: nowrap;
+  }
+  nav button:hover { color: var(--text); background: #1a2130; }
+  nav button.active { color: #fff; background: #1b2537; border-color: var(--border); }
+  nav button .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
+  nav button.active .dot { background: var(--accent); }
+  main { flex: 1; padding: 18px 22px 40px; max-width: 1280px; width: 100%; margin: 0 auto; }
+  .tab { display: none; }
+  .tab.active { display: block; animation: fade .18s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(3px);} to { opacity: 1;} }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .card h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .card h3 .n { color: var(--accent); }
+  .stat { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #1a2029; font-size: .88rem; }
+  .stat:last-child { border-bottom: none; }
+  .stat b { font-family: var(--mono); font-weight: 600; color: var(--text); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .info { color: var(--info); }
+  .bar { height: 6px; background: #1a2029; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width .4s ease; }
+  table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #161c26; vertical-align: top; }
+  th { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; position: sticky; top: 0; background: var(--panel); }
+  tr:hover td { background: #141a25; }
+  .tag { font-size: .68rem; padding: 2px 8px; border-radius: 12px; border: 1px solid var(--border); white-space: nowrap; }
+  .tag.todo { color: var(--info); } .tag.ready { color: var(--accent); } .tag.running { color: var(--warn); }
+  .tag.done { color: var(--ok); } .tag.review { color: #d2a8ff; } .tag.blocked { color: var(--err); }
+  .tag.failed { color: var(--err); }
+  .mono { font-family: var(--mono); font-size: .82rem; }
+  button.act {
+    background: #1b2537; color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: .86rem;
+  }
+  button.act:hover { border-color: var(--accent); color: #fff; }
+  button.act.primary { background: #0f3d38; border-color: #15554c; }
+  button.act.danger:hover { border-color: var(--err); }
+  button.act:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text], input[type=number], textarea, select {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 8px 12px; font-size: .9rem; width: 100%;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  label.f { display: block; font-size: .78rem; color: var(--muted); margin: 10px 0 4px; }
+  /* Console */
+  .console { display: flex; flex-direction: column; height: calc(100vh - 250px); min-height: 420px; }
+  .msgs { flex: 1; overflow-y: auto; padding: 8px 2px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 86%; padding: 10px 14px; border-radius: 12px; font-size: .92rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: #14394f; border-bottom-right-radius: 3px; }
+  .msg.engine { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+  .msg .meta { font-size: .72rem; color: var(--muted); margin-bottom: 4px; }
+  .msg .ev { font-size: .74rem; color: var(--info); font-family: var(--mono); margin-top: 6px; }
+  .composer { display: flex; gap: 8px; margin-top: 10px; }
+  .composer textarea { flex: 1; resize: none; height: 52px; }
+  .empty { color: var(--muted); font-size: .9rem; text-align: center; padding: 60px 20px; }
+  .empty .big { font-size: 2rem; display: block; margin-bottom: 10px; }
+  /* Proposals */
+  .proposal { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel2); }
+  .proposal .pid { font-family: var(--mono); font-size: .74rem; color: var(--accent); }
+  .proposal .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .proposal .why { font-size: .8rem; color: var(--muted); margin-top: 6px; }
+  .ev-row { font-family: var(--mono); font-size: .76rem; padding: 5px 0; border-bottom: 1px solid #141a24; display: flex; gap: 10px; }
+  .ev-row .t { color: var(--muted); }
+  .ev-row .n { color: var(--info); }
+  .errline { color: var(--err); font-size: .85rem; padding: 8px 0; }
+  .frow { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #161c26; }
+  .frow .k { flex: 1; font-family: var(--mono); font-size: .76rem; color: var(--muted); word-break: break-all; }
+  .frow input[type=text], .frow input[type=number] { width: 200px; flex: none; }
+  .frow input[type=checkbox] { width: 18px; height: 18px; }
+  .frow textarea { width: 220px; flex: none; height: 42px; font-family: var(--mono); font-size: .76rem; }
+  .frow input.secret { color: var(--warn); }
+  .secname { font-size: .8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent2); margin: 8px 0 2px; }
+  /* Team Graph Visuals (Phase 5) */
+  .tg-container { display: flex; flex-direction: column; gap: 16px; }
+  .tg-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .tg-stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tg-stat-card .lbl { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .tg-stat-card .val { font-size: 1.25rem; font-weight: 700; color: #fff; margin-top: 4px; font-family: var(--mono); }
+  .tg-tree-canvas {
+    background: radial-gradient(circle at 50% 15%, #141c2b 0%, #0c1017 100%);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 36px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    overflow-x: auto;
+  }
+  .tg-node {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    min-width: 280px;
+    max-width: 360px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    transition: transform 0.2s, border-color 0.2s;
+    position: relative;
+  }
+  .tg-node:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .tg-node.mayor { border-top: 4px solid var(--accent2); background: linear-gradient(180deg, rgba(122,162,255,0.12) 0%, var(--panel) 100%); }
+  .tg-node.suborch { border-top: 4px solid var(--accent); background: linear-gradient(180deg, rgba(79,209,197,0.12) 0%, var(--panel) 100%); }
+  .tg-node.coder { border-top: 4px solid var(--ok); background: linear-gradient(180deg, rgba(63,185,80,0.12) 0%, var(--panel) 100%); }
+  .tg-node.reviewer { border-top: 4px solid #d2a8ff; background: linear-gradient(180deg, rgba(210,168,255,0.12) 0%, var(--panel) 100%); }
+  
+  .tg-node-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .tg-node-title { font-weight: 600; font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 6px; }
+  .tg-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; font-family: var(--mono); text-transform: uppercase; font-weight: 600; }
+  .tg-badge.running { background: rgba(210,153,34,0.25); color: var(--warn); border: 1px solid var(--warn); }
+  .tg-badge.completed { background: rgba(63,185,80,0.25); color: var(--ok); border: 1px solid var(--ok); }
+  .tg-badge.idle { background: rgba(138,148,166,0.2); color: var(--muted); border: 1px solid var(--border); }
+  .tg-badge.paused { background: rgba(163,113,247,0.25); color: #d2a8ff; border: 1px solid #d2a8ff; }
+  .tg-badge.failed, .tg-badge.error { background: rgba(248,81,73,0.25); color: var(--err); border: 1px solid var(--err); }
+  .tg-badge.blocked { background: rgba(219,109,40,0.25); color: #db6d28; border: 1px solid #db6d28; }
+  
+  .tg-node-meta { font-size: 0.78rem; color: var(--muted); display: flex; flex-direction: column; gap: 5px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px; }
+  .tg-node-row { display: flex; justify-content: space-between; align-items: center; }
+  .tg-node-row .val { font-family: var(--mono); color: var(--text); }
+  
+  .tg-connector-v { width: 2px; height: 32px; background: linear-gradient(180deg, var(--accent2), var(--accent)); margin: 6px auto; }
+  .tg-connector-fork {
+    width: 65%;
+    min-width: 360px;
+    height: 24px;
+    border-top: 2px solid var(--accent);
+    border-left: 2px solid var(--ok);
+    border-right: 2px solid #d2a8ff;
+    margin: 0 auto;
+  }
+  .tg-workers-row {
+    display: flex;
+    justify-content: center;
+    gap: 36px;
+    width: 100%;
+    flex-wrap: wrap;
+    position: relative;
+    margin-top: 6px;
+  }
+  .tg-review-link {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #141c2b;
+    border: 1px dashed #d2a8ff;
+    color: #d2a8ff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-family: var(--mono);
+    z-index: 2;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  /* Animated Pulse for Active Nodes */
+  @keyframes pulseNodeRunning {
+    0% { box-shadow: 0 0 0 0 rgba(227, 179, 65, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(227, 179, 65, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(227, 179, 65, 0); }
+  }
+  @keyframes pulseNodeCompleted {
+    0% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.4); }
+    70% { box-shadow: 0 0 0 8px rgba(63, 185, 80, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+  }
+  .tg-node.status-running {
+    animation: pulseNodeRunning 2s infinite;
+    border-color: var(--warn) !important;
+  }
+  .tg-node.status-completed {
+    border-color: var(--ok) !important;
+  }
+  .tg-node.status-failed, .tg-node.status-blocked {
+    border-color: var(--err) !important;
+  }
+
+  .tg-actions { display: flex; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); }
+  .tg-btn { flex: 1; padding: 5px 8px; font-size: 0.72rem; border-radius: 6px; cursor: pointer; background: #1a2230; border: 1px solid var(--border); color: var(--text); font-weight: 500; }
+  .tg-btn:hover { border-color: var(--accent); color: #fff; background: #222c3e; }
+  .tg-btn.abort:hover { border-color: var(--err); color: var(--err); }
+
+  /* ==================================================================== */
+  /* KANBAN MULTI-LANE VISUALS (FASE 1)                                   */
+  /* ==================================================================== */
+  .kanban-lanes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .kanban-col {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    min-height: 480px;
+    max-height: calc(100vh - 230px);
+  }
+  .kanban-col-head {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px 10px 0 0;
+  }
+  .kanban-col-head .col-count {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+  }
+  .kanban-col.ready .kanban-col-head { border-top: 3px solid #7aa2ff; }
+  .kanban-col.running .kanban-col-head { border-top: 3px solid #e3b341; }
+  .kanban-col.review .kanban-col-head { border-top: 3px solid #d2a8ff; }
+  .kanban-col.done .kanban-col-head { border-top: 3px solid #3fb950; }
+  .kanban-col.failed .kanban-col-head { border-top: 3px solid #f85149; }
+
+  .kanban-cards-list {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .k-card {
+    background: #131822;
+    border: 1px solid #232d3f;
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: transform 0.15s, border-color 0.15s;
+    cursor: default;
+  }
+  .k-card:hover { border-color: #3b4c6b; transform: translateY(-1px); }
+  .k-card.running { border-color: #e3b341; box-shadow: 0 0 10px rgba(227,179,65,0.18); }
+  .k-card-top { display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; }
+  .k-card-title { font-weight: 600; font-size: 0.84rem; color: #f0f6fc; line-height: 1.3; }
+  .k-card-goal { font-size: 0.74rem; color: var(--muted); line-height: 1.3; max-height: 2.6em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .k-card-metrics { display: flex; gap: 8px; font-size: 0.72rem; font-family: var(--mono); color: var(--accent); background: rgba(0,0,0,0.3); padding: 3px 6px; border-radius: 4px; }
+  .k-card-worker { font-size: 0.72rem; color: var(--muted); }
+  .k-card-actions { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .k-card-actions button { font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; }
+
+  /* ==================================================================== */
+  /* CONSOLE LIVE STREAM & THOUGHT ENHANCEMENTS                           */
+  /* ==================================================================== */
+  .thought-card {
+    background: #101622;
+    border: 1px solid #1f2b3e;
+    border-left: 3px solid #7aa2ff;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    font-size: 0.82rem;
+  }
+  .thought-card summary {
+    cursor: pointer;
+    color: #7aa2ff;
+    font-weight: 600;
+    outline: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .thought-body {
+    margin-top: 6px;
+    color: #c9d1d9;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+    max-height: 240px;
+    overflow-y: auto;
+    line-height: 1.4;
+  }
+  .tool-call-card {
+    background: #0f192b;
+    border: 1px solid #1b2d4f;
+    border-left: 3px solid #4fd1c5;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 4px 0;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+  }
+  .tool-call-head { color: #4fd1c5; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .log-stream-box {
+    background: #080c14;
+    border: 1px solid #1a2232;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: #8b949e;
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin: 6px 0;
+  }
+
+  /* ==================================================================== */
+  /* UNIFIED TIMELINE VISUALS                                             */
+  /* ==================================================================== */
+  .timeline-item {
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #131822;
+    border: 1px solid #232d3f;
+    border-radius: 8px;
+    align-items: flex-start;
+    transition: background 0.15s;
+  }
+  .timeline-item:hover { background: #18202d; }
+  .timeline-icon { font-size: 1.1rem; padding: 4px; border-radius: 50%; background: #1a2332; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .timeline-content { flex: 1; min-width: 0; }
+  .timeline-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .timeline-title { font-weight: 600; font-size: 0.84rem; color: #f0f6fc; }
+  .timeline-time { font-size: 0.72rem; color: var(--muted); font-family: var(--mono); }
+  .timeline-payload { margin-top: 4px; font-size: 0.74rem; font-family: var(--mono); color: #8b949e; background: #0a0e17; padding: 4px 8px; border-radius: 4px; max-height: 90px; overflow-y: auto; word-break: break-all; }
+  .timeline-filter.active { background: #00F0FF; color: #0a0d13; font-weight: 700; border-color: #00F0FF; }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: #263041; border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+</head>
+<body>
+<header>
+  <div class="logo">⚡ HAOS<span>·ENGINE</span></div>
+  <span class="chip ok" id="chipMode">STANDALONE</span>
+
+  <!-- DSH Style Workspace Dropdown & Picker Trigger -->
+  <div style="position:relative;display:inline-flex;align-items:center;margin-left:8px;">
+    <div id="wsDropdownTrigger" onclick="toggleWorkspaceMenu()" style="display:flex;align-items:center;gap:6px;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:4px 10px;cursor:pointer;user-select:none;font-size:0.8rem;transition:all 0.15s;" title="Alternar ou Criar Workspace">
+      <span style="color:#00F0FF;font-weight:700;">📁</span>
+      <span id="currentWsName" style="font-weight:600;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Default (HERMES-TURBO)</span>
+      <span style="font-size:0.65rem;color:var(--muted);margin-left:2px;">▼</span>
+    </div>
+
+    <!-- Workspace Popover Menu -->
+    <div id="wsDropdownMenu" style="display:none;position:absolute;top:calc(100% + 6px);left:0;width:280px;background:#161b22;border:1px solid #30363d;border-radius:8px;box-shadow:0 12px 28px rgba(0,0,0,0.6);z-index:9999;padding:6px;">
+      <div style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;padding:4px 8px;letter-spacing:0.05em;">Workspaces Ativos</div>
+      <div id="wsMenuList" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
+        <!-- Injected dynamically -->
+      </div>
+      <div style="border-top:1px solid #30363d;margin-top:6px;padding-top:6px;">
+        <button class="act" style="width:100%;font-size:0.75rem;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 10px;background:rgba(0,240,255,0.12);color:#00F0FF;border-color:rgba(0,240,255,0.3);" onclick="openWorkspaceDialog()">
+          ＋ Novo Workspace…
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <span class="chip mono" id="chipDir" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;" title="Diretório de Trabalho Atual">…</span>
+  <div class="spacer"></div>
+  <a href="#" id="hermesConfigBtn" target="_blank" class="chip" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#172234;color:#4fd1c5;border:1px solid #2a3c5a;cursor:pointer;font-weight:600;padding:5px 12px;border-radius:6px;transition:all 0.2s;" title="Abrir Dashboard Oficial de Configuração do Hermes (Porta 9191)">
+    ⚙️ Hermes Config (9191)
+  </a>
+  <span class="chip" id="chipState">—</span>
+</header>
+<nav id="nav">
+  <button data-tab="terminal" class="active"><span class="dot"></span>Terminal</button>
+  <button data-tab="console"><span class="dot"></span>Console</button>
+  <button data-tab="taskboard"><span class="dot"></span>Taskboard</button>
+  <button data-tab="teamgraph"><span class="dot"></span>🌲 Team Graph</button>
+  <button data-tab="scheduler"><span class="dot"></span>Scheduler</button>
+  <button data-tab="ouroboros"><span class="dot"></span>Ouroboros</button>
+  <button data-tab="agent"><span class="dot"></span>Config Agente</button>
+  <button data-tab="system"><span class="dot"></span>Sistema</button>
+  <button data-tab="events"><span class="dot"></span>Timeline</button>
+  <button data-tab="config"><span class="dot"></span>Engine</button>
+</nav>
+<main>
+  <!-- ============ TERMINAL ============ -->
+  <section class="tab active" id="tab-terminal">
+    <!-- Terminal Top Controls Bar -->
+    <div class="card" style="margin-bottom:8px;padding:8px 12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h3 style="margin:0;display:flex;align-items:center;gap:6px;font-size:0.95rem;">
+          <span class="n">▮</span> Terminal Multiplex (PTY Real)
+        </h3>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex:1;justify-content:flex-end;">
+          <input type="text" id="termCwd" placeholder="cwd (vazio = home do projeto)" style="width:200px;max-width:100%;font-size:0.75rem;padding:4px 8px;" />
+          <button class="act primary" style="font-size:0.75rem;padding:4px 10px;" onclick="termStartNewTab()">＋ Nova Aba</button>
+          <button class="act" style="font-size:0.75rem;padding:4px 10px;background:#00F0FF;color:#0a0d13;font-weight:700;" onclick="termLaunchHaosTab()">⚡ Abrir HAOS CLI</button>
+          <button class="act" style="font-size:0.75rem;padding:4px 10px;background:#161b22;border-color:#30363d;" onclick="openHistoryModal()" title="Ver e Retomar Histórico de Sessões">🕒 Histórico</button>
+        </div>
+      </div>
+      <div class="errline" id="termMsg" style="margin-top:2px;font-size:0.75rem;"></div>
+    </div>
+
+    <!-- Browser-like Tabs Bar -->
+    <div style="display:flex;align-items:center;gap:4px;overflow-x:auto;padding:2px 4px;margin-bottom:0;background:var(--card);border:1px solid var(--border);border-bottom:none;border-radius:6px 6px 0 0;" id="termTabsBar">
+      <!-- Tabs injected dynamically here -->
+    </div>
+
+    <!-- Terminal xterm.js Multi-Window Container -->
+    <div class="card" style="padding:6px;margin-bottom:12px;border-top-left-radius:0;border-top-right-radius:0;border-top:none;">
+      <div id="termHost" style="height:calc(100vh - 210px);min-height:580px;background:#0a0d13;border-radius:0 0 6px 6px;position:relative;"></div>
+    </div>
+  </section>
+
+  <!-- ============ CONSOLE ============ -->
+  <section class="tab" id="tab-console">
+    <!-- Top Stream Control Bar -->
+    <div class="card" style="margin-bottom:8px;padding:8px 12px;background:#161b22;border:1px solid #30363d;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="consoleLiveDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#8b949e;"></span>
+          <span style="font-weight:600;font-size:0.88rem;color:#f0f6fc;" id="consoleMissionTitle">Console de Missões Agênticas</span>
+          <span class="tg-badge idle" id="consoleMissionStatus">PRONTO</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="chip mono" id="consoleLiveMetrics" style="font-size:0.75rem;padding:3px 8px;background:rgba(0,240,255,0.08);color:#00F0FF;border-color:rgba(0,240,255,0.25);">⏱ 0s · 🪙 0 · 💵 $0.000</span>
+          <button class="act" style="font-size:0.75rem;padding:4px 8px;" onclick="switchConsoleToActiveTerminal()" id="btnConsoleTerminal" title="Abrir terminal interativo vinculado">↗ Terminal</button>
+          <button class="act" style="font-size:0.75rem;padding:4px 8px;background:rgba(248,81,73,0.15);color:#f85149;border-color:rgba(248,81,73,0.3);" onclick="cancelActiveConsoleMission()" id="btnConsoleCancel" title="Interromper execução ativa">⏹ Parar</button>
+          <button class="act" style="font-size:0.75rem;padding:4px 8px;" onclick="clearConsoleFeed()" title="Limpar histórico da tela">Limpar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Stream Container -->
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div class="console">
+        <div class="msgs" id="consoleMsgs">
+          <div class="msg engine">
+            <div class="meta">HAOS · Cognitive Mission Console</div>
+            Despache missões diretamente na lane agêntica autônoma. O stream ao vivo exibirá o raciocínio profundo, chamadas de ferramentas e progresso em tempo real.
+          </div>
+        </div>
+        <div class="composer">
+          <textarea id="consoleInput" placeholder="Ex.: Implementar função de ordenação estável e testá-la…"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendConsole();}"></textarea>
+          <button class="act primary" onclick="sendConsole()">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TASKBOARD ============ -->
+  <section class="tab" id="tab-taskboard">
+    <!-- Taskboard Top Controls Bar -->
+    <div class="card" style="margin-bottom:12px;padding:10px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <h3 style="margin:0;font-size:0.95rem;color:#f0f6fc;display:flex;align-items:center;gap:6px;">
+            <span class="n">◫</span> Kanban Multi-Lane
+          </h3>
+          <span class="chip mono" style="font-size:0.78rem;">Total: <b id="tTotal" style="color:#00F0FF;">0</b></span>
+          <div id="tCols" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="act" style="font-size:0.78rem;padding:5px 10px;" onclick="toggleTaskboardView()" id="btnToggleTbView">▤ Tabela</button>
+          <button class="act" style="font-size:0.78rem;padding:5px 10px;background:rgba(248,81,73,0.12);color:#f85149;border-color:rgba(248,81,73,0.3);" onclick="clearCompletedTasks()" title="Limpar tarefas já concluídas ou canceladas do histórico">🗑️ Limpar Concluídas</button>
+          <button class="act danger" style="font-size:0.78rem;padding:5px 10px;background:#da3633;color:#fff;font-weight:600;" onclick="resetAllKanban()" title="Limpar todas as tarefas do Kanban completamente">⚠️ Resetar Kanban</button>
+          <button class="act" style="font-size:0.78rem;padding:5px 10px;background:#00F0FF;color:#0a0d13;font-weight:700;" onclick="dispatchNow()">⏩ Despachar</button>
+          <button class="act primary" style="font-size:0.78rem;padding:5px 12px;" onclick="openNewTaskModal()">＋ Nova Missão</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visual Kanban Lanes -->
+    <div id="kanbanLanesContainer" style="display:block;margin-bottom:16px;">
+      <div class="kanban-lanes" id="kanbanLanes">
+        <!-- Injected dynamically by renderTaskboard -->
+      </div>
+    </div>
+
+    <!-- Tabular View (Toggleable) -->
+    <div class="card" id="kanbanTableView" style="display:none;">
+      <h3><span class="n">▤</span> Tabela Detalhada de Tarefas</h3>
+      <div style="overflow:auto;max-height:480px;">
+        <table>
+          <thead><tr><th>ID</th><th>Objetivo</th><th>Status</th><th>Worker/Run</th><th>Métricas</th><th>Ações</th></tr></thead>
+          <tbody id="tBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TEAM GRAPH (PHASE 5) ============ -->
+  <section class="tab" id="tab-teamgraph">
+    <div class="tg-container">
+      <div class="tg-overview" id="tgOverview"></div>
+
+      <div class="card" style="padding: 24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin:0; font-size:1.15rem; color:#fff; display:flex; align-items:center; gap:8px;">
+              🌲 Hierarquia Viva da Equipe Multi-Agente (Phase 5 Control Plane)
+            </h3>
+            <span style="font-size:0.8rem; color:var(--muted)">Topologia GasTown: Town Mayor ⟶ Sub-Orchestrator ⟶ Polecat Coder ⟷ Witness Reviewer</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button class="act" onclick="openModelBindingModal()">🎛️ Vincular Modelos (Mayor / Orch / Leafs)</button>
+            <button class="act" onclick="fetchState()">🔄 Atualizar Grafo</button>
+          </div>
+        </div>
+
+        <!-- Model Binding Controls Card -->
+        <div id="tgModelSelectorCard" class="card" style="background:#0d1117; border:1px solid #30363d; padding:16px; margin-bottom:20px; display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <b style="font-size:0.95rem; color:#58a6ff;">⚙️ Model Binding dos Papéis (Salvo no config.yaml)</b>
+            <button class="act" style="padding:2px 8px; font-size:0.75rem;" onclick="$('tgModelSelectorCard').style.display='none'">✕ Fechar</button>
+          </div>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+            <div style="position:relative;">
+              <span style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:4px;">👑 Town Mayor (Líder Executivo)</span>
+              <input type="text" id="tgMayorModel" class="mono" style="width:100%; padding:8px 12px; background:#161b22; border:1px solid #30363d; border-radius:6px; color:#fff;" placeholder="Digite para buscar modelo ou provider..." autocomplete="off" oninput="filterModelDropdown('mayor')" onfocus="filterModelDropdown('mayor')" />
+              <div id="drop_mayor" class="tg-model-drop" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:#1c2128; border:1px solid #444c56; border-radius:6px; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:4px;"></div>
+            </div>
+            <div style="position:relative;">
+              <span style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:4px;">🏛️ Sub-Orchestrator (Arquiteto)</span>
+              <input type="text" id="tgOrchModel" class="mono" style="width:100%; padding:8px 12px; background:#161b22; border:1px solid #30363d; border-radius:6px; color:#fff;" placeholder="Digite para buscar modelo ou provider..." autocomplete="off" oninput="filterModelDropdown('orch')" onfocus="filterModelDropdown('orch')" />
+              <div id="drop_orch" class="tg-model-drop" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:#1c2128; border:1px solid #444c56; border-radius:6px; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:4px;"></div>
+            </div>
+            <div style="position:relative;">
+              <span style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:4px;">🤖 Leafs / Workers (Executores)</span>
+              <input type="text" id="tgLeafModel" class="mono" style="width:100%; padding:8px 12px; background:#161b22; border:1px solid #30363d; border-radius:6px; color:#fff;" placeholder="Digite para buscar modelo ou provider..." autocomplete="off" oninput="filterModelDropdown('leaf')" onfocus="filterModelDropdown('leaf')" />
+              <div id="drop_leaf" class="tg-model-drop" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:#1c2128; border:1px solid #444c56; border-radius:6px; z-index:1000; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:4px;"></div>
+            </div>
+          </div>
+          <datalist id="tgAvailModels"></datalist>
+          <div style="margin-top:14px; display:flex; justify-content:space-between; align-items:center;">
+            <span id="tgModelSaveMsg" style="font-size:0.8rem; color:var(--muted);"></span>
+            <button class="act primary" onclick="saveTeamModels()">💾 Aplicar Modelos aos Agentes</button>
+          </div>
+        </div>
+
+        <div class="tg-tree-canvas" id="tgTreeCanvas"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCHEDULER ============ -->
+  <section class="tab" id="tab-scheduler">
+    <div class="grid">
+      <div class="card">
+        <h3><span class="n">✧</span> Critical Path Method (CPM)</h3>
+        <div class="stat"><span>Tarefas avaliadas no grafo</span><b id="cpmTotal">0</b></div>
+        <div class="stat"><span>Nós no caminho crítico</span><b id="cpmNodes">—</b></div>
+        <div id="cpmList"></div>
+      </div>
+      <div class="card">
+        <h3><span class="n">⤒</span> Priority Inheritance (PIP)</h3>
+        <div class="stat"><span>Prioridade propagada</span><b id="pipCount">0</b></div>
+        <div id="pipList"></div>
+      </div>
+      <div class="card">
+        <h3><span class="n">◈</span> ConcurrencyGuard</h3>
+        <div class="stat"><span>Workers ativos</span><b id="cgActive">0</b></div>
+        <div class="stat"><span>Teto global</span><b id="cgMax">0</b></div>
+        <div id="cgProviders"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3><span class="n">◈</span> Quotas por provedor / tarefas ativas</h3>
+      <div id="cgDetail"><span class="empty" style="padding:20px;">Sem carga ativa.</span></div>
+    </div>
+  </section>
+
+  <!-- ============ OUROBOROS ============ -->
+  <section class="tab" id="tab-ouroboros">
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+      <h3 style="margin:0;flex:1;">Ouroboros — Self-Evolution Engine & Blast Radius</h3>
+      <button class="act" id="evAnalyzeBtn" onclick="analyzeEvo()">🔍 Analisar falhas → propostas</button>
+    </div>
+
+    <!-- Ouroboros Live Blast Radius & Automerge Verification Tool -->
+    <div class="card" style="margin-bottom:14px;background:#161b22;border:1px solid #30363d;">
+      <h3><span class="n">🎯</span> Blast Radius Analyzer & Automerge Gate</h3>
+      <div style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;">
+        Avalie o raio de impacto de alterações em arquivos/símbolos ou teste a elegibilidade de automerge para branches concluídas.
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">
+        <div>
+          <label class="f">Arquivos modificados (separados por vírgula)</label>
+          <input type="text" id="blastFilesInput" placeholder="ex: hermes/platform/webui/standalone.py, hermes/platform/tasks/kanban_adapter.py" />
+          <div style="margin-top:8px;">
+            <button class="act primary" onclick="runBlastRadiusAnalysis()">Calcular Blast Radius</button>
+          </div>
+        </div>
+        <div>
+          <label class="f">Testar Automerge Gate (Task ID)</label>
+          <input type="text" id="automergeTaskIdInput" placeholder="ex: t_28bce129" />
+          <div style="margin-top:8px;">
+            <button class="act" onclick="runAutomergeCheck()">Verificar Gate de Merge</button>
+          </div>
+        </div>
+      </div>
+      <div id="blastResultBox" style="margin-top:12px;display:none;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <h3><span class="n">◔</span> Propostas pendentes (human-in-the-loop)</h3>
+      <div id="evPending"><span class="empty">Nenhuma proposta pendente.</span></div>
+    </div>
+    <div class="card">
+      <h3><span class="n">◷</span> Histórico de decisões</h3>
+      <div id="evHistory"><span class="empty">Nenhuma decisão registrada.</span></div>
+    </div>
+  </section>
+
+  <!-- ============ CONFIG AGENTE ============ -->
+  <section class="tab" id="tab-agent">
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+      <h3 style="margin:0;flex:1;">Configuração do Agente — config.yaml real</h3>
+      <button class="act primary" onclick="agentCfgSave()">💾 Salvar alterações</button>
+      <button class="act" onclick="agentCfgLoad()">↻ Recarregar</button>
+      <button class="act" onclick="agentCfgRaw()">{} Ver raw</button>
+    </div>
+    <div class="card" style="margin-bottom:14px;">
+      <div class="errline" id="agentCfgMsg"></div>
+      <div class="stat"><span>Arquivo</span><b class="mono" id="agentCfgPath">—</b></div>
+      <div id="agentCfgManaged"></div>
+    </div>
+    <div id="agentCfgSections" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;">
+      <span class="empty">carregando…</span>
+    </div>
+    <div class="card" id="agentCfgRawCard" style="display:none;margin-top:14px;">
+      <h3><span class="n">{}</span> Snapshot JSON (avançado, read-only)</h3>
+      <textarea id="agentCfgRawArea" rows="18" style="font-family:var(--mono);font-size:.78rem;"></textarea>
+    </div>
+  </section>
+
+  <!-- ============ SISTEMA ============ -->
+  <section class="tab" id="tab-system">
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+      <h3 style="margin:0;flex:1;">Sistema — fatos reais do ambiente (onde cada coisa está salva)</h3>
+      <button class="act" onclick="systemLoad()">↻ Atualizar</button>
+    </div>
+    <div class="errline" id="sysMsg"></div>
+    <div class="grid" id="sysHomes"></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));">
+      <div class="card" id="sysEngineCard">
+        <h3><span class="n">▤</span> Dados do Engine HAOS (Task ≠ Run)</h3>
+      </div>
+      <div class="card" id="sysModelsCard">
+        <h3><span class="n">✧</span> Trocar modelos de orquestração (grava no config.yaml)</h3>
+        <div id="sysModelForm"></div>
+        <div class="errline" id="sysModelMsg"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3><span class="n">i</span> Como funciona / como mudar (honesto)</h3>
+      <div style="font-size:.86rem;line-height:1.6;color:var(--muted)" id="sysHow"></div>
+    </div>
+  </section>
+
+  <!-- ============ TIMELINE UNIFICADA ============ -->
+  <section class="tab" id="tab-events">
+    <div class="card" style="margin-bottom:12px;padding:10px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h3 style="margin:0;font-size:0.95rem;color:#f0f6fc;display:flex;align-items:center;gap:6px;">
+            <span class="n">≡</span> Timeline Unificada do Workspace
+          </h3>
+          <span style="font-size:0.75rem;color:var(--muted);">Trilha append-only ordenada em tempo real (tarefas, execuções de tools, intervenções e Ouroboros)</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;" id="timelineFilters">
+          <button class="act timeline-filter active" data-cat="all" onclick="filterTimeline('all')">Todos</button>
+          <button class="act timeline-filter" data-cat="tasks" onclick="filterTimeline('tasks')">📋 Missões</button>
+          <button class="act timeline-filter" data-cat="tools" onclick="filterTimeline('tools')">🔧 Tools</button>
+          <button class="act timeline-filter" data-cat="ouroboros" onclick="filterTimeline('ouroboros')">🔄 Ouroboros</button>
+          <button class="act timeline-filter" data-cat="interventions" onclick="filterTimeline('interventions')">🛡️ Intervenções</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div id="evList" style="max-height:calc(100vh - 240px);min-height:480px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+        <span class="empty">Carregando timeline unificada…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CONFIG ============ -->
+  <section class="tab" id="tab-config">
+    <div class="grid">
+      <div class="card">
+        <h3><span class="n">⚙</span> Configuração do Engine (persistente)</h3>
+        <label class="f">Concorrência global máxima</label>
+        <input type="number" id="cfgGlobal" min="1" />
+        <label class="f">Limite default por provider</label>
+        <input type="number" id="cfgDefaultProv" min="1" />
+        <label class="f">Limites por provider (a6api, openai, anthropic, fallback)</label>
+        <div id="cfgProviders"></div>
+        <label class="f">Limite default por modelo (vazio = sem teto)</label>
+        <input type="number" id="cfgDefaultModel" min="1" placeholder="vazio" />
+        <label class="f">Intervalo de auto-refresh (ms)</label>
+        <input type="number" id="cfgPoll" min="500" step="100" />
+        <label class="f" style="display:flex;gap:8px;align-items:center;">
+          <input type="checkbox" id="cfgShadow" style="width:auto" /> Ouroboros shadow mode (nunca aplica sozinho)
+        </label>
+        <div style="margin-top:14px;display:flex;gap:8px;">
+          <button class="act primary" onclick="saveSettings()">Salvar e aplicar ao vivo</button>
+          <button class="act danger" onclick="resetSettings()">Restaurar defaults</button>
+        </div>
+        <div class="errline" id="cfgMsg"></div>
+      </div>
+      <div class="card">
+        <h3><span class="n">◫</span> Agente — resumo (read-only)</h3>
+        <div id="agentSummary"><span class="empty">carregando…</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3><span class="n">i</span> Arquitetura honesta</h3>
+      <p style="font-size:.86rem;line-height:1.6;color:var(--muted)">
+        <b style="color:var(--text)">Task ≠ Run:</b> cada missão do Console vira um
+        <span class="mono">TaskSpec</span> no Kanban canônico SQLite; o scheduler determinístico
+        (CPM + PIP + starvation age) ordena, o <span class="mono">ConcurrencyGuard</span> admite
+        sob tetos globais/por-provider/por-modelo e a lane canônica executa. Todo ciclo de vida é
+        projetado de forma fail-safe no <span class="mono">EventStore</span> append-only; falhas são
+        classificadas e alimentam o loop Ouroboros em shadow mode. Esta UI nunca fabrica números:
+        ausência de dado mostra estado vazio honesto.
+      </p>
+    </div>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<!-- ============ MODAL: NOVA MISSÃO (TASKBOARD) ============ -->
+<div id="newTaskModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.75);z-index:10000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;width:580px;max-width:92vw;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.8);overflow:hidden;">
+    <div style="padding:14px 18px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center;background:#0d1117;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="color:#00F0FF;font-size:1.15rem;">＋</span>
+        <h3 style="margin:0;font-size:1rem;color:var(--text);font-weight:600;">Nova Missão no Taskboard</h3>
+      </div>
+      <button class="act" style="padding:2px 8px;font-size:0.9rem;" onclick="closeNewTaskModal()">✕</button>
+    </div>
+    <div style="padding:16px 20px;">
+      <label class="f">Título / Identificador Curto (Opcional)</label>
+      <input type="text" id="newTaskTitle" placeholder="Ex: Otimizar rotas do engine" style="width:100%;margin-bottom:12px;font-size:0.85rem;padding:6px 10px;" />
+      
+      <label class="f">Objetivo / Instruções da Missão *</label>
+      <textarea id="newTaskGoal" rows="4" placeholder="Descreva detalhadamente o que o agente autônomo deve realizar..." style="width:100%;resize:vertical;margin-bottom:12px;font-size:0.85rem;padding:8px 10px;"></textarea>
+
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;">
+          <label class="f">Prioridade (1–100)</label>
+          <input type="number" id="newTaskPrio" value="50" min="1" max="100" style="width:100%;font-size:0.85rem;padding:6px 10px;" />
+        </div>
+        <div style="flex:1;min-width:180px;margin-top:18px;">
+          <label class="f" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="newTaskAutoDispatch" checked style="width:auto;" /> Despachar imediatamente
+          </label>
+        </div>
+      </div>
+      <div class="errline" id="newTaskMsg" style="margin-top:8px;"></div>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #30363d;display:flex;justify-content:flex-end;gap:10px;background:#0d1117;">
+      <button class="act" onclick="closeNewTaskModal()">Cancelar</button>
+      <button class="act primary" onclick="submitNewTask()" style="background:#00F0FF;color:#0a0d13;font-weight:700;">✓ Criar Card</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: HISTÓRICO DE SESSÕES ============ -->
+<div id="historyModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.75);z-index:10000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;width:740px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.8);overflow:hidden;">
+    <div style="padding:14px 18px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:1.1rem;">🕒</span>
+        <h3 style="margin:0;font-size:1rem;color:var(--text);font-weight:600;">Histórico de Sessões Recentes</h3>
+        <span id="termSessionCount" style="font-size:0.75rem;background:#21262d;padding:2px 8px;border-radius:10px;color:var(--muted);">0 sessões</span>
+      </div>
+      <button class="act" style="padding:2px 8px;font-size:0.9rem;" onclick="closeHistoryModal()">✕</button>
+    </div>
+    <div style="padding:16px;overflow-y:auto;flex:1;">
+      <div id="termSessionHistoryList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;">
+        <span class="empty">Carregando sessões…</span>
+      </div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid #30363d;display:flex;justify-content:space-between;align-items:center;background:#0d1117;">
+      <span style="font-size:0.75rem;color:var(--muted)">Clique em "▶ Retomar" para abrir uma aba conectada à conversa.</span>
+      <button class="act" style="font-size:0.75rem;padding:4px 12px;" onclick="loadTerminalSessions()">↻ Atualizar Lista</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: NOVO WORKSPACE (DSH EXPLORER) ============ -->
+<div id="wsExplorerModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.75);z-index:10000;align-items:center;justify-content:center;backdrop-filter:blur(3px);">
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;width:780px;max-width:94vw;height:580px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.8);overflow:hidden;">
+    <!-- Modal Header -->
+    <div style="padding:14px 18px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center;background:#0d1117;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="color:#00F0FF;font-size:1.15rem;">📁</span>
+        <div>
+          <h3 style="margin:0;font-size:0.95rem;color:var(--text);font-weight:600;">Selecionar Diretório de Workspace</h3>
+          <span style="font-size:0.72rem;color:var(--muted)">Navegue pelas pastas do host, crie subpastas e selecione o workspace</span>
+        </div>
+      </div>
+      <button class="act" style="padding:2px 8px;font-size:0.9rem;" onclick="closeWorkspaceDialog()">✕</button>
+    </div>
+
+    <!-- Explorer Navigation Breadcrumbs & Controls -->
+    <div style="padding:8px 16px;background:#161b22;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <button class="act" style="font-size:0.75rem;padding:3px 8px;" onclick="fsNavigateTo(wsExplorerHomePath)" title="Ir para Home">🏠 Home</button>
+      <button class="act" style="font-size:0.75rem;padding:3px 8px;" id="fsUpBtn" onclick="fsNavigateUp()" title="Subir um nível">⬆ Subir</button>
+      <div style="flex:1;display:flex;align-items:center;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:2px 8px;">
+        <input type="text" id="fsCurrentPathInput" style="width:100%;background:transparent;border:none;color:#58a6ff;font-family:var(--mono);font-size:0.78rem;outline:none;" onkeydown="if(event.key==='Enter')fsNavigateTo(this.value.trim());" />
+      </div>
+      <button class="act" style="font-size:0.75rem;padding:4px 8px;" onclick="fsToggleHidden()" id="fsHiddenBtn" title="Mostrar/ocultar arquivos ocultos">👁 Ocultos</button>
+      <button class="act primary" style="font-size:0.75rem;padding:4px 10px;" onclick="fsPromptMkdir()">＋ Nova Pasta</button>
+    </div>
+
+    <!-- Folder Browser List -->
+    <div id="fsFolderList" style="flex:1;overflow-y:auto;padding:8px 16px;display:flex;flex-direction:column;gap:2px;background:#0a0d13;">
+      <span class="empty">Carregando diretórios…</span>
+    </div>
+
+    <!-- Workspace Details & Confirm Footer -->
+    <div style="padding:12px 18px;border-top:1px solid #30363d;background:#0d1117;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:280px;">
+        <span style="font-size:0.78rem;color:var(--muted);white-space:nowrap;">Nome do Workspace:</span>
+        <input type="text" id="wsNewNameInput" placeholder="Ex: Meu Projeto" style="flex:1;font-size:0.78rem;padding:4px 8px;" />
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="act" style="font-size:0.78rem;padding:6px 14px;" onclick="closeWorkspaceDialog()">Cancelar</button>
+        <button class="act primary" style="font-size:0.78rem;padding:6px 16px;background:#00F0FF;color:#0a0d13;font-weight:700;" onclick="fsConfirmSelectWorkspace()">✓ Abrir Workspace</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { last: null, pendingTasks: {}, settings: null };
+let timer = null;
+
+function openTaskTerminal(taskId, taskTitle) {
+  const shortTitle = taskTitle ? taskTitle.slice(0, 16) + (taskTitle.length > 16 ? "…" : "") : taskId;
+  termStartNewTab(
+    `haos status`,
+    `Task ${taskId} (${shortTitle})`
+  );
+  navigateToTerminalTab();
+}
+
+function navigateToTerminalTab() {
+  document.querySelectorAll("#nav button").forEach((x) => x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+  const termBtn = document.querySelector('#nav button[data-tab="terminal"]');
+  if (termBtn) termBtn.classList.add("active");
+  const termSec = $("tab-terminal");
+  if (termSec) termSec.classList.add("active");
+}
+function initNavTabs() {
+  document.querySelectorAll("#nav button").forEach((b) => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll("#nav button").forEach((x) => x.classList.remove("active"));
+      document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      const target = $("tab-" + b.dataset.tab);
+      if (target) {
+        target.classList.add("active");
+        window.scrollTo(0, 0);
+      }
+      if (b.dataset.tab === "terminal") {
+        termLoad();
+        const current = terminalTabs.find((t) => t.id === activeTabId);
+        if (current && current.fit) setTimeout(() => current.fit.fit(), 30);
+      }
+      if (b.dataset.tab === "teamgraph") fetchState();
+      if (b.dataset.tab === "scheduler") schedLoad();
+      if (b.dataset.tab === "agent") agentCfgLoad();
+      if (b.dataset.tab === "system") systemLoad();
+      if (b.dataset.tab === "events") loadUnifiedTimeline();
+    });
+  });
+
+  const initialPath = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase().replace("#", "");
+  if (initialPath.includes("chat") || initialPath.includes("console") || hash === "chat" || hash === "console") {
+    const cBtn = document.querySelector('#nav button[data-tab="console"]');
+    if (cBtn) cBtn.click();
+  } else if (initialPath.includes("taskboard") || hash === "taskboard") {
+    const tbBtn = document.querySelector('#nav button[data-tab="taskboard"]');
+    if (tbBtn) tbBtn.click();
+  }
+}
+
+// ---- fetch helpers ----------------------------------------------------
+async function api(path, body, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const opts = { headers: { "Content-Type": "application/json" }, signal: controller.signal };
+  if (body !== undefined) opts.method = "POST", opts.body = JSON.stringify(body);
+  try {
+    const resp = await fetch(path, opts);
+    let data = null;
+    try { data = await resp.json(); } catch (_) {}
+    if (!resp.ok) throw new Error((data && (data.error || data.detail)) || resp.status);
+    return data;
+  } catch (err) {
+    // O AbortError cru do navegador ("signal is aborted without reason") não diz
+    // ao operador nem o tempo nem o endpoint; traduzimos para o que estourou.
+    if (err && err.name === "AbortError") {
+      throw new Error(`tempo limite de ${Math.round(timeoutMs / 1000)}s excedido em ${path} — a operação continua no servidor, tente novamente`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ---- status helpers ---------------------------------------------------
+function statusTag(st) {
+  const s = String(st || "unknown").toLowerCase();
+  const cls = ["done", "ready", "running", "todo", "review", "blocked", "failed"].includes(s) ? s : "todo";
+  return `<span class="tag ${cls}">${esc(st || "—")}</span>`;
+}
+
+// ---- render: full state ----------------------------------------------
+function render(stateData) {
+  const st = stateData || {};
+  state.last = st;
+  state.settings = st.settings || state.settings;
+  const meta = st.meta || {};
+  $("chipDir").textContent = meta.data_dir || "…";
+  const cfgBtn = $("hermesConfigBtn");
+  if (cfgBtn) cfgBtn.href = "http://" + (window.location.hostname || "127.0.0.1") + ":9191/";
+  $("chipState").textContent =
+    (st.taskboard ? "📋 " + st.taskboard.total + " tarefas · " : "") +
+    "🛡 " + (st.concurrency ? st.concurrency.active_global + "/" + st.concurrency.max_global : "0/0") +
+    " · ◔ " + (st.evolution_pending ? st.evolution_pending.length : 0) + " propostas";
+  renderTaskboard(st.taskboard);
+  __hBind = st.harness_bindings || __hBind || {};
+  __hLastTG = [st.team_graph, st.control_overview];
+  renderTeamGraph(st.team_graph, st.control_overview);
+  if (!__hCat) ensureHarnessCatalog();
+  renderScheduler(st.concurrency, st.critical_path, st.approvals);
+  renderOuroboros(st.evolution_pending, st.evolution_history);
+  renderEvents(st.events_tail);
+  renderSettingsForm(st.settings);
+  renderAgentSummary(st);
+  followPendingTasks(st.taskboard);
+}
+
+// ---- taskboard --------------------------------------------------------
+let currentTbView = "lanes"; // "lanes" | "table"
+
+function toggleTaskboardView() {
+  currentTbView = (currentTbView === "lanes") ? "table" : "lanes";
+  const btn = $("btnToggleTbView");
+  const lanesDiv = $("kanbanLanesContainer");
+  const tableDiv = $("kanbanTableView");
+  if (currentTbView === "lanes") {
+    if (btn) btn.textContent = "▤ Alternar p/ Tabela";
+    if (lanesDiv) lanesDiv.style.display = "block";
+    if (tableDiv) tableDiv.style.display = "none";
+  } else {
+    if (btn) btn.textContent = "◫ Alternar p/ Lanes";
+    if (lanesDiv) lanesDiv.style.display = "none";
+    if (tableDiv) tableDiv.style.display = "block";
+  }
+  if (state.last && state.last.taskboard) {
+    renderTaskboard(state.last.taskboard);
+  }
+}
+
+function renderTaskboard(tb) {
+  if (!tb) return;
+  $("tTotal").textContent = tb.total;
+  const cols = tb.columns || [];
+  $("tCols").innerHTML = cols.length
+    ? cols.map((c) => `<div class="stat" style="padding:2px 6px;border:none;"><span>${esc(c.status)}</span><b class="info">${c.count}</b></div>`).join("")
+    : `<div class="stat"><span>Nenhuma coluna ativa</span><b class="muted">—</b></div>`;
+
+  const tasks = tb.recent || [];
+
+  // 1. Render Multi-Lane Kanban Visuals
+  const laneDefs = [
+    { key: "ready", label: "Prontas (Ready)", statusList: ["ready", "todo", "pending"] },
+    { key: "running", label: "Em Execução (Running)", statusList: ["running", "in_progress"] },
+    { key: "review", label: "Revisão (Review)", statusList: ["review", "testing"] },
+    { key: "done", label: "Concluídas (Done)", statusList: ["done", "completed"] },
+    { key: "failed", label: "Bloqueadas / Falha", statusList: ["failed", "blocked", "error"] },
+  ];
+
+  const lanesHtml = laneDefs.map((ld) => {
+    const laneTasks = tasks.filter((t) => {
+      const st = String(t.status || "").toLowerCase();
+      return ld.statusList.includes(st);
+    });
+
+    const cardsHtml = laneTasks.map((t) => {
+      const spec = t.spec || {};
+      const goal = spec.goal || spec.description || t.title || "";
+      const isRunning = String(t.status || "").toLowerCase() in { running: 1, in_progress: 1 };
+      const elapsed = t.elapsed_seconds ? `${t.elapsed_seconds}s` : "—";
+      const tokens = t.tokens ? Number(t.tokens).toLocaleString() : "0";
+      const cost = t.cost ? `$${Number(t.cost).toFixed(4)}` : "$0.00";
+      const worker = (t.run || {}).worker_id || t.worker || "haos-worker";
+
+      return `
+        <div class="k-card ${isRunning ? 'running' : ''}" id="kcard_${esc(t.id)}">
+          <div class="k-card-top">
+            <span class="mono" style="color:#00F0FF;font-weight:700;cursor:pointer;" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">${esc(t.id)}</span>
+            ${statusTag(t.status)}
+          </div>
+          <div class="k-card-title">${esc(t.title || goal || "")}</div>
+          <div class="k-card-goal">${esc(goal)}</div>
+          <div class="k-card-metrics">
+            <span>⏱ ${elapsed}</span>
+            <span>🪙 ${tokens}</span>
+            <span>💵 ${cost}</span>
+          </div>
+          <div class="k-card-worker">👤 ${esc(worker)} · Prio: ${t.priority || 50}</div>
+          <div class="k-card-actions">
+            <button class="act" onclick="attachConsoleToTask('${esc(t.id)}')">📡 Stream</button>
+            <button class="act" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">▮ Term</button>
+            ${isRunning
+              ? `<button class="act danger" onclick="triggerTaskAction('${esc(t.id)}', 'cancel')">⏹ Parar</button>`
+              : `<button class="act" onclick="triggerTaskAction('${esc(t.id)}', 'requeue')">↺ Repetir</button>`
+            }
+            <button class="act danger" style="padding:2px 7px;" onclick="deleteTaskCard('${esc(t.id)}')" title="Excluir este card do Kanban">🗑️</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="kanban-col ${ld.key}">
+        <div class="kanban-col-head">
+          <span>${ld.label}</span>
+          <span class="col-count">${laneTasks.length}</span>
+        </div>
+        <div class="kanban-cards-list">
+          ${cardsHtml || `<div class="empty" style="padding:30px 10px;font-size:0.75rem;">Sem cards nesta coluna</div>`}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  const lanesContainer = $("kanbanLanes");
+  if (lanesContainer) lanesContainer.innerHTML = lanesHtml;
+
+  // 2. Render Traditional Table View
+  const rows = tasks.map((t) => {
+    const spec = t.spec || {};
+    const run = t.run || {};
+    const goal = spec.goal || spec.description || "";
+    const res = t.result || {};
+    const summary = (typeof res.summary === "string" ? res.summary : "") ||
+                    (typeof res.outcome === "string" ? "outcome=" + res.outcome : "") || "";
+    const worker = run.worker_id || t.worker || "";
+    const metrics = `⏱ ${t.elapsed_seconds || 0}s | 🪙 ${t.tokens || 0}`;
+    return `<tr>
+      <td class="mono info"><a href="javascript:void(0)" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')" style="color:#00F0FF;text-decoration:none;font-weight:600;" title="Abrir terminal para este card">${esc(t.id || "")}</a></td>
+      <td><a href="javascript:void(0)" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')" style="color:var(--text);text-decoration:none;" title="Abrir terminal">${esc(t.title || goal || "")}</a><div style="color:var(--muted);font-size:.76rem">${esc(goal)}</div></td>
+      <td>${statusTag(t.status)}</td>
+      <td class="mono" style="color:var(--muted)">${esc(worker)}</td>
+      <td class="mono" style="font-size:0.75rem;color:var(--accent);">${metrics}</td>
+      <td>
+        <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="attachConsoleToTask('${esc(t.id)}')">Stream</button>
+        <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">Term</button>
+        <button class="act danger" style="font-size:0.7rem;padding:2px 6px;" onclick="deleteTaskCard('${esc(t.id)}')">🗑️</button>
+      </td>
+    </tr>`;
+  }).join("");
+  $("tBody").innerHTML = rows || `<tr><td colspan="6" style="color:var(--muted)">Sem tarefas no Kanban.</td></tr>`;
+}
+
+async function triggerTaskAction(taskId, action) {
+  try {
+    const res = await api(`/api/tasks/${taskId}/action`, { action });
+    if (res.success) {
+      refresh();
+      if (action === "requeue") {
+        api("/api/dispatch", { max_spawn: 1 });
+      }
+    }
+  } catch (err) {
+    alert(`Erro ao executar ação '${action}': ${err.message}`);
+  }
+}
+
+async function deleteTaskCard(taskId) {
+  const confirmed = confirm(`Deseja excluir o card ${taskId} do Kanban?`);
+  if (!confirmed) return;
+  await triggerTaskAction(taskId, 'delete');
+}
+
+async function resetAllKanban() {
+  const confirmed = confirm("ATENÇÃO: Deseja realmente RESETAR e LIMPAR TUDO do Kanban? Todas as tarefas em todas as colunas serão apagadas.");
+  if (!confirmed) return;
+  try {
+    const res = await api("/api/tasks/clear", { reset: true, all: true });
+    refresh();
+  } catch (err) {
+    alert("Erro ao resetar Kanban: " + err.message);
+  }
+}
+
+// ---- team graph (phase 5) ---------------------------------------------
+async function fetchState() {
+  await refresh();
+}
+
+// ---- Team Graph Model Binding Helpers ------------------------------
+let cachedAvailableModels = [];
+
+async function openModelBindingModal() {
+  const card = $("tgModelSelectorCard");
+  if (!card) return;
+  card.style.display = card.style.display === "none" ? "block" : "none";
+  if (card.style.display === "block") {
+    try {
+      const cfgResp = await api("/api/agent-config");
+      const sec = (cfgResp && cfgResp.sections) || {};
+      const delFields = (sec.delegation && sec.delegation.fields) || [];
+      const mdlFields = (sec.model && sec.model.fields) || [];
+
+      const fFind = (fields, path) => (fields.find(f => f.path === path) || {}).value || "";
+      const curMayor = fFind(delFields, "delegation.role_models.mayor") || fFind(mdlFields, "model.default") || "deepseek-v4-flash";
+      const curOrch = fFind(delFields, "delegation.role_models.orchestrator") || "gemini-3.8-flash-medium";
+      const curLeaf = fFind(delFields, "delegation.role_models.leaf") || "gemini-3.8-flash-medium";
+
+      $("tgMayorModel").value = curMayor;
+      $("tgOrchModel").value = curOrch;
+      $("tgLeafModel").value = curLeaf;
+
+      const modelsResp = await api("/v1/models");
+      cachedAvailableModels = (modelsResp && modelsResp.data) || [];
+    } catch (e) {
+      console.error("Failed to load models for binding:", e);
+    }
+  }
+}
+
+function filterModelDropdown(role) {
+  const input = role === "mayor" ? $("tgMayorModel") : (role === "orch" ? $("tgOrchModel") : $("tgLeafModel"));
+  const drop = $(`drop_${role}`);
+  if (!input || !drop) return;
+
+  const q = input.value.trim().toLowerCase();
+  const matched = cachedAvailableModels.filter(m => {
+    const id = String(m.id || "").toLowerCase();
+    const owner = String(m.owned_by || "").toLowerCase();
+    return !q || id.includes(q) || owner.includes(q);
+  });
+
+  if (!matched.length) {
+    drop.style.display = "none";
+    return;
+  }
+
+  drop.innerHTML = matched.slice(0, 25).map(m => {
+    const id = esc(m.id || "");
+    const prov = esc(m.owned_by || "custom");
+    return `<div class="tg-model-item" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #30363d; display:flex; justify-content:space-between; align-items:center;" onmousedown="selectModelOption('${role}', '${id}')">
+      <span style="color:#e2e8f0; font-family:var(--mono); font-size:0.85rem;">${id}</span>
+      <span style="font-size:0.75rem; color:#58a6ff; background:#1f242c; padding:2px 6px; border-radius:4px; border:1px solid #388bfd33;">${prov}</span>
+    </div>`;
+  }).join("");
+
+  drop.style.display = "block";
+}
+
+function selectModelOption(role, modelId) {
+  const input = role === "mayor" ? $("tgMayorModel") : (role === "orch" ? $("tgOrchModel") : $("tgLeafModel"));
+  const drop = $(`drop_${role}`);
+  if (input) input.value = modelId;
+  if (drop) drop.style.display = "none";
+}
+
+// Fechar dropdowns ao clicar fora
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".tg-model-drop") && !e.target.id.startsWith("tgMayor") && !e.target.id.startsWith("tgOrch") && !e.target.id.startsWith("tgLeaf")) {
+    document.querySelectorAll(".tg-model-drop").forEach(d => d.style.display = "none");
+  }
+});
+
+async function saveTeamModels() {
+  const mayor = $("tgMayorModel").value.trim();
+  const orch = $("tgOrchModel").value.trim();
+  const leaf = $("tgLeafModel").value.trim();
+  const msg = $("tgModelSaveMsg");
+  msg.textContent = "Gravando configurações...";
+  msg.style.color = "var(--muted)";
+
+  const updates = {};
+  if (mayor) updates["delegation.role_models.mayor"] = { kind: "str", value: mayor };
+  if (orch) updates["delegation.role_models.orchestrator"] = { kind: "str", value: orch };
+  if (leaf) updates["delegation.role_models.leaf"] = { kind: "str", value: leaf };
+
+  try {
+    const r = await api("/api/agent-config", { updates });
+    msg.textContent = "✓ Modelos vinculados e salvos no config.yaml (" + r.applied.length + " campos atualizados).";
+    msg.style.color = "var(--ok)";
+    setTimeout(() => {
+      fetchState();
+    }, 500);
+  } catch (e) {
+    msg.textContent = "✗ Erro: " + e.message;
+    msg.style.color = "var(--err)";
+  }
+}
+
+// ---- harness binding select (Team Graph) -------------------------------
+// Seleção de plataforma por papel, no padrão do seletor de modelos:
+// lista os harnesses detectados e persiste o vínculo papel -> plataforma.
+let __hCat = null;        // catálogo [{name,available,status,...}]
+let __hBind = {};         // bindings {role: harness}
+let __hLastTG = null;     // último (team_graph, overview) p/ re-render pós-load
+
+async function ensureHarnessCatalog() {
+  if (__hCat) return __hCat;
+  try {
+    const res = await api("/api/harnesses");
+    __hCat = (res && res.catalog) || [];
+    __hBind = (res && res.bindings) || __hBind || {};
+    if (__hLastTG) renderTeamGraph(__hLastTG[0], __hLastTG[1]);
+  } catch (_) {
+    __hCat = [];
+  }
+  return __hCat;
+}
+
+function harnessOptionsHtml(roleKey, nodeHarness) {
+  const cur = (__hBind && __hBind[roleKey]) || nodeHarness || "native";
+  const cat = (__hCat && __hCat.length)
+    ? __hCat
+    : ["native", "dsh", "opencode", "agy", "codex", "claude-code", "acp"].map((n) => ({ name: n, available: null }));
+  let hasCur = false;
+  const opts = cat.map((h) => {
+    if (h.name === cur) hasCur = true;
+    const unavail = h.available === false;
+    const mark = unavail ? " ⚠" : (h.available ? " ✓" : "");
+    return `<option value="${esc(h.name)}" ${h.name === cur ? "selected" : ""} title="${unavail ? "indisponível agora — execução fará fallback native" : (h.status || "")}">${esc(h.name)}${mark}</option>`;
+  }).join("");
+  const extra = hasCur ? "" : `<option value="${esc(cur)}" selected>${esc(cur)} (atual)</option>`;
+  return `<select class="tg-harness-sel" style="max-width:150px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:1px 4px;font:inherit;font-size:.78rem;" data-role="${esc(roleKey)}" onchange="setHarnessBinding(this,'${esc(roleKey)}')" title="Plataforma de execução deste papel">${extra}${opts}</select>`;
+}
+
+async function setHarnessBinding(sel, roleKey) {
+  const harness = sel.value;
+  const prev = sel.dataset.prev || ((__hBind && __hBind[roleKey]) || "native");
+  sel.dataset.prev = harness;
+  try {
+    const res = await api("/api/harness-binding", { role: roleKey, harness: harness });
+    if (__hBind) __hBind[roleKey] = harness;
+    if (res && res.warning) console.warn("HAOS harness:", res.warning);
+    fetchState();
+  } catch (err) {
+    sel.value = prev;
+    alert("✗ Erro ao vincular plataforma: " + err.message);
+  }
+}
+
+function renderTeamGraph(tg, ov) {
+  if (!tg) return;
+
+  // 1. Overview cards
+  const ovBox = $("tgOverview");
+  if (ovBox) {
+    const o = ov || {};
+    const mayorModel = (tg && tg.model_id) || "deepseek-v4-flash";
+    const mayorProv = (tg && tg.provider_id) || "custom";
+    const poolSize = Number(o.pool_size) > 0 ? Number(o.pool_size) : 4;
+    ovBox.innerHTML = `
+      <div class="tg-stat-card"><div class="lbl">Missões Executadas</div><div class="val" style="color:var(--accent2);">${o.total_missions != null ? o.total_missions : 0}</div></div>
+      <div class="tg-stat-card"><div class="lbl">Workers Ativos / Pool</div><div class="val" style="color:var(--ok);">${Number(o.active_workers) || 0} / ${poolSize}</div></div>
+      <div class="tg-stat-card"><div class="lbl">Tokens Consumidos</div><div class="val" style="color:var(--info);">${Number(o.total_tokens || 0).toLocaleString()}</div></div>
+      <div class="tg-stat-card"><div class="lbl">Custo Total (USD)</div><div class="val" style="color:var(--warn);">$${Number(o.total_cost_usd || 0).toFixed(4)}</div></div>
+      <div class="tg-stat-card"><div class="lbl">Rota do Mayor Ativa</div><div class="val" style="font-size:0.95rem;color:var(--accent);">${esc(mayorProv)}:${esc(mayorModel)}</div></div>
+      ${o.board_db ? `<div class="tg-stat-card" style="grid-column:span 2;"><div class="lbl">Board Ativo (fonte viva)</div><div class="val" style="font-size:0.8rem;color:var(--muted);font-family:var(--mono);">${esc(o.board_db)}</div></div>` : ""}
+    `;
+  }
+
+  // 2. Tree Canvas
+  const canvas = $("tgTreeCanvas");
+  if (!canvas) return;
+
+  const mayor = tg;
+  const subOrch = (mayor.children && mayor.children[0]) || null;
+  const workers = (subOrch && subOrch.children) || [];
+
+  const mayorStatus = mayor.status || "idle";
+  const subOrchStatus = subOrch ? (subOrch.status || mayorStatus) : "idle";
+
+  let html = `
+    <!-- LEVEL 1: TOWN MAYOR -->
+    <div class="tg-node mayor status-${esc(mayorStatus)}">
+      <div class="tg-node-header">
+        <div class="tg-node-title">👑 Town Mayor <span style="font-size:0.75rem;color:var(--muted);">(Executive Lead)</span></div>
+        <span class="tg-badge ${esc(mayorStatus)}">${esc(mayorStatus)}</span>
+      </div>
+      <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:6px;font-weight:500;">${esc(mayor.current_task || 'Strategic Mission Orchestrator')}</div>
+      <div class="tg-node-meta">
+        <div class="tg-node-row"><span>ID do Nó:</span><span class="val">${esc(mayor.node_id)}</span></div>
+        <div class="tg-node-row"><span>Postura:</span><span class="val" style="color:var(--accent2);">${esc(mayor.posture || 'executive')}</span></div>
+        <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(mayor.provider_id || 'a6api')}:${esc(mayor.model_id || 'deepseek-v4-flash')}</span></div>
+        <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml('mayor', mayor.harness)}</span></div>
+      </div>
+      <div class="tg-actions">
+        <button class="tg-btn" onclick="directNodeTerminal('${esc(mayor.node_id)}', 'Town Mayor')">▮ Terminal</button>
+        <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','steer')">🎯 Steer</button>
+        <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','pause')">⏸ Pause</button>
+        <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','resume')">▶ Resume</button>
+      </div>
+    </div>
+
+    <!-- CONNECTOR V -->
+    <div class="tg-connector-v"></div>
+
+    <!-- LEVEL 2: DOMAIN SUB-ORCHESTRATOR -->
+  `;
+
+  if (subOrch) {
+    html += `
+    <div class="tg-node suborch status-${esc(subOrchStatus)}">
+      <div class="tg-node-header">
+        <div class="tg-node-title">🧠 Domain Sub-Orchestrator</div>
+        <span class="tg-badge ${esc(subOrchStatus)}">${esc(subOrchStatus)}</span>
+      </div>
+      <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:6px;font-weight:500;">${esc(subOrch.label || 'Sub-Orchestrator')}</div>
+      <div class="tg-node-meta">
+        <div class="tg-node-row"><span>Escopo:</span><span class="val" style="color:var(--accent);">software DAG (impl ➔ test ➔ review)</span></div>
+        <div class="tg-node-row"><span>Postura:</span><span class="val">${esc(subOrch.posture || 'architect')}</span></div>
+        <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(subOrch.provider_id || 'a6api')}:${esc(subOrch.model_id || 'deepseek-v4-flash')}</span></div>
+        <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml('sub_orchestrator', subOrch.harness)}</span></div>
+      </div>
+      <div class="tg-actions">
+        <button class="tg-btn" onclick="directNodeTerminal('${esc(subOrch.node_id)}', 'Sub-Orchestrator')">▮ Terminal</button>
+        <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','steer')">🎯 Steer</button>
+        <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','pause')">⏸ Pause</button>
+        <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','resume')">▶ Resume</button>
+      </div>
+    </div>
+
+    <!-- CONNECTOR FORK -->
+    <div class="tg-connector-v" style="height:16px;"></div>
+    <div class="tg-connector-fork"></div>
+
+    <!-- LEVEL 3: SPECIALIST WORKERS ROW -->
+    <div class="tg-workers-row">
+      ${workers.length > 1 ? '<div class="tg-review-link">⟷ Code & Verdict Review Link</div>' : ''}
+    `;
+
+    workers.forEach((w) => {
+      const isReviewer = w.role === "reviewer" || w.posture === "reviewer";
+      const icon = isReviewer ? "👁" : "⚡";
+      const postureClass = isReviewer ? "reviewer" : "coder";
+      const rawStatus = (w.status || "idle").toLowerCase();
+      let statusClass = "idle";
+      let statusText = "idle";
+      if (rawStatus === "running" || rawStatus === "in_progress") {
+        statusClass = "running";
+        statusText = "running";
+      } else if (rawStatus === "completed" || rawStatus === "done") {
+        statusClass = "completed";
+        statusText = "completed";
+      } else if (rawStatus === "paused") {
+        statusClass = "paused";
+        statusText = "paused";
+      } else if (rawStatus === "failed" || rawStatus === "error") {
+        statusClass = "failed";
+        statusText = "failed";
+      } else if (rawStatus === "blocked") {
+        statusClass = "blocked";
+        statusText = "blocked";
+      } else {
+        statusClass = "idle";
+        statusText = rawStatus;
+      }
+
+      html += `
+      <div class="tg-node ${postureClass} status-${esc(statusClass)}">
+        <div class="tg-node-header">
+          <div class="tg-node-title">${icon} ${esc(w.label || w.node_id)}</div>
+          <span class="tg-badge ${esc(statusClass)}">${esc(statusText)}</span>
+        </div>
+        <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:6px;font-weight:500;">${esc(w.current_task || w.task || 'Execução de tarefa')}</div>
+        <div class="tg-node-meta">
+          <div class="tg-node-row"><span>Worker ID:</span><span class="val">${esc(w.node_id || w.id)}</span></div>
+          <div class="tg-node-row"><span>Postura:</span><span class="val" style="color:${isReviewer ? '#d2a8ff' : 'var(--ok)'};">${esc(w.posture || (isReviewer ? 'reviewer' : 'coder'))}</span></div>
+          <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(w.provider_id || 'a6api')}:${esc(w.model_id || 'deepseek-v4-flash')}</span></div>
+          <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml(isReviewer ? 'reviewer' : 'coder', w.harness)}</span></div>
+          <div class="tg-node-row"><span>Tokens / Custo:</span><span class="val">${w.tokens_consumed || w.tokens || 0} tkn · $${Number(w.cost_usd || w.cost || 0).toFixed(5)}</span></div>
+        </div>
+        <div class="tg-actions">
+          <button class="tg-btn" onclick="directNodeTerminal('${esc(w.node_id || w.id)}', '${esc(w.label || w.node_id)}')">▮ Terminal</button>
+          <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','steer')">🎯 Steer</button>
+          <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','pause')">⏸ Pause</button>
+          <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','resume')">▶ Resume</button>
+        </div>
+      </div>
+      `;
+    });
+
+    html += `</div>`; // End tg-workers-row
+  }
+
+  canvas.innerHTML = html;
+}
+
+// ---- operator intervention & direct terminal -------------------------
+function directNodeTerminal(nodeId, label) {
+  const shortLabel = label || nodeId;
+  termStartNewTab(
+    `haos chat -q "Foco operacional no agente: ${nodeId}"`,
+    `Agent (${shortLabel.slice(0, 14)})`
+  );
+  navigateToTerminalTab();
+}
+
+async function intervene(targetId, action) {
+  const reason = prompt(`Ação: ${action.toUpperCase()} para o agente ${targetId}.\nInforme a razão / instrução:`, "Instrução do operador via UI");
+  if (!reason) return;
+  try {
+    const res = await api("/api/intervene", { target_id: targetId, action: action, reason: reason });
+    // Auto-open interactive terminal tab for this agent intervention
+    termStartNewTab(
+      `haos chat -q "Intervenção no agente ${targetId} (${action}): ${reason}"`,
+      `Agent ${targetId}`
+    );
+    navigateToTerminalTab();
+    fetchState();
+  } catch (err) {
+    alert(`✗ Erro na intervenção: ${err.message}`);
+  }
+}
+
+// ---- scheduler --------------------------------------------------------
+function renderScheduler(cg, cp, approvals) {
+  if (cg) {
+    $("cgActive").textContent = cg.active_global; $("cgMax").textContent = cg.max_global;
+    $("cgProviders").innerHTML = Object.entries(cg.providers || {}).map(([p, v]) => {
+      const pct = v.limit ? Math.min(100, Math.round(100 * v.active / v.limit)) : 0;
+      return `<div class="stat"><span>${esc(p)}</span><b>${v.active} / ${v.limit}</b></div>
+        <div class="bar"><i style="width:${pct}%"></i></div>`;
+    }).join("");
+    const acts = (cg.active_tasks || []);
+    $("cgDetail").innerHTML = acts.length
+      ? `<table><thead><tr><th>Task</th><th>Provider</th><th>Modelo</th><th>Rota</th></tr></thead><tbody>` +
+        acts.map((a) => `<tr><td class="mono">${esc(a.task_id || a.id || "")}</td>
+          <td>${esc(a.provider_id || "—")}</td><td>${esc(a.model_id || "—")}</td><td class="mono">${esc(a.route_key || "—")}</td></tr>`).join("") +
+        `</tbody></table>`
+      : `<span class="empty" style="padding:16px;">Sem carga ativa — tarefas despachadas aparecem aqui.</span>`;
+  }
+  if (cp) {
+    $("cpmTotal").textContent = cp.total_tasks_evaluated;
+    $("cpmNodes").textContent = (cp.critical_path_ids || []).length ? cp.critical_path_ids.length + " nós" : "—";
+    $("cpmList").innerHTML = (cp.critical_path_ids || []).length
+      ? cp.critical_path_ids.map((n, i) => `<div class="stat"><span class="mono">${i + 1}. ${esc(n)}</span><b class="warn">crit</b></div>`).join("")
+      : `<div class="stat"><span>Sem grafo com dependências</span><b>—</b></div>`;
+    const pip = cp.inherited_priorities || {};
+    const entries = Object.entries(pip).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    $("pipCount").textContent = Object.keys(pip).length;
+    $("pipList").innerHTML = entries.length
+      ? entries.map(([id, p]) => `<div class="stat"><span class="mono">${esc(id)}</span><b class="info">${p}</b></div>`).join("")
+      : `<div class="stat"><span>Sem prioridade herdada</span><b>—</b></div>`;
+  }
+}
+
+// ---- ouroboros --------------------------------------------------------
+function renderOuroboros(pending, history) {
+  const box = $("evPending");
+  if (!pending || !pending.length) {
+    box.innerHTML = `<span class="empty">Nenhuma proposta pendente — rode “Analisar falhas → propostas”.</span>`;
+  } else {
+    box.innerHTML = pending.map((p) => {
+      const tgt = p.target || {};
+      const cur = p.current_profile || tgt.current_profile || "";
+      const prop = p.proposed_profile || tgt.proposed_profile || "";
+      return `<div class="proposal">
+        <span class="pid">◔ ${esc(p.proposal_id || "")}</span>
+        <div class="stat"><span>Target</span><b>${esc(p.target || "?")}</b></div>
+        <div class="stat"><span>Perfil atual</span><b>${esc(cur)}</b></div>
+        <div class="stat"><span>Proposta</span><b class="warn">${esc(prop)}</b></div>
+        <div class="why">${esc(p.rationale || "")}</div>
+        <div class="row">
+          <button class="act" onclick="decideEvo('${esc(p.proposal_id)}','approved')">✓ Aprovar</button>
+          <button class="act danger" onclick="decideEvo('${esc(p.proposal_id)}','rejected')">✗ Rejeitar</button>
+        </div></div>`;
+    }).join("");
+  }
+  const hist = (history || []).slice().reverse();
+  $("evHistory").innerHTML = hist.length
+    ? hist.map((h) => {
+        const pld = h.payload || {};
+        const v = pld.verdict === "approved" ? "approved" : (pld.verdict === "rejected" ? "rejected" : pld.verdict || "");
+        const color = v === "approved" ? "ok" : (v === "rejected" ? "err" : "info");
+        return `<div class="stat"><span class="mono">${esc(pld.proposal_id || h.name || "")}</span>
+          <b class="${color}">${esc(String(v || pld.approver || "")).slice(0, 90)}</b></div>`;
+      }).join("")
+    : `<span class="empty">Nenhuma decisão registrada.</span>`;
+}
+
+async function runBlastRadiusAnalysis() {
+  const filesInput = $("blastFilesInput");
+  const raw = (filesInput.value || "").trim();
+  const box = $("blastResultBox");
+  box.style.display = "block";
+  box.innerHTML = `<span class="muted">Calculando grafo de símbolos e dependências... (a primeira indexação AST pode levar alguns segundos)</span>`;
+  const files = raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  try {
+    // Timeout próprio, generoso: o servidor indexa o repo na primeira chamada
+    // (~10s) e o default de 8s do api() abortava a análise antes de responder.
+    const res = await api("/api/evolution/blast-radius", { files: files }, 180000);
+    const tests = (res.impacted_tests || []).map((t) => `<li>${esc(t)}</li>`).join("");
+    const callers = (res.impacted_callers || []).slice(0, 8).map((c) => `<li>${esc(c)}</li>`).join("");
+    const idxInfo = (res.indexed_files > 0)
+      ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">índice AST: ${res.indexed_files} arquivos · ${res.indexed_symbols} símbolos · raiz: <span class="mono">${esc(res.scan_root || '')}</span> · ${res.elapsed_ms}ms</div>`
+      : "";
+    const zeroHint = (res.impacted_files.length === 0 && res.impacted_callers.length === 0)
+      ? (files.length === 0
+          ? `<div style="font-size:0.75rem;color:var(--warn);margin-top:4px;">Nada a analisar: informe um ou mais arquivos modificados (separados por vírgula) relativos à raiz indexada abaixo.</div>`
+          : `<div style="font-size:0.75rem;color:var(--warn);margin-top:4px;">Nenhum impacto detectado para esses arquivos. Confira se o caminho é relativo à raiz indexada abaixo (ex.: <span class="mono">hermes/platform/webui/standalone.py</span>).</div>`)
+      : "";
+    box.innerHTML = `
+      <div style="font-weight:600;color:var(--ok);margin-bottom:6px;">✓ Análise de Blast Radius Concluída</div>
+      <div class="stat"><span>Pontuação de Risco Estimada:</span><b style="color:${res.risk_score > 0.5 ? 'var(--warn)' : 'var(--ok)'};">${res.risk_score}</b></div>
+      <div class="stat"><span>Arquivos Impactados:</span><b>${res.impacted_files.length}</b></div>
+      <div class="stat"><span>Chamadores Transitivos:</span><b>${res.impacted_callers.length}</b></div>
+      <div class="stat"><span>Suítes de Teste Recomendadas:</span><b>${res.impacted_tests.length}</b></div>
+      ${tests ? `<div style="margin-top:6px;font-size:0.75rem;color:var(--accent);"><b>Testes Críticos:</b><ul style="margin:2px 0 0 16px;">${tests}</ul></div>` : ''}
+      ${zeroHint}
+      ${idxInfo}
+    `;
+  } catch (err) {
+    box.innerHTML = `<div class="errline">Erro ao calcular Blast Radius: ${esc(err.message)}</div>`;
+  }
+}
+
+async function runAutomergeCheck() {
+  const taskInput = $("automergeTaskIdInput");
+  const taskId = (taskInput.value || "").trim();
+  const box = $("blastResultBox");
+  if (!taskId) {
+    alert("Informe o Task ID para verificar elegibilidade de automerge.");
+    return;
+  }
+  box.style.display = "block";
+  box.innerHTML = `<span class="muted">Executando contrato de automerge e testes de regressão...</span>`;
+  try {
+    // O gate roda contrato + suítes afetadas no servidor: 8s abortaria sempre.
+    const res = await api("/api/evolution/automerge", { task_id: taskId }, 600000);
+    box.innerHTML = `
+      <div style="font-weight:600;color:${res.merged ? 'var(--ok)' : 'var(--warn)'};margin-bottom:6px;">
+        ${res.merged ? '✓ Automerge Aprovado & Aplicado' : '⚠ Automerge Não Aplicado'}
+      </div>
+      <div class="stat"><span>Status:</span><b>${esc(res.reason || res.status || 'avaliado')}</b></div>
+      <div class="stat"><span>Task ID:</span><b class="mono">${esc(taskId)}</b></div>
+      ${res.diff_stat ? `<pre style="font-size:0.72rem;background:#05070a;padding:6px;border-radius:4px;overflow-x:auto;">${esc(res.diff_stat)}</pre>` : ''}
+    `;
+  } catch (err) {
+    box.innerHTML = `<div class="errline">Erro no Automerge: ${esc(err.message)}</div>`;
+  }
+}
+
+// ---- events & unified timeline ---------------------------------------
+let activeTimelineCategory = "all";
+
+function filterTimeline(category) {
+  activeTimelineCategory = category;
+  document.querySelectorAll(".timeline-filter").forEach((b) => {
+    b.classList.toggle("active", b.dataset.cat === category);
+  });
+  loadUnifiedTimeline();
+}
+
+async function loadUnifiedTimeline() {
+  const list = $("evList");
+  if (!list) return;
+  try {
+    const url = activeTimelineCategory === "all" ? "/api/timeline" : `/api/timeline?category=${activeTimelineCategory}`;
+    const res = await api(url);
+    const items = res.timeline || [];
+    if (!items.length) {
+      list.innerHTML = `<span class="empty">Nenhum evento registrado nesta categoria.</span>`;
+      return;
+    }
+    list.innerHTML = items.map((item) => {
+      const dt = new Date(item.timestamp * 1000);
+      const timeStr = dt.toLocaleTimeString();
+      const pldStr = typeof item.payload === "object" ? JSON.stringify(item.payload, null, 2) : String(item.payload || "");
+      return `
+        <div class="timeline-item">
+          <div class="timeline-icon">${item.icon || "⚡"}</div>
+          <div class="timeline-content">
+            <div class="timeline-header">
+              <span class="timeline-title">${esc(item.title || item.name)}</span>
+              <span class="timeline-time">${timeStr} · ${item.id ? esc(item.id.slice(0, 8)) : ""}</span>
+            </div>
+            <div style="font-size:0.75rem;color:var(--accent);margin-top:2px;" class="mono">${esc(item.name)}</div>
+            ${pldStr && pldStr !== "{}" ? `<div class="timeline-payload">${esc(pldStr)}</div>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    list.innerHTML = `<div class="errline">Erro ao carregar timeline: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderEvents(events) {
+  // Se a aba timeline estiver ativa, carrega via API unificada
+  const eventsTab = $("tab-events");
+  if (eventsTab && eventsTab.classList.contains("active")) {
+    loadUnifiedTimeline();
+  }
+}
+
+// ---- settings ---------------------------------------------------------
+function renderSettingsForm(s) {
+  if (!s || document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("cfg")) return;
+  $("cfgGlobal").value = s.max_global_concurrency;
+  $("cfgDefaultProv").value = s.default_provider_limit;
+  $("cfgDefaultModel").value = s.default_model_limit || "";
+  $("cfgPoll").value = s.poll_refresh_ms;
+  $("cfgShadow").checked = !!s.shadow_mode;
+  $("cfgProviders").innerHTML = Object.entries(s.provider_limits || {})
+    .map(([k, v]) => `<div style="display:flex;gap:8px;margin-top:6px;"><input type="number" min="1" value="${v}" id="prov_${esc(k)}" style="flex:1" /> <span class="mono" style="align-self:center;color:var(--muted)">${esc(k)}</span></div>`).join("");
+}
+
+async function saveSettings() {
+  const prov = {};
+  document.querySelectorAll("#cfgProviders input").forEach((i) => {
+    const key = i.id.replace("prov_", "");
+    if (key && i.value) prov[key] = parseInt(i.value, 10);
+  });
+  const patch = {
+    max_global_concurrency: parseInt($("cfgGlobal").value, 10) || 8,
+    default_provider_limit: parseInt($("cfgDefaultProv").value, 10) || 2,
+    provider_limits: prov,
+    default_model_limit: $("cfgDefaultModel").value ? parseInt($("cfgDefaultModel").value, 10) : null,
+    poll_refresh_ms: parseInt($("cfgPoll").value, 10) || 4000,
+    shadow_mode: $("cfgShadow").checked,
+  };
+  try {
+    const res = await api("/api/settings", patch);
+    $("cfgMsg").textContent = "✓ Configurações salvas e aplicadas ao vivo.";
+    $("cfgMsg").style.color = "var(--ok)";
+    state.settings = res.settings;
+    scheduleRefresh();
+  } catch (e) { $("cfgMsg").textContent = "✗ " + e.message; $("cfgMsg").style.color = "var(--err)"; }
+}
+
+async function resetSettings() {
+  try {
+    const res = await api("/api/settings/reset", {});
+    $("cfgMsg").textContent = "✓ Defaults restaurados.";
+    $("cfgMsg").style.color = "var(--ok)";
+    state.settings = res.settings;
+    renderSettingsForm(res.settings);
+    scheduleRefresh();
+  } catch (e) { $("cfgMsg").textContent = "✗ " + e.message; $("cfgMsg").style.color = "var(--err)"; }
+}
+
+async function renderAgentSummary() {
+  try {
+    const a = await api("/api/agent-settings");
+    $("agentSummary").innerHTML = a.available === false
+      ? `<div class="errline">${esc(a.error || "indisponível")}</div>`
+      : `<div class="stat"><span>Model</span><b>${esc(a.model || "—")}</b></div>
+         <div class="stat"><span>Provider</span><b>${esc(a.provider || "—")}</b></div>
+         <div class="stat"><span>Skin / Idioma</span><b>${esc(a.skin)} / ${esc(a.language)}</b></div>
+         <div class="stat"><span>Memória</span><b>${a.memory_enabled ? "on" : "off"}</b></div>
+         <div class="stat"><span>Toolsets</span><b>${esc((a.toolsets || []).join(", ") || "—")}</b></div>
+         <p style="font-size:.76rem;color:var(--muted);margin-top:8px">${esc(a.note || "")}</p>`;
+  } catch (e) {
+    $("agentSummary").innerHTML = `<div class="errline">${esc(e.message)}</div>`;
+  }
+}
+
+// ---- console ----------------------------------------------------------
+let activeConsoleTaskId = null;
+let activeConsoleEventSource = null;
+
+function clearConsoleFeed() {
+  $("consoleMsgs").innerHTML = `
+    <div class="msg engine">
+      <div class="meta">HAOS · Cognitive Mission Console</div>
+      Feed limpo. Digite uma missão para iniciar um novo fluxo agêntico autônomo.
+    </div>
+  `;
+}
+
+function pushMsg(kind, html) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + kind;
+  wrap.innerHTML = html;
+  $("consoleMsgs").appendChild(wrap);
+  $("consoleMsgs").scrollTop = $("consoleMsgs").scrollHeight;
+  return wrap;
+}
+
+function attachConsoleToTask(taskId) {
+  activeConsoleTaskId = taskId;
+  $("consoleMissionTitle").textContent = `Missão ativa: ${taskId}`;
+  $("consoleLiveDot").style.background = "#e3b341";
+  $("consoleMissionStatus").className = "tg-badge running";
+  $("consoleMissionStatus").textContent = "RUNNING";
+
+  if (activeConsoleEventSource) {
+    activeConsoleEventSource.close();
+    activeConsoleEventSource = null;
+  }
+
+  // Switch to console tab
+  document.querySelectorAll("#nav button").forEach((x) => x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+  const cBtn = document.querySelector('#nav button[data-tab="console"]');
+  if (cBtn) cBtn.classList.add("active");
+  const cSec = $("tab-console");
+  if (cSec) cSec.classList.add("active");
+  window.scrollTo(0, 0);
+
+  const streamCard = pushMsg("engine", `
+    <div class="meta">HAOS · Conectado ao Live Stream da Tarefa ${esc(taskId)}</div>
+    <div style="font-weight:600;margin-bottom:6px;">📡 Acompanhando saída e raciocínio em tempo real...</div>
+    <div class="log-stream-box" id="streamLog_${esc(taskId)}">Conectando aos logs do worker agêntico...</div>
+  `);
+
+  const logBox = $(`streamLog_${taskId}`);
+  const sse = new EventSource(`/api/tasks/${taskId}/stream`);
+  activeConsoleEventSource = sse;
+
+  sse.addEventListener("status", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.elapsed_seconds !== undefined || data.tokens !== undefined) {
+        $("consoleLiveMetrics").textContent = `⏱ ${data.elapsed_seconds || 0}s · 🪙 ${data.tokens || 0} · 💵 $${Number(data.cost || 0).toFixed(4)}`;
+      }
+      if (data.status) {
+        const st = String(data.status).toLowerCase();
+        $("consoleMissionStatus").textContent = st.toUpperCase();
+        if (st === "done" || st === "completed") {
+          $("consoleMissionStatus").className = "tg-badge completed";
+          $("consoleLiveDot").style.background = "#3fb950";
+        } else if (st === "failed" || st === "error" || st === "blocked") {
+          $("consoleMissionStatus").className = "tg-badge failed";
+          $("consoleLiveDot").style.background = "#f85149";
+        } else {
+          $("consoleMissionStatus").className = "tg-badge running";
+          $("consoleLiveDot").style.background = "#e3b341";
+        }
+      }
+    } catch (err) {}
+  });
+
+  sse.addEventListener("log", (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.text && logBox) {
+        if (logBox.textContent.includes("Conectando aos logs")) logBox.textContent = "";
+        logBox.textContent += data.text;
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+    } catch (err) {}
+  });
+
+  sse.addEventListener("done", () => {
+    sse.close();
+    activeConsoleEventSource = null;
+    pushMsg("engine", `<div class="meta">HAOS · Stream Encerrado</div>✓ Execução da missão finalizada.`);
+    refresh();
+  });
+
+  sse.addEventListener("error", () => {
+    sse.close();
+    activeConsoleEventSource = null;
+  });
+}
+
+function switchConsoleToActiveTerminal() {
+  if (activeConsoleTaskId) {
+    openTaskTerminal(activeConsoleTaskId, "Console Task");
+  } else {
+    termLaunchHaosTab();
+    navigateToTerminalTab();
+  }
+}
+
+async function cancelActiveConsoleMission() {
+  if (!activeConsoleTaskId) {
+    alert("Nenhuma missão ativa no momento.");
+    return;
+  }
+  await triggerTaskAction(activeConsoleTaskId, "cancel");
+  $("consoleMissionStatus").className = "tg-badge failed";
+  $("consoleMissionStatus").textContent = "CANCELADO";
+  $("consoleLiveDot").style.background = "#f85149";
+}
+
+async function sendConsole() {
+  const input = $("consoleInput");
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = "";
+  pushMsg("user", `<div class="meta">Operador</div>${esc(message)}`);
+  try {
+    const res = await api("/api/console", { message });
+    pushMsg("engine",
+      `<div class="meta">HAOS · Task Engine</div>
+       Missão aceita no Kanban canônico: <b class="mono info">${esc(res.task_id)}</b>
+       (spec <span class="mono">${esc(res.spec_id)}</span>). Despachada para a lane!`);
+    state.pendingTasks[res.task_id] = { last: "running", html: null, goal: message };
+
+    // Auto attach live stream
+    attachConsoleToTask(res.task_id);
+    refresh();
+  } catch (e) {
+    pushMsg("engine", `<div class="meta">HAOS · Task Engine</div><span class="errline">✗ ${esc(e.message)}</span>`);
+  }
+}
+
+function followPendingTasks(tb) {
+  const recent = (tb && tb.recent) || [];
+  Object.keys(state.pendingTasks).forEach((tid) => {
+    const info = state.pendingTasks[tid];
+    const t = recent.find((x) => x && x.id === tid);
+    if (!t) return;
+    const status = String(t.status || "running");
+    if (info.last === "running" && (status === "done" || status === "failed" || status === "blocked")) {
+      const res = t.result || {};
+      const spec = t.spec || {};
+      let out = "";
+      if (typeof res.summary === "string" && res.summary) out = res.summary;
+      else if (typeof res.outcome === "string" && res.outcome) out = "outcome=" + res.outcome;
+      else out = "sem resultado textual registrado.";
+      info.last = status;
+      pushMsg("engine",
+        `<div class="meta">HAOS · ${esc(tid)}</div>
+         <b class="${status === "done" ? "ok" : "err"}">${esc(status.toUpperCase())}</b> — ${esc(out).slice(0, 400)}
+         <div class="ev">worker=${esc((t.run || {}).worker_id || "—")}</div>`);
+    }
+  });
+}
+
+function openNewTaskModal() {
+  const modal = $("newTaskModal");
+  if (modal) {
+    modal.style.display = "flex";
+    $("newTaskGoal").value = "";
+    $("newTaskTitle").value = "";
+    $("newTaskPrio").value = "50";
+    $("newTaskMsg").textContent = "";
+    setTimeout(() => $("newTaskGoal").focus(), 50);
+  }
+}
+
+function closeNewTaskModal() {
+  const modal = $("newTaskModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function submitNewTask() {
+  const goal = $("newTaskGoal").value.trim();
+  const title = $("newTaskTitle").value.trim();
+  const priority = parseInt($("newTaskPrio").value, 10) || 50;
+  const autoDispatch = $("newTaskAutoDispatch").checked;
+  const msgEl = $("newTaskMsg");
+
+  if (!goal) {
+    if (msgEl) {
+      msgEl.textContent = "Por favor, preencha o objetivo da missão.";
+      msgEl.style.color = "var(--err)";
+    }
+    return;
+  }
+
+  try {
+    const res = await api("/api/tasks", { goal, title: title || null, priority });
+    closeNewTaskModal();
+    if (autoDispatch) {
+      api("/api/dispatch", { max_spawn: 1 });
+    }
+    refresh();
+    // Auto attach live console stream
+    if (res.task_id) {
+      attachConsoleToTask(res.task_id);
+    }
+  } catch (err) {
+    if (msgEl) {
+      msgEl.textContent = "Erro: " + err.message;
+      msgEl.style.color = "var(--err)";
+    } else {
+      alert("Erro ao criar missão: " + err.message);
+    }
+  }
+}
+
+const createTask = submitNewTask;
+
+async function clearCompletedTasks() {
+  const confirmed = confirm("Deseja limpar as missões finalizadas (concluídas/canceladas) do histórico do Taskboard?");
+  if (!confirmed) return;
+  try {
+    const res = await api("/api/tasks/clear", { include_failed: false });
+    refresh();
+  } catch (err) {
+    alert("Erro ao limpar missões: " + err.message);
+  }
+}
+
+async function dispatchNow() {
+  try { await api("/api/dispatch", { max_spawn: 1 }); refresh(); }
+  catch (e) { alert("✗ " + e.message); }
+}
+
+async function analyzeEvo() {
+  const btn = $("evAnalyzeBtn");
+  btn.disabled = true;
+  try {
+    const res = await api("/api/evolution/analyze", {});
+    btn.textContent = "✓ " + res.submitted + " nova(s) submetida(s) · " + res.pending + " pendente(s)";
+    refresh();
+  } catch (e) { btn.textContent = "✗ " + e.message; }
+  setTimeout(() => { btn.disabled = false; btn.textContent = "🔍 Analisar falhas → propostas"; }, 2000);
+}
+
+async function decideEvo(pid, verdict) {
+  const approver = window.prompt("Identidade do operador (obrigatório — nunca inventamos):", "");
+  if (!approver || !approver.trim()) return;
+  try {
+    await api("/api/evolution/decide", { proposal_id: pid, verdict, approver: approver.trim() });
+    refresh();
+  } catch (e) { alert("✗ " + e.message); }
+}
+
+// ---- polling ----------------------------------------------------------
+async function refresh() {
+  try {
+    const data = await api("/api/state");
+    render(data);
+  } catch (_) {}
+}
+
+function scheduleRefresh() {
+  const ms = state.settings && state.settings.poll_refresh_ms ? state.settings.poll_refresh_ms : 4000;
+  if (timer) clearInterval(timer);
+  timer = setInterval(refresh, ms);
+  refresh();
+}
+
+// ---- Terminal Multiplex (Abas tipo Navegador com xterm.js + PTY) ------------------------
+let terminalTabs = []; // { id, title, term, fit, session, containerEl }
+let activeTabId = null;
+let termDrainTimer = null;
+let draggedTabIndex = null;
+
+function renderTabsBar() {
+  const bar = $("termTabsBar");
+  if (!bar) return;
+  bar.innerHTML = terminalTabs.map((t, idx) => {
+    const isActive = t.id === activeTabId;
+    const bg = isActive ? "#0a0d13" : "rgba(22, 27, 34, 0.6)";
+    const border = isActive ? "1px solid #00F0FF" : "1px solid var(--border)";
+    const color = isActive ? "#00F0FF" : "var(--muted)";
+    const dotColor = t.running !== false ? "#2ea043" : "#8b949e";
+    return `
+      <div class="term-tab-item" draggable="true"
+           data-tab-id="${t.id}" data-tab-idx="${idx}"
+           onclick="switchTerminalTab('${t.id}')"
+           ondragstart="onTabDragStart(event, ${idx})"
+           ondragover="onTabDragOver(event)"
+           ondrop="onTabDrop(event, ${idx})"
+           style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:${bg};border:${border};border-bottom:none;border-radius:6px 6px 0 0;cursor:pointer;user-select:none;font-size:0.8rem;color:${color};font-weight:${isActive ? "600" : "400"};transition:all 0.15s ease;">
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};"></span>
+        <span style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(t.title)}</span>
+        <span onclick="event.stopPropagation();closeTerminalTab('${t.id}')"
+              style="padding:0 3px;margin-left:4px;border-radius:3px;opacity:0.6;font-weight:700;"
+              onmouseover="this.style.opacity=1;this.style.color='#f85149'"
+              onmouseout="this.style.opacity=0.6;this.style.color='inherit'"
+              title="Fechar aba">✕</span>
+      </div>
+    `;
+  }).join("") + `
+    <button onclick="termStartNewTab()" class="act" style="padding:4px 8px;font-size:0.75rem;margin-left:4px;border-radius:4px;border:1px dashed var(--border);background:transparent;" title="Abrir nova aba">＋</button>
+  `;
+}
+
+function onTabDragStart(e, idx) {
+  draggedTabIndex = idx;
+  e.dataTransfer.effectAllowed = "move";
+}
+function onTabDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+}
+function onTabDrop(e, targetIdx) {
+  e.preventDefault();
+  if (draggedTabIndex === null || draggedTabIndex === targetIdx) return;
+  const item = terminalTabs.splice(draggedTabIndex, 1)[0];
+  terminalTabs.splice(targetIdx, 0, item);
+  draggedTabIndex = null;
+  saveTerminalTabsState();
+  renderTabsBar();
+}
+
+function switchTerminalTab(tabId) {
+  activeTabId = tabId;
+  terminalTabs.forEach((t) => {
+    if (t.containerEl) {
+      t.containerEl.style.display = t.id === tabId ? "block" : "none";
+    }
+  });
+  renderTabsBar();
+  const current = terminalTabs.find((t) => t.id === tabId);
+  if (current && current.fit) {
+    setTimeout(() => {
+      try {
+        current.fit.fit();
+        current.term.focus();
+        api("/api/terminal/" + current.session + "/resize", { rows: current.term.rows, cols: current.term.cols }).catch(() => {});
+      } catch (_) {}
+    }, 40);
+  }
+}
+
+async function termStartNewTab(initialCmd = null, customTitle = null) {
+  const host = $("termHost");
+  if (!host) return;
+
+  const tabId = "ttab_" + Math.random().toString(36).slice(2, 9);
+  const container = document.createElement("div");
+  container.id = "c_" + tabId;
+  container.style.width = "100%";
+  container.style.height = "100%";
+  container.style.display = "none";
+  host.appendChild(container);
+
+  const fit = window.FitAddon ? new window.FitAddon.FitAddon() : null;
+  const xtermInstance = new window.Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    theme: { background: "#0a0d13", foreground: "#d7dde7", cursor: "#4fd1c5" }
+  });
+  if (fit) xtermInstance.loadAddon(fit);
+  xtermInstance.open(container);
+
+  try {
+    let cwdVal = ($("termCwd") && $("termCwd").value.trim()) || undefined;
+    if (!cwdVal) {
+      const curWs = workspacesCache.find((w) => w.id === activeWorkspaceId);
+      if (curWs && curWs.path) cwdVal = curWs.path;
+    }
+    const r = await api("/api/terminal/start", { cwd: cwdVal });
+    const title = customTitle || (initialCmd ? initialCmd.split(" ")[0].toUpperCase() : "Shell " + (terminalTabs.length + 1));
+    
+    let hermesSid = null;
+    if (initialCmd) {
+      const m = initialCmd.match(/--resume\s+([a-zA-Z0-9_-]+)/);
+      if (m) hermesSid = m[1];
+    }
+    const tabObj = {
+      id: tabId,
+      title: title,
+      term: xtermInstance,
+      fit: fit,
+      session: r.session_id,
+      containerEl: container,
+      running: true,
+      initialCmd: initialCmd || null,
+      hermesSessionId: hermesSid
+    };
+
+    xtermInstance.onData((data) => {
+      if (tabObj.session) api("/api/terminal/" + tabObj.session + "/input", { data }, 2000).catch(() => {});
+    });
+
+    xtermInstance.write("\x1b[90mHAOS Terminal PTY · " + r.shell + " @ " + r.cwd + " (sessão " + r.session_id.slice(0, 8) + ")\x1b[0m\r\n");
+    terminalTabs.push(tabObj);
+    switchTerminalTab(tabId);
+    saveTerminalTabsState();
+
+    if (!termDrainTimer) {
+      termDrainTimer = setInterval(drainAllTerminalTabs, 160);
+    }
+
+    if (initialCmd) {
+      setTimeout(() => {
+        api("/api/terminal/" + r.session_id + "/input", { data: initialCmd + "\r" }).catch(() => {});
+      }, 300);
+    }
+    $("termMsg").textContent = "";
+  } catch (e) {
+    container.remove();
+    $("termMsg").textContent = "✗ Falha ao iniciar terminal: " + e.message;
+    $("termMsg").style.color = "var(--err)";
+  }
+}
+
+let _draining = false;
+async function drainAllTerminalTabs() {
+  if (_draining) return;
+  _draining = true;
+  try {
+    for (const t of terminalTabs) {
+      if (!t.session || t.running === false) continue;
+      try {
+        const r = await api("/api/terminal/" + t.session + "/drain", undefined, 3000);
+        if (r && r.data) t.term.write(r.data);
+        if (r && !r.running) {
+          t.running = false;
+          t.term.write("\r\n\x1b[90m[sessão encerrada — exit " + r.exit_code + "]\x1b[0m\r\n");
+          renderTabsBar();
+        }
+      } catch (_) {}
+    }
+  } finally {
+    _draining = false;
+  }
+}
+
+async function closeTerminalTab(tabId) {
+  const idx = terminalTabs.findIndex((t) => t.id === tabId);
+  if (idx === -1) return;
+  const t = terminalTabs[idx];
+  if (t.session) {
+    api("/api/terminal/" + t.session + "/kill", {}).catch(() => {});
+  }
+  if (t.containerEl) t.containerEl.remove();
+  terminalTabs.splice(idx, 1);
+  if (activeTabId === tabId) {
+    activeTabId = terminalTabs.length ? terminalTabs[Math.max(0, idx - 1)].id : null;
+  }
+  saveTerminalTabsState();
+  if (activeTabId) switchTerminalTab(activeTabId);
+  else renderTabsBar();
+}
+
+async function termKillActiveTab() {
+  if (activeTabId) closeTerminalTab(activeTabId);
+}
+
+async function termLaunchHaosTab() {
+  await termStartNewTab("haos", "HAOS CLI");
+}
+
+function openHistoryModal() {
+  const modal = $("historyModal");
+  if (modal) {
+    modal.style.display = "flex";
+    loadTerminalSessions();
+  }
+}
+
+function closeHistoryModal() {
+  const modal = $("historyModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function resumeTerminalSession(sessionId) {
+  if (!sessionId) return;
+  closeHistoryModal();
+  $("termMsg").textContent = "Retomando sessão: " + sessionId + " em nova aba…";
+  $("termMsg").style.color = "#00F0FF";
+  const shortId = sessionId.length > 15 ? sessionId.slice(0, 15) + "…" : sessionId;
+  await termStartNewTab("haos --resume " + sessionId, "HAOS (" + shortId + ")");
+}
+
+function saveTerminalTabsState() {
+  try {
+    const serialized = terminalTabs.map((t) => ({
+      id: t.id,
+      title: t.title,
+      session: t.session,
+      initialCmd: t.initialCmd || null,
+      hermesSessionId: t.hermesSessionId || null,
+    }));
+    const raw = JSON.stringify(serialized);
+    localStorage.setItem("haos_term_tabs", raw);
+    localStorage.setItem("haos_term_active_tab", activeTabId || "");
+    sessionStorage.setItem("haos_term_tabs", raw);
+    sessionStorage.setItem("haos_term_active_tab", activeTabId || "");
+  } catch (_) {}
+}
+
+async function restoreTerminalTabsState() {
+  let savedTabs = [];
+  let savedActive = null;
+  try {
+    const raw = sessionStorage.getItem("haos_term_tabs") || localStorage.getItem("haos_term_tabs");
+    savedTabs = JSON.parse(raw || "[]");
+    savedActive = sessionStorage.getItem("haos_term_active_tab") || localStorage.getItem("haos_term_active_tab");
+  } catch (_) {}
+
+  // Verify which sessions are still alive on the server
+  let activeSessions = [];
+  try {
+    const sres = await api("/api/terminal");
+    activeSessions = (sres && sres.sessions) || [];
+  } catch (_) {}
+
+  const activeIds = new Set(activeSessions.map((s) => s.session_id));
+  let restoredCount = 0;
+
+  for (const st of savedTabs) {
+    if (!activeIds.has(st.session)) {
+      // PTY died on server or server restarted; automatically re-launch or resume
+      if (st.hermesSessionId) {
+        await termStartNewTab("haos --resume " + st.hermesSessionId, st.title);
+        restoredCount++;
+      } else if (st.initialCmd) {
+        await termStartNewTab(st.initialCmd, st.title);
+        restoredCount++;
+      }
+      continue;
+    }
+
+    const tabId = st.id;
+    const host = $("termHost");
+    if (!host) continue;
+
+    const isActive = (st.id === savedActive) || (restoredCount === 0);
+
+    const container = document.createElement("div");
+    container.id = "c_" + tabId;
+    container.style.width = "100%";
+    container.style.height = "100%";
+    container.style.display = isActive ? "block" : "none";
+    host.appendChild(container);
+
+    const fit = window.FitAddon ? new window.FitAddon.FitAddon() : null;
+    const xtermInstance = new window.Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      theme: { background: "#0a0d13", foreground: "#d7dde7", cursor: "#4fd1c5" }
+    });
+    if (fit) xtermInstance.loadAddon(fit);
+    xtermInstance.open(container);
+
+    const tabObj = {
+      id: tabId,
+      title: st.title,
+      term: xtermInstance,
+      fit: fit,
+      session: st.session,
+      containerEl: container,
+      running: true,
+      initialCmd: st.initialCmd || null,
+      hermesSessionId: st.hermesSessionId || null,
+    };
+
+    xtermInstance.onData((data) => {
+      if (tabObj.session) api("/api/terminal/" + tabObj.session + "/input", { data }, 2000).catch(() => {});
+    });
+
+    if (isActive && fit) {
+      setTimeout(() => {
+        try {
+          fit.fit();
+          api("/api/terminal/" + st.session + "/resize", { rows: xtermInstance.rows, cols: xtermInstance.cols }).catch(() => {});
+        } catch (_) {}
+      }, 40);
+    }
+
+    // Replay full output history from the server
+    try {
+      const replay = await api("/api/terminal/" + st.session + "/replay");
+      const replayText = (replay && (replay.data || replay.buffer)) || "";
+      if (replayText) xtermInstance.write(replayText);
+      if (replay && !replay.running) {
+        tabObj.running = false;
+        xtermInstance.write("\r\n\x1b[90m[sessão finalizada anteriormente — exit " + replay.exit_code + "]\x1b[0m\r\n");
+      }
+    } catch (_) {}
+
+    terminalTabs.push(tabObj);
+    restoredCount++;
+  }
+
+  if (restoredCount > 0) {
+    if (!termDrainTimer) termDrainTimer = setInterval(drainAllTerminalTabs, 160);
+    const targetTab = terminalTabs.find((t) => t.id === savedActive) || terminalTabs[0];
+    if (targetTab) switchTerminalTab(targetTab.id);
+  } else {
+    // If no active sessions could be restored, check for most recent hermes session
+    try {
+      const sres = await api("/api/sessions");
+      const sessions = (sres && sres.sessions) || [];
+      if (sessions.length > 0) {
+        const latest = sessions[0];
+        const shortId = latest.id.length > 15 ? latest.id.slice(0, 15) + "…" : latest.id;
+        await termStartNewTab("haos --resume " + latest.id, "HAOS (" + shortId + ")");
+        return;
+      }
+    } catch (_) {}
+    termStartNewTab("haos", "HAOS CLI");
+  }
+}
+
+function termLoad() {
+  if (terminalTabs.length === 0) {
+    restoreTerminalTabsState();
+  } else if (activeTabId) {
+    switchTerminalTab(activeTabId);
+  }
+}
+
+async function loadTerminalSessions() {
+  const listEl = $("termSessionHistoryList");
+  const countEl = $("termSessionCount");
+  if (!listEl) return;
+  try {
+    const res = await api("/api/sessions");
+    const sessions = (res && res.sessions) || [];
+    if (countEl) countEl.textContent = sessions.length + " sessões";
+    if (!sessions.length) {
+      listEl.innerHTML = '<span class="empty" style="font-size:0.8rem;">Nenhuma sessão anterior encontrada.</span>';
+      return;
+    }
+    listEl.innerHTML = sessions.map((s) => {
+      const sid = esc(s.session_id);
+      const title = esc(s.title || sid);
+      const date = esc(s.started_at || s.updated_at || "");
+      const badge = '<span style="font-size:0.65rem;background:rgba(0,240,255,0.15);color:#00F0FF;font-weight:700;padding:2px 6px;border-radius:4px;border:1px solid rgba(0,240,255,0.3);">HAOS SESSION</span>';
+      return `
+        <div style="flex:0 0 280px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;display:flex;flex-direction:column;justify-content:space-between;gap:6px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            ${badge}
+            <span style="font-size:0.7rem;color:var(--muted);font-family:var(--mono);">${date}</span>
+          </div>
+          <div style="font-size:0.8rem;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${title}">
+            ${title}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+            <code style="font-size:0.7rem;color:var(--muted);">${sid.slice(0, 15)}…</code>
+            <div style="display:flex;gap:4px;">
+              <button class="act" style="font-size:0.7rem;padding:2px 10px;background:rgba(0,240,255,0.15);color:#00F0FF;border-color:rgba(0,240,255,0.4);" onclick="resumeTerminalSession('${sid}')" title="Retomar sessão no terminal PTY do HAOS">
+                ▶ Retomar no Terminal
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    listEl.innerHTML = `<span class="empty" style="color:var(--err);font-size:0.8rem;">Erro ao carregar sessões: ${esc(err.message)}</span>`;
+  }
+}
+
+// ---- Config Agente (config.yaml real) ----------------------------------
+let agentCfg = null;
+async function agentCfgLoad() {
+  try {
+    agentCfg = await api("/api/agent-config");
+    const s = agentCfg;
+    $("agentCfgPath").textContent = s.config_path + (s.exists ? "" : "  (não existe — rode `hermes setup`)");
+    $("agentCfgManaged").innerHTML = s.managed
+      ? `<div class="errline">⚠ Perfil gerenciado: leitura apenas — escrita bloqueada.</div>` : "";
+    if (s.error) { $("agentCfgMsg").textContent = "✗ " + s.error; $("agentCfgMsg").style.color = "var(--err)"; }
+    const box = $("agentCfgSections");
+    const secs = Object.values(s.sections || {});
+    if (!secs.length) { box.innerHTML = '<span class="empty">config.yaml vazio — adicione chaves ou rode `hermes setup`.</span>'; return; }
+    box.innerHTML = secs.map((sec) => {
+      const fields = (sec.fields || []).map((f) => frow(f)).join("");
+      return `<div class="card"><h3><span class="n">§</span> ${esc(sec.title)}</h3>${fields || '<div style="color:var(--muted)">(sem campos escalares)</div>'}</div>`;
+    }).join("");
+  } catch (e) { $("agentCfgSections").innerHTML = `<span class="empty">✗ ${esc(e.message)}</span>`; }
+}
+function frow(f) {
+  const key = "acf_" + btoa(f.path).replace(/[^A-Za-z0-9]/g, "x");
+  const orig = f.kind === "secret" ? "__secret__" : JSON.stringify(f.value);
+  let ctl = "";
+  const v = f.value;
+  if (f.kind === "bool") {
+    ctl = `<input type="checkbox" data-path="${esc(f.path)}" data-kind="bool" data-key="${key}" data-orig="${esc(orig)}" ${v ? "checked" : ""} />`;
+  } else if (f.kind === "int" || f.kind === "float") {
+    ctl = `<input type="number" step="${f.kind === "float" ? "any" : "1"}" value="${esc(v ?? "")}" data-path="${esc(f.path)}" data-kind="${f.kind}" data-key="${key}" data-orig="${esc(orig)}" />`;
+  } else if (f.kind === "secret") {
+    ctl = `<input type="password" class="secret" value="" placeholder="******** (inalterado)" data-path="${esc(f.path)}" data-kind="str" data-key="${key}" data-orig="${esc(orig)}" />`;
+  } else if (f.kind === "list") {
+    ctl = `<input type="text" value="${esc(Array.isArray(v) ? v.join(", ") : "")}" data-path="${esc(f.path)}" data-kind="list" data-key="${key}" data-orig="${esc(orig)}" />`;
+  } else if (f.kind === "json") {
+    ctl = `<textarea data-path="${esc(f.path)}" data-kind="json" data-key="${key}" data-orig="${esc(orig)}">${esc(v)}</textarea>`;
+  } else if (v === null || v === undefined) {
+    ctl = `<input type="text" value="" placeholder="null" data-path="${esc(f.path)}" data-kind="null" data-key="${key}" data-orig="${esc(orig)}" />`;
+  } else {
+    ctl = `<input type="text" value="${esc(String(v))}" data-path="${esc(f.path)}" data-kind="str" data-key="${key}" data-orig="${esc(orig)}" />`;
+  }
+  return `<div class="frow"><span class="k">${esc(f.path)}</span>${ctl}</div>`;
+}
+async function agentCfgSave() {
+  const updates = {};
+  let changed = 0;
+  document.querySelectorAll("#agentCfgSections input[data-path], #agentCfgSections textarea[data-path]").forEach((el) => {
+    const path = el.dataset.path, kind = el.dataset.kind;
+    let val;
+    if (kind === "bool") val = el.checked;
+    else if (kind === "int") val = el.value === "" ? null : parseInt(el.value, 10);
+    else if (kind === "float") val = el.value === "" ? null : parseFloat(el.value);
+    else if (kind === "list") val = el.value.split(",").map((x) => x.trim()).filter(Boolean);
+    else val = el.value;
+    // Segredo intocado (campo vazio) => NÃO envia nada: nunca apaga por engano.
+    if (el.dataset.orig === "__secret__") {
+      if (el.value.trim() !== "") { updates[path] = { kind: "str", value: val }; changed++; }
+      return;
+    }
+    const cur = JSON.stringify(val);
+    if (cur === el.dataset.orig) return; // inalterado
+    updates[path] = { kind, value: val };
+    changed++;
+  });
+  if (!changed) { $("agentCfgMsg").textContent = "Nenhuma alteração para gravar."; $("agentCfgMsg").style.color = "var(--muted)"; return; }
+  try {
+    const r = await api("/api/agent-config", { updates });
+    $("agentCfgMsg").textContent = "✓ " + r.applied.length + " campo(s) gravados em " + r.config_path + " (backup em config-backups/).";
+    $("agentCfgMsg").style.color = "var(--ok)";
+    agentCfgLoad();
+  } catch (e) {
+    $("agentCfgMsg").textContent = "✗ " + e.message;
+    $("agentCfgMsg").style.color = "var(--err)";
+  }
+}
+function agentCfgRaw() {
+  const card = $("agentCfgRawCard");
+  const show = card.style.display === "none";
+  card.style.display = show ? "block" : "none";
+  if (show && agentCfg) $("agentCfgRawArea").value = JSON.stringify(agentCfg, null, 2);
+}
+
+scheduleRefresh();
+agentCfgLoad();
+systemLoad();
+
+// ---- Sistema: fatos reais ----------------------------------------------
+let sysFacts = null;
+const row = (k, v, cls) => `<div class="stat"><span>${esc(k)}</span><b class="${cls || ""}">${esc(String(v ?? "—"))}</b></div>`;
+const tiny = (o) => o ? `<span class="mono" style="word-break:break-all">${esc(o)}</span>` : '<span style="color:var(--muted)">—</span>';
+async function systemLoad() {
+  try {
+    sysFacts = await api("/api/system-facts");
+    $("sysMsg").textContent = "";
+    const homes = (sysFacts.homes || []);
+    $("sysHomes").innerHTML = homes.map((h) => {
+      const c = h.config || {}, mdl = c.model || {}, del = c.delegation || {};
+      const role = del.role_models || {};
+      const kn = h.knowledge || {};
+      const html = [
+        `<div class="card"><h3><span class="n">◫</span> Home ${esc(h.role || "")}</h3>`,
+        row("HAOS_HOME", h.home, "info"),
+        row("config.yaml", c.exists ? c.config_path : "inexistente (defaults)", c.exists ? "ok" : "warn"),
+        mdl && mdl.default ? row("Modelo padrão", mdl.default) : "",
+        mdl && mdl.provider ? row("Provider", mdl.provider) : "",
+        role && role.orchestrator ? row("Orquestrador (delegação)", role.orchestrator, "info") : "",
+        role && role.leaf ? row("Leaf (subagentes)", role.leaf) : "",
+        del && del.orchestrator_enabled !== undefined ? row("Delegação habilitada", del.orchestrator_enabled) : "",
+        del && del.max_concurrent_children !== undefined ? row("Filhos simultâneos", del.max_concurrent_children) : "",
+        (c.display || {}).skin ? row("Skin/Idioma", (c.display.skin || "default") + " / " + (c.display.language || "en")) : "",
+        `<div class="secname">Conhecimento (onde está salvo)</div>`,
+        kn.vault ? row("Vault Obsidian", kn.vault.path + " · " + kn.vault.notes + " nota(s)") : "",
+        kn.graphrag ? row("GraphRAG index", kn.graphrag.path + " · " + kn.graphrag.entities + " entidades / " + kn.graphrag.relationships + " relações") : "",
+        kn.memories ? row("Memórias (MD)", kn.memories.path + (kn.memories.files.length ? " · " + kn.memories.files.join(", ") : " · vazio")) : "",
+        `</div>`,
+      ].filter(Boolean).join("");
+      return html;
+    }).join("") || `<span class="empty">Nenhuma HAOS_HOME detectada.</span>`;
+    // Engine card
+    const e = sysFacts.engine || {};
+    $("sysEngineCard").innerHTML = `<h3><span class="n">▤</span> Dados do Engine HAOS (Task ≠ Run)</h3>`
+      + row("data_dir", e.data_dir) + row("Kanban canônico (db)", e.kanban_db)
+      + row("EventStore (db)", e.events_db) + row("settings.json (engine)", e.settings_file)
+      + row("Backups de config", e.config_backups);
+    // Modelos editáveis (primeira home com config.yaml)
+    const editable = homes.find((hh) => (hh.config || {}).exists);
+    if (editable) {
+      const c = editable.config || {}, mdl = c.model || {}, del = c.delegation || {}, role = del.role_models || {};
+      const sug = (sysFacts.models_suggestions || []).map((s) => `<option value="${esc(s)}">`).join("");
+      const dlist = (id) => `<datalist id="${id}">${sug}</datalist>`;
+      $("sysModelForm").innerHTML =
+        `<div class="frow"><span class="k">modelo padrão</span><input type="text" id="sysMDefault" value="${esc(mdl.default || "")}" list="sugModels" />${dlist("sugModels")}</div>` +
+        `<div class="frow"><span class="k">orquestrador (delegação)</span><input type="text" id="sysMOrch" value="${esc(role.orchestrator || "")}" list="sugModels2" />${dlist("sugModels2")}</div>` +
+        `<div class="frow"><span class="k">leaf (subagentes)</span><input type="text" id="sysMLeaf" value="${esc(role.leaf || "")}" list="sugModels3" />${dlist("sugModels3")}</div>` +
+        `<div style="margin-top:10px;"><button class="act primary" onclick="systemSaveModels('${esc(editable.config.config_path)}')">💾 Gravar no config.yaml</button></div>`;
+    } else {
+      $("sysModelForm").innerHTML = `<span class="empty">Sem config.yaml detectado para editar.</span>`;
+    }
+    $("sysHow").innerHTML = sysHowHtml(editable);
+  } catch (e) { $("sysMsg").textContent = "✗ " + e.message; $("sysMsg").style.color = "var(--err)"; }
+}
+async function systemSaveModels(cfgPath) {
+  const updates = {};
+  const def = $("sysMDefault").value.trim(), orch = $("sysMOrch").value.trim(), leaf = $("sysMLeaf").value.trim();
+  if (def) updates["model.default"] = { kind: "str", value: def };
+  if (orch) updates["delegation.role_models.orchestrator"] = { kind: "str", value: orch };
+  if (leaf) updates["delegation.role_models.leaf"] = { kind: "str", value: leaf };
+  if (!Object.keys(updates).length) { $("sysModelMsg").textContent = "Nada para gravar."; $("sysModelMsg").style.color = "var(--muted)"; return; }
+  try {
+    const r = await api("/api/agent-config", { updates });
+    $("sysModelMsg").textContent = "✓ gravado em " + cfgPath + " — vale para novas sessões/reload (" + r.applied.length + " campo(s)).";
+    $("sysModelMsg").style.color = "var(--ok)";
+    setTimeout(systemLoad, 400);
+  } catch (e) { $("sysModelMsg").textContent = "✗ " + e.message; $("sysModelMsg").style.color = "var(--err)"; }
+}
+function sysHowHtml(editable) {
+  const cfg = editable ? editable.config.config_path : "config.yaml";
+  return [
+    "<b style='color:var(--text)'>Quem orquestra e quem executa (sistema de agentes):</b><br/>" +
+    "O agente principal responde com o <b>modelo padrão</b> (model.default). Quando ele delega trabalho, o <b>orquestrador</b> " +
+    "(delegation.role_models.orchestrator) coordena os subagentes e o <b>leaf</b> (delegation.role_models.leaf) executa as folhas. " +
+    "Mude os três no card acima — grava no " + tiny(cfg) + " via seam canônico com backup automático.",
+    "<b style='color:var(--text)'>Onde está salvo cada recurso:</b><br/>" +
+    "• <b>Obsidian vault</b>: diretório <span class='mono'>vault/</span> dentro da HAOS_HOME (notas ADR consultadas pelo agente).<br/>" +
+    "• <b>GraphRAG-lite</b>: diretório <span class='mono'>graphrag/</span> (entities.csv + relationships.csv — grafo de conhecimento local, sem embeddings).<br/>" +
+    "• <b>Memórias de longo prazo</b>: <span class='mono'>memories/</span> (MEMORY.md/USER.md) com limites em memory.*.<br/>" +
+    "• <b>Kanban do agente</b>: kanban.db na HAOS_HOME; <b>Kanban/EventStore do HAOS engine</b>: em data_dir (card acima).",
+    "<b style='color:var(--text)'>Se algo aparecer como “—”:</b> o recurso ainda não existe naquela home — a UI nunca inventa. Crie seguindo o padrão dos adapters " +
+    "(vault com .md, graphrag com entities.csv) ou rode as skills instaladas (obsidian / graphrag-lite em skills/).",
+  ].map((x) => `<p style="margin-bottom:10px;">${x}</p>`).join("");
+}
+// ---- Workspaces & DSH Directory Explorer -----------------------------
+let activeWorkspaceId = localStorage.getItem("haos_active_ws") || "default";
+let workspacesCache = [];
+let wsExplorerCurrentPath = "";
+let wsExplorerHomePath = "";
+let wsExplorerShowHidden = false;
+
+function toggleWorkspaceMenu() {
+  const menu = $("wsDropdownMenu");
+  if (!menu) return;
+  menu.style.display = menu.style.display === "block" ? "none" : "block";
+  if (menu.style.display === "block") loadWorkspaces();
+}
+
+// Close workspace dropdown when clicking outside
+document.addEventListener("click", (e) => {
+  const trigger = $("wsDropdownTrigger");
+  const menu = $("wsDropdownMenu");
+  if (menu && menu.style.display === "block") {
+    if (trigger && !trigger.contains(e.target) && !menu.contains(e.target)) {
+      menu.style.display = "none";
+    }
+  }
+});
+
+async function loadWorkspaces() {
+  try {
+    const res = await api("/api/workspaces");
+    workspacesCache = (res && res.workspaces) || [];
+    renderWorkspaceMenu();
+    updateActiveWorkspaceUI();
+  } catch (err) {
+    console.error("Failed loading workspaces:", err);
+  }
+}
+
+function updateActiveWorkspaceUI() {
+  const current = workspacesCache.find((w) => w.id === activeWorkspaceId) || workspacesCache[0];
+  if (!current) return;
+  activeWorkspaceId = current.id;
+  localStorage.setItem("haos_active_ws", current.id);
+  const nameEl = $("currentWsName");
+  if (nameEl) nameEl.textContent = current.name;
+  const chipEl = $("chipDir");
+  if (chipEl) {
+    chipEl.textContent = current.path;
+    chipEl.title = current.path;
+  }
+  const termCwdEl = $("termCwd");
+  if (termCwdEl && !termCwdEl.value) {
+    termCwdEl.placeholder = "cwd (" + current.name + ")";
+  }
+}
+
+function renderWorkspaceMenu() {
+  const listEl = $("wsMenuList");
+  if (!listEl) return;
+  listEl.innerHTML = workspacesCache.map((w) => {
+    const isAct = w.id === activeWorkspaceId;
+    return `
+      <div onclick="selectWorkspace('${esc(w.id)}')"
+           style="padding:6px 8px;border-radius:6px;cursor:pointer;display:flex;flex-direction:column;gap:2px;background:${isAct ? 'rgba(0,240,255,0.1)' : 'transparent'};border:1px solid ${isAct ? 'rgba(0,240,255,0.3)' : 'transparent'};">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:0.78rem;font-weight:600;color:${isAct ? '#00F0FF' : 'var(--text)'};">
+            ${isAct ? '● ' : ''}${esc(w.name)}
+          </span>
+        </div>
+        <span style="font-size:0.68rem;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(w.path)}">
+          ${esc(w.path)}
+        </span>
+      </div>
+    `;
+  }).join("");
+}
+
+function selectWorkspace(wsId) {
+  const target = workspacesCache.find((w) => w.id === wsId);
+  if (!target) return;
+  activeWorkspaceId = target.id;
+  updateActiveWorkspaceUI();
+  $("wsDropdownMenu").style.display = "none";
+
+  // When switching workspace, open a new terminal session in the chosen workspace root
+  termStartNewTab(null, "Shell (" + target.name + ")");
+}
+
+function openWorkspaceDialog() {
+  $("wsDropdownMenu").style.display = "none";
+  $("wsExplorerModal").style.display = "flex";
+  const current = workspacesCache.find((w) => w.id === activeWorkspaceId);
+  fsNavigateTo(current ? current.path : "");
+}
+
+function closeWorkspaceDialog() {
+  $("wsExplorerModal").style.display = "none";
+}
+
+async function fsNavigateTo(targetPath) {
+  const list = $("fsFolderList");
+  if (list) list.innerHTML = '<span class="empty">Carregando diretórios…</span>';
+  try {
+    const query = new URLSearchParams();
+    if (targetPath) query.set("path", targetPath);
+    if (wsExplorerShowHidden) query.set("show_hidden", "1");
+    const res = await api("/api/fs/browse?" + query.toString());
+    wsExplorerCurrentPath = res.current_path;
+    wsExplorerHomePath = res.home_path;
+    $("fsCurrentPathInput").value = wsExplorerCurrentPath;
+
+    // Up button disabled if at filesystem root
+    $("fsUpBtn").disabled = !res.parent_path;
+
+    const parts = wsExplorerCurrentPath.split("/").filter(Boolean);
+    const suggestedName = parts.length ? parts[parts.length - 1] : "Workspace";
+    $("wsNewNameInput").placeholder = suggestedName;
+
+    renderFsItems(res.items);
+  } catch (err) {
+    if (list) list.innerHTML = `<span class="errline">✗ Erro: ${esc(err.message)}</span>`;
+  }
+}
+
+function fsNavigateUp() {
+  if (!wsExplorerCurrentPath) return;
+  const parts = wsExplorerCurrentPath.split("/").filter(Boolean);
+  if (parts.length > 0) {
+    parts.pop();
+    const upPath = "/" + parts.join("/");
+    fsNavigateTo(upPath || "/");
+  }
+}
+
+function fsToggleHidden() {
+  wsExplorerShowHidden = !wsExplorerShowHidden;
+  $("fsHiddenBtn").style.color = wsExplorerShowHidden ? "#00F0FF" : "var(--text)";
+  fsNavigateTo(wsExplorerCurrentPath);
+}
+
+function renderFsItems(items) {
+  const list = $("fsFolderList");
+  if (!list) return;
+  const dirs = (items || []).filter((i) => i.is_dir);
+  if (!dirs.length) {
+    list.innerHTML = '<span class="empty">Nenhum subdiretório encontrado nesta pasta.</span>';
+    return;
+  }
+  list.innerHTML = dirs.map((d) => {
+    return `
+      <div onclick="fsNavigateTo('${esc(d.path).replace(/'/g, "\\'")}')"
+           style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;cursor:pointer;background:#161b22;border:1px solid rgba(255,255,255,0.04);transition:all 0.15s;"
+           onmouseover="this.style.borderColor='rgba(0,240,255,0.4)';this.style.background='#1c2330';"
+           onmouseout="this.style.borderColor='rgba(255,255,255,0.04)';this.style.background='#161b22';">
+        <span style="font-size:1.1rem;color:#58a6ff;">📁</span>
+        <span style="font-size:0.82rem;font-weight:500;color:var(--text);">${esc(d.name)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+async function fsPromptMkdir() {
+  const name = prompt("Nome da nova pasta em:\n" + wsExplorerCurrentPath);
+  if (!name || !name.trim()) return;
+  try {
+    await api("/api/fs/mkdir", { base_dir: wsExplorerCurrentPath, name: name.trim() });
+    fsNavigateTo(wsExplorerCurrentPath);
+  } catch (err) {
+    alert("✗ Falha ao criar pasta: " + err.message);
+  }
+}
+
+async function fsConfirmSelectWorkspace() {
+  const path = wsExplorerCurrentPath;
+  const nameInput = $("wsNewNameInput").value.trim();
+  const parts = path.split("/").filter(Boolean);
+  const name = nameInput || (parts.length ? parts[parts.length - 1] : "Workspace");
+
+  try {
+    const ws = await api("/api/workspaces", { path, name });
+    closeWorkspaceDialog();
+    await loadWorkspaces();
+    selectWorkspace(ws.id);
+  } catch (err) {
+    alert("✗ Erro ao registrar workspace: " + err.message);
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  initNavTabs();
+  termLoad();
+  loadWorkspaces();
+  scheduleRefresh();
+  refresh();
+});
+</script>
+</body>
+</html>

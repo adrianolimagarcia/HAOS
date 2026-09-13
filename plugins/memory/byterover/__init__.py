@@ -17,7 +17,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agent.memory_provider import MemoryProvider, spawn_context_thread
+from agent.memory_provider import MemoryProvider
 from tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,7 @@ class ByteRoverMemoryProvider(MemoryProvider):
             except Exception as e:
                 logger.debug("ByteRover %s failed: %s", what, e)
 
-        t = spawn_context_thread(_work, name=name)
+        t = threading.Thread(target=_work, daemon=True, name=name)
         t.start()
         return t
 

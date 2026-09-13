@@ -1,0 +1,51 @@
+{
+  "_comment": "HAOS default model profiles. This file is the source of truth for concrete models (Emenda 26: modelos concretos ficam em config, nunca no schema). Edit freely. Each profile binds a canonical ModelIdentity to an ordered route chain; the ExactModelRouter walks routes by ascending 'priority' and NEVER substitutes a different model when all routes fail.",
+  "model_profiles": {
+    "coding-primary": {
+      "model_identity": { "family": "deepseek-v4", "variant": "flash", "revision": "latest", "strict_identity": true },
+      "substitute_allowed": false,
+      "parameters": { "temperature": 0.2 },
+      "routes": [
+        { "provider_id": "a6api", "provider_model_id": "deepseek-v4-flash", "priority": 1 },
+        { "provider_id": "deepseek-direct", "provider_model_id": "deepseek-v4-flash-direct", "priority": 2 }
+      ]
+    },
+    "architecture-primary": {
+      "model_identity": { "family": "claude-3-5", "variant": "sonnet", "revision": "latest", "strict_identity": true },
+      "substitute_allowed": false,
+      "parameters": { "temperature": 0.1 },
+      "routes": [
+        { "provider_id": "a6api", "provider_model_id": "claude-3-5-sonnet", "priority": 1 },
+        { "provider_id": "anthropic-direct", "provider_model_id": "claude-3-5-sonnet-20241022", "priority": 2 }
+      ]
+    },
+    "review-primary": {
+      "model_identity": { "family": "gpt-4o", "variant": "main", "revision": "latest", "strict_identity": true },
+      "substitute_allowed": false,
+      "parameters": { "temperature": 0.0 },
+      "routes": [
+        { "provider_id": "a6api", "provider_model_id": "gpt-4o", "priority": 1 },
+        { "provider_id": "openai-direct", "provider_model_id": "gpt-4o", "priority": 2 }
+      ]
+    },
+    "orchestrator-primary": {
+      "model_identity": { "family": "zhipu-glm", "variant": "5.3", "revision": "latest", "strict_identity": true },
+      "substitute_allowed": false,
+      "parameters": { "temperature": 0.3 },
+      "routes": [
+        { "provider_id": "a6api", "provider_model_id": "glm-5.3", "priority": 1 },
+        { "provider_id": "zhipu-direct", "provider_model_id": "glm-5.3", "priority": 2 },
+        { "provider_id": "openrouter", "provider_model_id": "zhipu/glm-5.3", "priority": 3 }
+      ]
+    },
+    "security-primary": {
+      "model_identity": { "family": "deepseek-v4", "variant": "full", "revision": "latest", "strict_identity": true },
+      "substitute_allowed": false,
+      "parameters": { "temperature": 0.0 },
+      "routes": [
+        { "provider_id": "a6api", "provider_model_id": "deepseek-v4", "priority": 1 },
+        { "provider_id": "deepseek-direct", "provider_model_id": "deepseek-v4", "priority": 2 }
+      ]
+    }
+  }
+}

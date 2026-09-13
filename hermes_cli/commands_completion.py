@@ -43,6 +43,12 @@ def _personalities_from_cli_config() -> Dict[str, Any]:
     return _personalities_memo[1]
 
 
+def _short_desc(info: Mapping[str, Any], default: str) -> str:
+    """50-char description preview used in completion menus."""
+    description = str(info.get("description", default))
+    return description[:50] + ("..." if len(description) > 50 else "")
+
+
 def _file_size_label(path: str) -> str:
     """Return a compact human-readable file size, or '' on error."""
     try:
@@ -230,6 +236,7 @@ _STATIC_CONTEXT_REFS = (
     ("@file:", "Attach a file"),
     ("@folder:", "Attach a folder"),
     ("@git:", "Git log with diffs (e.g. @git:5)"),
+    ("@session:", "Attach a session summary (e.g. @session:last or @session:<id>)"),
     ("@url:", "Fetch web content"))
 
 
@@ -329,7 +336,7 @@ class SlashCommandCompleter(Completer):
             # Exact match: trailing space keeps the dropdown open for the next stacked token.
             yield _completion(
                 f"{cmd} " if cmd == word_key else cmd, current_word, cmd,
-                f"⚡ {info.get('description', 'Skill command')}")
+                f"⚡ {_short_desc(info, 'Skill command')}")
 
     @staticmethod
     def _completion_text(cmd_name: str, word: str) -> str:
@@ -351,6 +358,24 @@ class SlashCommandCompleter(Completer):
             if candidate.startswith(lowered) and candidate != lowered:
                 yield _completion(candidate, word, candidate, meta)
         # Bare `@file` / `@folder` (no colon yet) already opens the picker.
+        if word == "@session" or word.startswith("@session:"):
+            query = word[len("@session:"):].strip().lower() if word.startswith("@session:") else ""
+            yield _completion("@session:last", word, "@session:last", "Most recent session")
+            try:
+                from hermes_state import SessionDB
+                db = SessionDB(read_only=True)
+                try:
+                    for s in db.list_recent_sessions_bounded(limit=10):
+                        sid = s.get("id", "")
+                        title = s.get("title") or "Untitled"
+                        tag = f"@session:{sid[:8]}"
+                        if not query or query in sid.lower() or query in title.lower():
+                            yield _completion(tag, word, tag, title[:40])
+                finally:
+                    db.close()
+            except Exception:
+                pass
+            return
         for prefix in ("@file:", "@folder:"):
             bare = prefix[:-1]
             if word == bare or word.startswith(prefix):
@@ -449,16 +474,16 @@ class SlashCommandCompleter(Completer):
             if cmd[1:].startswith(word):
                 skill_count = len(info.get("skills", []))
                 yield _cmd_completion(
-                    cmd[1:], f"▣ {info.get('description', 'Skill bundle')} ({skill_count} skills)")
+                    cmd[1:], f"▣ {_short_desc(info, 'Skill bundle')} ({skill_count} skills)")
         for cmd, info in self._iter_skill_commands().items():
             if cmd[1:].startswith(word):
-                yield _cmd_completion(cmd[1:], f"⚡ {info.get('description', 'Skill command')}")
+                yield _cmd_completion(cmd[1:], f"⚡ {_short_desc(info, 'Skill command')}")
         try:
             from hermes_cli.plugins import get_plugin_commands
             for cmd_name, cmd_info in get_plugin_commands().items():
                 if cmd_name.startswith(word):
                     yield _cmd_completion(
-                        cmd_name, f"🔌 {cmd_info.get('description', 'Plugin command')}")
+                        cmd_name, f"🔌 {_short_desc(cmd_info, 'Plugin command')}")
         except Exception:
             pass
 

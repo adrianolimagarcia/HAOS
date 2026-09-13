@@ -8,7 +8,6 @@ hermes_cli.models.opencode_zen_free_runtime). Select via ``/model free``.
 
 from typing import Any
 
-from agent.reasoning_effort import ox_alpha_reasoning_extras
 from hermes_cli import __version__ as _HERMES_VERSION
 from providers import register_provider
 from providers.base import ProviderProfile
@@ -18,13 +17,22 @@ class OpenCodeFreeProfile(ProviderProfile):
     """OpenCode Free — keyless, with Ox Alpha reasoning controls.
 
     Ox Alpha (x-preview-f-free) is also reachable via opencode-zen with the same wire
-    contract; both profiles call ``agent.reasoning_effort.ox_alpha_reasoning_extras``.
+    contract; the translation lives in the zen plugin and is resolved through the
+    registered zen profile's module so the two providers can never drift.
     """
 
     def build_api_kwargs_extras(
         self, *, reasoning_config: dict | None = None, model: str | None = None, **context
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        return ox_alpha_reasoning_extras(reasoning_config, model)
+        try:
+            import sys
+
+            from providers import get_provider_profile
+
+            zen_module = sys.modules[type(get_provider_profile("opencode-zen")).__module__]
+            return zen_module._build_ox_alpha_reasoning_extras(reasoning_config, model)
+        except Exception:
+            return {}, {}
 
 
 opencode_free = OpenCodeFreeProfile(
