@@ -445,11 +445,6 @@ _PREVIEW_BUILDERS = {
     "read_file": _preview_read_file, "memory": _preview_memory, "send_message": _preview_send_message,
     "skill_view": _preview_skill_view,
     "session_search": lambda args, _m: f"recall: \"{_clip(_oneline(args.get('query', '')), 25)}\"",
-    "obsidian_get_adr": lambda args, _m: f"reading {args.get('adr_id', '')}",
-    "obsidian_save_note": lambda args, _m: f"writing note \"{_clip(_oneline(args.get('title', '')), 30)}\"",
-    "graphrag_query": lambda args, _m: f"querying \"{_clip(_oneline(args.get('query', '')), 30)}\"",
-    "haos_hybrid_memory_query": lambda args, _m: f"searching \"{_clip(_oneline(args.get('query', '')), 30)}\"",
-    "haos_okf_save_document": lambda args, _m: f"writing spec \"{_clip(_oneline(args.get('title', '')), 30)}\"",
 }
 
 
@@ -497,13 +492,8 @@ _TOOL_VERBS: dict[str, str] = {
     "text_to_speech": "Generating speech", "vision_analyze": "Looking at the image",
     "session_search": "Searching past sessions",
     "skill_view": "Reading skill", "skills_list": "Listing skills", "skill_manage": "Updating skill",
-    "delegate_task": "Orchestrating subagents", "cronjob_manage": "Scheduling routine", "clarify": "Asking",
+    "delegate_task": "Delegating", "cronjob_manage": "Scheduling", "clarify": "Asking",
     "memory": "Updating memory", "todo_list": "Updating tasks",
-    "graphrag_query": "Querying knowledge graph", "obsidian_get_adr": "Consulting ADR vault",
-    "obsidian_save_note": "Writing architectural record", "haos_hybrid_memory_query": "Searching RAGFlow & OKF",
-    "haos_okf_save_document": "Saving canonical OKF spec", "instinct_manage": "Evolving Ouroboros instincts",
-    "mcp_gateway_call": "Calling federated MCP", "mcp_gateway_list_tools": "Listing MCP tools",
-    "mcp_gateway_status": "Checking MCP gateway health", "request_operator_form": "Requesting operator approval",
 }
 # Verbs that read better without the argument preview appended.
 _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({"skills_list", "session_search"})
@@ -776,10 +766,6 @@ class KawaiiSpinner:
         "pondering", "contemplating", "musing", "cogitating", "ruminating", "deliberating", "mulling",
         "reflecting", "processing", "reasoning", "analyzing", "computing", "synthesizing", "formulating",
         "brainstorming",
-        # HAOS Control Plane & Multi-Agent Cognitive Verbs
-        "synchronizing kanban", "consulting town mayor", "orchestrating subagents",
-        "evolving ouroboros", "querying knowledge graph", "dispatching worker lanes",
-        "verifying architecture adrs", "checking mission gates", "evaluating goal blockers",
     ]
 
     @staticmethod
@@ -1001,7 +987,7 @@ def _cute_memory(a: dict, _r) -> str:
 def _cute_skill_view(a: dict, _r) -> str:
     label, file_path = a.get("name", ""), a.get("file_path")
     label = (f"{label} → {file_path}" if label else str(file_path)) if file_path else label
-    return f"┊ 🔮 skill(load) {_cute_trunc(label)}"
+    return f"┊ 📚 skill     {_cute_trunc(label)}"
 
 
 def _cute_cronjob(a: dict, _r) -> str:
@@ -1027,23 +1013,12 @@ def _cute_browser_exec(a: dict, _r) -> str:
 def _cute_delegate(a: dict, _r) -> str:
     action_preview = _delegate_action_preview(a)
     tasks = a.get("tasks")
-    role = str(a.get("role") or "").strip().lower()
-
-    if role in ("mayor", "town_mayor"):
-        role_label = "👑 mayor   "
-    elif role in ("orchestrator", "sub_orchestrator"):
-        role_label = "🏛️ orch    "
-    elif role in ("reviewer", "qa"):
-        role_label = "🛡️ review  "
-    else:
-        role_label = "🔀 delegate"
-
     if action_preview is not None:
-        return f"┊ {role_label}  {_cute_trunc(action_preview)}"
+        return f"┊ 🔀 delegate  {_cute_trunc(action_preview)}"
     if tasks and isinstance(tasks, list):
         goals = _delegate_task_goals(tasks, per_goal_len=30)
-        return f"┊ {role_label}  {len(goals) or len(tasks)}x: {_cute_trunc(' | '.join(goals) if goals else 'parallel')}"
-    return f"┊ {role_label}  {_cute_trunc(a.get('goal', ''))}"
+        return f"┊ 🔀 delegate  {len(goals) or len(tasks)}x: {_cute_trunc(' | '.join(goals) if goals else 'parallel')}"
+    return f"┊ 🔀 delegate  {_cute_trunc(a.get('goal', ''))}"
 
 
 def _cute_process_manage(a: dict, _r) -> str:
@@ -1085,15 +1060,6 @@ _CUTE_LINES = {
     "execute_code": _cute_execute_code,
     "browser_exec": _cute_browser_exec,
     "delegate_task": _cute_delegate,
-    # HAOS Control Plane & Memory System Renderers
-    "graphrag_query": lambda a, r: f"┊ 🕸️  graph(read) {_cute_trunc(a.get('query', ''))}",
-    "haos_hybrid_memory_query": lambda a, r: f"┊ 🧠 rag(read)   {_cute_trunc(a.get('query', ''))}",
-    "obsidian_get_adr": lambda a, r: f"┊ 🏛️  vault(read) {_cute_trunc(a.get('adr_id', ''))}",
-    "obsidian_save_note": lambda a, r: f"┊ 🏛️  vault(write) {_cute_trunc(a.get('title', ''))}",
-    "haos_okf_save_document": lambda a, r: f"┊ 📜 okf(write)   {_cute_trunc(a.get('title', ''))}",
-    "instinct_manage": lambda a, r: f"┊ 🐍 ouroboros   {_cute_trunc(a.get('action', '') + ' ' + (a.get('rule', '') or ''))}",
-    "request_operator_form": lambda a, r: f"┊ 🛡️  gate(ask)   {_cute_trunc(a.get('title', ''))}",
-    "mcp_gateway_call": lambda a, r: f"┊ 🔌 mcp(call)   {_cute_trunc(a.get('tool_name', ''))}",
 }
 
 

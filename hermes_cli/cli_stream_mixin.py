@@ -115,7 +115,7 @@ class CLIStreamMixin:
         preview_text = "\n".join(paragraphs)
         if not preview_text:
             return
-        if self.verbose or getattr(self, "reasoning_full", False):
+        if self.verbose:
             _cprint(f"  {_DIM}[thinking] {preview_text}{_RST}")
             return
         lines = preview_text.splitlines()
@@ -706,23 +706,6 @@ class CLIStreamMixin:
                 if self.tool_progress_mode == "new" and function_name == self._last_scrollback_tool:
                     self._invalidate()
                     return
-                # Suppress repetitive polling of delegate list in tight loops
-                is_polling_list = (function_name == "delegate_task" and (stored_args or {}).get("action") == "list")
-                if is_polling_list and getattr(self, "_last_was_polling_list", False):
-                    self._invalidate()
-                    return
-                self._last_was_polling_list = is_polling_list
-
-                # Suppress repetitive reads of the same log file in tight loop
-                current_file = (stored_args or {}).get("file_path") or (stored_args or {}).get("path")
-                if function_name in {"read_file", "read"} and current_file and str(current_file).endswith(".log"):
-                    if getattr(self, "_last_logged_read_file", None) == current_file:
-                        self._invalidate()
-                        return
-                    self._last_logged_read_file = current_file
-                else:
-                    self._last_logged_read_file = None
-
                 self._last_scrollback_tool = function_name
                 try:
                     from agent.display import get_cute_tool_message

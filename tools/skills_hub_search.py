@@ -19,7 +19,6 @@ from tools.skills_hub_models import SkillMeta, SkillSource, TRUST_RANK, _dedupe_
 from tools.skills_hub_official import HermesIndexSource, OptionalSkillSource
 from tools.skills_hub_skillssh import SkillsShSource
 from tools.skills_hub_sources import BrowseShSource, LobeHubSource, UrlSource, WellKnownSkillSource
-from tools.skills_hub_wshobson import WshobsonSource
 
 # Log-record parity with the origin module.
 logger = logging.getLogger("tools.skills_hub")
@@ -96,7 +95,6 @@ def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]
         SkillsShSource(auth=auth),
         WellKnownSkillSource(),
         UrlSource(),                      # direct HTTP(S) URL to a SKILL.md
-        WshobsonSource(),                 # wshobson/agents 183+ engineering skills
         GitHubSource(auth=auth, extra_taps=TapsManager().list_taps()),
         ClawHubSource(),
         LobeHubSource(),

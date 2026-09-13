@@ -230,7 +230,6 @@ _STATIC_CONTEXT_REFS = (
     ("@file:", "Attach a file"),
     ("@folder:", "Attach a folder"),
     ("@git:", "Git log with diffs (e.g. @git:5)"),
-    ("@session:", "Attach a session summary (e.g. @session:last or @session:<id>)"),
     ("@url:", "Fetch web content"))
 
 
@@ -352,24 +351,6 @@ class SlashCommandCompleter(Completer):
             if candidate.startswith(lowered) and candidate != lowered:
                 yield _completion(candidate, word, candidate, meta)
         # Bare `@file` / `@folder` (no colon yet) already opens the picker.
-        if word == "@session" or word.startswith("@session:"):
-            query = word[len("@session:"):].strip().lower() if word.startswith("@session:") else ""
-            yield _completion("@session:last", word, "@session:last", "Most recent session")
-            try:
-                from hermes_state import SessionDB
-                db = SessionDB(read_only=True)
-                try:
-                    for s in db.list_recent_sessions_bounded(limit=10):
-                        sid = s.get("id", "")
-                        title = s.get("title") or "Untitled"
-                        tag = f"@session:{sid[:8]}"
-                        if not query or query in sid.lower() or query in title.lower():
-                            yield _completion(tag, word, tag, title[:40])
-                finally:
-                    db.close()
-            except Exception:
-                pass
-            return
         for prefix in ("@file:", "@folder:"):
             bare = prefix[:-1]
             if word == bare or word.startswith(prefix):
