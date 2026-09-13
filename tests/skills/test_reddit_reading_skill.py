@@ -13,7 +13,7 @@ SCRIPTS_DIR = next(
     (
         REPO_ROOT / root / "social-media" / "reddit-reading" / "scripts"
         for root in ("skills", "optional-skills")
-        if (REPO_ROOT / root / "social-media" / "reddit-reading" / "scripts").is_dir()
+        if (REPO_ROOT / root / "social-media" / "reddit-reading" / "scripts" / "reddit.py").is_file()
     ),
     None,
 )

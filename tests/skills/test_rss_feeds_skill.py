@@ -11,7 +11,7 @@ SCRIPTS_DIR = next(
     (
         REPO_ROOT / root / "research" / "rss-feeds" / "scripts"
         for root in ("skills", "optional-skills")
-        if (REPO_ROOT / root / "research" / "rss-feeds" / "scripts").is_dir()
+        if (REPO_ROOT / root / "research" / "rss-feeds" / "scripts" / "feed.py").is_file()
     ),
     None,
 )

@@ -537,7 +537,11 @@ class TestDeferredFtsRetryInProcess:
                 )
                 t0 = time.monotonic()
                 assert gw.retry_deferred_fts_recovery() is False
-                assert time.monotonic() - t0 < 2.0
+                # Bound: "quickly" vs the 30s admission budget, not a tight
+                # wall-clock race. Measured 2.26s under full-suite load (16
+                # workers); 5.0s keeps the contract (immediate, not 30s) with
+                # headroom over the observed cold-settle tail.
+                assert time.monotonic() - t0 < 5.0
                 assert gw._fts_stale is True
                 # Rate limit engaged: an immediate second call is a no-op.
                 assert gw.retry_deferred_fts_recovery() is False
