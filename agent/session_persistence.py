@@ -111,7 +111,7 @@ def _durable_content(content: Any) -> Any:
     txt = [
         str(p.get("text", "")) if p.get("type") == "text" else "[screenshot]"
         for p in content
-        if isinstance(p, dict) and (p.get("type") == "text" or p.get("type") in _IMAGE_PART_TYPES)
+        if isinstance(p, dict) and (p.get("type") == "text" or (isinstance(p.get("type"), str) and p.get("type") in _IMAGE_PART_TYPES))
     ]
     return "\n".join(txt) if txt else None
 

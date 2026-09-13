@@ -20,10 +20,7 @@ export function SidebarFooter({ status }: SidebarFooterProps) {
         {status?.version != null ? `v${status.version}` : "—"}
       </Typography>
 
-      <a
-        href="https://nousresearch.com"
-        target="_blank"
-        rel="noopener noreferrer"
+      <span
         className={cn(
           "font-sans text-display text-xs tracking-[0.12em] text-midground",
           "transition-opacity hover:opacity-90",
@@ -31,7 +28,7 @@ export function SidebarFooter({ status }: SidebarFooterProps) {
         )}
       >
         {t.app.footer.org}
-      </a>
+      </span>
     </div>
   );
 }

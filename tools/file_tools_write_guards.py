@@ -121,6 +121,45 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
             f"Refusing to write to Hermes config file: {filepath}\n"
             "Agent cannot modify security-sensitive configuration. "
             "Edit ~/.hermes/config.yaml directly or use 'hermes config' instead.")
+    # HAOS WorkspaceScope: General code editing tools must not mutate the Agent
+    # Workspace (~/.hermes). Dedicated tools (skill_manage, HAOS memory, config)
+    # manage agent-internal state.
+    ws_err = _check_agent_workspace_scope(filepath, task_id)
+    if ws_err:
+        return ws_err
+    return None
+
+
+def _check_agent_workspace_scope(filepath: str, task_id: str = "default") -> str | None:
+    """Refuse writes targeted into the Agent Workspace (~/.hermes).
+
+    General file tools (write_file/patch) are scoped to the Project Workspace.
+    Mutating ~/.hermes requires dedicated tools ('skill_manage', HAOS memory tools,
+    or 'hermes config').
+    """
+    try:
+        from hermes_cli.config import load_config, cfg_get
+        cfg = load_config()
+        if not cfg_get(cfg, "security", "isolate_agent_workspace", default=True):
+            return None
+    except Exception:
+        pass
+
+    try:
+        from tools.file_tools_paths import _resolve_base_dir
+        project_dir = _resolve_base_dir(task_id)
+    except Exception:
+        project_dir = None
+
+    try:
+        from hermes.platform.security.workspace_scope import resolve_workspace_scope
+        scope = resolve_workspace_scope(project_dir=project_dir)
+        target = _resolved_or_raw(filepath, task_id)
+        allowed, err = scope.is_write_permitted(target)
+        if not allowed:
+            return err
+    except Exception:
+        pass
     return None
 
 

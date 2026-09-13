@@ -1,0 +1,482 @@
+# ==============================================================================
+# HAOS MASTER IMPLEMENTATION BACKLOG (M0 - M20)
+# Canonical Task DAG: TASK-0001 through TASK-0021
+# ==============================================================================
+
+version: "1.0.0"
+generated_at: "2026-09-08T13:15:00Z"
+authority: "Hermes Architecture Guild"
+
+tasks:
+  - task_id: "TASK-0001"
+    milestone: "M0"
+    epic: "E-CORE"
+    objective: "Establish Architecture Freeze v0.1: emit 12 canonical ADRs, schema definitions, and contracts."
+    depends_on: []
+    owner: "Architecture Agent"
+    posture: "architect"
+    model_profile: "architect-primary"
+    modules:
+      - "architecture/ADRs/"
+      - "architecture/schemas/"
+      - "architecture/contracts/contracts.py"
+      - "architecture/change_requests/"
+    interfaces:
+      - "TaskSpecContract"
+      - "TaskRunContract"
+      - "ArtifactSpecContract"
+      - "ContextPackageContract"
+    tests:
+      - "tests/platform/test_adr_002_freeze_contract.py"
+    risk: "LOW"
+    acceptance:
+      - "All 12 ADRs written and committed."
+      - "Schemas compile and serialize with schema_version 1.0.0."
+      - "Zero schema divergence across modules."
+    merge_after: "Immediate"
+
+  - task_id: "TASK-0002"
+    milestone: "M1"
+    epic: "E-CORE"
+    objective: "Implement Universal Registries for capabilities, postures, model profiles, and worker pools."
+    depends_on: ["TASK-0001"]
+    owner: "Runtime Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/capabilities/registry.py"
+      - "hermes/platform/postures/registry.py"
+      - "hermes/platform/models/model_resolver.py"
+    interfaces:
+      - "UniversalCapabilityRegistry"
+      - "PostureRegistry"
+      - "ModelResolver"
+    tests:
+      - "tests/platform/capabilities/test_registry.py"
+      - "tests/platform/models/test_models_capabilities.py"
+    risk: "LOW"
+    acceptance:
+      - "Registries load configurations without hardcoded strings."
+      - "Unknown profile raises UnknownModelProfileError."
+    merge_after: "TASK-0001"
+
+  - task_id: "TASK-0003"
+    milestone: "M2"
+    epic: "E-CORE"
+    objective: "Build append-only SQLite EventStore and event contract bus for full auditability."
+    depends_on: ["TASK-0001"]
+    owner: "Runtime Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/events/store.py"
+      - "hermes/platform/events/contracts.py"
+    interfaces:
+      - "EventStore"
+      - "EventContract"
+    tests:
+      - "tests/platform/events/test_event_store.py"
+    risk: "LOW"
+    acceptance:
+      - "WAL mode active with busy_timeout."
+      - "Events queryable by task_id and topic in monotonic order."
+    merge_after: "TASK-0001"
+
+  - task_id: "TASK-0004"
+    milestone: "M3"
+    epic: "E-TASK"
+    objective: "Implement TaskSpec and TaskRun lifecycle management backed by kanban.db."
+    depends_on: ["TASK-0001", "TASK-0003"]
+    owner: "Task Engine Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/tasks/spec.py"
+      - "hermes/platform/tasks/lifecycle.py"
+      - "hermes/platform/kanban/adapter.py"
+    interfaces:
+      - "TaskSpec"
+      - "TaskRun"
+      - "KanbanAdapter"
+    tests:
+      - "tests/platform/tasks/test_task_spec.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "Separation of Task and Run strictly preserved."
+      - "State transitions atomic in kanban.db."
+    merge_after: "TASK-0003"
+
+  - task_id: "TASK-0005"
+    milestone: "M4"
+    epic: "E-TASK"
+    objective: "Implement AssignmentSpec and multi-resolver pipeline (Posture, Model, Capability, Workspace)."
+    depends_on: ["TASK-0002", "TASK-0004"]
+    owner: "Task Engine Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/execution/assignment.py"
+      - "hermes/platform/execution/assignment_resolver.py"
+    interfaces:
+      - "AssignmentSpec"
+      - "AssignmentResolver"
+    tests:
+      - "tests/platform/execution/test_assignment.py"
+    risk: "LOW"
+    acceptance:
+      - "Generates immutable AssignmentSpec snapshot from task request."
+      - "Resolves exact model family/variant and prioritized routes."
+    merge_after: "TASK-0004"
+
+  - task_id: "TASK-0006"
+    milestone: "M5"
+    epic: "E-EXEC"
+    objective: "Implement ExactModelRouter with circuit breaker and exact-model multi-provider failover."
+    depends_on: ["TASK-0005"]
+    owner: "Model/Provider Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/models/provider_router.py"
+      - "hermes/platform/models/circuit_breaker.py"
+      - "hermes/platform/models/client.py"
+    interfaces:
+      - "ExactModelRouter"
+      - "CircuitBreaker"
+      - "ExactModelClient"
+    tests:
+      - "tests/platform/models/test_models_capabilities.py"
+      - "tests/platform/models/test_model_deduplication.py"
+    risk: "HIGH"
+    acceptance:
+      - "Never downgrades model silently upon route failure."
+      - "Circuit breaker trips on consecutive 429/503."
+    merge_after: "TASK-0005"
+
+  - task_id: "TASK-0007"
+    milestone: "M6"
+    epic: "E-CAP"
+    objective: "Implement Capability execution fabric with native MCP and LSP client adapters."
+    depends_on: ["TASK-0002", "TASK-0005"]
+    owner: "Capability/MCP/LSP Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/capabilities/mcp_adapter.py"
+      - "hermes/platform/capabilities/lsp_adapter.py"
+    interfaces:
+      - "MCPClientAdapter"
+      - "LSPClientAdapter"
+    tests:
+      - "tests/platform/capabilities/test_mcp_lsp.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "LSP diagnostics and MCP tools resolve dynamically per posture."
+    merge_after: "TASK-0005"
+
+  - task_id: "TASK-0008"
+    milestone: "M7"
+    epic: "E-CONTEXT"
+    objective: "Implement ContextPackageBuilder with byte-stable prefix caching and tail token budgeting."
+    depends_on: ["TASK-0005"]
+    owner: "Context/Memory Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/context/context_builder.py"
+      - "hermes/platform/context/budgeter.py"
+    interfaces:
+      - "ContextPackage"
+      - "ContextBuilder"
+    tests:
+      - "tests/platform/context/test_context_engine.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "System prompt prefix identical byte-for-byte turn-over-turn."
+      - "Context overflows trimmed deterministically from tail."
+    merge_after: "TASK-0005"
+
+  - task_id: "TASK-0009"
+    milestone: "M8"
+    epic: "E-MEMORY"
+    objective: "Implement Memory Fabric Provider supporting Obsidian vault scopes and GraphRAG knowledge store."
+    depends_on: ["TASK-0003", "TASK-0005"]
+    owner: "Context/Memory Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/memory/obsidian_adapter.py"
+      - "hermes/platform/memory/graphrag_adapter.py"
+      - "hermes/platform/memory/fabric.py"
+    interfaces:
+      - "ObsidianAdapter"
+      - "GraphRAGAdapter"
+      - "MemoryFabric"
+    tests:
+      - "tests/platform/memory/test_memory_fabric.py"
+    risk: "LOW"
+    acceptance:
+      - "Notes partitioned across private/team/project/global."
+      - "GraphRAG entity relations queryable with temporal supersession."
+    merge_after: "TASK-0005"
+
+  - task_id: "TASK-0010"
+    milestone: "M9"
+    epic: "E-EXEC"
+    objective: "Implement GenericWorkerLane lifecycle and git worktree isolation (Kilo Lane)."
+    depends_on: ["TASK-0005"]
+    owner: "Worker/Kilo Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/execution/lane_generic.py"
+      - "hermes/platform/workspaces/git_worktree.py"
+    interfaces:
+      - "GenericWorkerLane"
+      - "GitWorktreeManager"
+    tests:
+      - "tests/platform/execution/test_lane_generic.py"
+      - "tests/platform/workspaces/test_git_worktree.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "Universal lifecycle prepare -> spawn -> heartbeat -> collect -> cancel -> cleanup verified."
+      - "Ephemeral worktrees isolated with atomic tear-down."
+    merge_after: "TASK-0005"
+
+  - task_id: "TASK-0011"
+    milestone: "M10"
+    epic: "E-EXEC"
+    objective: "Construct and verify Vertical Slice v0.1: Goal -> Task -> Assignment -> Worker -> Review -> DONE."
+    depends_on: ["TASK-0006", "TASK-0007", "TASK-0008", "TASK-0009", "TASK-0010"]
+    owner: "Runtime Agent"
+    posture: "coordinator"
+    model_profile: "coordinator-primary"
+    modules:
+      - "hermes/platform/execution/vertical_slice.py"
+      - "tests/platform/execution/test_vertical_slice_phase1.py"
+    interfaces:
+      - "VerticalSlicePipeline"
+    tests:
+      - "tests/platform/execution/test_vertical_slice_phase1.py"
+    risk: "HIGH"
+    acceptance:
+      - "End-to-end mission executes without manual structural intervention."
+      - "Provider failover keeps exact model."
+      - "Independent Reviewer inspects diff and accepts."
+    merge_after: "TASK-0010"
+
+  - task_id: "TASK-0012"
+    milestone: "M11"
+    epic: "E-HARNESS"
+    objective: "Formalize Golden Tasks Benchmark Suite (G001 to G010) and deterministic eval harness."
+    depends_on: ["TASK-0011"]
+    owner: "QA/Chaos Agent"
+    posture: "evaluator"
+    model_profile: "eval-primary"
+    modules:
+      - "hermes/platform/evals/golden_tasks.py"
+      - "tests/platform/evals/test_golden_tasks.py"
+    interfaces:
+      - "GoldenTasksRunner"
+      - "GoldenTaskSpec"
+    tests:
+      - "tests/platform/evals/test_golden_tasks.py"
+    risk: "LOW"
+    acceptance:
+      - "All 10 Golden Tasks registered with deterministic assertions."
+      - "Regression gate blocks merges that degrade quality or spike token cost."
+    merge_after: "TASK-0011"
+
+  - task_id: "TASK-0013"
+    milestone: "M12"
+    epic: "E-HARNESS"
+    objective: "Implement Chaos & Hardening suite: provider chaos, worker SIGKILL, stale leases, DB restarts."
+    depends_on: ["TASK-0011"]
+    owner: "QA/Chaos Agent"
+    posture: "evaluator"
+    model_profile: "eval-primary"
+    modules:
+      - "hermes/platform/scaling/hardening_and_scale.py"
+      - "tests/platform/scaling/test_hardening_and_scale.py"
+    interfaces:
+      - "ChaosInjector"
+      - "CrashRecoveryManager"
+    tests:
+      - "tests/platform/scaling/test_hardening_and_scale.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "System recovers from 95%+ injected transient faults."
+      - "Zombie worktrees automatically cleaned up on restart."
+    merge_after: "TASK-0011"
+
+  - task_id: "TASK-0014"
+    milestone: "M13"
+    epic: "E-TEAM"
+    objective: "Implement Team Foundation: TeamSpec, TeamState, durable team lifecycle."
+    depends_on: ["TASK-0012", "TASK-0013"]
+    owner: "Team Runtime Agent"
+    posture: "architect"
+    model_profile: "architect-primary"
+    modules:
+      - "hermes/platform/execution/team.py"
+      - "hermes/platform/execution/team_runtime.py"
+    interfaces:
+      - "TeamSpec"
+      - "TeamState"
+      - "TeamRuntime"
+    tests:
+      - "tests/platform/execution/test_team_runtime.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "Team lifecycle states: CREATED -> STARTING -> ACTIVE -> COMPLETED."
+      - "GasTown topology: Mayor, Deacon, Dog, Witness, Refinery, Polecat, Crew."
+    merge_after: "TASK-0013"
+
+  - task_id: "TASK-0015"
+    milestone: "M14"
+    epic: "E-TEAM"
+    objective: "Implement Specialist Worker Pools and dynamic backpressure governor."
+    depends_on: ["TASK-0014"]
+    owner: "Team Runtime Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/execution/pools.py"
+    interfaces:
+      - "SpecialistPool"
+      - "BackpressureGovernor"
+    tests:
+      - "tests/platform/execution/test_pools.py"
+    risk: "LOW"
+    acceptance:
+      - "Parallelism bounded by min(task, team, lane, provider, budget)."
+      - "Pools dynamically scale within capacity bounds."
+    merge_after: "TASK-0014"
+
+  - task_id: "TASK-0016"
+    milestone: "M15"
+    epic: "E-TEAM"
+    objective: "Implement Sub-Orchestrators and leaf worker segregation."
+    depends_on: ["TASK-0014"]
+    owner: "Team Runtime Agent"
+    posture: "coordinator"
+    model_profile: "coordinator-primary"
+    modules:
+      - "tools/delegate_tool.py"
+      - "hermes/platform/execution/team.py"
+    interfaces:
+      - "SubOrchestratorNode"
+      - "LeafWorkerNode"
+    tests:
+      - "tests/platform/execution/test_leaf_vs_orchestrator.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "Leaf workers have delegation tools stripped to prevent recursive spawning loops."
+      - "Sub-orchestrator can generate bounded child DAGs."
+    merge_after: "TASK-0014"
+
+  - task_id: "TASK-0017"
+    milestone: "M16"
+    epic: "E-TEAM"
+    objective: "Implement Structured Mailbox Bus for inter-agent asynchronous messages."
+    depends_on: ["TASK-0014"]
+    owner: "Team Runtime Agent"
+    posture: "coder"
+    model_profile: "coding-primary"
+    modules:
+      - "hermes/platform/communication/mailbox.py"
+    interfaces:
+      - "Mailbox"
+      - "MessageEnvelope"
+    tests:
+      - "tests/platform/communication/test_mailbox.py"
+    risk: "LOW"
+    acceptance:
+      - "Messages typed (TASK_REQUEST, QUESTION, ANSWER, ARTIFACT, REVIEW)."
+      - "Durable per-team and per-task association in SQLite."
+    merge_after: "TASK-0014"
+
+  - task_id: "TASK-0018"
+    milestone: "M17"
+    epic: "E-TEAM"
+    objective: "Implement Independent Reviewer, Judge, and Integrator nodes."
+    depends_on: ["TASK-0016", "TASK-0017"]
+    owner: "Reviewer"
+    posture: "witness"
+    model_profile: "witness-primary"
+    modules:
+      - "hermes/platform/execution/review.py"
+      - "hermes/platform/execution/judge.py"
+      - "hermes/platform/execution/integrator.py"
+    interfaces:
+      - "WitnessReviewer"
+      - "TaskJudge"
+      - "CodeIntegrator"
+    tests:
+      - "tests/platform/execution/test_review_judge_integrator.py"
+    risk: "HIGH"
+    acceptance:
+      - "Reviewer receives only artifacts and spec without author transcript."
+      - "Integrator validates tests and rebases before merge."
+    merge_after: "TASK-0016"
+
+  - task_id: "TASK-0019"
+    milestone: "M18"
+    epic: "E-CAP"
+    objective: "Implement Multimodal Delegation workers (Vision, Audio, Perception Artifacts)."
+    depends_on: ["TASK-0007", "TASK-0016"]
+    owner: "Capability/MCP/LSP Agent"
+    posture: "specialist"
+    model_profile: "vision-primary"
+    modules:
+      - "hermes/platform/multimodal/vision_worker.py"
+    interfaces:
+      - "VisionWorker"
+      - "PerceptionArtifact"
+    tests:
+      - "tests/platform/multimodal/test_vision_worker.py"
+    risk: "LOW"
+    acceptance:
+      - "Text worker requests vision capability and receives PerceptionArtifact asynchronously."
+    merge_after: "TASK-0016"
+
+  - task_id: "TASK-0020"
+    milestone: "M19"
+    epic: "E-HARNESS"
+    objective: "Execute comprehensive multi-agent team evaluations and end-to-end verification."
+    depends_on: ["TASK-0018", "TASK-0019"]
+    owner: "QA/Chaos Agent"
+    posture: "evaluator"
+    model_profile: "eval-primary"
+    modules:
+      - "hermes/platform/evals/team_evals.py"
+    interfaces:
+      - "TeamBenchmarkRunner"
+    tests:
+      - "tests/platform/evals/test_team_evals.py"
+    risk: "MEDIUM"
+    acceptance:
+      - "Full hierarchical team completes 3 concurrent multi-deliverable goals."
+      - "Zero deadlock, zero orphaned processes."
+    merge_after: "TASK-0018"
+
+  - task_id: "TASK-0021"
+    milestone: "M20"
+    epic: "E-EVOL"
+    objective: "Implement Phase 3 Adaptive Intelligence (Ouroboros) in strict Shadow Mode."
+    depends_on: ["TASK-0020"]
+    owner: "Architecture Agent"
+    posture: "evaluator"
+    model_profile: "architect-primary"
+    modules:
+      - "hermes/platform/evolution/adaptive_intelligence.py"
+    interfaces:
+      - "OuroborosEvolutionObserver"
+      - "ExperimentSpec"
+    tests:
+      - "tests/platform/evolution/test_adaptive_intelligence.py"
+    risk: "LOW"
+    acceptance:
+      - "Shadow mode only: observes events, forms hypotheses, records candidate recommendations."
+      - "Zero unapproved automated mutations to production core."
+    merge_after: "TASK-0020"

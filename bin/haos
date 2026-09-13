@@ -1,0 +1,343 @@
+#!/usr/bin/env python3
+"""HAOS CLI - Hermes Agent Operating System Entry Point."""
+
+import os
+import sys
+import argparse
+import asyncio
+import json
+import uuid
+
+# Ensure root workspace directory is in python path
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from hermes.platform.protocols.bus import EventBus
+from hermes.platform.observability.events import Event
+from hermes.platform.observability.event_store import EventStore
+from hermes.platform.posture.resolver import PostureResolver
+from hermes.platform.tasks.spec import TaskSpec, AcceptanceCriterion
+from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+from hermes.platform.models.model_resolver import ModelResolver
+from hermes.platform.capabilities.resolver import CapabilityResolver
+from hermes.platform.execution.scheduler import HAOSScheduler
+from hermes.platform.execution.runs import TaskRun
+from hermes.platform.adapters.kilo.adapter import KiloLaneAdapter
+from hermes.platform.memory.context_engine.compiler import ContextBuilder
+
+def main():
+    parser = argparse.ArgumentParser(description="HAOS CLI - Hermes Agent Operating System")
+    subparsers = parser.add_subparsers(dest="command", help="Comandos disponíveis")
+
+    # Command: run
+    run_parser = subparsers.add_parser("run", help="Executa uma tarefa no HAOS Engine")
+    run_parser.add_argument("goal", type=str, help="Objetivo da tarefa")
+    run_parser.add_argument("--posture", type=str, default="implementer", help="Postura cognitiva (implementer, architect, reviewer, executive)")
+    run_parser.add_argument("--profile", type=str, default="coding-primary", help="Model Profile (coding-primary, architecture-primary, review-primary)")
+    run_parser.add_argument("--capabilities", type=str, default="git,code-intelligence", help="Capacidades separadas por vírgula")
+    run_parser.add_argument("--priority", type=int, default=50, help="Prioridade da tarefa (1-100)")
+
+    # Command: server
+    server_parser = subparsers.add_parser("server", help="Inicia o Control Plane Web Server do HAOS")
+    server_parser.add_argument("--port", type=int, default=9119, help="Porta web (default: 9119)")
+
+    # Command: web (Standalone WebUI do HAOS)
+    web_parser = subparsers.add_parser(
+        "web", help="Inicia a UI standalone do HAOS (Console, Taskboard, Scheduler, Ouroboros, Eventos, Config)")
+    web_parser.add_argument("--port", type=int, default=8788, help="Porta (default: 8788)")
+    web_parser.add_argument("--host", type=str, default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+    web_parser.add_argument("--data-dir", dest="data_dir", type=str, default=None,
+                            help="Diretório persistente do engine (default: ~/.haos)")
+
+    # Command: status
+    subparsers.add_parser("status", help="Exibe o status do HAOS e tarefas recentes")
+
+    # Command: cpm
+    subparsers.add_parser("cpm", help="Calcula e exibe o Caminho Crítico (CPM) e Prioridade Herdada (PIP)")
+
+    # Command: concurrency
+    subparsers.add_parser("concurrency", help="Exibe status e cotas ativas do ConcurrencyGuard")
+
+    # Command: evolution
+    subparsers.add_parser("evolution", help="Exibe propostas pendentes e histórico do Ouroboros")
+
+    # Command: doctor
+    doc_parser = subparsers.add_parser("doctor", help="Valida integridade, caminhos e permissões do HAOS")
+    doc_parser.add_argument("--json", action="store_true", help="Output em JSON")
+
+    # Command: eval
+    eval_parser = subparsers.add_parser("eval", help="Executa a bateria de avaliação Golden Tasks e registra baseline")
+    eval_parser.add_argument("--tasks", type=str, help="IDs das tarefas (ex: G001,G002)")
+    eval_parser.add_argument("--label", type=str, default="current", help="Rótulo da medição")
+    eval_parser.add_argument("--json", action="store_true", help="Output em JSON")
+
+    # Command: skills
+    skills_parser = subparsers.add_parser("skills", help="Gerencia e pesquisa habilidades especializadas do catálogo")
+    skills_sub = skills_parser.add_subparsers(dest="skills_action")
+
+    sk_search = skills_sub.add_parser("search", help="Busca habilidades no catálogo")
+    sk_search.add_argument("query", nargs="?", default="", help="Termo de busca")
+    sk_search.add_argument("--limit", type=int, default=20, help="Limite de resultados")
+
+    sk_install = skills_sub.add_parser("install", help="Baixa e instala uma habilidade")
+    sk_install.add_argument("skill_name", help="Nome da habilidade a instalar")
+    sk_install.add_argument("--force", action="store_true", help="Força instalação")
+
+    sk_list = skills_sub.add_parser("list", help="Lista habilidades locais registradas")
+
+    # Command: graph
+    graph_parser = subparsers.add_parser("graph", help="Code Knowledge Graph determinístico (Graphify Engine)")
+    graph_sub = graph_parser.add_subparsers(dest="graph_action")
+
+    g_build = graph_sub.add_parser("build", help="Varre a base de código e gera graph.json e GRAPH_REPORT.md")
+    g_build.add_argument("--dir", help="Diretório da base de código")
+    g_build.add_argument("--out", help="Diretório de saída")
+
+    g_path = graph_sub.add_parser("path", help="Encontra o menor caminho entre dois símbolos ou componentes")
+    g_path.add_argument("source", help="Símbolo de origem")
+    g_path.add_argument("target", help="Símbolo de destino")
+    g_path.add_argument("--dir", help="Diretório da base de código")
+
+    # Command: doc (RAGFlow Engine)
+    doc_parser = subparsers.add_parser("doc", aliases=["rag"], help="Deep Document Understanding & RRF Search (RAGFlow Engine)")
+    doc_sub = doc_parser.add_subparsers(dest="doc_action")
+
+    d_index = doc_sub.add_parser("index", help="Indexa arquivo ou diretório markdown em SQLite FTS5 com breadcrumbs")
+    d_index.add_argument("path", nargs="?", default=".", help="Arquivo ou diretório a indexar")
+    d_index.add_argument("--pattern", default="**/*.md", help="Padrão glob para diretórios (padrão: **/*.md)")
+
+    d_search = doc_sub.add_parser("search", help="Busca híbrida com Reciprocal Rank Fusion (RRF)")
+    d_search.add_argument("query", help="Consulta de busca")
+    d_search.add_argument("--limit", type=int, default=5, help="Limite de resultados")
+
+    args = parser.parse_args()
+
+    if args.command == "run":
+        asyncio.run(execute_task(args))
+    elif args.command == "graph":
+        from hermes_cli.haos_cmd import cmd_haos_graph_build, cmd_haos_graph_path
+        if args.graph_action == "path":
+            sys.exit(cmd_haos_graph_path(args))
+        else:
+            sys.exit(cmd_haos_graph_build(args))
+    elif args.command in ("doc", "rag"):
+        from hermes_cli.haos_cmd import cmd_haos_doc_index, cmd_haos_doc_search
+        if args.doc_action == "search":
+            sys.exit(cmd_haos_doc_search(args))
+        else:
+            sys.exit(cmd_haos_doc_index(args))
+    elif args.command == "skills":
+        from hermes_cli.haos_cmd import cmd_haos_skills_search, cmd_haos_skills_install, cmd_haos_skills_list
+        if args.skills_action == "search":
+            sys.exit(cmd_haos_skills_search(args))
+        elif args.skills_action == "install":
+            sys.exit(cmd_haos_skills_install(args))
+        elif args.skills_action == "list":
+            sys.exit(cmd_haos_skills_list(args))
+        else:
+            skills_parser.print_help()
+            sys.exit(0)
+    elif args.command == "eval":
+        from hermes_cli.haos_cmd import cmd_haos_eval
+        sys.exit(cmd_haos_eval(args))
+    elif args.command == "doctor":
+        from hermes.platform.diagnostics.doctor import HAOSDoctor
+        sys.exit(HAOSDoctor.print_terminal_report(json_output=args.json))
+    elif args.command == "server":
+        # Demo do estado observável — servidor canônico ui/server.py (o
+        # haos_server.py legado foi removido no fechamento, delta 50).
+        from hermes.platform.observability.event_store import EventStore
+        from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+        from hermes.platform.ui.server import make_ui_server
+        from hermes.platform.ui.stats import DashboardStats
+
+        kanban = KanbanAdapter()
+        event_store = EventStore()
+        stats = DashboardStats(kanban=kanban, event_store=event_store)
+        server, base = make_ui_server(stats, port=args.port)
+        print(f"🌐 [HAOS UI] Estado observável servido em {base} (ctrl+c para parar)")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+    elif args.command == "web":
+        from hermes.platform.webui.standalone import make_standalone_server
+        server, _state, base = make_standalone_server(
+            data_dir=args.data_dir, host=args.host, port=args.port)
+        print(f"🌐 [HAOS STANDALONE] UI própria do HAOS servida em {base} (ctrl+c para parar)")
+        print(f"   Dados persistentes: {_state.data_dir}")
+        print(f"   Console/Taskboard/Scheduler/Ouroboros/Eventos/Config — dados reais do engine.")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+    elif args.command == "status":
+        show_status()
+    elif args.command == "cpm":
+        show_cpm()
+    elif args.command == "concurrency":
+        show_concurrency()
+    elif args.command == "evolution":
+        show_evolution()
+    else:
+        parser.print_help()
+
+async def execute_task(args):
+    task_id = f"T-{uuid.uuid4().hex[:6]}"
+    trace_id = f"trace-{uuid.uuid4().hex[:8]}"
+
+    print(f"🚀 [HAOS CLI] Iniciando tarefa {task_id}: '{args.goal}'")
+    
+    # 1. Store Task no Kanban canônico
+    kanban = KanbanAdapter()
+    caps = args.capabilities.split(",")
+    task_spec = TaskSpec(
+        id=task_id,
+        title=f"Task {task_id}",
+        goal=args.goal,
+        priority=args.priority,
+        posture=args.posture,
+        model_profile=args.profile,
+        required_capabilities=caps,
+        workspace_type="scratch"  # K8: workspace canônico do card (sem worktree avulso)
+    )
+    kanban.save_task(task_spec, status="READY")
+    upstream_id = kanban._resolve_task_id(task_id)
+    if upstream_id is None:
+        upstream_id = task_id
+
+    # 2. Resolve Model & Provider Route
+    model_resolver = ModelResolver()
+    profile = model_resolver.resolve(args.profile)
+
+    print(f"🧠 [POSTURE] {args.posture.upper()} | Model: {profile.model_identity.family}:{profile.model_identity.variant}")
+
+    # 3. Schedule & Spawn Assignment
+    scheduler = HAOSScheduler()
+    assignment = scheduler.schedule_next([task_spec])
+    run = TaskRun(
+        task_id=upstream_id,
+        worker_id=f"worker-cli-{uuid.uuid4().hex[:4]}",
+        posture_id=args.posture,
+        model_profile_id=args.profile,
+        resolved_model=f"{profile.model_identity.family}:{profile.model_identity.variant}",
+        provider_chain=[
+            {"provider_id": r.provider_id, "provider_model_id": r.provider_model_id,
+             "priority": r.priority}
+            for r in profile.routes
+        ],
+        lane=assignment.lane,
+    )
+    claimed = kanban.claim_task(upstream_id, run.worker_id, run=run)
+    if not claimed:
+        print(f"⚠️  [KANBAN] Tarefa {task_id} não pôde ser reivindicada (já em execução ou sem run)")
+
+    print(f"📌 [SCHEDULER] Assignment Shape: {assignment.execution_shape} | Lane: {assignment.lane}")
+
+    # 4. Context Engine Assembly
+    posture_resolver = PostureResolver()
+    ctx_builder = ContextBuilder()
+    context_pkg = ctx_builder.build_package(task_spec, posture_resolver.resolve(args.posture))
+
+    print(f"📦 [CONTEXT ENGINE] ContextPackage {context_pkg.id} compilado ({context_pkg.token_count} tokens est.)")
+
+    # 5. Kilo Execution (mesmo DB canônico do KanbanAdapter acima)
+    kilo_adapter = KiloLaneAdapter(db_path=str(kanban.db_path))
+    result = kilo_adapter.execute_assignment(assignment)
+
+    # 6. Complete on the canonical Kanban + Event Persistence
+    kanban.complete_task(upstream_id, summary=result["summary"])
+    event_store = EventStore()
+    event_store.append(Event(name="task.cli_executed", payload={"task_id": task_id, "goal": args.goal, "result": result["summary"]}, trace_id=trace_id))
+
+    print(f"✅ [HAOS CLI] Tarefa concluída com sucesso!")
+    print(f"   Workspace: {result['workspace_path']}")
+    print(f"   Trace ID: {trace_id}")
+
+def show_status():
+    print("=" * 60)
+    print("      HAOS (HERMES AGENT OPERATING SYSTEM v1.2) STATUS")
+    print("=" * 60)
+    print("Kernel: Hermes AIAgent (Active)")
+    print("ExactModelRouter: Configurado (A6API -> Direct Provider)")
+    
+    kanban = KanbanAdapter()
+    event_store = EventStore()
+    print(f"Database Events: {event_store.db_path}")
+    print(f"Database Tasks: {kanban.db_path}")
+    
+    print("\nExecuções Recentes:")
+    try:
+        conn = event_store._get_connection()
+        cursor = conn.execute("SELECT name, payload, timestamp FROM events ORDER BY timestamp DESC LIMIT 5")
+        rows = cursor.fetchall()
+        for r in rows:
+            print(f" - [{r['name']}] {r['payload']}")
+    except Exception as e:
+        print(" (Nenhum evento registrado ainda)")
+    print("=" * 60)
+
+def show_cpm():
+    from hermes.platform.ui.stats import DashboardStats
+    from hermes.platform.ui.views import critical_path_view
+
+    kanban = KanbanAdapter()
+    stats = DashboardStats(kanban=kanban)
+    view = critical_path_view(stats)
+    print("=" * 60)
+    print("       HAOS - CRITICAL PATH METHOD (CPM) & PIP")
+    print("=" * 60)
+    print(f"Tarefas Avaliadas no Grafo: {view['total_tasks_evaluated']}")
+    print(f"Nós no Caminho Crítico: {view['critical_path_ids']}")
+    print("\nPrioridades Herdadas (PIP):")
+    for tid, prio in sorted(view['inherited_priorities'].items(), key=lambda x: x[1], reverse=True)[:10]:
+        print(f" - {tid}: prioridade efetiva {prio}")
+    print("=" * 60)
+
+def show_concurrency():
+    from hermes.platform.execution.backpressure import ConcurrencyGuard
+    from hermes.platform.ui.stats import DashboardStats
+    from hermes.platform.ui.views import concurrency_view
+
+    # Instância padrão de inspeção
+    guard = ConcurrencyGuard()
+    stats = DashboardStats(concurrency_guard=guard)
+    view = concurrency_view(stats)
+    print("=" * 60)
+    print("       HAOS - CONCURRENCY GUARD & BACKPRESSURE")
+    print("=" * 60)
+    print(f"Workers Ativos Globais: {view['active_global']} / {view['max_global']} (Disponíveis: {view['available_global']})")
+    print("\nQuotas por Provider:")
+    for prov, data in view['providers'].items():
+        print(f" - {prov}: {data['active']} / {data['limit']}")
+    print("=" * 60)
+
+def show_evolution():
+    from hermes.platform.evolution.ledger import EvolutionLedger
+    from hermes.platform.evolution.analyzer import OuroborosAnalyzer
+
+    event_store = EventStore()
+    ledger = EvolutionLedger(event_store)
+    pending = ledger.pending()
+    history = ledger.history()
+
+    print("=" * 60)
+    print("       HAOS - OUROBOROS EVOLUTION ENGINE")
+    print("=" * 60)
+    print(f"Propostas Pendentes (Shadow Mode): {len(pending)}")
+    for p in pending:
+        print(f" [ID: {p.get('proposal_id')}]")
+        print(f"  Target: {p.get('target')}")
+        print(f"  Proposta: {p.get('current_profile')} -> {p.get('proposed_profile')}")
+        print(f"  Rationale: {p.get('rationale')}")
+        print("-" * 40)
+    decided_events = [e for e in history if e.get("name") == "evolution.proposal.decided"]
+    print(f"\nDecisões Registradas: {len(decided_events)}")
+    for d in decided_events[:5]:
+        pld = d.get("payload") or {}
+        print(f" - [{pld.get('verdict')}] Proposta {pld.get('proposal_id')} aprovada por {pld.get('approver')}")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()

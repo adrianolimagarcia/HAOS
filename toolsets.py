@@ -14,6 +14,9 @@ _HERMES_CORE_TOOLS = [
     "read_file", "write_file", "patch", "search_files",
     "vision_analyze", "image_generate",
     "skills_list", "skill_view", "skill_manage",
+    "obsidian_get_adr", "obsidian_save_note", "graphrag_query",
+    "mcp_gateway_status", "mcp_gateway_list_tools", "mcp_gateway_call",
+    "lsp_query",
     "browser_navigate", "browser_snapshot", "browser_click",
     "browser_type", "browser_scroll", "browser_back",
     "browser_press", "browser_get_images",
@@ -21,10 +24,10 @@ _HERMES_CORE_TOOLS = [
     "browser_vault_list", "browser_vault_unlock", "browser_vault_fill", "browser_vault_save_login", "browser_vault_enter_code",  # ride with the browser
     "browser_exec",  # replaces the other browser tools when browser.backend is "browser-use"
     "text_to_speech",
-    "todo_list", "memory",
+    "todo_list", "memory", "instinct_manage",
     "session_search",
-    "clarify",
-    "execute_code", "delegate_task",
+    "clarify", "request_operator_form",
+    "execute_code", "delegate_task", "dsh_run",
     "cronjob_manage",
     "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
     "kanban_show", "kanban_list",
@@ -128,6 +131,12 @@ TOOLSETS = {
     "context_engine": _ts("Runtime tools exposed by the active context engine"),
     "session_search": _ts("Search and recall past conversations with summarization", ["session_search"]),
     "connections": _ts("Remote connector discovery, execution, and account authorization", ["manage_connections"]),
+
+    "mcp_gateway": _ts(
+        "HAOS Local MCP Gateway & Aggregator - federates multiple independent MCP servers "
+        "with namespacing and resilience",
+        ["mcp_gateway_status", "mcp_gateway_list_tools", "mcp_gateway_call"],
+    ),
     "project": _ts("Desktop Projects — create/switch named workspaces (GUI sessions only)", ["desktop_project"]),
     "bot_room": _ts("Verified text-only Group Chat turn capabilities"),
 
@@ -483,3 +492,4 @@ def resolve_multiple_toolsets(toolset_names: List[str]) -> List[str]:
 
     return sorted(all_tools)
 # ---- END PLUGIN-COMPAT ----
+

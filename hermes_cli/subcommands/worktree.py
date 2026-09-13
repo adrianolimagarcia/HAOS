@@ -29,13 +29,35 @@ def build_worktree_parser(subparsers) -> None:
         "--branches-only", action="store_true",
         help="Only delete merged local branches; leave worktrees alone")
 
+    worktree_create = worktree_subparsers.add_parser(
+        "create", help="Create an isolated git worktree for a task")
+    worktree_create.add_argument("task_id", help="Task ID or branch slug")
+    worktree_create.add_argument("--base", help="Base branch (default: current branch)")
+    worktree_create.add_argument("--repo", help="Repo root (default: current repo)")
+
+    worktree_remove = worktree_subparsers.add_parser(
+        "remove", aliases=["rm"], help="Remove an isolated git worktree")
+    worktree_remove.add_argument("task_id", help="Task ID to remove")
+    worktree_remove.add_argument("--force", action="store_true", default=True, help="Force remove worktree directory")
+    worktree_remove.add_argument("--delete-branch", action="store_true", help="Also delete the task git branch")
+    worktree_remove.add_argument("--repo", help="Repo root (default: current repo)")
+
+    worktree_merge = worktree_subparsers.add_parser(
+        "merge", help="Merge task worktree branch back into target branch")
+    worktree_merge.add_argument("task_id", help="Task ID to merge")
+    worktree_merge.add_argument("--target", help="Target branch (default: current branch)")
+    worktree_merge.add_argument("--squash", action="store_true", help="Squash merge into a single commit")
+    worktree_merge.add_argument("--repo", help="Repo root (default: current repo)")
+
     def _dispatch_worktree(_args):
         from hermes_cli.worktree_cmd import cmd_worktree
 
-        # argparse aliases set dest to the literal typed string ("ls"/"audit").
+        # argparse aliases set dest to the literal typed string ("ls"/"audit"/"rm").
         action = getattr(_args, "worktree_action", None)
         if action in ("ls", "audit"):
             _args.worktree_action = "list"
+        elif action in ("rm",):
+            _args.worktree_action = "remove"
         return cmd_worktree(_args)
 
     worktree_parser.set_defaults(func=_dispatch_worktree)

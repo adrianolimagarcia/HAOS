@@ -31,7 +31,11 @@ from setuptools.command.sdist import sdist
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 
-_IN_NIX_BUILD = os.environ.get("HERMES_NIX_BUILD") == "1"
+_IN_NIX_BUILD = (
+    os.environ.get("HERMES_NIX_BUILD") == "1"
+    or os.environ.get("HAOS_BUILD") == "1"
+    or os.environ.get("HAOS_PYPI_BUILD") == "1"
+)
 
 _BLOCK_MESSAGE = (
     "Building wheels or sdists for hermes-agent is not supported.\n"

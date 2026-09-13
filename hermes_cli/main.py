@@ -1546,7 +1546,8 @@ def _warn_retired_xai_models() -> None:
             for _ref in _retired_xai_refs:
                 sys.stderr.write(f"  \033[33m⚠\033[0m {format_issue(_ref)}\n")
             sys.stderr.write(f"  \033[2mMigration guide: {MIGRATION_GUIDE_URL}\033[0m\n")
-            sys.stderr.write("  \033[2mRun 'hermes doctor' for details.\033[0m\n\n")
+            from hermes_constants import product_command
+            sys.stderr.write(f"  \033[2mRun '{product_command('doctor')}' for details.\033[0m\n\n")
     except Exception:
         pass
 
@@ -1603,13 +1604,15 @@ def _start_chat_background_prefetch() -> None:
 
 
 def _first_run_setup_guard(args) -> None:
-    """No provider configured: offer `hermes setup` (TTY) or exit 1 with guidance."""
+    """No provider configured: offer `haos setup`/`hermes setup` (TTY) or exit 1 with guidance."""
+    from hermes_constants import product_cli_name, product_command
+    _product = product_cli_name()
     print()
     print(
-        "It looks like Hermes isn't configured yet -- no API keys or providers found."
+        f"It looks like {_product} isn't configured yet -- no API keys or providers found."
     )
     print()
-    print("  Run:  hermes setup")
+    print(f"  Run:  {product_command('setup')}")
     print()
 
     from hermes_cli.setup import (
@@ -1619,7 +1622,7 @@ def _first_run_setup_guard(args) -> None:
 
     if not is_interactive_stdin():
         print_noninteractive_setup_guidance(
-            "No interactive TTY detected for the first-run setup prompt."
+            f"No interactive TTY detected for the first-run setup prompt ({_product})."
         )
         sys.exit(1)
 
@@ -1631,7 +1634,7 @@ def _first_run_setup_guard(args) -> None:
         cmd_setup(args)
         return
     print()
-    print("You can run 'hermes setup' at any time to configure.")
+    print(f"You can run '{product_command('setup')}' at any time to configure.")
     sys.exit(1)
 
 
@@ -1709,9 +1712,34 @@ def cmd_chat(args):
     # --source: tag session source for filtering (e.g. 'tool' for integrations)
     if getattr(args, "source", None):
         os.environ["HERMES_SESSION_SOURCE"] = args.source
+    # --ultrawork / -u: OmO-inspired autonomous execution mode
+    if getattr(args, "ultrawork", False):
+        os.environ["HAOS_ULTRAWORK_MODE"] = "1"
 
     _pin_kanban_board_env()
+    # Ativação padrão do HAOS (workers agênticos reais, integridade do runtime e catálogo de skills)
+    try:
+        from hermes.platform.execution.lane_executor import install_real_lane_workers
+        install_real_lane_workers()
+        from tools.skills_sync import sync_skills
+        sync_skills(quiet=True)
+    except Exception:
+        pass
     _confirm_startup_expensive_model_override(args)
+
+    # HAOS Harness Override (e.g. --harness dsh / --harness acp)
+    harness = getattr(args, "harness", None)
+    if harness == "dsh":
+        import shutil, subprocess
+        dsh_bin = shutil.which("dsh") or os.environ.get("DSH_PATH") or "dsh"
+        query_text = getattr(args, "query", None) or "Start interactive DSH session"
+        dsh_args = [dsh_bin, "exec", "--objective", query_text, "--workdir", os.getcwd()]
+        try:
+            rc = subprocess.call(dsh_args)
+            sys.exit(rc)
+        except FileNotFoundError:
+            print(f"Error: DeepSeek Harness executable '{dsh_bin}' not found on PATH.")
+            sys.exit(1)
 
     passthrough = {k: getattr(args, k, d) for k, d in _CHAT_PASSTHROUGH}
     if use_tui:
@@ -1908,9 +1936,10 @@ def _resolve_active_provider(config, model_cfg, effective_provider, custom_provi
                     active,
                 )
         else:
+            from hermes_constants import product_command
             print(
-                f"Warning: Unknown provider '{effective_provider}'. Check 'hermes model' for "
-                "available providers, or run 'hermes doctor' to diagnose config "
+                f"Warning: Unknown provider '{effective_provider}'. Check '{product_command('model')}' for "
+                f"available providers, or run '{product_command('doctor')}' to diagnose config "
                 "issues. Falling back to auto provider detection."
             )
     if not active:
@@ -2627,6 +2656,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "dump", "egress", "fallback", "gateway", "hooks", "import", "import-agent", "insights",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "journey", "memory-graph", "learning",
+        "codebase-wiki",
         "model", "monitoring", "pairing", "pause", "peer", "pets", "plugins", "portal", "profile",
         "project", "proxy",
         "prompt-size",
@@ -3244,6 +3274,12 @@ def _build_cli_parser():
 
     from hermes_cli.projects_cmd import build_parser as _build_project_parser
     _build_project_parser(subparsers).set_defaults(func=cmd_project)
+
+    from hermes_cli.haos_cmd import build_haos_parser
+    build_haos_parser(subparsers)
+
+    from hermes_cli.codebase_wiki import build_parser as _build_codebase_wiki_parser
+    _build_codebase_wiki_parser(subparsers)
 
     build_hooks_parser(subparsers, cmd_hooks=cmd_hooks)
     build_doctor_parser(subparsers, cmd_doctor=cmd_doctor)

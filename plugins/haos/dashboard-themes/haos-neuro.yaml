@@ -1,0 +1,70 @@
+# HAOS Neuromorphic — user theme for the Hermes Agent dashboard.
+# Clean/technological restyle: deep space glass palette, tech typography,
+# soft elevated radius. Loaded via the official ~/.hermes/dashboard-themes seam.
+name: haos-neuro
+label: HAOS Neuromorphic
+description: Repaginada clean/tecnológica — vidro fosco profundo, acentos ciano/violeta, tipografia tech.
+palette:
+  background:
+    hex: "#05070f"
+    alpha: 1
+  midground:
+    hex: "#cfe0ff"
+    alpha: 1
+  foreground:
+    hex: "#ffffff"
+    alpha: 0
+  warmGlow: "rgba(34, 211, 238, 0.26)"
+  noiseOpacity: 0.45
+typography:
+  fontSans: '"Space Grotesk", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+  fontMono: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace'
+  fontUrl: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+  baseSize: "14.5px"
+  lineHeight: "1.6"
+  letterSpacing: "-0.008em"
+layout:
+  radius: "1rem"
+  density: comfortable
+layoutVariant: standard
+colorOverrides:
+  card: "#0b1120"
+  cardForeground: "#dbe7ff"
+  popover: "#0a0f1c"
+  popoverForeground: "#dbe7ff"
+  primary: "#22d3ee"
+  primaryForeground: "#031018"
+  secondary: "#131f3a"
+  secondaryForeground: "#c7d8ff"
+  muted: "#0d1526"
+  mutedForeground: "#7f93b8"
+  accent: "#182847"
+  accentForeground: "#cfe3ff"
+  border: "#1c2b4d"
+  input: "#22345c"
+  ring: "#22d3ee"
+  destructive: "#f87171"
+  destructiveForeground: "#1a0b0b"
+  success: "#34d399"
+  warning: "#fbbf24"
+componentStyles:
+  card:
+    background: "rgba(13, 19, 34, 0.6)"
+    border: "1px solid rgba(126, 153, 220, 0.16)"
+    borderRadius: "1rem"
+customCSS: |
+  :root { color-scheme: dark; }
+  body {
+    background:
+      radial-gradient(1200px 620px at 88% -12%, rgba(34, 211, 238, 0.09), transparent 60%),
+      radial-gradient(900px 520px at -8% 112%, rgba(129, 140, 248, 0.13), transparent 55%),
+      linear-gradient(180deg, #05070f, #070b16 55%, #060913);
+  }
+  ::selection { background: rgba(34, 211, 238, 0.32); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #1c2b4d, #26395f);
+    border-radius: 8px; border: 2px solid transparent; background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background-color: #31497c; }
+  input, textarea, select { caret-color: #22d3ee; }

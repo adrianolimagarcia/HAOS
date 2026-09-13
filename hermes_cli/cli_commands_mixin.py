@@ -2703,3 +2703,63 @@ class CLICommandsMixin:
         if _save("wake_word.enabled", enabled):
             _cp(_dim(f"Wake word {'enabled' if enabled else 'disabled'} in config "
                      f"(wake_word.enabled: {str(enabled).lower()})."))
+
+    # ---- /haos ---------------------------------------------------------------------------
+    def _handle_haos_command(self, command: str = ""):
+        """Handle /haos [status|dispatch|constructor|plan <meta>] — HAOS Control Plane.
+        Ativa o protocolo multiagente, inspeção do Kanban/EventStore e dispatch de tarefas."""
+        parts = command.strip().split(maxsplit=2)
+        subcmd = parts[1].lower() if len(parts) > 1 else "status"
+        arg = parts[2] if len(parts) > 2 else ""
+
+        from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+        from hermes.platform.observability.event_store import EventStore
+        from hermes.platform.execution.dispatcher import HAOSDispatcher
+        from hermes.platform.execution.lane_executor import install_real_lane_workers
+
+        install_real_lane_workers()
+        kanban = KanbanAdapter()
+        event_store = EventStore()
+
+        if subcmd == "status":
+            tasks = kanban.list_tasks()
+            by_status = {}
+            for t in tasks:
+                s = t.get("status", "unknown")
+                by_status[s] = by_status.get(s, 0) + 1
+            status_summary = ", ".join(f"{k}: {v}" for k, v in sorted(by_status.items())) or "vazio"
+            cursor = event_store.cursor()
+            _cp(f"[bold cyan]⚡ HAOS Control Plane[/] · Kanban Tasks ({len(tasks)}): [green]{status_summary}[/] · EventStore cursor: [dim]{cursor}[/]")
+            print("  Subcomandos: /haos dispatch (processar fila), /haos constructor <objetivo>, /haos doctor (diagnóstico de saúde)")
+
+        elif subcmd == "doctor":
+            from hermes.platform.diagnostics.doctor import HAOSDoctor
+            json_mode = "--json" in arg
+            HAOSDoctor.print_terminal_report(json_output=json_mode)
+
+        elif subcmd == "dispatch":
+            disp = HAOSDispatcher(kanban)
+            executed = disp.claim_tick(max_spawn=3)
+            if executed:
+                _cp(f"[bold green]✓ HAOS Dispatch:[/] {len(executed)} cards processados: {', '.join(executed)}")
+            else:
+                _cp("[bold yellow]ℹ HAOS Dispatch:[/] nenhum card em READY disponível para claim.")
+
+        elif subcmd in ("constructor", "plan"):
+            if not arg:
+                _cp("[bold red]Uso:[/] /haos constructor <objetivo ou projeto a estruturar>")
+                return
+            prompt = (
+                f"[HAOS CONSTRUCTOR ACTIVATED]\n"
+                f"Você é o Constructor do HAOS (Hermes Agent Operating System v1.1).\n"
+                f"Objetivo do usuário: {arg}\n\n"
+                f"Diretrizes obrigatórias:\n"
+                f"1. Se a meta for vaga, faça perguntas de alinhamento para fechar requisitos e critérios de aceite.\n"
+                f"2. Estruture a demanda no Kanban chamando a ferramenta kanban_create_task / save_task com status='READY', posture='implementer' e team_id='software_engineering'.\n"
+                f"3. Ao executar a tarefa no workspace isolado, certifique-se de produzir o código/testes e concluir chamando kanban.complete_task para que o card avance para DONE e fique pronto para aprovação humana no dashboard.\n"
+                f"Proceda agora com o acolhimento da demanda e o plano inicial."
+            )
+            self.agent.run_conversation(prompt)
+
+        else:
+            _cp(f"[bold red]Subcomando desconhecido:[/] {subcmd}. Opções: status, dispatch, constructor, plan.")

@@ -21,7 +21,7 @@ from typing import List, Tuple
 SCANNER_VERSION = "skills-guard-v2"
 
 # NVIDIA-verified skills each ship a signed `skill.oms.sig` + governance `skill-card.md`.
-TRUSTED_REPOS = {"openai/skills", "anthropics/skills", "huggingface/skills", "NVIDIA/skills"}
+TRUSTED_REPOS = {"openai/skills", "anthropics/skills", "huggingface/skills", "NVIDIA/skills", "wshobson/agents", "affaan-m/ECC"}
 
 INSTALL_POLICY = {
     #                  safe      caution    dangerous

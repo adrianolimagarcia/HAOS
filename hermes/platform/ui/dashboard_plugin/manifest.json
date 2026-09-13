@@ -1,0 +1,14 @@
+{
+  "name": "haos",
+  "label": "HAOS Control Plane",
+  "description": "Estado observável do HAOS no shell oficial: taskboard/approvals/memory-graph/evolution/grants derivados do Kanban canônico + EventStore + vault reais (nunca fabricados), com actions de control plane na view (dispatch/evolution decide/grants/acp plan). Backend (api) no delta 45; aba /haos + entry IIFE no delta 46; actions HTTP no delta 47; botões + ACP bridge no delta 49.",
+  "icon": "Activity",
+  "version": "1.2.0",
+  "tab": {
+    "path": "/haos",
+    "position": "after:skills"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

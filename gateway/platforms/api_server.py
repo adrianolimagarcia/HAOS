@@ -2233,10 +2233,24 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         def _model(mid: str, root: str, parent) -> Dict[str, Any]:
             return {"id": mid, "object": "model", "created": now, "owned_by": "hermes", "permission": [],
                     "root": root, "parent": parent}
-        models = [_model(model_name, model_name, None)]
-        models.extend(
+
+        seen_model_ids: set[str] = set()
+        raw_candidates = [_model(model_name, model_name, None)]
+        raw_candidates.extend(
             _model(alias, route_cfg.get("model", alias), model_name)
             for alias, route_cfg in self._model_routes.items() if alias != model_name)
+
+        models: List[Dict[str, Any]] = []
+        for m in raw_candidates:
+            mid = m.get("id")
+            if not mid or not isinstance(mid, str):
+                continue
+            key = mid.strip().lower()
+            if key in seen_model_ids:
+                continue
+            seen_model_ids.add(key)
+            models.append(m)
+
         return web.json_response({"object": "list", "data": models})
 
     @_require_auth

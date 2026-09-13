@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TaskSpec",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "goal"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "goal": { "type": "string" },
+    "description": { "type": "string" },
+    "posture": { "type": "string", "default": "general" },
+    "priority": { "type": "integer", "default": 0 },
+    "parent_id": { "type": ["string", "null"] },
+    "requires_tasks": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "max_tokens": { "type": "integer" },
+        "max_duration_sec": { "type": "number" },
+        "max_cost_usd": { "type": "number" }
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" }, "default": [] }
+  }
+}

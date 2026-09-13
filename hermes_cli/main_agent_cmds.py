@@ -62,9 +62,56 @@ def cmd_memory(args):
         _cmd_memory_off()
     elif sub == "reset":
         _cmd_memory_reset(args)
+    elif sub == "dream":
+        _cmd_memory_dream(args)
+    elif sub == "log":
+        _cmd_memory_log(args)
+    elif sub == "revert":
+        _cmd_memory_revert(args)
     else:
         from hermes_cli.memory_setup import memory_command
         memory_command(args)
+
+
+def _cmd_memory_dream(args):
+    from hermes.platform.memory.dream import DreamConsolidator
+    consolidator = DreamConsolidator()
+    dry_run = getattr(args, "dry_run", False)
+    print(f"Executing HAOS Dream memory consolidation (dry_run={dry_run})...")
+    res = consolidator.run_dream(dry_run=dry_run)
+    print(f"Status: {res.get('status')}")
+    print(f"Consolidated sessions: {res.get('consolidated_count')}")
+    if res.get("commit"):
+        print(f"Audit commit: {res.get('commit')}")
+
+
+def _cmd_memory_log(args):
+    from hermes.platform.memory.dream import DreamGitStore
+    from hermes_constants import get_hermes_home
+    store = DreamGitStore(get_hermes_home() / "memory")
+    limit = getattr(args, "limit", 10)
+    commits = store.list_commits(limit=limit)
+    if not commits:
+        print("No dream commits recorded yet.")
+        return
+    print(f"HAOS Memory Git Audit Trail (last {len(commits)} commits):")
+    for c in commits:
+        print(f"  [{c['sha']}] {c['timestamp']} — {c['subject']}")
+
+
+def _cmd_memory_revert(args):
+    from hermes.platform.memory.dream import DreamGitStore
+    from hermes_constants import get_hermes_home
+    store = DreamGitStore(get_hermes_home() / "memory")
+    sha = getattr(args, "sha", "")
+    if not sha:
+        print("Commit SHA required.")
+        return
+    ok = store.revert(sha)
+    if ok:
+        print(f"Successfully reverted dream commit {sha}.")
+    else:
+        print(f"Failed to revert commit {sha}.")
 
 
 # (args attribute, acp flag) — forwarded in this order.

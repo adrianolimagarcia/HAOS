@@ -1,0 +1,238 @@
+/* HAOS Control Plane — dashboard plugin styles (delta 46).
+ * Minimal, namespaced under .hermes-haos-*; the host provides the design
+ * system (cards/badges via the plugin SDK), this file only lays out the
+ * HAOS page grid and small spacing tweaks. */
+.hermes-haos {
+  padding: 0.5rem;
+}
+
+.hermes-haos--loading,
+.hermes-haos--error {
+  padding: 1rem;
+}
+
+.hermes-haos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.hermes-haos-card {
+  min-width: 0;
+}
+
+.hermes-haos-total {
+  font-weight: 600;
+}
+
+.hermes-haos-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.hermes-haos-badge {
+  white-space: nowrap;
+}
+
+.hermes-haos-evo-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.hermes-haos-evo-item {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+/* Delta 49 — control-plane actions on the /haos view. Namespaced, minimal;
+ * visual language comes from the host, this only arranges buttons/rows. */
+.hermes-haos-actions {
+  margin-bottom: 1rem;
+}
+
+.hermes-haos-operator {
+  display: block;
+  font-size: 0.85em;
+  margin-bottom: 0.5rem;
+}
+
+.hermes-haos-operator-input {
+  margin-left: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font-size: 0.9em;
+}
+
+.hermes-haos-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.hermes-haos-btn {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid currentColor;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.hermes-haos-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hermes-haos-btn--approve {
+  color: #16a34a;
+}
+
+.hermes-haos-btn--reject {
+  color: #dc2626;
+}
+
+.hermes-haos-btn--revoke {
+  color: #b45309;
+}
+
+.hermes-haos-notice {
+  margin-top: 0.5rem;
+  font-size: 0.85em;
+}
+
+.hermes-haos-notice--success {
+  color: #16a34a;
+}
+
+.hermes-haos-notice--error {
+  color: #dc2626;
+}
+
+.hermes-haos-approval-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.hermes-haos-approval-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.hermes-haos-approval-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.hermes-haos-evo-item,
+.hermes-haos-grant-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.hermes-haos-evo-actions,
+.hermes-haos-grant-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.hermes-haos-grant-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.hermes-haos-grant-item {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8em;
+}
+
+.hermes-haos-notice--running {
+  color: #2563eb;
+}
+
+.hermes-haos-notice--running::after {
+  content: "";
+  display: inline-block;
+  width: 0.7em;
+  margin-left: 0.25em;
+  animation: hermes-haos-spin 0.9s linear infinite;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  height: 0.7em;
+  vertical-align: -0.1em;
+}
+
+@keyframes hermes-haos-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Delta 51 — transparência: listas dos cards recentes, aprovações pendentes e
+ * nós do memory graph. O estado que o backend deriva deve ser visível, não só
+ * contadores. Mesma linguagem das listas evo/grant existentes. */
+.hermes-haos-recent-list,
+.hermes-haos-approval-list,
+.hermes-haos-mem-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.hermes-haos-recent-item,
+.hermes-haos-approval-item,
+.hermes-haos-mem-item {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8em;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.hermes-haos-recent-status {
+  color: #16a34a;
+}
+
+.hermes-haos-approval-meta,
+.hermes-haos-mem-count,
+.hermes-haos-recent-id {
+  opacity: 0.65;
+}
+
+.hermes-haos-mem-edges {
+  font-size: 0.85em;
+  opacity: 0.75;
+  margin-top: 0.4rem;
+}
+
+.hermes-haos-acp-card {
+  grid-column: 1 / -1;
+}
+
+.hermes-haos-acp-meta {
+  font-size: 0.8em;
+  opacity: 0.7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.hermes-haos-acp-block {
+  white-space: pre-wrap;
+  font-size: 0.9em;
+  margin: 0.35rem 0;
+  padding: 0.4rem 0.6rem;
+  border-left: 2px solid currentColor;
+  opacity: 0.9;
+}

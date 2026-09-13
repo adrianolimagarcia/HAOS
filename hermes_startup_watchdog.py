@@ -100,13 +100,15 @@ _handle: Optional["StartupWatchdogHandle"] = None
 
 def _process_hermes_home() -> Path:
     """HERMES_HOME for diagnostic files — stdlib-only replica of the hermes_constants default."""
-    val = os.environ.get("HERMES_HOME", "").strip()
+    val = os.environ.get("HAOS_HOME", "").strip() or os.environ.get("HERMES_HOME", "").strip()
     if val:
         return Path(val)
     if sys.platform == "win32":
         local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
         base = Path(local_appdata) if local_appdata else Path.home() / "AppData" / "Local"
-        return base / "hermes"
+        return base / "haos" if (base / "haos").exists() else base / "hermes"
+    if (Path.home() / ".haos").exists():
+        return Path.home() / ".haos"
     return Path.home() / ".hermes"
 
 

@@ -135,6 +135,10 @@ def _add_top_level_flags(parser: argparse.ArgumentParser) -> None:
         "high, xhigh, max, or ultra. Overrides agent.reasoning_effort in "
         "config.yaml for this run only; the persistent level lives there "
         "(or per-model under agent.reasoning_overrides)."))
+    inherited(parser, "--harness", choices=["native", "dsh", "acp"], default=None,
+              help="Execution harness backend: native AIAgent, dsh (DeepSeek Harness), or acp")
+    inherited(parser, "-u", "--ultrawork", action="store_true", default=False,
+              help="Ultrawork mode (OmO-inspired): high-intensity autonomous execution without interim questions until tests pass.")
     add("-t", "--toolsets", default=None,
         help="Comma-separated toolsets to enable for this invocation. Applies to -z/--oneshot and --tui.")
     add("--resume", "-r", metavar="SESSION", default=None, help=(
@@ -224,6 +228,11 @@ def _build_chat_parser(subparsers) -> argparse.ArgumentParser:
     add("-v", "--verbose", action="store_true", default=SUPPRESS, help="Verbose output")
     add("-Q", "--quiet", action="store_true",
         help="Quiet mode for programmatic use: suppress banner, spinner, and tool previews. Only output the final response and session info.")
+    inherited(chat_parser, "--harness", default=SUPPRESS,
+              choices=["native", "dsh", "acp"],
+              help="Execution harness backend: native AIAgent, dsh (DeepSeek Harness), or acp")
+    inherited(chat_parser, "-u", "--ultrawork", action="store_true", default=SUPPRESS,
+              help="Ultrawork mode (OmO-inspired): high-intensity autonomous execution without interim questions until tests pass.")
     add("--resume", "-r", metavar="SESSION_ID", default=SUPPRESS, help=(
         "Resume a previous session by ID (shown on exit), or 'latest' "
         "for the most recent session"))

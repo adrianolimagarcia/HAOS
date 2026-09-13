@@ -360,8 +360,16 @@ def _cmd_create(args: argparse.Namespace) -> int:
         return _err(f"kanban: --max-retries must be >= 1 (got {max_retries}); "
                     "use 1 to trip on the first failure.", 2)
     with kbc.connect_closing() as conn:
+        # Ultrawork mode: sets goal_mode and injects ultrawork directive in body
+        body_text = args.body or ""
+        goal_mode_active = bool(getattr(args, "goal_mode", False))
+        if getattr(args, "ultrawork", False):
+            goal_mode_active = True
+            if "[ULTRAWORK]" not in body_text:
+                body_text = (body_text + "\n\n[ULTRAWORK: OmO autonomous execution, run tests before completion]").strip()
+
         task_id = kb.create_task(
-            conn, title=args.title, body=args.body, assignee=args.assignee,
+            conn, title=args.title, body=body_text or None, assignee=args.assignee,
             created_by=args.created_by or _profile_author(),
             workspace_kind=ws_kind, workspace_path=ws_path, branch_name=branch_name,
             project_id=getattr(args, "project", None), tenant=args.tenant, priority=args.priority,
@@ -370,7 +378,7 @@ def _cmd_create(args: argparse.Namespace) -> int:
             max_runtime_seconds=max_runtime, skills=getattr(args, "skills", None) or None,
             max_retries=max_retries, model_override=getattr(args, "model_override", None),
             provider_override=getattr(args, "provider_override", None),
-            goal_mode=bool(getattr(args, "goal_mode", False)),
+            goal_mode=goal_mode_active,
             goal_max_turns=getattr(args, "goal_max_turns", None),
             completion_contract=getattr(args, "completion_contract", None),
             initial_status=getattr(args, "initial_status", "running"),

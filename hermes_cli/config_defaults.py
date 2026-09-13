@@ -19,11 +19,16 @@ def _aux(timeout, *, reasoning_effort=True, **extra):
 
 
 DEFAULT_CONFIG = {
-    "model": "",
+    "model": {
+        "persist_switch_by_default": True,
+    },
+    "display": {
+        "skin": "haos",
+    },
     "providers": {},
     "fallback_providers": [],
     "credential_pool_strategies": {},
-    "toolsets": ["hermes-cli"],
+    "toolsets": ["hermes-cli", "skills"],
     # journal_mode: SQLite journal mode for every Hermes DB. "wal" default; use "delete" on
     # weak-fsync/shared filesystems where WAL is not crash-safe (macOS virtiofs, NFS, SMB).
     "database": {
@@ -2657,6 +2662,9 @@ OPTIONAL_ENV_VARS = {
         "Picovoice access key for the Porcupine 'Hey Hermes' wake word engine (optional; "
         "openWakeWord is the free default)", "Picovoice access key",
         "https://console.picovoice.ai/"),
+    "JULES_API_KEY": _tool(
+        "Google Jules API key for delegating autonomous cloud coding tasks",
+        "Google Jules API key", "https://jules.google/"),
     "GITHUB_TOKEN": _tool("GitHub token for Skills Hub (higher API rate limits, skill publish)",
         "GitHub Token", "https://github.com/settings/tokens"),
     # ── Bundled skills (opt-in) ── category="skill" (not "tool") so the sandbox env blocklist in

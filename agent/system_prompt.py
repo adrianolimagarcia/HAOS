@@ -491,7 +491,13 @@ def _identity_parts(agent: Any, ctx_len: Optional[int]) -> Tuple[List[str], bool
     Returns ``(parts, soul_loaded)``."""
     wants_soul = agent.load_soul_identity or not agent.skip_context_files
     _soul_content = _pb.load_soul_md(ctx_len, home_override=_agent_home(agent)) if wants_soul else None
-    return ([_soul_content], True) if _soul_content else ([DEFAULT_AGENT_IDENTITY], False)
+    if _soul_content:
+        return ([_soul_content], True)
+    if DEFAULT_AGENT_IDENTITY != _pb.DEFAULT_AGENT_IDENTITY:
+        return ([DEFAULT_AGENT_IDENTITY], False)
+    from hermes_constants import is_haos_environment
+    fallback_identity = _pb.HAOS_AGENT_IDENTITY if is_haos_environment() else DEFAULT_AGENT_IDENTITY
+    return ([fallback_identity], False)
 
 
 def _guidance_parts(agent: Any) -> List[str]:
@@ -619,13 +625,16 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     # hermes-agent skill installed, so the variant is chosen after the skills
     # index is built; this slot holds its position.
     _help_guidance_slot = len(stable_parts)
-    stable_parts.append(HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS)
+    from hermes_constants import is_haos_environment
+    in_haos = is_haos_environment()
+    default_help = _pb.HAOS_AGENT_HELP_GUIDANCE_NO_SKILLS if in_haos else HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS
+    stable_parts.append(default_help)
     stable_parts.extend(_guidance_parts(agent))
     skills_prompt = _skills_prompt(agent)
     # Skill-pointer variant requires BOTH skill_view AND the hermes-agent skill
     # in the rendered index (pure string check — inherits the index's stability).
-    if "skill_view" in (agent.valid_tool_names or set()) and "- hermes-agent:" in skills_prompt:
-        stable_parts[_help_guidance_slot] = HERMES_AGENT_HELP_GUIDANCE
+    if "skill_view" in (agent.valid_tool_names or set()) and ("- hermes-agent:" in skills_prompt or "- haos-control-plane:" in skills_prompt):
+        stable_parts[_help_guidance_slot] = _pb.HAOS_AGENT_HELP_GUIDANCE if in_haos else HERMES_AGENT_HELP_GUIDANCE
     stable_parts.extend(_alibaba_identity_part(agent))
     # Coding posture: the operating brief stays in the stable prefix. The
     # environment block contains the current cwd/backend and belongs after

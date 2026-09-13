@@ -374,11 +374,10 @@ _DASHBOARD_EMBEDDED_CHAT_ENABLED = True
 _DESKTOP_ATTACHMENT_WS_MAX_BYTES = 384 * 1024 * 1024
 
 
-# CORS: localhost origins only — allow_origins=["*"] on 0.0.0.0 would let any
-# website read/modify config and secrets.
+# CORS: localhost and Tailscale CGNAT (100.64.0.0/10) origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|100\.\d+\.\d+\.\d+)(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -557,7 +556,7 @@ def _is_accepted_host(
         return True
     bound_lc = bound_host.lower()
     if bound_lc in _LOOPBACK_HOST_VALUES:
-        return host_only in _LOOPBACK_HOST_VALUES
+        return host_only in _LOOPBACK_HOST_VALUES or host_only.startswith("100.")
     return host_only == bound_lc
 
 

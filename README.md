@@ -1,264 +1,171 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Hermes Agent" width="100%">
+  <h1 align="center">HAOS ☤ (Hermes Agentic Operating System)</h1>
+  <p align="center"><b>Multi-Agent Autonomous OS • Kanban Backbone • Self-Evolution Ouroboros • Ultrawork Mode • 100% Standalone</b></p>
 </p>
 
-# Hermes Agent ☤
 <p align="center">
-  <a href="https://hermes-agent.nousresearch.com/">Hermes Agent</a> | <a href="https://hermes-agent.nousresearch.com/">Hermes Desktop</a>
-</p>
-<p align="center">
-  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://nousresearch.com"><img src="https://img.shields.io/badge/Built%20by-Nous%20Research-blueviolet?style=for-the-badge" alt="Built by Nous Research"></a>
-  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/Lang-中文-red?style=for-the-badge" alt="中文"></a>
-  <a href="README.ur-pk.md"><img src="https://img.shields.io/badge/Lang-اردو-green?style=for-the-badge" alt="اردو"></a>
-  <a href="README.es.md"><img src="https://img.shields.io/badge/Lang-Español-orange?style=for-the-badge" alt="Español"></a>
+  <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Release-2026.9.8-blue?style=for-the-badge" alt="Release Date"></a>
+  <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Version-0.21.1-cyan?style=for-the-badge" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://github.com/adrianolimagarcia/HAOS"><img src="https://img.shields.io/badge/Architecture-100%25%20Standalone-purple?style=for-the-badge" alt="Standalone"></a>
 </p>
 
-**The self-improving AI agent built by [Nous Research](https://nousresearch.com).** It's the only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, searches its own past conversations, and builds a deepening model of who you are across sessions. Run it on a $5 VPS, a GPU cluster, or serverless infrastructure that costs nearly nothing when idle. It's not tied to your laptop — talk to it from Telegram while it works on a cloud VM.
+---
 
-Use any model you want — [Nous Portal](https://portal.nousresearch.com), OpenRouter, OpenAI, your own endpoint, and [many others](https://hermes-agent.nousresearch.com/docs/integrations/providers). Switch with `hermes model` — no code changes, no lock-in.
+## ⚡ O que é o HAOS?
 
-<table>
-<tr><td><b>A real terminal interface</b></td><td>Full TUI with multiline editing, slash-command autocomplete, conversation history, interrupt-and-redirect, and streaming tool output.</td></tr>
-<tr><td><b>Lives where you do</b></td><td>Telegram, Discord, Slack, WhatsApp, Signal, and CLI — all from a single gateway process. Voice memo transcription, cross-platform conversation continuity.</td></tr>
-<tr><td><b>A closed learning loop</b></td><td>Agent-curated memory with periodic nudges. Autonomous skill creation after complex tasks. Skills self-improve during use. FTS5 session search with LLM summarization for cross-session recall. <a href="https://github.com/plastic-labs/honcho">Honcho</a> dialectic user modeling. Compatible with the <a href="https://agentskills.io">agentskills.io</a> open standard.</td></tr>
-<tr><td><b>Scheduled automations</b></td><td>Built-in cron scheduler with delivery to any platform. Daily reports, nightly backups, weekly audits — all in natural language, running unattended.</td></tr>
-<tr><td><b>Delegates and parallelizes</b></td><td>Spawn isolated subagents for parallel workstreams. Write Python scripts that call tools via RPC, collapsing multi-step pipelines into zero-context-cost turns.</td></tr>
-<tr><td><b>Runs anywhere, not just your laptop</b></td><td>Seven terminal backends — local, Docker, SSH, Singularity, Modal, Daytona, and Vercel Sandbox. Daytona and Modal offer serverless persistence — your agent's environment hibernates when idle and wakes on demand, costing nearly nothing between sessions. Run it on a $5 VPS or a GPU cluster.</td></tr>
-<tr><td><b>Research-ready</b></td><td>Batch trajectory generation, trajectory compression for training the next generation of tool-calling models.</td></tr>
-</table>
+O **HAOS** (*Hermes Agentic Operating System*) é um sistema operacional agêntico de desenvolvimento de software de alta performance e autonomia contínua. Ele combina uma espinha dorsal de orquestração multi-agente via **Kanban**, um motor de auto-evolução (**Ouroboros**), aprendizado contínuo por **Instintos Atômicos com Confidence Scoring**, execução em modo **Ultrawork** e um **Control Plane Web nativo** (porta `8788`).
+
+Projetado sob a filosofia de **Cintura Estreita (Narrow Waist) e Autonomia Máxima**:
+- **100% Standalone:** Zero Docker obrigatório, zero Kubernetes, zero bancos externos (Postgres/Redis).
+- **Persistência Concorrente Local:** SQLite com WAL (*Write-Ahead Logging*) para Kanban, eventos e métricas.
+- **Cache de Prompt Sagrado:** Prompt de sistema estável a nível de byte; injeção dinâmica segura no payload de ferramentas (`role: tool`).
+- **Pronto para Offline:** Pode operar 100% desconectado da internet utilizando modelos locais (Ollama, LM Studio, llama-server) ou provedores de nuvem (DeepSeek, OpenRouter, Anthropic, OpenAI).
 
 ---
 
-## Quick Install
+## 🚀 Instalação Rápida (1 Comando)
 
-### Linux, macOS, WSL2, Termux
+### Linux e WSL2 (Ubuntu / Debian / Arch / CachyOS / Fedora / macOS)
+
+Execute no terminal:
 
 ```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/adrianolimagarcia/hermes-agent/haos-standalone/scripts/install_haos.sh | bash
 ```
 
-### Windows (native, PowerShell)
+*(Se já tiver o repositório clonado localmente, basta rodar `./scripts/install_haos.sh`).*
 
-> **Heads up:** Native Windows runs Hermes without WSL — CLI, gateway, TUI, and tools all work natively. If you'd rather use WSL2, the Linux/macOS one-liner above works there too. Found a bug? Please [file issues](https://github.com/NousResearch/hermes-agent/issues).
+O instalador automático:
+1. Instala pacotes essenciais do sistema (`git`, `curl`, `socat`, compiladores).
+2. Provisiona o `uv` e cria um ambiente virtual isolado Python 3.11.
+3. Instala todas as dependências do HAOS e registra o executável global **`haos`** no seu terminal.
+4. Cria o diretório de dados em `~/.haos`.
 
-Run this in PowerShell:
+---
 
-```powershell
-iex (irm https://hermes-agent.nousresearch.com/install.ps1)
-```
+## 🖥️ Começando a Usar
 
-The installer handles everything: uv, Python 3.11, Node.js, ripgrep, ffmpeg, **and a portable Git Bash** (MinGit, unpacked to `%LOCALAPPDATA%\hermes\git` — no admin required, completely isolated from any system Git install). Hermes uses this bundled Git Bash to run shell commands.
-
-If you already have Git installed, the installer detects it and uses that instead. Otherwise a ~45MB MinGit download is all you need — it won't touch or interfere with any system Git.
-
-> **Android / Termux:** The tested manual path is documented in the [Termux guide](https://hermes-agent.nousresearch.com/docs/getting-started/termux). On Termux, Hermes installs a curated `.[termux]` extra because the full `.[all]` extra currently pulls Android-incompatible voice dependencies.
->
-> **Windows:** Native Windows is fully supported — the PowerShell one-liner above installs everything. If you'd rather use WSL2, the Linux command works there too. Native Windows install lives under `%LOCALAPPDATA%\hermes`; WSL2 installs under `~/.hermes` as on Linux.
-
-After installation:
+Após a instalação, abra um novo terminal e use o comando **`haos`**:
 
 ```bash
-source ~/.bashrc    # reload shell (or: source ~/.zshrc)
-hermes              # start chatting!
+# Chat interativo com o agente
+haos chat
+
+# Modo ULTRAWORK (autonomia contínua e foco total até testes passarem)
+haos chat -u "Construa o módulo de autenticação JWT e execute os testes"
+
+# Status e diagnóstico completo do sistema
+haos status
+
+# Gestão do Kanban de tarefas multi-agente
+haos kanban list
+haos kanban create "Refatorar camada de banco de dados" -u
+
+# Iniciar o Servidor Web do Control Plane (porta 8788)
+python scripts/serve_controlplane.py
 ```
-
-### Troubleshooting
-
-#### Windows Defender or antivirus flags `uv.exe` as malware
-
-If your antivirus (Bitdefender, Windows Defender, etc.) quarantines `uv.exe` from the Hermes `bin` folder (`%LOCALAPPDATA%\hermes\bin\uv.exe`), this is a **false positive**. The file is Astral's `uv` — the Rust Python package manager Hermes bundles to manage its Python environment. ML-based antivirus engines commonly flag unsigned Rust binaries that download and install packages.
-
-**To verify your copy is authentic:**
-
-```powershell
-# Install GitHub CLI if needed
-winget install --id GitHub.cli
-
-# Login to GitHub
-gh auth login
-
-# Run verification
-$uv = "$env:LOCALAPPDATA\hermes\bin\uv.exe"
-$ver = (& $uv --version).Split(' ')[1]
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$zip = "$env:TEMP\uv.zip"
-Invoke-WebRequest "https://github.com/astral-sh/uv/releases/download/$ver/uv-x86_64-pc-windows-msvc.zip" -OutFile $zip -UseBasicParsing
-gh attestation verify $zip --repo astral-sh/uv
-Expand-Archive $zip "$env:TEMP\uv_x" -Force
-(Get-FileHash "$env:TEMP\uv_x\uv.exe").Hash -eq (Get-FileHash $uv).Hash
-```
-
-If attestation says "Verification succeeded" and the last line prints `True`, you're good.
-
-**To whitelist Hermes:**
-- **Windows Defender:** Run PowerShell as Admin → `Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\hermes\bin"`
-- **Bitdefender:** Add an exception in the Bitdefender console (Protection > Antivirus > Settings > Manage Exceptions)
-- Whitelist the **folder**, not the file hash — Hermes updates `uv` and the hash changes every version
-
-For more context, see the upstream Astral reports: [astral-sh/uv#13553](https://github.com/astral-sh/uv/issues/13553), [astral-sh/uv#15011](https://github.com/astral-sh/uv/issues/15011), [astral-sh/uv#10079](https://github.com/astral-sh/uv/issues/10079).
 
 ---
 
-## Getting Started
+## 🌐 Control Plane WebUI (Porta 8788)
+
+O HAOS traz um servidor HTTP nativo e autônomo. Acesse pelo navegador:
+
+👉 **`http://localhost:8788/`** ou **`http://localhost:8788/chat`**
+
+Abas e funcionalidades disponíveis na interface:
+- **Console / Chat (`/chat`):** Terminal de missões com streaming em tempo real e despacho nas lanes do agente.
+- **Taskboard:** Kanban interativo em tempo real (Ready, Running, Review, Done) com criação e limpeza de tarefas.
+- **Team Graph:** Visualização em árvore do grafo cognitivo de subagentes e delegações.
+- **Scheduler:** Gestor de tarefas com agendamento dinâmico e grafos de dependência DAG.
+- **Ouroboros:** Ledger de auto-evolução com análise de histórico e raio de impacto (*Blast Radius*).
+- **Terminal Web:** Shell PTY emulado no navegador para monitoramento e intervenções operacionais.
+
+---
+
+## 🏛️ Recursos Arquiteturais
+
+### 1. Modo Ultrawork (`ulw`)
+Ativado via flag `-u` / `--ultrawork`. O agente opera em regime de alta autonomia:
+- Não devolve a palavra ao operador com perguntas intermediárias desnecessárias.
+- Decompõe autonomamente em (1) exploração via LSP, (2) implementação e (3) execução real de testes.
+- **Critério de conclusão:** Uma tarefa de código só é finalizada quando os testes automatizados passarem 100% verdes no terminal.
+- Auto-correção (*self-healing*) imediata em caso de erro.
+
+### 2. Aprendizado Contínuo por Instintos Atômicos (ECC-inspired)
+- **Instintos Atômicos:** Regras e aprendizados curtos de 1 linha gerados em sessão (`instinct_manage`).
+- **Confidence Scoring:** Começa com confiança `0.3`, ganha `+0.2` a cada revalidação bem-sucedida e sofre penalidade em caso de erro.
+- **Isolamento por Projeto:** Aprendizados de um projeto em Python não contaminam repositórios em TypeScript ou Rust.
+- **Promoção no Ouroboros:** Quando um instinto atinge confiança $\ge 0.8$, o motor de auto-evolução o promove automaticamente a uma **Skill permanente**.
+- **Rotina Dream:** Consolidação e auditoria git de memórias via `haos memory dream`.
+
+### 3. Regras Modulares por Caminho (`.haos/rules/*.md`)
+- Em vez de inflar arquivos de regras gigantes, as instruções podem ser organizadas em `.haos/rules/*.md`.
+- Suporte a frontmatter de ativação sob demanda:
+  ```yaml
+  ---
+  paths:
+    - "hermes_cli/**/*.py"
+    - "agent/*.py"
+  ---
+  # Regras do CLI
+  Sempre valide novos comandos com a flag --json antes de comitar.
+  ```
+- Carregamento *lazy* apenas quando o agente acessa arquivos correspondentes, economizando tokens e preservando o cache de prompt.
+
+### 4. Fatiamento Vertical de Tarefas (Vertical PRD Slices)
+- Decomposição no Kanban em fatias verticais autônomas (Model/Schema + Lógica de Negócio + Testes Automatizados) via `DAGWorkflowBuilder.add_vertical_slice()`.
+- Evita código bloqueado ou intestável até as fases finais do projeto.
+
+### 5. Loop Hygiene Guard & Segurança
+- **RepeatToolGuard:** Monitora assinaturas criptográficas SHA-256 das ferramentas e argumentos executados.
+- Detecta loops infinitos ou repetições infrutíferas precocemente (aviso progressivo no 2º ciclo e bloqueio crítico no 4º ciclo).
+
+### 6. Federação de Subagentes Heterogêneos
+- Suporte nativo a subagentes **DSH** (*DeepSeek Harness*), **ACP** e **Codex** coordenados diretamente pelo Kanban do HAOS via flag `--harness`.
+
+---
+
+## 🛠️ Matriz de Comandos CLI
+
+| Comando | Descrição |
+| :--- | :--- |
+| `haos chat` | Abre o chat conversacional interativo com o agente |
+| `haos chat -u "missão"` | Executa uma missão em modo autônomo **Ultrawork** |
+| `haos kanban list` | Lista as tarefas e lanes do Task Engine |
+| `haos kanban create "título" -u` | Cria uma nova tarefa com loop de metas e testes |
+| `haos evolution status` | Exibe o status e propostas de auto-evolução do Ouroboros |
+| `haos evolution analyze` | Analisa métricas e promove instintos confiáveis a Skills |
+| `haos evolution blast-radius <arquivos>` | Calcula o raio de impacto de alterações no código |
+| `haos memory dream` | Executa a rotina de consolidação e versionamento de memória |
+| `haos status` | Exibe o MOTD com diagnóstico completo dos módulos do HAOS |
+
+---
+
+## 🧪 Testes e Qualidade
+
+O HAOS possui uma suíte com mais de 39.000 testes com isolamento estrito de subprocessos. Para rodar a validação das suítes do HAOS:
 
 ```bash
-hermes              # Interactive CLI — start a conversation
-hermes model        # Choose your LLM provider and model
-hermes tools        # Configure which tools are enabled
-hermes config set   # Set individual config values
-hermes config get   # Print individual config values
-hermes gateway      # Start the messaging gateway (Telegram, Discord, etc.)
-hermes setup        # Run the full setup wizard (configures everything at once)
-hermes claw migrate # Migrate from OpenClaw (if coming from OpenClaw)
-hermes update       # Update to the latest version
-hermes doctor       # Diagnose any issues
-```
-
-📖 **[Full documentation →](https://hermes-agent.nousresearch.com/docs/)**
-
----
-
-## Skip the API-key collection — Nous Portal
-
-Hermes works with whatever provider you want — that's not changing. But if you'd rather not collect five separate API keys for the model, web search, image generation, TTS, and a cloud browser, **[Nous Portal](https://portal.nousresearch.com)** covers all of them under one subscription:
-
-- **300+ models** — pick any of them with `/model <name>`
-- **Tool Gateway** — web search (Firecrawl), image generation (FAL), text-to-speech (OpenAI), cloud browser (Browser Use), all routed through your sub. No extra accounts.
-
-One command from a fresh install:
-
-```bash
-hermes setup --portal
-```
-
-That logs you in via OAuth, sets Nous as your provider, and turns on the Tool Gateway. Check what's wired up any time with `hermes portal info`. Full details on the [Tool Gateway docs page](https://hermes-agent.nousresearch.com/docs/user-guide/features/tool-gateway).
-
-You can still bring your own keys per-tool whenever you want — the gateway is per-backend, not all-or-nothing.
-
----
-
-## CLI vs Messaging Quick Reference
-
-Hermes has two entry points: start the terminal UI with `hermes`, or run the gateway and talk to it from Telegram, Discord, Slack, WhatsApp, Signal, or Email. Once you're in a conversation, many slash commands are shared across both interfaces.
-
-| Action                         | CLI                                           | Messaging platforms                                                              |
-| ------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------- |
-| Start chatting                 | `hermes`                                      | Run `hermes gateway setup` + `hermes gateway start`, then send the bot a message |
-| Start fresh conversation       | `/new` or `/reset`                            | `/new` or `/reset`                                                               |
-| Change model                   | `/model [provider:model]`                     | `/model [provider:model]`                                                        |
-| Set a personality              | `/personality [name]`                         | `/personality [name]`                                                            |
-| Retry or undo the last turn    | `/retry`, `/undo`                             | `/retry`, `/undo`                                                                |
-| Compress context / check usage | `/compress`, `/usage`, `/insights [--days N]` | `/compress`, `/usage`, `/insights [days]`                                        |
-| Browse skills                  | `/skills` or `/<skill-name>`                  | `/<skill-name>`                                                                  |
-| Interrupt current work         | `Ctrl+C` or send a new message                | `/stop` or send a new message                                                    |
-| Platform-specific status       | `/platforms`                                  | `/status`, `/sethome`                                                            |
-
-For the full command lists, see the [CLI guide](https://hermes-agent.nousresearch.com/docs/user-guide/cli) and the [Messaging Gateway guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging).
-
----
-
-## Documentation
-
-All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)**:
-
-| Section                                                                                             | What's Covered                                             |
-| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart)                 | Install → setup → first conversation in 2 minutes          |
-| [CLI Usage](https://hermes-agent.nousresearch.com/docs/user-guide/cli)                              | Commands, keybindings, personalities, sessions             |
-| [Configuration](https://hermes-agent.nousresearch.com/docs/user-guide/configuration)                | Config file, providers, models, all options                |
-| [Messaging Gateway](https://hermes-agent.nousresearch.com/docs/user-guide/messaging)                | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
-| [Security](https://hermes-agent.nousresearch.com/docs/user-guide/security)                          | Command approval, DM pairing, container isolation          |
-| [Tools & Toolsets](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools)            | 40+ tools, toolset system, terminal backends               |
-| [Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills)              | Procedural memory, Skills Hub, creating skills             |
-| [Memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory)                     | Persistent memory, user profiles, best practices           |
-| [MCP Integration](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp)               | Connect any MCP server for extended capabilities           |
-| [Cron Scheduling](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron)              | Scheduled tasks with platform delivery                     |
-| [Context Files](https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files)       | Project context that shapes every conversation             |
-| [Architecture](https://hermes-agent.nousresearch.com/docs/developer-guide/architecture)             | Project structure, agent loop, key classes                 |
-| [Contributing](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing)             | Development setup, PR process, code style                  |
-| [CLI Reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands)                  | All commands and flags                                     |
-| [Environment Variables](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) | Complete env var reference                                 |
-
----
-
-## Migrating from OpenClaw
-
-If you're coming from OpenClaw, Hermes can automatically import your settings, memories, skills, and API keys.
-
-**During first-time setup:** The setup wizard (`hermes setup`) automatically detects `~/.openclaw` and offers to migrate before configuration begins.
-
-**Anytime after install:**
-
-```bash
-hermes claw migrate              # Interactive migration (full preset)
-hermes claw migrate --dry-run    # Preview what would be migrated
-hermes claw migrate --preset user-data   # Migrate without secrets
-hermes claw migrate --overwrite  # Overwrite existing conflicts
-```
-
-What gets imported:
-
-- **SOUL.md** — persona file
-- **Memories** — MEMORY.md and USER.md entries
-- **Skills** — user-created skills → `~/.hermes/skills/openclaw-imports/`
-- **Command allowlist** — approval patterns
-- **Messaging settings** — platform configs, allowed users, working directory
-- **API keys** — allowlisted secrets (Telegram, OpenRouter, OpenAI, Anthropic, ElevenLabs)
-- **TTS assets** — workspace audio files
-- **Workspace instructions** — AGENTS.md (with `--workspace-target`)
-
-See `hermes claw migrate --help` for all options, or use the `openclaw-migration` skill for an interactive agent-guided migration with dry-run previews.
-
----
-
-## Contributing
-
-We welcome contributions! See the [Contributing Guide](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) for development setup, code style, and PR process.
-
-Quick start for contributors — use the standard installer, then work from the
-full git checkout it creates at `$HERMES_HOME/hermes-agent` (usually
-`~/.hermes/hermes-agent`). This matches the layout used by `hermes update`, the
-managed venv, lazy dependencies, gateway, and docs tooling.
-
-```bash
-curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-cd "${HERMES_HOME:-$HOME/.hermes}/hermes-agent"
-uv pip install -e ".[all,dev]"
-scripts/run_tests.sh
-```
-
-Manual clone fallback (for throwaway clones/CI where you intentionally do not
-want the managed install layout):
-
-Create the venv outside the cloned source tree — a venv inside the directory
-the agent operates from can be wiped by a relative-path command the agent runs
-against its own checkout, destroying the running runtime mid-session.
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv ~/.hermes/venvs/hermes-dev --python 3.11
-source ~/.hermes/venvs/hermes-dev/bin/activate
-uv pip install -e ".[all,dev]"
-scripts/run_tests.sh
+./scripts/run_tests.sh \
+  tests/test_haos_agentic_engineering.py \
+  tests/test_haos_ultrawork.py \
+  tests/test_haos_instincts.py \
+  tests/test_haos_dynamic_forms.py \
+  tests/test_haos_durable_workflow.py \
+  tests/test_haos_dsh_tool.py \
+  tests/test_haos_loop_hygiene.py \
+  tests/test_haos_lsp_tool.py \
+  tests/test_haos_external_worker.py \
+  tests/test_haos_workspace_scope.py \
+  tests/test_haos_session_mention.py \
+  tests/test_haos_dream_memory.py \
+  tests/agent/test_subdirectory_hints.py
 ```
 
 ---
 
-## Community
+## 📄 Licença
 
-- 💬 [Discord](https://discord.gg/NousResearch)
-- 📚 [Skills Hub](https://agentskills.io)
-- 🐛 [Issues](https://github.com/NousResearch/hermes-agent/issues)
-- 🔌 [computer-use-linux](https://github.com/avifenesh/computer-use-linux) — Linux desktop-control MCP server for Hermes and other MCP hosts, with AT-SPI accessibility trees, Wayland/X11 input, screenshots, and compositor window targeting.
-- 🔌 [HermesClaw](https://github.com/AaronWong1999/hermesclaw) — Community WeChat bridge: Run Hermes Agent and OpenClaw on the same WeChat account.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-Built by [Nous Research](https://nousresearch.com).
+Distribuído sob a licença MIT. Veja `LICENSE` para mais informações.

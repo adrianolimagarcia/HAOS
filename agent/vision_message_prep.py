@@ -29,7 +29,7 @@ _DATA_URL_SUFFIXES = {
 
 
 def _is_image_part(part: Any) -> bool:
-    return isinstance(part, dict) and part.get("type") in _IMAGE_PART_TYPES
+    return isinstance(part, dict) and isinstance(part.get("type"), str) and part.get("type") in _IMAGE_PART_TYPES
 
 
 def _salvage_text_parts(content: list, *, any_dict_text: bool) -> List[str]:

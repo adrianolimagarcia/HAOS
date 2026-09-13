@@ -1,0 +1,38 @@
+# Nous-approved MCP catalog entry.
+# Schema version 1.
+manifest_version: 1
+
+name: activepieces
+description: Connect HAOS to 760+ enterprise SaaS apps and automations via Activepieces MCP bridge.
+source: https://github.com/activepieces/activepieces
+
+# How to launch the server once installed.
+# Runs the official Activepieces MCP bridge using npx pinned exactly
+transport:
+  type: stdio
+  command: "npx"
+  args:
+    - "-y"
+    - "@activepieces/piece-mcp@0.0.12"
+
+# Authentication: Activepieces API Key and Host URL
+auth:
+  type: api_key
+  env:
+    - name: ACTIVEPIECES_URL
+      prompt: "Activepieces Instance URL (default: cloud or local)"
+      default: "https://cloud.activepieces.com"
+      required: true
+      secret: false
+    - name: ACTIVEPIECES_API_KEY
+      prompt: "Activepieces API Key (from Project Settings → API Keys)"
+      required: true
+      secret: true
+
+# Tags for MCP picker discovery
+tags:
+  - automation
+  - integration
+  - workflow
+  - saas
+  - pieces

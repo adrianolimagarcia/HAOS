@@ -1,0 +1,3720 @@
+[
+  {
+    "name": "accessibility",
+    "description": "Design, implement, and audit inclusive digital products using WCAG 2.2 Level AA. Use when building or auditing UI that must meet WCAG 2.2 Level AA, or when reviewing a change for keyboard, contrast, or screen-reader support.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/accessibility",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "accessibility"
+    ]
+  },
+  {
+    "name": "agent-architecture-audit",
+    "description": "Full-stack diagnostic for agent and LLM applications. Audits the 12-layer agent stack for wrapper regression, memory pollution, tool discipline failures, hidden repair loops, and rendering corruption. Produces severity-ranked findings with code-first fixes. Essential for developers building agent applications, autonomous loops, or any LLM-powered feature. Use when an agent or LLM feature misbehaves and the failing layer is unknown, or before shipping an agent stack.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agent-architecture-audit",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agent architecture audit"
+    ]
+  },
+  {
+    "name": "agent-eval",
+    "description": "Head-to-head comparison of coding agents (Claude Code, Aider, Codex, etc.) on custom tasks with pass rate, cost, time, and consistency metrics. Use when choosing between coding agents, or when a change to an agent setup needs measured pass rate, cost, and time rather than an impression.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agent-eval",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agent eval"
+    ]
+  },
+  {
+    "name": "agent-harness-construction",
+    "description": "Design and optimize AI agent action spaces, tool definitions, and observation formatting for higher completion rates. Use when defining or revising an agent's tool set, action space, or observation format.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agent-harness-construction",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agent harness construction"
+    ]
+  },
+  {
+    "name": "agent-introspection-debugging",
+    "description": "Structured self-debugging workflow for AI agent failures using capture, diagnosis, contained recovery, and introspection reports. Use when an agent run fails and you need a reproducible diagnosis instead of a retry.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agent-introspection-debugging",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agent introspection debugging"
+    ]
+  },
+  {
+    "name": "agent-payment-x402",
+    "description": "Add x402 payment execution to AI agents with per-task budgets, spending controls, and non-custodial wallets. Supports Base through agentwallet-sdk and X Layer through OKX Payments / OKX Agent Payments Protocol. Use when an agent must pay for something itself and needs per-task budgets, spending controls, and a non-custodial wallet.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agent-payment-x402",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agent payment x402"
+    ]
+  },
+  {
+    "name": "agent-self-evaluation",
+    "description": "Use after completing any non-trivial task. The agent self-rates its output on 5 axes — accuracy, completeness, clarity, actionability, conciseness — with concrete evidence per criterion. Produces a structured 1-5 scorecard with specific improvement suggestions.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agent-self-evaluation",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agent self evaluation"
+    ]
+  },
+  {
+    "name": "agent-sort",
+    "description": "Build an evidence-backed ECC install plan for a specific repo by sorting skills, commands, rules, hooks, and extras into DAILY vs LIBRARY buckets using parallel repo-aware review passes. Use when ECC should be trimmed to what a project actually needs instead of loading the full bundle.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agent-sort",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agent sort"
+    ]
+  },
+  {
+    "name": "agentic-engineering",
+    "description": "Operate as an agentic engineer using eval-first execution, decomposition, and cost-aware model routing. Use when planning or executing engineering work that agents will carry out end to end.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agentic-engineering",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agentic engineering"
+    ]
+  },
+  {
+    "name": "agentic-os",
+    "description": "Build persistent multi-agent operating systems on Claude Code. Covers kernel architecture, specialist agents, slash commands, file-based memory, scheduled automation, and state management without external databases. Use when building a persistent multi-agent system on Claude Code with its own memory, commands, and scheduling.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/agentic-os",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "agentic os"
+    ]
+  },
+  {
+    "name": "ai-first-engineering",
+    "description": "Engineering operating model for teams where AI agents generate a large share of implementation output. Use when setting team process, review gates, or ownership rules for a codebase largely written by agents.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ai-first-engineering",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ai first engineering"
+    ]
+  },
+  {
+    "name": "ai-regression-testing",
+    "description": "Regression testing strategies for AI-assisted development. Sandbox-mode API testing without database dependencies, automated bug-check workflows, and patterns to catch AI blind spots where the same model writes and reviews code. Use when adding regression coverage to AI-assisted code, or when the same model both wrote and reviewed a change.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ai-regression-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ai regression testing"
+    ]
+  },
+  {
+    "name": "android-clean-architecture",
+    "description": "Clean Architecture patterns for Android and Kotlin Multiplatform projects — module structure, dependency rules, UseCases, Repositories, and data layer patterns. Use when structuring modules, layers, or data flow in an Android or KMP project.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/android-clean-architecture",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "android clean architecture"
+    ]
+  },
+  {
+    "name": "angular-developer",
+    "description": "Generates Angular code and provides architectural guidance. Trigger when creating projects, components, or services, or for best practices on reactivity (signals, linkedSignal, resource), forms, dependency injection, routing, SSR, accessibility (ARIA), animations, styling (component styles, Tailwind CSS), testing, or CLI tooling.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/angular-developer",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "angular developer"
+    ]
+  },
+  {
+    "name": "api-connector-builder",
+    "description": "Build a new API connector or provider by matching the target repo's existing integration pattern exactly. Use when adding one more integration without inventing a second architecture.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/api-connector-builder",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "api connector builder"
+    ]
+  },
+  {
+    "name": "api-design",
+    "description": "REST API design patterns including resource naming, status codes, pagination, filtering, error responses, versioning, and rate limiting for production APIs. Use when designing or reviewing REST endpoints, resource names, status codes, pagination, or versioning.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/api-design",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "api design"
+    ]
+  },
+  {
+    "name": "architecture-decision-records",
+    "description": "Capture architectural decisions made during Claude Code sessions as structured ADRs. Auto-detects decision moments, records context, alternatives considered, and rationale. Maintains an ADR log so future developers understand why the codebase is shaped the way it is.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/architecture-decision-records",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "architecture decision records"
+    ]
+  },
+  {
+    "name": "article-writing",
+    "description": "Write articles, guides, blog posts, tutorials, newsletter issues, and other long-form content in a distinctive voice derived from supplied examples or brand guidance. Use when the user wants polished written content longer than a paragraph, especially when voice consistency, structure, and credibility matter.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/article-writing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "article writing"
+    ]
+  },
+  {
+    "name": "automation-audit-ops",
+    "description": "Evidence-first automation inventory and overlap audit workflow for ECC. Use when the user wants to know which jobs, hooks, connectors, MCP servers, or wrappers are live, broken, redundant, or missing before fixing anything.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/automation-audit-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "automation audit ops"
+    ]
+  },
+  {
+    "name": "autonomous-agent-harness",
+    "description": "Transform Claude Code into a fully autonomous agent system with persistent memory, scheduled operations, computer use, and task queuing. Replaces standalone agent frameworks (Hermes, AutoGPT) by leveraging Claude Code's native crons, dispatch, MCP tools, and memory. Use when the user wants continuous autonomous operation, scheduled tasks, or a self-directing agent loop.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/autonomous-agent-harness",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "autonomous agent harness"
+    ]
+  },
+  {
+    "name": "autonomous-loops",
+    "description": "Patterns and architectures for autonomous Claude Code loops — from simple sequential pipelines to RFC-driven multi-agent DAG systems. Retained for compatibility only: when new autonomous loop guidance is needed, use continuous-agent-loop instead.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/autonomous-loops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "autonomous loops"
+    ]
+  },
+  {
+    "name": "backend-patterns",
+    "description": "Backend architecture patterns, API design, database optimization, and server-side best practices for Node.js, Express, and Next.js API routes. Use when building or reviewing Node.js, Express, or Next.js API routes and their data access.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/backend-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "backend patterns"
+    ]
+  },
+  {
+    "name": "benchmark-methodology",
+    "description": ">-",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/benchmark-methodology",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "benchmark methodology"
+    ]
+  },
+  {
+    "name": "benchmark-optimization-loop",
+    "description": "Use when the user asks to make something faster, try many variants, run recursive optimization, benchmark latency/throughput/cost, or choose the best implementation by repeated measured tests.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/benchmark-optimization-loop",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "benchmark optimization loop"
+    ]
+  },
+  {
+    "name": "benchmark",
+    "description": "Use this skill to measure performance baselines, detect regressions before/after PRs, and compare stack alternatives.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/benchmark",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "benchmark"
+    ]
+  },
+  {
+    "name": "blender-motion-state-inspection",
+    "description": "Use this skill when inspecting Blender characters, rigs, poses, animation retargeting, ground contact, facing direction, or model-vs-motion alignment where screenshots alone are not enough.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/blender-motion-state-inspection",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "blender motion state inspection"
+    ]
+  },
+  {
+    "name": "blueprint",
+    "description": ">-",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/blueprint",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "blueprint"
+    ]
+  },
+  {
+    "name": "brand-discovery",
+    "description": ">-",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/brand-discovery",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "brand discovery"
+    ]
+  },
+  {
+    "name": "brand-voice",
+    "description": "Build a source-derived writing style profile from real posts, essays, launch notes, docs, or site copy, then reuse that profile across content, outreach, and social workflows. Use when the user wants voice consistency without generic AI writing tropes.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/brand-voice",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "brand voice"
+    ]
+  },
+  {
+    "name": "browser-qa",
+    "description": "Use this skill to automate visual testing and UI interaction verification using browser automation after deploying features.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/browser-qa",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "browser qa"
+    ]
+  },
+  {
+    "name": "bun-runtime",
+    "description": "Bun as runtime, package manager, bundler, and test runner. When to choose Bun vs Node, migration notes, and Vercel support.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/bun-runtime",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "bun runtime"
+    ]
+  },
+  {
+    "name": "canary-watch",
+    "description": "Use this skill to monitor and verify a deployed URL after releases — checks HTTP endpoints, SSE streams, static assets, console errors, and performance regressions after deploys, merges, or dependency upgrades. Smoke / canary / post-deploy verification.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/canary-watch",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "canary watch"
+    ]
+  },
+  {
+    "name": "carrier-relationship-management",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/carrier-relationship-management",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "carrier relationship management"
+    ]
+  },
+  {
+    "name": "cisco-ios-patterns",
+    "description": "Cisco IOS and IOS-XE review patterns for show commands, config hierarchy, wildcard masks, ACL placement, interface hygiene, and safe change-window verification. Use when reading, writing, or reviewing Cisco IOS / IOS-XE configuration or planning a change window.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/cisco-ios-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "cisco ios patterns"
+    ]
+  },
+  {
+    "name": "ck",
+    "description": "Persistent per-project memory for Claude Code. Auto-loads project context on session start, tracks sessions with git activity, and writes to native memory. Commands run deterministic Node.js scripts — behavior is consistent across model versions. Use when a project needs context to survive across Claude Code sessions instead of being re-explained each time.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ck",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ck"
+    ]
+  },
+  {
+    "name": "claude-devfleet",
+    "description": "Orchestrate multi-agent coding tasks via Claude DevFleet — plan projects, dispatch parallel agents in isolated worktrees, monitor progress, and read structured reports. Use when dispatching parallel coding agents across isolated worktrees and tracking their reports.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/claude-devfleet",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "claude devfleet"
+    ]
+  },
+  {
+    "name": "click-path-audit",
+    "description": "Trace every user-facing button/touchpoint through its full state change sequence to find bugs where functions individually work but cancel each other out, produce wrong final state, or leave the UI in an inconsistent state. Use when: systematic debugging found no bugs but users report broken buttons, or after any major refactor touching shared state stores.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/click-path-audit",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "click path audit"
+    ]
+  },
+  {
+    "name": "clickhouse-io",
+    "description": "ClickHouse database patterns, query optimization, analytics, and data engineering best practices for high-performance analytical workloads. Use when writing ClickHouse schemas or queries, or when an analytical query is too slow.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/clickhouse-io",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "clickhouse io"
+    ]
+  },
+  {
+    "name": "code-tour",
+    "description": "Create CodeTour `.tour` files — persona-targeted, step-by-step walkthroughs with real file and line anchors. Use for onboarding tours, architecture walkthroughs, PR tours, RCA tours, and structured \"explain how this works\" requests. Use when the user asks for a code tour, onboarding walkthrough, PR tour, or an explanation of how a subsystem works.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/code-tour",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "code tour"
+    ]
+  },
+  {
+    "name": "codebase-onboarding",
+    "description": "Analyze an unfamiliar codebase and generate a structured onboarding guide with architecture map, key entry points, conventions, and a starter CLAUDE.md. Use when joining a new project or setting up Claude Code for the first time in a repo.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/codebase-onboarding",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "codebase onboarding"
+    ]
+  },
+  {
+    "name": "codehealth-mcp",
+    "description": "Real-time structural Code Health via CodeScene MCP — review before edits, verify score deltas after changes, gate commits and PRs. Use when reviewing code quality, refactoring, checking if AI changes degraded a file, or before commit/PR.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/codehealth-mcp",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "codehealth mcp"
+    ]
+  },
+  {
+    "name": "coding-standards",
+    "description": "Baseline cross-project coding conventions for naming, readability, immutability, and code-quality review. Use detailed frontend or backend skills for framework-specific patterns. Use when reviewing code quality or naming with no framework-specific skill that applies.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/coding-standards",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "coding standards"
+    ]
+  },
+  {
+    "name": "competitive-platform-analysis",
+    "description": ">-",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/competitive-platform-analysis",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "competitive platform analysis"
+    ]
+  },
+  {
+    "name": "competitive-report-structure",
+    "description": ">-",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/competitive-report-structure",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "competitive report structure"
+    ]
+  },
+  {
+    "name": "compose-multiplatform-patterns",
+    "description": "Compose Multiplatform and Jetpack Compose patterns for KMP projects — state management, navigation, theming, performance, and platform-specific UI. Use when building Compose or Jetpack Compose UI, state, navigation, or theming in a KMP project.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/compose-multiplatform-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "compose multiplatform patterns"
+    ]
+  },
+  {
+    "name": "config-gc",
+    "description": "Garbage collection for your Claude Code configuration. Periodically scans ~/.claude (skills, memory, hooks, permissions, MCP servers, caches) for redundant, stale, orphaned, or low-value items, then walks the user through a confirm-each-deletion cleanup. Use when the user says \"clean up my config\", \"config GC\", \"too many skills\", \"audit my setup\", \"my .claude is bloated\", or asks for a periodic config review.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/config-gc",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "config gc"
+    ]
+  },
+  {
+    "name": "configure-ecc",
+    "description": "Guide ECC installation, update, or reconfiguration from inside Claude Code, Codex, or Kimi while respecting each harness's real plugin, scope, and hook capabilities.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/configure-ecc",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "configure ecc"
+    ]
+  },
+  {
+    "name": "connections-optimizer",
+    "description": "Reorganize the user's X and LinkedIn network with review-first pruning, add/follow recommendations, and channel-specific warm outreach drafted in the user's real voice. Use when the user wants to clean up following lists, grow toward current priorities, or rebalance a social graph around higher-signal relationships.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/connections-optimizer",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "connections optimizer"
+    ]
+  },
+  {
+    "name": "content-engine",
+    "description": "Create platform-native content systems for X, LinkedIn, TikTok, YouTube, newsletters, and repurposed multi-platform campaigns. Use when the user wants social posts, threads, scripts, content calendars, or one source asset adapted cleanly across platforms.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/content-engine",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "content engine"
+    ]
+  },
+  {
+    "name": "content-hash-cache-pattern",
+    "description": "Cache expensive file processing results using SHA-256 content hashes — path-independent, auto-invalidating, with service layer separation. Use when repeated file processing is slow and results should be cached and invalidated by content rather than path.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/content-hash-cache-pattern",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "content hash cache pattern"
+    ]
+  },
+  {
+    "name": "context-budget",
+    "description": "Audits Claude Code context window consumption across agents, skills, MCP servers, and rules. Identifies bloat, redundant components, and produces prioritized token-savings recommendations. Use when the context window is filling up too fast and the agents, skills, MCP servers, or rules consuming it need to be identified.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/context-budget",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "context budget"
+    ]
+  },
+  {
+    "name": "continuous-agent-loop",
+    "description": "Patterns for continuous autonomous agent loops with quality gates, evals, and recovery controls. Use when running an agent loop that must self-check, gate on evals, and recover from failures.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/continuous-agent-loop",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "continuous agent loop"
+    ]
+  },
+  {
+    "name": "continuous-learning-v2",
+    "description": "Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents. v2.1 adds project-scoped instincts to prevent cross-project contamination. Use when capturing lessons from a session, managing instincts, or promoting them into skills, commands, or agents.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/continuous-learning-v2",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "continuous learning v2"
+    ]
+  },
+  {
+    "name": "continuous-learning",
+    "description": "[DEPRECATED - use continuous-learning-v2] Legacy v1 stop-hook skill extractor. v2 is a strict superset with instinct-based, project-scoped, hook-reliable learning. Do not invoke v1: when continuous learning, session learning, or pattern extraction is requested, route to continuous-learning-v2 instead.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/continuous-learning",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "continuous learning"
+    ]
+  },
+  {
+    "name": "contract-first",
+    "description": "Use when multiple consumers and providers must evolve an API or event schema without field drift, integration surprises, or one side silently redefining the interface.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/contract-first",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "contract first"
+    ]
+  },
+  {
+    "name": "cost-aware-llm-pipeline",
+    "description": "Cost optimization patterns for LLM API usage — model routing by task complexity, budget tracking, retry logic, and prompt caching. Use when LLM spend needs to come down, or when routing tasks across model tiers and budgets.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/cost-aware-llm-pipeline",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "cost aware llm pipeline"
+    ]
+  },
+  {
+    "name": "cost-tracking",
+    "description": "Track and report Claude Code token usage, spending, and budgets from the local ECC cost-tracker metrics log. Use when the user asks about costs, spending, usage, tokens, budgets, or cost breakdowns by model, session, or date.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/cost-tracking",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "cost tracking"
+    ]
+  },
+  {
+    "name": "council-multi-model",
+    "description": "Add one optional external Codex critique after the existing council has produced a decision draft. Use when an ambiguous, high-consequence decision would benefit from a separate model invocation's attempt to break the synthesis. Requires explicit consent before sending the compact draft and disagreement to OpenAI, labels same-provider reviews honestly, and marks the review absent when the adapter is unavailable.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/council-multi-model",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "council multi model"
+    ]
+  },
+  {
+    "name": "council",
+    "description": "Convene a four-voice council for ambiguous decisions, tradeoffs, and go/no-go calls. Use when multiple valid paths exist and you need structured disagreement before choosing.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/council",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "council"
+    ]
+  },
+  {
+    "name": "cpp-coding-standards",
+    "description": "C++ coding standards based on the C++ Core Guidelines (isocpp.github.io). Use when writing, reviewing, or refactoring C++ code to enforce modern, safe, and idiomatic practices.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/cpp-coding-standards",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "cpp coding standards"
+    ]
+  },
+  {
+    "name": "cpp-testing",
+    "description": "Use only when writing/updating/fixing C++ tests, configuring GoogleTest/CTest, diagnosing failing or flaky tests, or adding coverage/sanitizers.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/cpp-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "cpp testing"
+    ]
+  },
+  {
+    "name": "crosspost",
+    "description": "Multi-platform content distribution across X, LinkedIn, Threads, and Bluesky. Adapts content per platform using content-engine patterns. Never posts identical content cross-platform. Use when the user wants to distribute content across social platforms.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/crosspost",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "crosspost"
+    ]
+  },
+  {
+    "name": "csharp-testing",
+    "description": "C# and .NET testing patterns with xUnit, FluentAssertions, mocking, integration tests, and test organization best practices. Use when writing or reviewing xUnit tests, mocks, or integration tests in a C# / .NET project.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/csharp-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "csharp testing"
+    ]
+  },
+  {
+    "name": "customer-billing-ops",
+    "description": "Operate customer billing workflows such as subscriptions, refunds, churn triage, billing-portal recovery, and plan analysis using connected billing tools like Stripe. Use when the user needs to help a customer, inspect subscription state, or manage revenue-impacting billing operations.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/customer-billing-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "customer billing ops"
+    ]
+  },
+  {
+    "name": "customs-trade-compliance",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/customs-trade-compliance",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "customs trade compliance"
+    ]
+  },
+  {
+    "name": "dart-flutter-patterns",
+    "description": "Production-ready Dart and Flutter patterns covering null safety, immutable state, async composition, widget architecture, popular state management frameworks (BLoC, Riverpod, Provider), GoRouter navigation, Dio networking, Freezed code generation, and clean architecture. Use when writing or reviewing Dart and Flutter code — state, widgets, navigation, networking, or architecture.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/dart-flutter-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "dart flutter patterns"
+    ]
+  },
+  {
+    "name": "dashboard-builder",
+    "description": "Build monitoring dashboards that answer real operator questions for Grafana, SigNoz, and similar platforms. Use when turning metrics into a working dashboard instead of a vanity board.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/dashboard-builder",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "dashboard builder"
+    ]
+  },
+  {
+    "name": "data-scraper-agent",
+    "description": "Build a fully automated AI-powered data collection agent for any public source — job boards, prices, news, GitHub, sports, anything. Runs on a schedule, enriches data with a free LLM (Gemini Flash), stores results in Notion/Sheets/Supabase, and learns from user feedback. Runs 100% free on GitHub Actions. Use when the user wants to monitor, collect, or track any public data automatically.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/data-scraper-agent",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "data scraper agent"
+    ]
+  },
+  {
+    "name": "data-throughput-accelerator",
+    "description": "Use when large data ingestion, backfill, export, ETL, warehouse loading, manifest catch-up, or table synchronization needs to become much faster while preserving data correctness.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/data-throughput-accelerator",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "data throughput accelerator"
+    ]
+  },
+  {
+    "name": "database-migrations",
+    "description": "Database migration best practices for schema changes, data migrations, rollbacks, and zero-downtime deployments across PostgreSQL, MySQL, and common ORMs (Prisma, Drizzle, Kysely, Django, TypeORM, golang-migrate). Use when writing a schema or data migration, planning a rollback, or aiming for zero-downtime deployment.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/database-migrations",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "database migrations"
+    ]
+  },
+  {
+    "name": "deep-research",
+    "description": "Multi-source deep research using firecrawl and exa MCPs. Searches the web, synthesizes findings, and delivers cited reports with source attribution. Use when the user wants thorough research on any topic with evidence and citations.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/deep-research",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "deep research"
+    ]
+  },
+  {
+    "name": "defi-amm-security",
+    "description": "Security checklist for Solidity AMM contracts, liquidity pools, and swap flows. Covers reentrancy, CEI ordering, donation or inflation attacks, oracle manipulation, slippage, admin controls, and integer math. Use when auditing or writing Solidity AMM, liquidity pool, or swap code.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/defi-amm-security",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "defi amm security"
+    ]
+  },
+  {
+    "name": "delivery-gate",
+    "description": "Stop hook that blocks Claude from finishing until quality checks pass. Detects rationalization patterns (surface text heuristics), stale learning logs (filesystem mtime), and low disk space. Complements self-audit by mechanically enforcing learning capture habits. Use when Claude should be mechanically blocked from declaring work finished before quality checks and learning capture actually pass.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/delivery-gate",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "delivery gate"
+    ]
+  },
+  {
+    "name": "deployment-patterns",
+    "description": "Deployment workflows, CI/CD pipeline patterns, Docker containerization, health checks, rollback strategies, and production readiness checklists for web applications. Use when setting up CI/CD, containerizing an app, or checking production readiness before a release.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/deployment-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "deployment patterns"
+    ]
+  },
+  {
+    "name": "design-system",
+    "description": "Use this skill to generate or audit design systems, check visual consistency, and review PRs that touch styling. Use when generating or auditing a design system, checking visual consistency, or reviewing a PR that touches styling.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/design-system",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "design system"
+    ]
+  },
+  {
+    "name": "dev-team",
+    "description": "Simulate a collaborative dev team session where multiple role-based personas (PM, Architect, Developer, QA) respond to the same problem together in one session. Use when designing a feature, reviewing a proposal, or onboarding a new initiative and you want multi-role perspective without switching agents manually.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/dev-team",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "dev team"
+    ]
+  },
+  {
+    "name": "django-celery",
+    "description": "Django + Celery async task patterns — configuration, task design, beat scheduling, retries, canvas workflows, monitoring, and testing. Use when adding background jobs, scheduled tasks, or async processing to a Django app.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/django-celery",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "django celery"
+    ]
+  },
+  {
+    "name": "django-patterns",
+    "description": "Django architecture patterns, REST API design with DRF, ORM best practices, caching, signals, middleware, and production-grade Django apps. Use when building or reviewing Django apps, DRF APIs, ORM queries, or caching.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/django-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "django patterns"
+    ]
+  },
+  {
+    "name": "django-security",
+    "description": "Django security best practices, authentication, authorization, CSRF protection, SQL injection prevention, XSS prevention, and secure deployment configurations. Use when reviewing Django authentication, authorization, input handling, or deployment settings.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/django-security",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "django security"
+    ]
+  },
+  {
+    "name": "django-tdd",
+    "description": "Django testing strategies with pytest-django, TDD methodology, factory_boy, mocking, coverage, and testing Django REST Framework APIs. Use when writing Django or DRF tests with pytest-django, or driving a Django feature test-first.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/django-tdd",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "django tdd"
+    ]
+  },
+  {
+    "name": "django-verification",
+    "description": "Verification loop for Django projects: migrations, linting, tests with coverage, security scans, and deployment readiness checks before release or PR.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/django-verification",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "django verification"
+    ]
+  },
+  {
+    "name": "dmux-workflows",
+    "description": "Multi-agent orchestration using dmux (tmux pane manager for AI agents). Patterns for parallel agent workflows across Claude Code, Codex, OpenCode, and other harnesses. Use when running multiple agent sessions in parallel or coordinating multi-agent development workflows.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/dmux-workflows",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "dmux workflows"
+    ]
+  },
+  {
+    "name": "docker-patterns",
+    "description": "Docker and Docker Compose patterns for local development, hardened CLI installer harnesses, container security, networking, volumes, and multi-service orchestration. Use when creating or reviewing Dockerfiles and Compose services, testing installers across Linux distributions, or planning accurate native macOS and Windows validation.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/docker-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "docker patterns"
+    ]
+  },
+  {
+    "name": "documentation-lookup",
+    "description": "Use up-to-date library and framework docs via Context7 MCP instead of training data. Activates for setup questions, API references, code examples, or when the user names a framework (e.g. React, Next.js, Prisma).",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/documentation-lookup",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "documentation lookup"
+    ]
+  },
+  {
+    "name": "dotnet-patterns",
+    "description": "Idiomatic C# and .NET patterns, conventions, dependency injection, async/await, and best practices for building robust, maintainable .NET applications. Use when writing or reviewing C# / .NET code — DI, async, or general conventions.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/dotnet-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "dotnet patterns"
+    ]
+  },
+  {
+    "name": "dynamic-workflow-mode",
+    "description": "Design task-local harnesses, eval gates, and reusable skill extraction for Claude dynamic workflow mode and other adaptive agent harnesses. Use when building a task-local harness, adding eval gates, or extracting a reusable skill from ad-hoc work.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/dynamic-workflow-mode",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "dynamic workflow mode"
+    ]
+  },
+  {
+    "name": "e2e-testing",
+    "description": "Playwright E2E testing patterns, Page Object Model, configuration, CI/CD integration, artifact management, and flaky test strategies. Use when writing Playwright tests, structuring page objects, or fixing flaky E2E runs in CI.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/e2e-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "e2e testing"
+    ]
+  },
+  {
+    "name": "ecc-guide",
+    "description": "Guide users through ECC's current agents, skills, commands, hooks, rules, install profiles, and project onboarding by reading the live repository surface before answering.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ecc-guide",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ecc guide"
+    ]
+  },
+  {
+    "name": "ecc-recipes",
+    "description": "Map a described workflow to the right ECC command-GROUP with run-order and stop condition, and browse all command-group recipe families. Adds a family-grouping + run-order + when-to-stop layer on top of the flat command catalog. Advisory only. TRIGGER when the user says which commands for X, what command group runs X, show ECC recipes, list ECC pipelines, or how do I run a workflow with ECC. DO NOT TRIGGER when the user wants the task executed directly, wants a single-command deep doc (use ecc-guide), or wants a draft prompt rewritten (use prompt-optimizer).",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ecc-recipes",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ecc recipes"
+    ]
+  },
+  {
+    "name": "ecc-tools-cost-audit",
+    "description": "Evidence-first ECC Tools burn and billing audit workflow. Use when investigating runaway PR creation, quota bypass, premium-model leakage, duplicate jobs, or GitHub App cost spikes in the ECC Tools repo.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ecc-tools-cost-audit",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ecc tools cost audit"
+    ]
+  },
+  {
+    "name": "email-ops",
+    "description": "Evidence-first mailbox triage, drafting, send verification, and sent-mail-safe follow-up workflow for ECC. Use when the user wants to organize email, draft or send through the real mail surface, or prove what landed in Sent.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/email-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "email ops"
+    ]
+  },
+  {
+    "name": "energy-procurement",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/energy-procurement",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "energy procurement"
+    ]
+  },
+  {
+    "name": "enterprise-agent-ops",
+    "description": "Operate long-lived agent workloads with observability, security boundaries, and lifecycle management. Use when running long-lived agent workloads that need observability, security boundaries, or lifecycle control.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/enterprise-agent-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "enterprise agent ops"
+    ]
+  },
+  {
+    "name": "error-handling",
+    "description": "Patterns for robust error handling across TypeScript, Python, and Go. Covers typed errors, error boundaries, retries, circuit breakers, and user-facing error messages. Use when designing error types, retries, circuit breakers, or user-facing failure messages in TypeScript, Python, or Go.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/error-handling",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "error handling"
+    ]
+  },
+  {
+    "name": "eval-harness",
+    "description": "Formal evaluation framework for Claude Code sessions implementing eval-driven development (EDD) principles. Use when a Claude Code workflow needs a formal eval before it is trusted or changed.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/eval-harness",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "eval harness"
+    ]
+  },
+  {
+    "name": "evm-token-decimals",
+    "description": "Prevent silent decimal mismatch bugs across EVM chains. Covers runtime decimal lookup, chain-aware caching, bridged-token precision drift, and safe normalization for bots, dashboards, and DeFi tools. Use when handling token amounts across EVM chains, or when a balance, price, or transfer amount is off by orders of magnitude.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/evm-token-decimals",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "evm token decimals"
+    ]
+  },
+  {
+    "name": "exa-search",
+    "description": "Neural search via Exa MCP for web, code, and company research. Use when the user needs web search, code examples, company intel, people lookup, or AI-powered deep research with Exa's neural search engine.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/exa-search",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "exa search"
+    ]
+  },
+  {
+    "name": "fal-ai-media",
+    "description": "Unified media generation via fal.ai MCP — image, video, and audio. Covers text-to-image (Nano Banana), text/image-to-video (Seedance, Kling, Veo 3), text-to-speech (CSM-1B), and video-to-audio (ThinkSound). Use when the user wants to generate images, videos, or audio with AI.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/fal-ai-media",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "fal ai media"
+    ]
+  },
+  {
+    "name": "fastapi-patterns",
+    "description": "FastAPI best practices covering project structure, Pydantic v2 schemas, dependency injection, async handlers, authentication, authorization, transactional service layers, and testing with httpx and pytest. Use when building or reviewing FastAPI apps — Pydantic schemas, dependencies, async handlers, auth, or tests.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/fastapi-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "fastapi patterns"
+    ]
+  },
+  {
+    "name": "finance-billing-ops",
+    "description": "Evidence-first revenue, pricing, refunds, team-billing, and billing-model truth workflow for ECC. Use when the user wants a sales snapshot, pricing comparison, duplicate-charge diagnosis, or code-backed billing reality instead of generic payments advice.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/finance-billing-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "finance billing ops"
+    ]
+  },
+  {
+    "name": "flox-environments",
+    "description": "Create reproducible, cross-platform (macOS/Linux) development environments with Flox, a declarative Nix-based environment manager. Use when setting up project toolchains for any language, installing system-level dependencies (compilers, databases, native libs like openssl/BLAS), pinning exact package versions for a team, running local services (PostgreSQL, Redis, Kafka), onboarding developers with one command, or solving 'works on my machine' problems — including agent/vibe-coding setups that need project-scoped tools without sudo. Also use when the user mentions .flox/, manifest.toml, flox activate, or FloxHub.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/flox-environments",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "flox environments"
+    ]
+  },
+  {
+    "name": "flutter-dart-code-review",
+    "description": "Library-agnostic Flutter/Dart code review checklist covering widget best practices, state management patterns (BLoC, Riverpod, Provider, GetX, MobX, Signals), Dart idioms, performance, accessibility, security, and clean architecture. Use when reviewing Flutter or Dart code, whatever state management library the project uses.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/flutter-dart-code-review",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "flutter dart code review"
+    ]
+  },
+  {
+    "name": "foundation-models-on-device",
+    "description": "Apple FoundationModels framework for on-device LLM — text generation, guided generation with @Generable, tool calling, and snapshot streaming in iOS 26+. Use when adding on-device LLM features with Apple FoundationModels on iOS 26+.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/foundation-models-on-device",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "foundation models on device"
+    ]
+  },
+  {
+    "name": "frontend-a11y",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/frontend-a11y",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "frontend a11y"
+    ]
+  },
+  {
+    "name": "frontend-design-direction",
+    "description": "Set an ECC-specific frontend design direction for production UI work. Use when building or improving websites, dashboards, applications, components, landing pages, visual tools, or any web UI that needs stronger product-specific design judgment.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/frontend-design-direction",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "frontend design direction"
+    ]
+  },
+  {
+    "name": "frontend-patterns",
+    "description": "Frontend development patterns for React, Next.js, state management, performance optimization, and UI best practices. Use when building or reviewing React or Next.js components, state, or render performance.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/frontend-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "frontend patterns"
+    ]
+  },
+  {
+    "name": "frontend-slides",
+    "description": "Create stunning, animation-rich HTML presentations from scratch or by converting PowerPoint files. Use when the user wants to build a presentation, convert a PPT/PPTX to web, or create slides for a talk/pitch. Helps non-designers discover their aesthetic through visual exploration rather than abstract choices.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/frontend-slides",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "frontend slides"
+    ]
+  },
+  {
+    "name": "fsharp-testing",
+    "description": "F# testing patterns with xUnit, FsUnit, Unquote, FsCheck property-based testing, integration tests, and test organization best practices. Use when writing F# tests with xUnit, FsUnit, Unquote, or FsCheck.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/fsharp-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "fsharp testing"
+    ]
+  },
+  {
+    "name": "gan-style-harness",
+    "description": "GAN-inspired Generator-Evaluator agent harness for building high-quality applications autonomously. Based on Anthropic's March 2026 harness design paper. Use when a feature should be built autonomously through generator and evaluator iteration until it clears a quality bar.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/gan-style-harness",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "gan style harness"
+    ]
+  },
+  {
+    "name": "gateguard",
+    "description": "Fact-forcing gate that blocks Edit/Write/Bash (including MultiEdit) and demands concrete investigation (importers, data schemas, user instruction) before allowing the action. Measurably improves output quality by +2.25 points vs ungated agents.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/gateguard",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "gateguard"
+    ]
+  },
+  {
+    "name": "generating-python-installer",
+    "description": "Commercial-grade Python installer expert for Windows: Nuitka extreme compilation, dist slimming, DLL footprint analysis, and Inno Setup packaging to ship the smallest, fastest installers. Use when a Python app must ship as a minimal, fast-starting Windows installer; not for basic script-to-exe conversion. 中文触发：Nuitka 极限优化、Python 商业打包、极限编译 Python、dist 瘦身、DLL 分析、最小安装包、最快启动、商业级打包风格",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/generating-python-installer",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "generating python installer"
+    ]
+  },
+  {
+    "name": "git-workflow",
+    "description": "Git workflow patterns including branching strategies, commit conventions, merge vs rebase, conflict resolution, and collaborative development best practices for teams of all sizes. Use when choosing a branching strategy, writing commit conventions, deciding merge versus rebase, or resolving conflicts.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/git-workflow",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "git workflow"
+    ]
+  },
+  {
+    "name": "github-ops",
+    "description": "GitHub repository operations, automation, and management. Issue triage, PR management, CI/CD operations, release management, and security monitoring using the gh CLI. Use when the user wants to manage GitHub issues, PRs, CI status, releases, contributors, stale items, or any GitHub operational task beyond simple git commands.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/github-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "github ops"
+    ]
+  },
+  {
+    "name": "golang-patterns",
+    "description": "Idiomatic Go patterns, best practices, and conventions for building robust, efficient, and maintainable Go applications. Use when writing or reviewing Go code and idiomatic structure or conventions are in question.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/golang-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "golang patterns"
+    ]
+  },
+  {
+    "name": "golang-testing",
+    "description": "Go testing patterns including table-driven tests, subtests, benchmarks, fuzzing, and test coverage. Follows TDD methodology with idiomatic Go practices. Use when writing Go tests — table-driven cases, subtests, benchmarks, fuzzing, or coverage.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/golang-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "golang testing"
+    ]
+  },
+  {
+    "name": "google-workspace-ops",
+    "description": "Operate across Google Drive, Docs, Sheets, and Slides as one workflow surface for plans, trackers, decks, and shared documents. Use when the user needs to find, summarize, edit, migrate, or clean up Google Workspace assets without dropping to raw tool calls.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/google-workspace-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "google workspace ops"
+    ]
+  },
+  {
+    "name": "growth-log",
+    "description": "Use after a complex task, failure, or when reviewing what was learned. Teaches how to write growth logs that extract reusable patterns — not diary entries.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/growth-log",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "growth log"
+    ]
+  },
+  {
+    "name": "healthcare-cdss-patterns",
+    "description": "Clinical Decision Support System (CDSS) development patterns. Drug interaction checking, dose validation, clinical scoring (NEWS2, qSOFA), alert severity classification, and integration into EMR workflows. Use when building clinical decision support — drug interaction checks, dose validation, clinical scoring, or alert severity.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/healthcare-cdss-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "healthcare cdss patterns"
+    ]
+  },
+  {
+    "name": "healthcare-emr-patterns",
+    "description": "EMR/EHR development patterns for healthcare applications. Clinical safety, encounter workflows, prescription generation, clinical decision support integration, and accessibility-first UI for medical data entry. Use when building EMR or EHR features such as encounter workflows, prescription generation, or clinical data entry UI.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/healthcare-emr-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "healthcare emr patterns"
+    ]
+  },
+  {
+    "name": "healthcare-eval-harness",
+    "description": "Patient safety evaluation harness for healthcare application deployments. Automated test suites for CDSS accuracy, PHI exposure, clinical workflow integrity, and integration compliance. Blocks deployments on safety failures. Use when a healthcare deployment must be gated on patient-safety tests for CDSS accuracy, PHI exposure, and workflow integrity.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/healthcare-eval-harness",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "healthcare eval harness"
+    ]
+  },
+  {
+    "name": "healthcare-phi-compliance",
+    "description": "Protected Health Information (PHI) and Personally Identifiable Information (PII) compliance patterns for healthcare applications. Covers data classification, access control, audit trails, encryption, and common leak vectors. Use when code touches PHI or PII in a healthcare system, or when auditing access control, audit trails, or leak vectors.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/healthcare-phi-compliance",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "healthcare phi compliance"
+    ]
+  },
+  {
+    "name": "hermes-imports",
+    "description": "Convert local Hermes operator workflows into sanitized ECC skills and release-pack artifacts. Use when preparing a Hermes workflow for public ECC reuse without leaking private workspace state, credentials, or local-only paths.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/hermes-imports",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "hermes imports"
+    ]
+  },
+  {
+    "name": "hexagonal-architecture",
+    "description": "Design, implement, and refactor Ports & Adapters systems with clear domain boundaries, dependency inversion, and testable use-case orchestration across TypeScript, Java, Kotlin, and Go services. Use when introducing or refactoring toward Ports and Adapters, or when domain logic has become entangled with I/O.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/hexagonal-architecture",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "hexagonal architecture"
+    ]
+  },
+  {
+    "name": "hipaa-compliance",
+    "description": "HIPAA-specific entrypoint for healthcare privacy and security work. Use when a task is explicitly framed around HIPAA, PHI handling, covered entities, BAAs, breach posture, or US healthcare compliance requirements.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/hipaa-compliance",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "hipaa compliance"
+    ]
+  },
+  {
+    "name": "homelab-network-readiness",
+    "description": "Readiness checklist for homelab VLAN segmentation, local DNS filtering, and WireGuard-style remote access before changing router, firewall, DHCP, or VPN configuration.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/homelab-network-readiness",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "homelab network readiness"
+    ]
+  },
+  {
+    "name": "homelab-network-setup",
+    "description": "Practical home and homelab network planning for gateways, switches, access points, IP ranges, DHCP reservations, DNS, cabling, and common beginner mistakes. Use when planning or fixing a home or homelab network — gateway, switch, AP, IP ranges, DHCP, DNS, or cabling.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/homelab-network-setup",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "homelab network setup"
+    ]
+  },
+  {
+    "name": "homelab-pihole-dns",
+    "description": "Pi-hole installation, blocklist management, DNS-over-HTTPS setup, DHCP integration, local DNS records, and troubleshooting broken DNS resolution on a home network. Use when the task explicitly involves Pi-hole — installing it, managing blocklists, configuring DoH or DHCP, adding local DNS records, or diagnosing DNS resolution with Pi-hole in the path.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/homelab-pihole-dns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "homelab pihole dns"
+    ]
+  },
+  {
+    "name": "homelab-vlan-segmentation",
+    "description": "Segmenting home networks into VLANs for IoT, guest, trusted, and server traffic using UniFi, pfSense/OPNsense, and MikroTik — including switch trunk config, firewall rules, and wireless SSID mapping. Use when splitting a home network into IoT, guest, trusted, and server VLANs on UniFi, pfSense/OPNsense, or MikroTik.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/homelab-vlan-segmentation",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "homelab vlan segmentation"
+    ]
+  },
+  {
+    "name": "homelab-wireguard-vpn",
+    "description": "WireGuard VPN server setup, peer configuration, key generation, split tunneling vs full tunnel routing, and remote access to a home network from mobile and laptop clients. Use when setting up WireGuard for remote access to a home network, or deciding between split and full tunnel routing.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/homelab-wireguard-vpn",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "homelab wireguard vpn"
+    ]
+  },
+  {
+    "name": "hookify-rules",
+    "description": "This skill should be used when the user asks to create a hookify rule, write a hook rule, configure hookify, add a hookify rule, or needs guidance on hookify rule syntax and patterns.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/hookify-rules",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "hookify rules"
+    ]
+  },
+  {
+    "name": "inherit-legacy-style",
+    "description": "Legacy-project style inheritance skill. Use when the user types /inherit-legacy-style, or when onboarding an AI coding agent onto a hand-written legacy project and you need to prevent \"style drift\" (the model imposing its pretrained mainstream idioms onto the project). Language- and framework-agnostic — it aligns meta-architecture only, not syntax. Once run, it becomes a behavioral constraint on all subsequent coding tasks. Do NOT use for pure research or one-off questions unrelated to code-style alignment.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/inherit-legacy-style",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "inherit legacy style"
+    ]
+  },
+  {
+    "name": "intent-driven-development",
+    "description": "Turn ambiguous or high-impact product and engineering changes into scoped, verifiable acceptance criteria before or alongside implementation. Use when a user asks to clarify a feature, define acceptance criteria, de-risk a security/data/migration/integration change, prepare implementation requirements for another agent, or make a complex request testable. Do not trigger for trivial edits, straightforward fixes, active debugging, code review, or implementation requests whose acceptance conditions are already clear unless the user explicitly invokes this skill.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/intent-driven-development",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "intent driven development"
+    ]
+  },
+  {
+    "name": "inventory-demand-planning",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/inventory-demand-planning",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "inventory demand planning"
+    ]
+  },
+  {
+    "name": "investor-materials",
+    "description": "Create and update pitch decks, one-pagers, investor memos, accelerator applications, financial models, and fundraising materials. Use when the user needs investor-facing documents, projections, use-of-funds tables, milestone plans, or materials that must stay internally consistent across multiple fundraising assets.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/investor-materials",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "investor materials"
+    ]
+  },
+  {
+    "name": "investor-outreach",
+    "description": "Draft cold emails, warm intro blurbs, follow-ups, update emails, and investor communications for fundraising. Use when the user wants outreach to angels, VCs, strategic investors, or accelerators and needs concise, personalized, investor-facing messaging.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/investor-outreach",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "investor outreach"
+    ]
+  },
+  {
+    "name": "ios-icon-gen",
+    "description": "Generate iOS app icons as PNG imagesets for Xcode asset catalogs from SF Symbols (5000+ Apple-native) or Iconify API (275k+ open source icons from 200+ collections). Use when generating icons, creating icon assets, adding icons to asset catalog, or searching for icons for iOS projects.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ios-icon-gen",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ios icon gen"
+    ]
+  },
+  {
+    "name": "iterative-retrieval",
+    "description": "Pattern for progressively refining context retrieval to solve the subagent context problem. Use when a subagent lacks the context it needs and retrieval must be refined across passes.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/iterative-retrieval",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "iterative retrieval"
+    ]
+  },
+  {
+    "name": "ito-baskets",
+    "description": "Read-only Itô basket and prediction-market data skill. Index the live basket catalog, compare a basket against user-supplied research or a watchlist, build a source-grounded market brief, or draft a non-executable planning worksheet. Use when a user asks to browse or index Itô baskets, compare a basket against notes or a thesis, research prediction-market events/venues/liquidity, or plan a basket or market idea without trading. Never advises, orders, trades, reserves, or executes.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ito-baskets",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ito baskets"
+    ]
+  },
+  {
+    "name": "ito-compute",
+    "description": "Query live GPU inventory, submit an authenticated Itô fixed-rate RFQ, inspect RFQ or procurement status, revoke device credentials, and run explicitly gated node qualification through the separately installed canonical CLI. Use when a user asks to find H100/H200 capacity, request a fixed compute rate, check Itô compute status, validate GPU nodes, revoke Itô access, or rent or purchase GPU compute and needs the supported boundary explained.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ito-compute",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ito compute"
+    ]
+  },
+  {
+    "name": "ito-inference",
+    "description": "Inspect the availability of model serving on a completed Itô compute booking and, when the canonical backend becomes available, hand off an explicitly confirmed serving manifest. Use after ito-compute has booked GPU nodes and the user asks for an OpenAI-compatible endpoint, ito-serve, hosted Kimi, or self-hosted open-weights inference. ECC implements no serving stack of its own.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ito-inference",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ito inference"
+    ]
+  },
+  {
+    "name": "ito-training",
+    "description": "Inspect the availability of ML training on a completed Itô compute booking and, when the canonical backend becomes available, hand off an explicitly confirmed training manifest. Use after ito-compute has booked GPU nodes and the user wants pre-training, fine-tuning, or RL on that metal. ECC implements no training stack of its own.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ito-training",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ito training"
+    ]
+  },
+  {
+    "name": "java-coding-standards",
+    "description": "Java coding standards for Spring Boot and Quarkus services: naming, immutability, Optional usage, streams, exceptions, generics, CDI, reactive patterns, and project layout. Automatically applies framework-specific conventions. Use when writing or reviewing Java in a Spring Boot or Quarkus service.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/java-coding-standards",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "java coding standards"
+    ]
+  },
+  {
+    "name": "jira-integration",
+    "description": "Use this skill when retrieving Jira tickets, analyzing requirements, updating ticket status, adding comments, or transitioning issues. Provides Jira API patterns via MCP or direct REST calls.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/jira-integration",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "jira integration"
+    ]
+  },
+  {
+    "name": "jpa-patterns",
+    "description": "JPA/Hibernate patterns for entity design, relationships, query optimization, transactions, auditing, indexing, pagination, and pooling in Spring Boot. Use when designing JPA entities or relationships, or when a Hibernate query, transaction, or N+1 problem needs fixing.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/jpa-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "jpa patterns"
+    ]
+  },
+  {
+    "name": "knowledge-ops",
+    "description": "Knowledge base management, ingestion, sync, and retrieval across multiple storage layers (local files, MCP memory, vector stores, Git repos). Use when the user wants to save, organize, sync, deduplicate, or search across their knowledge systems.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/knowledge-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "knowledge ops"
+    ]
+  },
+  {
+    "name": "kotlin-coroutines-flows",
+    "description": "Kotlin Coroutines and Flow patterns for Android and KMP — structured concurrency, Flow operators, StateFlow, error handling, and testing. Use when writing coroutines or Flow code on Android or KMP, or debugging cancellation and concurrency.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/kotlin-coroutines-flows",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "kotlin coroutines flows"
+    ]
+  },
+  {
+    "name": "kotlin-exposed-patterns",
+    "description": "JetBrains Exposed ORM patterns including DSL queries, DAO pattern, transactions, HikariCP connection pooling, Flyway migrations, and repository pattern. Use when working with the Exposed ORM — DSL or DAO queries, transactions, pooling, or migrations.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/kotlin-exposed-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "kotlin exposed patterns"
+    ]
+  },
+  {
+    "name": "kotlin-ktor-patterns",
+    "description": "Ktor server patterns including routing DSL, plugins, authentication, Koin DI, kotlinx.serialization, WebSockets, and testApplication testing. Use when building a Ktor server — routing, plugins, auth, DI, serialization, or tests.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/kotlin-ktor-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "kotlin ktor patterns"
+    ]
+  },
+  {
+    "name": "kotlin-patterns",
+    "description": "Idiomatic Kotlin patterns, best practices, and conventions for building robust, efficient, and maintainable Kotlin applications with coroutines, null safety, and DSL builders. Use when writing or reviewing Kotlin code and idiomatic structure or null safety is in question.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/kotlin-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "kotlin patterns"
+    ]
+  },
+  {
+    "name": "kotlin-testing",
+    "description": "Kotlin testing patterns with Kotest, MockK, coroutine testing, property-based testing, and Kover coverage. Follows TDD methodology with idiomatic Kotlin practices. Use when writing Kotlin tests with Kotest or MockK, or testing coroutines and checking coverage.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/kotlin-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "kotlin testing"
+    ]
+  },
+  {
+    "name": "kubernetes-patterns",
+    "description": "Kubernetes workload patterns, resource management, RBAC, probes, autoscaling, ConfigMap/Secret handling, and kubectl debugging for production-grade deployments. Use when writing or reviewing Kubernetes manifests, or debugging probes, RBAC, autoscaling, or resource limits.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/kubernetes-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "kubernetes patterns"
+    ]
+  },
+  {
+    "name": "laravel-patterns",
+    "description": "Laravel architecture patterns, routing/controllers, Eloquent ORM, service layers, queues, events, caching, and API resources for production apps. Use when building or reviewing Laravel apps — controllers, Eloquent, service layers, queues, or API resources.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/laravel-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "laravel patterns"
+    ]
+  },
+  {
+    "name": "laravel-plugin-discovery",
+    "description": "Discover and evaluate Laravel packages via LaraPlugins.io MCP. Use when the user wants to find plugins, check package health, or assess Laravel/PHP compatibility.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/laravel-plugin-discovery",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "laravel plugin discovery"
+    ]
+  },
+  {
+    "name": "laravel-security",
+    "description": "Laravel security best practices — authentication, authorization, Eloquent safety, CSRF, XSS prevention, API security, and secure deployment configurations. Use when reviewing Laravel auth, Eloquent safety, CSRF, XSS, API security, or deployment configuration.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/laravel-security",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "laravel security"
+    ]
+  },
+  {
+    "name": "laravel-tdd",
+    "description": "Laravel testing strategies with PHPUnit, Pest, model factories, HTTP tests, Sanctum authentication testing, mocking, and coverage. Use when writing Laravel tests with PHPUnit or Pest, or driving a Laravel feature test-first.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/laravel-tdd",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "laravel tdd"
+    ]
+  },
+  {
+    "name": "laravel-verification",
+    "description": "Verification loop for Laravel projects: env checks, linting, static analysis, tests with coverage, security scans, and deployment readiness. Use when verifying a Laravel project before merge or deploy — lint, static analysis, tests, coverage, security.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/laravel-verification",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "laravel verification"
+    ]
+  },
+  {
+    "name": "latency-critical-systems",
+    "description": "Use for latency-sensitive systems such as realtime dashboards, market data, streaming agents, execution gateways, queues, caches, or HFT-like infrastructure where freshness and p95 latency matter. Use when p95 latency or data freshness matters — realtime dashboards, market data, streaming agents, queues, or caches.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/latency-critical-systems",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "latency critical systems"
+    ]
+  },
+  {
+    "name": "lead-intelligence",
+    "description": "AI-native lead intelligence and outreach pipeline. Replaces Apollo, Clay, and ZoomInfo with agent-powered signal scoring, mutual ranking, warm path discovery, source-derived voice modeling, and channel-specific outreach across email, LinkedIn, and X. Use when the user wants to find, qualify, and reach high-value contacts.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/lead-intelligence",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "lead intelligence"
+    ]
+  },
+  {
+    "name": "liquid-glass-design",
+    "description": "iOS 26 Liquid Glass design system — dynamic glass material with blur, reflection, and interactive morphing for SwiftUI, UIKit, and WidgetKit. Use when building iOS 26 Liquid Glass UI in SwiftUI, UIKit, or WidgetKit.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/liquid-glass-design",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "liquid glass design"
+    ]
+  },
+  {
+    "name": "living-docs-governance",
+    "description": "Keep a long-lived project's documentation from rotting by assigning existing project docs clear constitution, map, status, and history roles, then wiring the active agent harness to those canonical sources. Use in the maintain phase when docs drift from code, agents lose context between sessions, or intentional removals keep being recreated. Prefer adopting the repository's current docs structure over creating new root files. 中文触发：文档治理、活文档、项目状态追踪、防文档漂移、项目地图、健康仪表盘、删除区、长期项目治理",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/living-docs-governance",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "living docs governance"
+    ]
+  },
+  {
+    "name": "llm-trading-agent-security",
+    "description": "Security patterns for autonomous trading agents with wallet or transaction authority. Covers prompt injection, spend limits, pre-send simulation, circuit breakers, MEV protection, and key handling. Use when an autonomous agent holds wallet or transaction authority and its limits, simulation, or key handling need review.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/llm-trading-agent-security",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "llm trading agent security"
+    ]
+  },
+  {
+    "name": "logistics-exception-management",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/logistics-exception-management",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "logistics exception management"
+    ]
+  },
+  {
+    "name": "loop-design-check",
+    "description": "Design a goal-oriented agent loop, and review it for the ways loops go wrong — spinning and burning tokens, Goodhart-gaming the verifier, or running a wrong answer to completion. Two actions: (1) WRITE a loop — gate whether to build it, define a machine-decidable goal, pick the loop type, pick a skeleton; (2) REVIEW a loop — run it past five failure modes plus decidability, boundaries, fallback, judge independence, and keep-judgment-with-the-human red lines. Use when designing an autonomous agent loop, or when you already have one and worry it will spin, cheat, or run a wrong answer to the end. Complements the mechanism-layer loop skills (autonomous-loops, continuous-agent-loop) by covering the judgment layer they don't. 中文触发：写 loop、设计 loop、做一个 loop、检查 loop 对不对、loop 体检、loop 会不会跑飞、可判定目标、五个崩法、plan build judge。English triggers: design an agent loop, write a loop, check a loop, loop review, prevent a runaway loop, goal-oriented loop, decidable goal, plan/build/judge.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/loop-design-check",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "loop design check"
+    ]
+  },
+  {
+    "name": "mailtrap-email-integration",
+    "description": "Guides agents through integrating transactional email sending via Mailtrap's Email API, including sandbox testing, domain verification, and API authentication. Use when implementing email-sending features, debugging delivery issues, or setting up safe dev/staging email testing.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/mailtrap-email-integration",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "mailtrap email integration"
+    ]
+  },
+  {
+    "name": "make-interfaces-feel-better",
+    "description": "Apply concrete design-engineering details that make interfaces feel polished. Use when reviewing or improving UI spacing, typography, borders, shadows, motion, hit areas, icons, text wrapping, and interaction states.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/make-interfaces-feel-better",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "make interfaces feel better"
+    ]
+  },
+  {
+    "name": "manim-video",
+    "description": "Build reusable Manim explainers for technical concepts, graphs, system diagrams, and product walkthroughs, then hand off to the wider ECC video stack if needed. Use when the user wants a clean animated explainer rather than a generic talking-head script.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/manim-video",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "manim video"
+    ]
+  },
+  {
+    "name": "market-research",
+    "description": "Conduct market research, competitive analysis, investor due diligence, and industry intelligence with source attribution and decision-oriented summaries. Use when the user wants market sizing, competitor comparisons, fund research, technology scans, or research that informs business decisions.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/market-research",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "market research"
+    ]
+  },
+  {
+    "name": "marketing-campaign",
+    "description": "End-to-end marketing campaign planning and execution. Covers audience research, positioning, campaign angle definition, landing page copy, email sequences, social posts, ad copy, short-form video scripts, and content calendars. Use as the orchestration layer for multi-channel product launches. Use when planning or executing a multi-channel product launch, or producing landing page, email, social, or ad copy.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/marketing-campaign",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "marketing campaign"
+    ]
+  },
+  {
+    "name": "mcp-server-patterns",
+    "description": "Build MCP servers with Node/TypeScript SDK — tools, resources, prompts, Zod validation, stdio vs Streamable HTTP. Use Context7 or official MCP docs for latest API. Use when building or debugging an MCP server — tools, resources, prompts, validation, or transport choice.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/mcp-server-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "mcp server patterns"
+    ]
+  },
+  {
+    "name": "messages-ops",
+    "description": "Evidence-first live messaging workflow for ECC. Use when the user wants to read texts or DMs, recover a recent one-time code, inspect a thread before replying, or prove which message source was actually checked.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/messages-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "messages ops"
+    ]
+  },
+  {
+    "name": "ml-adoption-playbook",
+    "description": "End-to-end methodology for AI agents and software engineers to add machine learning algorithms to existing non-ML codebases. Covers problem framing, data readiness, architectural decoupling, and baseline model integration. Use when adding a machine learning capability to a codebase that has none, from problem framing through a baseline model.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ml-adoption-playbook",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ml adoption playbook"
+    ]
+  },
+  {
+    "name": "mle-workflow",
+    "description": "Production machine-learning engineering workflow for data contracts, reproducible training, model evaluation, deployment, monitoring, and rollback. Use when building, reviewing, or hardening ML systems beyond one-off notebooks.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/mle-workflow",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "mle workflow"
+    ]
+  },
+  {
+    "name": "motion-advanced",
+    "description": "Advanced motion patterns for React / Next.js — drag & drop, gestures, text animations, SVG path drawing, custom hooks, imperative sequences (useAnimate), loaders, and the full API decision tree. Requires motion-foundations. Use when building drag and drop, gestures, text or SVG animation, or imperative animation sequences in React or Next.js.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/motion-advanced",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "motion advanced"
+    ]
+  },
+  {
+    "name": "motion-foundations",
+    "description": "Motion tokens, spring presets, performance rules, device adaptation, accessibility enforcement, and SSR safety for React / Next.js using motion/react. Foundation layer — all other motion skills depend on this. Use when setting up motion tokens, spring presets, reduced-motion handling, or SSR-safe animation in React or Next.js.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/motion-foundations",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "motion foundations"
+    ]
+  },
+  {
+    "name": "motion-patterns",
+    "description": "Production-ready animation patterns for React / Next.js — button, modal, toast, stagger, page transitions, exit animations, scroll, and layout — built on motion-foundations tokens and springs. Use when animating a specific UI element in React or Next.js — button, modal, toast, stagger, page transition, or scroll.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/motion-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "motion patterns"
+    ]
+  },
+  {
+    "name": "motion-ui",
+    "description": "Production-ready UI motion system for React/Next.js. Use when implementing animations, transitions, or motion patterns.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/motion-ui",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "motion ui"
+    ]
+  },
+  {
+    "name": "mysql-patterns",
+    "description": "MySQL and MariaDB schema, query, indexing, transaction, replication, and connection-pool patterns for production backends. Use when designing MySQL or MariaDB schemas and indexes, or when a query, transaction, or replica lags.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/mysql-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "mysql patterns"
+    ]
+  },
+  {
+    "name": "nanoclaw-repl",
+    "description": "Operate and extend NanoClaw v2, ECC's zero-dependency session-aware REPL built on claude -p. Use when operating or extending the NanoClaw REPL.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/nanoclaw-repl",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "nanoclaw repl"
+    ]
+  },
+  {
+    "name": "nasiko-control-plane",
+    "description": "Use the experimental Nasiko CLI lifecycle bridge for pinned installation, read-only status, and qualified uninstall with explicit consent and telemetry and secrets boundaries.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/nasiko-control-plane",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "nasiko control plane"
+    ]
+  },
+  {
+    "name": "nestjs-patterns",
+    "description": "NestJS architecture patterns for modules, controllers, providers, DTO validation, guards, interceptors, config, and production-grade TypeScript backends. Use when building or reviewing a NestJS backend — modules, providers, DTO validation, guards, or interceptors.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/nestjs-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "nestjs patterns"
+    ]
+  },
+  {
+    "name": "netmiko-ssh-automation",
+    "description": "Safe Python Netmiko patterns for read-only collection, bounded batch SSH, TextFSM parsing, guarded config changes, timeouts, and network automation error handling. Use when automating network device access with Python Netmiko, whether collecting state or pushing guarded config changes.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/netmiko-ssh-automation",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "netmiko ssh automation"
+    ]
+  },
+  {
+    "name": "network-bgp-diagnostics",
+    "description": "Diagnostics-only BGP troubleshooting patterns for neighbor state, route exchange, prefix policy, AS path inspection, and safe evidence collection. Use when a BGP neighbor is down, routes are missing, or prefix policy and AS path need inspection.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/network-bgp-diagnostics",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "network bgp diagnostics"
+    ]
+  },
+  {
+    "name": "network-config-validation",
+    "description": "Pre-deployment checks for router and switch configuration, including dangerous commands, duplicate addresses, subnet overlaps, stale references, management-plane risk, and IOS-style security hygiene. Use when reviewing a router or switch configuration before deployment.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/network-config-validation",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "network config validation"
+    ]
+  },
+  {
+    "name": "network-interface-health",
+    "description": "Diagnose interface errors, drops, CRCs, duplex mismatches, flapping, speed negotiation issues, and counter trends on routers, switches, and Linux hosts. Use when an interface shows errors, drops, CRCs, flapping, or a duplex or speed mismatch.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/network-interface-health",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "network interface health"
+    ]
+  },
+  {
+    "name": "nextjs-turbopack",
+    "description": "Next.js 16+ and Turbopack — incremental bundling, FS caching, dev speed, and when to use Turbopack vs webpack.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/nextjs-turbopack",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "nextjs turbopack"
+    ]
+  },
+  {
+    "name": "nodejs-keccak256",
+    "description": "Prevent Ethereum hashing bugs in JavaScript and TypeScript. Node's sha3-256 is NIST SHA3, not Ethereum Keccak-256, and silently breaks selectors, signatures, storage slots, and address derivation. Use when hashing for Ethereum in JavaScript or TypeScript, or when a selector, signature, storage slot, or derived address is wrong.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/nodejs-keccak256",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "nodejs keccak256"
+    ]
+  },
+  {
+    "name": "nutrient-document-processing",
+    "description": "Process, convert, OCR, extract, redact, sign, and fill documents using the Nutrient DWS API. Works with PDFs, DOCX, XLSX, PPTX, HTML, and images. Use when converting, OCRing, extracting from, redacting, signing, or filling documents via the Nutrient DWS API.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/nutrient-document-processing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "nutrient document processing"
+    ]
+  },
+  {
+    "name": "nuxt4-patterns",
+    "description": "Nuxt 4 app patterns for hydration safety, performance, route rules, lazy loading, and SSR-safe data fetching with useFetch and useAsyncData. Use when building or reviewing a Nuxt 4 app, or debugging hydration mismatches and SSR-safe data fetching.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/nuxt4-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "nuxt4 patterns"
+    ]
+  },
+  {
+    "name": "openclaw-persona-forge",
+    "description": "为 OpenClaw AI Agent 锻造完整的龙虾灵魂方案。根据用户偏好或随机抽卡， 输出身份定位、灵魂描述(SOUL.md)、角色化底线规则、名字和头像生图提示词。 如当前环境提供已审核的生图 skill，可自动生成统一风格头像图片。 当用户需要创建、设计或定制 OpenClaw 龙虾灵魂时使用。 不适用于：微调已有 SOUL.md、非 OpenClaw 平台的角色设计、纯工具型无性格 Agent。 触发词：龙虾灵魂、虾魂、OpenClaw 灵魂、养虾灵魂、龙虾角色、龙虾定位、 龙虾剧本杀角色、龙虾游戏角色、龙虾 NPC、龙虾性格、龙虾背景故事、 lobster soul、lobster character、抽卡、随机龙虾、龙虾 SOUL、gacha。 Use when creating, designing, or customizing an OpenClaw lobster persona — identity, SOUL.md, name, or avatar prompt.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/openclaw-persona-forge",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "openclaw persona forge"
+    ]
+  },
+  {
+    "name": "opensource-pipeline",
+    "description": "Open-source pipeline: fork, sanitize, and package private projects for safe public release. Chains 3 agents (forker, sanitizer, packager). Triggers: '/opensource', 'open source this', 'make this public', 'prepare for open source'. Use when a private project must be forked, stripped of secrets, and packaged for public release.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/opensource-pipeline",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "opensource pipeline"
+    ]
+  },
+  {
+    "name": "orch-add-feature",
+    "description": "Orchestrate building a brand-new feature end to end — research, plan, TDD implementation, review, and gated commit — by delegating each phase to the matching ECC agent. Use when adding a capability that does not exist yet.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/orch-add-feature",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "orch add feature"
+    ]
+  },
+  {
+    "name": "orch-build-mvp",
+    "description": "Orchestrate bootstrapping a working MVP from a design or spec document — ingest the doc, plan thin vertical slices, scaffold the first end-to-end slice, then TDD-implement, review, and gated commit. Use to turn an SDD/PRD into a running starting point. Use when a design or spec document must become a running MVP through planned vertical slices.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/orch-build-mvp",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "orch build mvp"
+    ]
+  },
+  {
+    "name": "orch-change-feature",
+    "description": "Orchestrate altering an existing, working feature to new desired behavior — update its tests to the new spec, change the implementation to match, review, and gated commit. Use when behavior is not broken but should be different.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/orch-change-feature",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "orch change feature"
+    ]
+  },
+  {
+    "name": "orch-fix-defect",
+    "description": "Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, review, and gated commit — by delegating each phase to the matching ECC agent. Use when existing behavior is broken or wrong.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/orch-fix-defect",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "orch fix defect"
+    ]
+  },
+  {
+    "name": "orch-pipeline",
+    "description": "Shared orchestration engine for the orch-* skill family. Defines the gated Research-Plan-TDD-Review-Commit pipeline, the size classifier, the agent map, and the two human gates that the orch-* operation skills delegate to. Not usually invoked directly. Not usually invoked directly; it applies when an orch-* skill delegates its gated Research-Plan-TDD-Review-Commit pipeline.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/orch-pipeline",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "orch pipeline"
+    ]
+  },
+  {
+    "name": "orch-refine-code",
+    "description": "Orchestrate a behavior-preserving refactor — confirm tests are green, restructure without changing behavior, keep tests green, review, and gated commit. Use when the structure should improve but behavior must not change.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/orch-refine-code",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "orch refine code"
+    ]
+  },
+  {
+    "name": "parallel-execution-optimizer",
+    "description": "Use when the user wants a task done much faster through parallel work, concurrent agents, batched tool calls, isolated worktrees, or many independent verification lanes without losing correctness.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/parallel-execution-optimizer",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "parallel execution optimizer"
+    ]
+  },
+  {
+    "name": "perl-patterns",
+    "description": "Modern Perl 5.36+ idioms, best practices, and conventions for building robust, maintainable Perl applications. Use when writing or reviewing modern Perl 5.36+ code.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/perl-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "perl patterns"
+    ]
+  },
+  {
+    "name": "perl-security",
+    "description": "Comprehensive Perl security covering taint mode, input validation, safe process execution, DBI parameterized queries, web security (XSS/SQLi/CSRF), and perlcritic security policies. Use when reviewing Perl input handling, process execution, DBI queries, or web-facing code.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/perl-security",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "perl security"
+    ]
+  },
+  {
+    "name": "perl-testing",
+    "description": "Perl testing patterns using Test2::V0, Test::More, prove runner, mocking, coverage with Devel::Cover, and TDD methodology. Use when writing Perl tests with Test2::V0 or Test::More, or measuring coverage.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/perl-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "perl testing"
+    ]
+  },
+  {
+    "name": "plan-canvas",
+    "description": "Open plans and HTML artifacts in a local browser canvas where the human annotates elements, chats, and approves or requests changes without leaving the page. Use when presenting a plan for review, or when feedback like \"move this, change that\" is easier pointed at than typed.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/plan-canvas",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "plan canvas"
+    ]
+  },
+  {
+    "name": "plan-orchestrate",
+    "description": "Read a plan document, decompose it into steps, design a per-step agent chain from the ECC catalogue, and emit ready-to-paste /orchestrate custom prompts. Generative only — never invokes /orchestrate itself. Use when the user has a multi-step plan and wants to drive it through orchestrate without composing chains by hand.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/plan-orchestrate",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "plan orchestrate"
+    ]
+  },
+  {
+    "name": "plankton-code-quality",
+    "description": "Write-time code quality enforcement using Plankton — auto-formatting, linting, and Claude-powered fixes on every file edit via hooks. Use when setting up write-time formatting, linting, or auto-fix hooks on file edits.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/plankton-code-quality",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "plankton code quality"
+    ]
+  },
+  {
+    "name": "postgres-patterns",
+    "description": "PostgreSQL database patterns for query optimization, schema design, indexing, and security. Based on Supabase best practices. Use when designing PostgreSQL schemas, indexes, or RLS policies, or when a query is too slow.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/postgres-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "postgres patterns"
+    ]
+  },
+  {
+    "name": "prediction-market-oracle-research",
+    "description": "Research prediction markets as data sources or oracle signals for products, agents, dashboards, and corporate decision intelligence. Use for source-grounded analysis of market-implied probabilities, caveats, and integration patterns without investment advice. Use when evaluating prediction markets as a data source or oracle signal for a product, agent, or dashboard.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/prediction-market-oracle-research",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "prediction market oracle research"
+    ]
+  },
+  {
+    "name": "prediction-market-risk-review",
+    "description": "Review prediction-market, basket, oracle, and trading-agent workflows for compliance, safety, data-quality, privacy, and execution risk. Use before any workflow handles venue auth, user portfolio data, API keys, or trade planning.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/prediction-market-risk-review",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "prediction market risk review"
+    ]
+  },
+  {
+    "name": "prisma-patterns",
+    "description": "Prisma ORM patterns for TypeScript backends — schema design, query optimization, transactions, pagination, and critical traps like updateMany returning count not records, $transaction timeouts, migrate dev resetting the DB, @updatedAt skipped on bulk writes, and serverless connection exhaustion. Use when writing a Prisma schema or query, or debugging transactions, migrations, or serverless connection limits.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/prisma-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "prisma patterns"
+    ]
+  },
+  {
+    "name": "product-capability",
+    "description": "Translate PRD intent, roadmap asks, or product discussions into an implementation-ready capability plan that exposes constraints, invariants, interfaces, and unresolved decisions before multi-service work starts. Use when the user needs an ECC-native PRD-to-SRS lane instead of vague planning prose.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/product-capability",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "product capability"
+    ]
+  },
+  {
+    "name": "product-lens",
+    "description": "Use this skill to validate the \"why\" before building, run product diagnostics, and pressure-test product direction before the request becomes an implementation contract.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/product-lens",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "product lens"
+    ]
+  },
+  {
+    "name": "production-audit",
+    "description": "Local-evidence production readiness audit for shipped apps, pre-launch reviews, post-merge checks, and \"what breaks in prod?\" questions without sending repo data to an external audit service. Use when auditing production readiness before launch, after a merge, or when asked what breaks in prod.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/production-audit",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "production audit"
+    ]
+  },
+  {
+    "name": "production-scheduling",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/production-scheduling",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "production scheduling"
+    ]
+  },
+  {
+    "name": "project-flow-ops",
+    "description": "Operate execution flow across GitHub and Linear by triaging issues and pull requests, linking active work, and keeping GitHub public-facing while Linear remains the internal execution layer. Use when the user wants backlog control, PR triage, or GitHub-to-Linear coordination.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/project-flow-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "project flow ops"
+    ]
+  },
+  {
+    "name": "prompt-optimizer",
+    "description": ">-",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/prompt-optimizer",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "prompt optimizer"
+    ]
+  },
+  {
+    "name": "python-patterns",
+    "description": "Pythonic idioms, PEP 8 standards, type hints, and best practices for building robust, efficient, and maintainable Python applications. Use when writing or reviewing Python code and idiomatic structure, typing, or PEP 8 is in question.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/python-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "python patterns"
+    ]
+  },
+  {
+    "name": "python-testing",
+    "description": "Python testing strategies using pytest, TDD methodology, fixtures, mocking, parametrization, and coverage requirements. Use when writing pytest tests — fixtures, mocks, parametrization, or coverage.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/python-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "python testing"
+    ]
+  },
+  {
+    "name": "pytorch-patterns",
+    "description": "PyTorch deep learning patterns and best practices for building robust, efficient, and reproducible training pipelines, model architectures, and data loading. Use when writing or reviewing PyTorch training loops, model architectures, or data loading, or when a run will not reproduce.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/pytorch-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "pytorch patterns"
+    ]
+  },
+  {
+    "name": "quality-nonconformance",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/quality-nonconformance",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "quality nonconformance"
+    ]
+  },
+  {
+    "name": "quarkus-patterns",
+    "description": "Quarkus 3.x LTS architecture patterns with Camel for messaging, RESTful API design, CDI services, data access with Panache, and async processing. Use for Java Quarkus backend work with event-driven architectures. Use when building or reviewing a Quarkus service, especially with Camel messaging or Panache data access.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/quarkus-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "quarkus patterns"
+    ]
+  },
+  {
+    "name": "quarkus-security",
+    "description": "Quarkus Security best practices for authentication, authorization, JWT/OIDC, RBAC, input validation, CSRF, secrets management, and dependency security. Use when reviewing Quarkus authn/authz, JWT or OIDC, RBAC, validation, or secrets.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/quarkus-security",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "quarkus security"
+    ]
+  },
+  {
+    "name": "quarkus-tdd",
+    "description": "Test-driven development for Quarkus 3.x LTS using JUnit 5, Mockito, REST Assured, Camel testing, and JaCoCo. Use when adding features, fixing bugs, or refactoring event-driven services.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/quarkus-tdd",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "quarkus tdd"
+    ]
+  },
+  {
+    "name": "quarkus-verification",
+    "description": "Verification loop for Quarkus projects: build, static analysis, tests with coverage, security scans, native compilation, and diff review before release or PR.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/quarkus-verification",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "quarkus verification"
+    ]
+  },
+  {
+    "name": "ralphinho-rfc-pipeline",
+    "description": "RFC-driven multi-agent DAG execution pattern with quality gates, merge queues, and work unit orchestration. Use when running RFC-driven multi-agent execution with quality gates and a merge queue.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ralphinho-rfc-pipeline",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ralphinho rfc pipeline"
+    ]
+  },
+  {
+    "name": "react-native-patterns",
+    "description": "React Native and Expo app patterns — Expo Router navigation, state separation (server/client/route/form), TanStack Query data fetching with Zod, performant lists, NativeWind/StyleSheet styling, native APIs, and secure storage. Use when building or editing React Native / Expo screens, components, navigation, or data layers.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/react-native-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "react native patterns"
+    ]
+  },
+  {
+    "name": "react-patterns",
+    "description": "React 18/19 patterns including hooks discipline, server/client component boundaries, Suspense + error boundaries, form actions, data fetching, state management decision trees, and accessibility-first composition. Use when writing or reviewing React components.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/react-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "react patterns"
+    ]
+  },
+  {
+    "name": "react-performance",
+    "description": "React and Next.js performance optimization patterns adapted from Vercel Engineering's React Best Practices (https://github.com/vercel-labs/agent-skills). Organizes 70+ rules across 8 priority categories — waterfalls, bundle size, server-side, client fetching, re-render, rendering, JS micro-perf, advanced. Use when writing, reviewing, or refactoring React/Next.js code for performance.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/react-performance",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "react performance"
+    ]
+  },
+  {
+    "name": "react-testing",
+    "description": "React component testing with React Testing Library, Vitest/Jest, MSW for network mocking, accessibility assertions with axe, and the decision boundary between component tests and Playwright/Cypress end-to-end runs. Use when writing or fixing tests for React components, hooks, or pages.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/react-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "react testing"
+    ]
+  },
+  {
+    "name": "recsys-pipeline-architect",
+    "description": "Design composable recommendation, ranking, and feed pipelines using the six-stage Source→Hydrator→Filter→Scorer→Selector→SideEffect framework popularized by xAI's open-sourced For You algorithm. Use this skill whenever the user is building any system that picks \"the top K items for a (user, context)\" — social feeds, content CMSs, RAG rerankers, task prioritizers, notification triage, search reranking, ad ranking.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/recsys-pipeline-architect",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "recsys pipeline architect"
+    ]
+  },
+  {
+    "name": "recursive-decision-ledger",
+    "description": "Use when the user asks for repeated rollouts, marked decision processes, high-dimensional search, stochastic optimization, local-optima exploration, ensemble comparison, or recursive reasoning with a visible evidence trail.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/recursive-decision-ledger",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "recursive decision ledger"
+    ]
+  },
+  {
+    "name": "redis-patterns",
+    "description": "Redis data structure patterns, caching strategies, distributed locks, rate limiting, pub/sub, and connection management for production applications. Use when adding caching, a distributed lock, rate limiting, or pub/sub with Redis, or when key design needs review.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/redis-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "redis patterns"
+    ]
+  },
+  {
+    "name": "regex-vs-llm-structured-text",
+    "description": "Decision framework for choosing between regex and LLM when parsing structured text — start with regex, add LLM only for low-confidence edge cases.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/regex-vs-llm-structured-text",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "regex vs llm structured text"
+    ]
+  },
+  {
+    "name": "remotion-video-creation",
+    "description": "Best practices for Remotion - Video creation in React. 29 domain-specific rules covering 3D, animations, audio, captions, charts, transitions, and more. Use when building video in React with Remotion — animations, audio, captions, charts, or transitions.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/remotion-video-creation",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "remotion video creation"
+    ]
+  },
+  {
+    "name": "repo-scan",
+    "description": "Bootstrap pointer that installs the external repo-scan skill from a pinned, reviewable commit. Use when repo-scan must be installed before running its cross-stack source-code asset audit; this ECC pointer does not perform the audit itself.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/repo-scan",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "repo scan"
+    ]
+  },
+  {
+    "name": "research-ops",
+    "description": "Evidence-first current-state research workflow for ECC. Use when the user wants fresh facts, comparisons, enrichment, or a recommendation built from current public evidence and any supplied local context.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/research-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "research ops"
+    ]
+  },
+  {
+    "name": "returns-reverse-logistics",
+    "description": ">",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/returns-reverse-logistics",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "returns reverse logistics"
+    ]
+  },
+  {
+    "name": "rules-distill",
+    "description": "Scan skills to extract cross-cutting principles and distill them into rules — append, revise, or create new rule files. Use when the same principle keeps recurring across skills and belongs in a rule file instead.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/rules-distill",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "rules distill"
+    ]
+  },
+  {
+    "name": "rust-patterns",
+    "description": "Idiomatic Rust patterns, ownership, error handling, traits, concurrency, and best practices for building safe, performant applications. Use when writing or reviewing Rust code and ownership, error handling, traits, or concurrency is in question.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/rust-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "rust patterns"
+    ]
+  },
+  {
+    "name": "rust-testing",
+    "description": "Rust testing patterns including unit tests, integration tests, async testing, property-based testing, mocking, and coverage. Follows TDD methodology. Use when writing Rust tests — unit, integration, async, property-based, or coverage.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/rust-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "rust testing"
+    ]
+  },
+  {
+    "name": "safety-guard",
+    "description": "Use this skill to prevent destructive operations when working on production systems or running agents autonomously.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/safety-guard",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "safety guard"
+    ]
+  },
+  {
+    "name": "santa-method",
+    "description": "Multi-agent adversarial verification with convergence loop. Two independent review agents must both pass before output ships. Use when output must clear two independent adversarial reviewers before it ships.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/santa-method",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "santa method"
+    ]
+  },
+  {
+    "name": "scientific-db-pubmed-database",
+    "description": "Direct PubMed and NCBI E-utilities search workflows for biomedical literature, MeSH queries, PMID lookup, citation retrieval, and API-backed literature monitoring. Use when a task needs biomedical literature from PubMed rather than general web search.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/scientific-db-pubmed-database",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "scientific db pubmed database"
+    ]
+  },
+  {
+    "name": "scientific-db-uspto-database",
+    "description": "USPTO patent and trademark data workflow for official record lookup, PatentSearch queries, TSDR checks, assignment data, and reproducible IP research logs. Use when a task needs official United States patent or trademark records from USPTO systems.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/scientific-db-uspto-database",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "scientific db uspto database"
+    ]
+  },
+  {
+    "name": "scientific-pkg-gget",
+    "description": "gget CLI and Python workflow for quick genomic database queries, sequence lookup, BLAST-style searches, enrichment checks, and reproducible bioinformatics evidence logs. Use when a task needs quick bioinformatics lookup across genomic reference databases with the gget CLI or Python package.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/scientific-pkg-gget",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "scientific pkg gget"
+    ]
+  },
+  {
+    "name": "scientific-thinking-literature-review",
+    "description": "Systematic literature-review workflow for academic, biomedical, technical, and scientific topics, including search planning, source screening, synthesis, citation checks, and evidence logging. Use when the task is to find, screen, synthesize, and cite a body of academic or technical literature.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/scientific-thinking-literature-review",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "scientific thinking literature review"
+    ]
+  },
+  {
+    "name": "scientific-thinking-scholar-evaluation",
+    "description": "Structured scholarly-work evaluation for papers, proposals, literature reviews, methods sections, evidence quality, citation support, and research-writing feedback. Use when evaluating academic or scientific work — papers, proposals, methods sections, or evidence quality — against a repeatable rubric.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/scientific-thinking-scholar-evaluation",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "scientific thinking scholar evaluation"
+    ]
+  },
+  {
+    "name": "search-first",
+    "description": "Research-before-coding workflow. Search for existing tools, libraries, and patterns before writing custom code. Invokes the researcher agent.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/search-first",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "search first"
+    ]
+  },
+  {
+    "name": "security-bounty-hunter",
+    "description": "Hunt for exploitable, bounty-worthy security issues in repositories. Focuses on remotely reachable vulnerabilities that qualify for real reports instead of noisy local-only findings. Use when hunting reportable, remotely reachable vulnerabilities in a repository.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/security-bounty-hunter",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "security bounty hunter"
+    ]
+  },
+  {
+    "name": "security-review",
+    "description": "Use this skill when adding authentication, handling user input, working with secrets, creating API endpoints, or implementing payment/sensitive features. Provides comprehensive security checklist and patterns.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/security-review",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "security review"
+    ]
+  },
+  {
+    "name": "security-scan",
+    "description": "Scan your Claude Code configuration (.claude/ directory) for security vulnerabilities, misconfigurations, and injection risks using AgentShield. Checks CLAUDE.md, settings.json, MCP servers, hooks, and agent definitions. Use when auditing a .claude/ directory — CLAUDE.md, settings.json, MCP servers, hooks, or agent definitions.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/security-scan",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "security scan"
+    ]
+  },
+  {
+    "name": "seo",
+    "description": "Audit, plan, and implement SEO improvements across technical SEO, on-page optimization, structured data, Core Web Vitals, and content strategy. Use when the user wants better search visibility, SEO remediation, schema markup, sitemap/robots work, or keyword mapping.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/seo",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "seo"
+    ]
+  },
+  {
+    "name": "skill-comply",
+    "description": "Visualize whether skills, rules, and agent definitions are actually followed — auto-generates scenarios at 3 prompt strictness levels, runs agents, classifies behavioral sequences, and reports compliance rates with full tool call timelines. Use when checking whether agents actually follow the skills, rules, and definitions they were given, rather than assuming they do.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/skill-comply",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "skill comply"
+    ]
+  },
+  {
+    "name": "skill-scout",
+    "description": "Search existing local, marketplace, GitHub, and web skill sources before creating a new skill. Use when the user wants to create, build, fork, or find a skill for a workflow.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/skill-scout",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "skill scout"
+    ]
+  },
+  {
+    "name": "skill-stocktake",
+    "description": "Use when auditing Claude skills and commands for quality. Supports Quick Scan (changed skills only) and Full Stocktake modes with sequential subagent batch evaluation.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/skill-stocktake",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "skill stocktake"
+    ]
+  },
+  {
+    "name": "social-graph-ranker",
+    "description": "Weighted social-graph ranking for warm intro discovery, bridge scoring, and network gap analysis across X and LinkedIn. Use when the user wants the reusable graph-ranking engine itself, not the broader outreach or network-maintenance workflow layered on top of it.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/social-graph-ranker",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "social graph ranker"
+    ]
+  },
+  {
+    "name": "social-publisher",
+    "description": "Agent-driven scheduling and publishing of social media posts across 13 platforms via SocialClaw. Use when the user wants to publish to X, LinkedIn, Instagram, Facebook Pages, TikTok, Discord, Telegram, YouTube, Reddit, WordPress, or Pinterest — or when managing campaigns, uploading media, or monitoring post delivery status.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/social-publisher",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "social publisher"
+    ]
+  },
+  {
+    "name": "springboot-patterns",
+    "description": "Spring Boot architecture patterns, REST API design, layered services, data access, caching, async processing, and logging. Use for Java Spring Boot backend work. Use when building or reviewing a Spring Boot backend — REST layer, services, data access, caching, or async work.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/springboot-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "springboot patterns"
+    ]
+  },
+  {
+    "name": "springboot-security",
+    "description": "Spring Security best practices for authn/authz, validation, CSRF, secrets, headers, rate limiting, and dependency security in Java Spring Boot services. Use when reviewing Spring Security authn/authz, validation, CSRF, secrets, headers, or rate limiting.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/springboot-security",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "springboot security"
+    ]
+  },
+  {
+    "name": "springboot-tdd",
+    "description": "Test-driven development for Spring Boot using JUnit 5, Mockito, MockMvc, Testcontainers, and JaCoCo. Use when adding features, fixing bugs, or refactoring.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/springboot-tdd",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "springboot tdd"
+    ]
+  },
+  {
+    "name": "springboot-verification",
+    "description": "Verification loop for Spring Boot projects: build, static analysis, tests with coverage, security scans, and diff review before release or PR.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/springboot-verification",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "springboot verification"
+    ]
+  },
+  {
+    "name": "strategic-compact",
+    "description": "Suggests manual context compaction at logical intervals to preserve context through task phases rather than arbitrary auto-compaction. Use when a session is approaching a context limit and a task phase is a natural place to compact.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/strategic-compact",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "strategic compact"
+    ]
+  },
+  {
+    "name": "swift-actor-persistence",
+    "description": "Thread-safe data persistence in Swift using actors — in-memory cache with file-backed storage, eliminating data races by design. Use when persisting data in Swift and a data race or thread-safety problem needs designing out.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/swift-actor-persistence",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "swift actor persistence"
+    ]
+  },
+  {
+    "name": "swift-concurrency-6-2",
+    "description": "Swift 6.2 Approachable Concurrency — single-threaded by default, @concurrent for explicit background offloading, isolated conformances for main actor types. Use when adopting Swift 6.2 concurrency — offloading with @concurrent or resolving main-actor isolation.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/swift-concurrency-6-2",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "swift concurrency 6 2"
+    ]
+  },
+  {
+    "name": "swift-protocol-di-testing",
+    "description": "Protocol-based dependency injection for testable Swift code — mock file system, network, and external APIs using focused protocols and Swift Testing. Use when Swift code needs testing and file system, network, or external APIs must be mocked.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/swift-protocol-di-testing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "swift protocol di testing"
+    ]
+  },
+  {
+    "name": "swiftui-patterns",
+    "description": "SwiftUI architecture patterns, state management with @Observable, view composition, navigation, performance optimization, and modern iOS/macOS UI best practices. Use when building or reviewing SwiftUI views, @Observable state, navigation, or render performance.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/swiftui-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "swiftui patterns"
+    ]
+  },
+  {
+    "name": "taste",
+    "description": "A creative-direction (taste) layer for music videos and short-form edits in the angelcore / cloud-trance / hyperpop visual family. Distills a named-genre aesthetic vocabulary, a mood + color + light system, and a beat-synced editing grammar, then chains ECC's video skills (video-editing, fal-ai-media, remotion-video-creation, motion-*, content-engine) into one production pipeline. Use when the work is not just making a video function but making it feel intentional, when building a music video, a fancam/edit, a moodboard-driven reel, or when choosing a coherent visual direction for AI-generated b-roll.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/taste",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "taste"
+    ]
+  },
+  {
+    "name": "tasteforge-video",
+    "description": "Use for file-driven multimodal image, video, and 3D-asset discovery; taste interviews; distill or apply workflows; style-pack validation; editable EDL/FCPXML export; provenance audits; and offline planning that must fail closed before provider generation.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/tasteforge-video",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "tasteforge video"
+    ]
+  },
+  {
+    "name": "tdd-workflow",
+    "description": "Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with 80%+ coverage including unit, integration, and E2E tests.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/tdd-workflow",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "tdd workflow"
+    ]
+  },
+  {
+    "name": "team-agent-orchestration",
+    "description": "Run team-based orchestration for agent squads using work items, ownership, agent Kanban, merge gates, and control pane handoffs. Use when coordinating an agent squad with work items, ownership, Kanban, and merge gates.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/team-agent-orchestration",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "team agent orchestration"
+    ]
+  },
+  {
+    "name": "team-builder",
+    "description": "Interactive agent picker for composing and dispatching parallel teams. Use when composing and dispatching a parallel team of agents for a task.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/team-builder",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "team builder"
+    ]
+  },
+  {
+    "name": "terminal-opener",
+    "description": "Open an executable and its argument array in a visible terminal window through a reusable, shell-free launch plan with dry-run, JSON, capability detection, detached fallback, and standalone recovery modes. Use when Codex needs to open an interactive CLI, SSH session, local development process, sandbox, or other argv-based command in a new host terminal; diagnose whether a supported terminal is available; or provide an actionable plan when the requested terminal is unsupported.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/terminal-opener",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "terminal opener"
+    ]
+  },
+  {
+    "name": "terminal-ops",
+    "description": "Evidence-first repo execution workflow for ECC. Use when the user wants a command run, a repo checked, a CI failure debugged, or a narrow fix pushed with exact proof of what was executed and verified.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/terminal-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "terminal ops"
+    ]
+  },
+  {
+    "name": "tinystruct-patterns",
+    "description": "Expert guidance for developing with the tinystruct Java framework. Use when working on the tinystruct codebase or any project built on tinystruct — including creating Application classes, @Action-mapped routes, unit tests, ActionRegistry, HTTP/CLI dual-mode handling, the built-in HTTP server, the event system, JSON with Builder/Builders, database persistence with AbstractData, POJO generation, Server-Sent Events (SSE), file uploads, and outbound HTTP networking.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/tinystruct-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "tinystruct patterns"
+    ]
+  },
+  {
+    "name": "token-budget-advisor",
+    "description": ">-",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/token-budget-advisor",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "token budget advisor"
+    ]
+  },
+  {
+    "name": "ui-demo",
+    "description": "Record polished UI demo videos using Playwright. Use when the user asks to create a demo, walkthrough, screen recording, or tutorial video of a web application. Produces WebM videos with visible cursor, natural pacing, and professional feel.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ui-demo",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ui demo"
+    ]
+  },
+  {
+    "name": "ui-to-vue",
+    "description": "Use when the user has UI screenshots or design exports that need batch conversion into Vue 3 components, especially with Vant, Element Plus, or Ant Design Vue.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/ui-to-vue",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "ui to vue"
+    ]
+  },
+  {
+    "name": "uncloud",
+    "description": "Use when managing an Uncloud cluster — deploying services, configuring Caddy ingress, adding static proxy routes for non-cluster devices, publishing ports, scaling, inspecting logs, or managing machines and volumes with the `uc` CLI.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/uncloud",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "uncloud"
+    ]
+  },
+  {
+    "name": "unified-memory",
+    "description": "Share durable, inspectable context and handoffs between Claude, Codex, Hermes, Cursor, OpenCode, and other agents through the local ECC Memory Vault. Use when an agent must save work state, transfer context, resume another agent's task, or search shared project knowledge.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/unified-memory",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "unified memory"
+    ]
+  },
+  {
+    "name": "unified-notifications-ops",
+    "description": "Operate notifications as one ECC-native workflow across GitHub, Linear, desktop alerts, hooks, and connected communication surfaces. Use when the real problem is alert routing, deduplication, escalation, or inbox collapse.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/unified-notifications-ops",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "unified notifications ops"
+    ]
+  },
+  {
+    "name": "verification-loop",
+    "description": "A comprehensive verification system for Claude Code sessions. Use when verifying a Claude Code session's work before claiming it is complete.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/verification-loop",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "verification loop"
+    ]
+  },
+  {
+    "name": "video-editing",
+    "description": "AI-assisted video editing workflows for cutting, structuring, and augmenting real footage. Covers the full pipeline from raw capture through FFmpeg, Remotion, ElevenLabs, fal.ai, and final polish in Descript or CapCut. Use when the user wants to edit video, cut footage, create vlogs, or build video content.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/video-editing",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "video editing"
+    ]
+  },
+  {
+    "name": "videodb",
+    "description": "See, Understand, Act on video and audio. See- ingest from local files, URLs, RTSP/live feeds, or live record desktop; return realtime context and playable stream links. Understand- extract frames, build visual/semantic/temporal indexes, and search moments with timestamps and auto-clips. Act- transcode and normalize (codec, fps, resolution, aspect ratio), perform timeline edits (subtitles, text/image overlays, branding, audio overlays, dubbing, translation), generate media assets (image, audio, video), and create real time alerts for events from live streams or desktop capture. Use when ingesting, indexing, searching, editing, transcoding, or alerting on video or audio content.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/videodb",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "videodb"
+    ]
+  },
+  {
+    "name": "visa-doc-translate",
+    "description": "Translate visa application documents (images) to English and create a bilingual PDF with original and translation. Use when visa application document images must be translated to English as a bilingual PDF.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/visa-doc-translate",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "visa doc translate"
+    ]
+  },
+  {
+    "name": "vite-patterns",
+    "description": "Vite build tool patterns including config, plugins, HMR, env variables, proxy setup, SSR, library mode, dependency pre-bundling, and build optimization. Activate when working with vite.config.ts, Vite plugins, or Vite-based projects.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/vite-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "vite patterns"
+    ]
+  },
+  {
+    "name": "vue-patterns",
+    "description": "Vue.js 3 Composition API patterns, component architecture, reactivity best practices, Pinia state management, Vue Router navigation, and Nuxt SSR patterns. Activates for Vue, Nuxt, Vite, or Pinia projects. Use when building or reviewing Vue 3, Nuxt, or Pinia code — Composition API, reactivity, or router navigation.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/vue-patterns",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "vue patterns"
+    ]
+  },
+  {
+    "name": "windows-desktop-e2e",
+    "description": "E2E testing for Windows native desktop apps (WPF, WinForms, Win32/MFC, Qt) using pywinauto and Windows UI Automation. Use when writing E2E tests for a Windows native desktop app with pywinauto or UI Automation.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/windows-desktop-e2e",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "windows desktop e2e"
+    ]
+  },
+  {
+    "name": "workspace-surface-audit",
+    "description": "Audit the active repo, MCP servers, plugins, connectors, env surfaces, and harness setup, then recommend the highest-value ECC-native skills, hooks, agents, and operator workflows. Use when the user wants help setting up Claude Code or understanding what capabilities are actually available in their environment.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/workspace-surface-audit",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "workspace surface audit"
+    ]
+  },
+  {
+    "name": "x-api",
+    "description": "X/Twitter API integration for posting tweets, threads, reading timelines, search, and analytics. Covers OAuth auth patterns, rate limits, and platform-native content posting. Use when the user wants to interact with X programmatically.",
+    "category": "ECC Harness",
+    "repo": "affaan-m/ECC",
+    "path": "skills/x-api",
+    "trust_level": "trusted",
+    "tags": [
+      "ecc",
+      "agent-harness",
+      "x api"
+    ]
+  }
+]

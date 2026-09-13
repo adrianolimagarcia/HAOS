@@ -1768,6 +1768,13 @@ def _dispatch_once_locked(
     the PID so later ticks catch crashes before the TTL. Cap semantics:
     :func:`_tick_spawn_budget`."""
     result = DispatchResult()
+    # Conductor-inspired SignalGate: evaluate review / signal expirations and timeout actions
+    try:
+        from hermes.platform.workflow.durable import evaluate_signal_gates
+        evaluate_signal_gates(conn)
+    except Exception as _sig_err:
+        logger.debug("Signal gate evaluation failed: %s", _sig_err)
+
     _run_reclaim_phase(
         conn, result, stale_timeout_seconds=stale_timeout_seconds,
         failure_limit=failure_limit, reconcile_orphans=reconcile_orphans,
@@ -2250,6 +2257,8 @@ def _default_spawn(task: Task, workspace: str, *, board: Optional[str] = None) -
         env["HERMES_KANBAN_GOAL_MODE"] = "1"
         if task.goal_max_turns is not None:
             env["HERMES_KANBAN_GOAL_MAX_TURNS"] = str(int(task.goal_max_turns))
+    if task.body and "[ULTRAWORK" in task.body:
+        env["HAOS_ULTRAWORK_MODE"] = "1"
     for var in ("TERMINAL_TIMEOUT", "TERMINAL_MAX_FOREGROUND_TIMEOUT"):
         override = _worker_terminal_timeout_env(task.max_runtime_seconds, env.get(var))
         if override is not None:
@@ -2271,6 +2280,23 @@ def _default_spawn(task: Task, workspace: str, *, board: Optional[str] = None) -
     # `--cli` is the highest-precedence TUI override; dropping HERMES_TUI covers
     # older hermes builds on PATH that predate the flag's precedence.
     env.pop("HERMES_TUI", None)
+
+    # HAOS External Worker Dispatch (DSH, ACP, Codex, Claude Code)
+    try:
+        from hermes.platform.workers.external import resolve_external_worker, spawn_external_worker
+        ext_spec = resolve_external_worker(
+            task.assignee,
+            {"task_id": task.id, "workspace": workspace, "title": getattr(task, "title", "")},
+        )
+        if ext_spec is not None:
+            log_f = _open_worker_log(task, board)
+            try:
+                return spawn_external_worker(ext_spec, workspace, env, log_f)
+            except Exception as _ext_err:
+                log_f.close()
+                raise
+    except ImportError:
+        pass
 
     cmd = _worker_argv(task, profile_arg, env.get("HERMES_HOME"))
     # A worker spawned by a managed systemd gateway must leave the gateway's

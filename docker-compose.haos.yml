@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  haos-controlplane:
+    build:
+      context: .
+      dockerfile: Dockerfile.haos
+    container_name: haos-controlplane
+    restart: unless-stopped
+    ports:
+      - "8788:8788"
+    environment:
+      - HAOS_HOST=0.0.0.0
+      - HAOS_PORT=8788
+      - HAOS_HOME=/var/lib/haos
+      - HERMES_HOME=/var/lib/haos
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - haos-data:/var/lib/haos
+      - .:/workspace
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8788/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  haos-data:
+    driver: local

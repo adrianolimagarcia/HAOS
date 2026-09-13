@@ -521,9 +521,8 @@ def resolve_persist_behavior(
     if isinstance(model_cfg, dict):
         if not (model_cfg.get("default") or model_cfg.get("provider")):
             return True
-        if explicit_provider:
-            return False
-        return bool(model_cfg.get("persist_switch_by_default", False))
+        # Sempre persiste a escolha do usuário por padrão (último modelo usado), a menos que explicitamente cancelado
+        return bool(model_cfg.get("persist_switch_by_default", True))
     return not model_cfg
 
 
@@ -904,14 +903,15 @@ def _ollama_configured_base() -> tuple[dict, str]:
 
 
 def _unknown_provider_message(explicit_provider: str) -> str:
+    from hermes_constants import product_command
     msg = (
-        f"Unknown provider '{explicit_provider}'. Check 'hermes model' for available "
+        f"Unknown provider '{explicit_provider}'. Check '{product_command('model')}' for available "
         f"providers, or define it in config.yaml under 'providers:'.")
     try:  # Surface common config issues that cause provider resolution failures
         from hermes_cli.config import validate_config_structure
         issues = validate_config_structure()
         if issues:
-            msg += "\n\nRun 'hermes doctor' — config issues detected:" + "".join(f"\n  • {ci.message}" for ci in issues[:3])
+            msg += f"\n\nRun '{product_command('doctor')}' — config issues detected:" + "".join(f"\n  • {ci.message}" for ci in issues[:3])
     except Exception:
         pass
     return msg

@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""
+Hermes Agent CLI launcher (HAOS fork).
+
+Mirror of the upstream root ``hermes`` launcher. The fork replaced that root
+file with the ``hermes/`` package directory (namespace for ``hermes.platform``,
+per the approved HAOS tree), so the launcher now lives here and behaves like
+the installed ``hermes`` command, including subcommands such as ``gateway``,
+``cron``, and ``doctor``.
+
+Usage from the checkout root::
+
+    python bin/hermes [subcommand] ...
+"""
+
+if __name__ == "__main__":
+    from hermes_cli.main import main
+    main()

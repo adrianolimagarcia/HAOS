@@ -1030,6 +1030,15 @@ def _commit_tool_result(
     # Multimodal dicts become an OpenAI-style content list; text-only servers get a
     # string-safe fallback so a rejected image result never poisons history.
     _tool_content = agent._tool_result_content_for_active_model(function_name, persisted_result)
+
+    # HAOS Loop Hygiene: repeat-tool-reminder
+    try:
+        from agent.loop_hygiene import attach_repetition_reminder_if_needed
+        if isinstance(_tool_content, str):
+            _tool_content = attach_repetition_reminder_if_needed(agent, function_name, function_args, _tool_content)
+    except Exception as _hygiene_err:
+        logger.debug("Loop hygiene check failed: %s", _hygiene_err)
+
     tool_message = make_tool_result_message(function_name, _tool_content, tool_call_id, effect_disposition=effect_disposition)
     messages.append(tool_message)
     if not _flush_session_db_after_tool_progress(agent, messages, stage=f"tool result {function_name}"):
@@ -1473,12 +1482,25 @@ def _finish_quiet_tool_spinner(agent, spinner, function_name: str, function_args
 def _delegate_spinner_label(function_args: dict) -> str:
     action = str(function_args.get("action") or "").strip().lower()
     tasks = function_args.get("tasks")
+    role = str(function_args.get("role") or "").strip().lower()
+
+    if role in ("mayor", "town_mayor"):
+        role_tag = "👑 Mayor"
+    elif role in ("orchestrator", "sub_orchestrator"):
+        role_tag = "🏛️ Orchestrator"
+    elif role in ("reviewer", "qa"):
+        role_tag = "🛡️ Reviewer"
+    elif role:
+        role_tag = f"🤖 {role}"
+    else:
+        role_tag = "🔀 subagent"
+
     if action in ("list", "steer", "stop"):
-        return f"🔀 subagent {action}"
+        return f"{role_tag} {action}"
     if tasks and isinstance(tasks, list):
-        return f"🔀 delegating {len(tasks)} tasks · (/agents to monitor)"
+        return f"{role_tag} spawning {len(tasks)} workers · (/agents to monitor)"
     goal_preview = (function_args.get("goal") or "")[:30]
-    return f"🔀 {goal_preview} · (/agents to monitor)" if goal_preview else "🔀 delegating · (/agents to monitor)"
+    return f"{role_tag} {goal_preview} · (/agents to monitor)" if goal_preview else f"{role_tag} spawning · (/agents to monitor)"
 
 
 @dataclass

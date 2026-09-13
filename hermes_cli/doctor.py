@@ -153,7 +153,8 @@ def _print_summary(should_fix: bool, total: Finding) -> None:
         print()
         print(numbered)
         if not should_fix:
-            print(color("  Tip: run 'hermes doctor --fix' to auto-fix what's possible.", Colors.DIM))
+            from hermes_constants import product_command
+            print(color(f"  Tip: run '{product_command('doctor', '--fix')}' to auto-fix what's possible.", Colors.DIM))
     else:
         print(color("─" * 60, Colors.GREEN))
         print(color("  All checks passed! 🎉", Colors.GREEN, Colors.BOLD))

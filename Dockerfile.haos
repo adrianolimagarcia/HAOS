@@ -1,0 +1,41 @@
+# HAOS Standalone SOTA Multi-Agent Control Plane & Autonomous Engine
+FROM python:3.11-slim
+
+LABEL maintainer="HAOS Project <https://github.com/adrianolimagarcia/HAOS>"
+LABEL description="HAOS Autonomous Cognitive Multi-Agent Control Plane & Execution Engine"
+
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    HAOS_PORT=8788 \
+    HAOS_HOST=0.0.0.0 \
+    HAOS_HOME=/var/lib/haos \
+    HERMES_HOME=/var/lib/haos
+
+# Install runtime tools: git, curl, bash
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    bash \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install minimal base dependencies
+COPY pyproject.toml /app/pyproject.toml
+
+# Copy codebase
+COPY hermes /app/hermes
+COPY scripts /app/scripts
+
+# Create data directory and non-root user
+RUN mkdir -p /var/lib/haos && \
+    chmod 0755 /var/lib/haos && \
+    chmod -R a+rX /app
+
+EXPOSE 8788
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+  CMD curl -f http://127.0.0.1:8788/health || exit 1
+
+ENTRYPOINT ["python", "scripts/serve_controlplane.py"]

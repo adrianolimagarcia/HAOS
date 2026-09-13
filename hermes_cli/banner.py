@@ -6,6 +6,9 @@ import shutil
 import subprocess
 import threading
 import time
+import socket
+import datetime
+import platform
 from pathlib import Path
 from urllib.parse import urlparse
 from hermes_constants import get_hermes_home
@@ -57,12 +60,13 @@ def _skin_color(key: str, fallback: str) -> str:
 
 from hermes_cli import __version__ as VERSION, __release_date__ as RELEASE_DATE
 
-HERMES_AGENT_LOGO = """[bold #FFD700]██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
-[bold #FFD700]██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝[/]
-[#FFBF00]███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║[/]
-[#FFBF00]██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║[/]
-[#CD7F32]██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║[/]
-[#CD7F32]╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝[/]"""
+HERMES_AGENT_LOGO = """[bold #4FD1C5]  ██╗  ██╗ █████╗  ██████╗ ███████╗[/]
+[bold #4FD1C5]  ██║  ██║██╔══██╗██╔═══██╗██╔════╝[/]
+[bold #00E5FF]  ███████║███████║██║   ██║███████╗[/]
+[bold #00E5FF]  ██╔══██║██╔══██║██║   ██║╚════██║[/]
+[bold #7AA2FF]  ██║  ██║██║  ██║╚██████╔╝███████║[/]
+[bold #7AA2FF]  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝[/]
+[bold #8A94A6]  Hermes Agentic Multi-Agent Operating System[/]"""
 
 HERMES_CADUCEUS = """[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀⠀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
 [#CD7F32]⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣇⠸⣿⣿⠇⣸⣿⣿⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀[/]
@@ -483,7 +487,7 @@ def get_latest_release_tag(repo_dir: Optional[Path] = None) -> Optional[tuple]:
 
 def format_banner_version_label() -> str:
     """Return the version label shown in the startup banner title."""
-    base = f"Hermes Agent v{VERSION} ({RELEASE_DATE})"
+    base = f"HAOS · Hermes Agent v{VERSION} ({RELEASE_DATE})"
     state = get_git_banner_state()
     if not state:
         return base
@@ -815,7 +819,8 @@ def _banner_left_lines(model: str, cwd: str, session_id, context_length, provide
         return f" [dim {dim}]·[/] [dim {dim}]{label}[/]"
     lines = []
     ctx_str = _dim_sep(f"{_format_context_length(context_length)} context") if context_length else ""
-    nous_str = _dim_sep("Nous Research")
+    nous_str = _dim_sep("HAOS Engineering")
+
     if not (model or "").strip():
         # Credentials resolve lazily on the first message; the banner prints first. Ask the route
         # the same question so a fresh free-tier install shows its model, not a red "unconfigured".
@@ -884,51 +889,138 @@ def _banner_skill_lines(skills_by_category: Dict[str, List[str]], skills_enabled
     return lines
 
 
+def _make_motd_bar(percent: float, width: int = 12) -> str:
+    filled = int(round((percent / 100.0) * width))
+    filled = max(0, min(width, filled))
+    empty = width - filled
+    color = "#10B981" if percent < 60 else ("#F59E0B" if percent < 85 else "#EF4444")
+    return f"[{color}]" + "━" * filled + f"[/][#64748B]" + "─" * empty + f"[/] [{color}]{percent:4.1f}%[/]"
+
+
+def _check_port_listening(host: str, port: int, timeout: float = 0.15) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (OSError, ConnectionRefusedError):
+        return False
+
+
+def _get_tailscale_ip() -> str:
+    try:
+        import psutil
+        for iface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == socket.AF_INET and addr.address.startswith("100."):
+                    return addr.address
+    except Exception:
+        pass
+    return "127.0.0.1"
+
+
+def _get_uptime_str() -> str:
+    try:
+        import psutil
+        boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
+        delta = datetime.datetime.now() - boot_time
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+        return f"{days}d {hours}h {minutes}m" if days > 0 else f"{hours}h {minutes}m"
+    except Exception:
+        return "active"
+
+
+def _build_system_vitals_table() -> "Table":
+    from rich.table import Table
+    table = Table(box=None, show_header=False, expand=True, padding=(0, 1))
+    table.add_column("Key", style="bold #94A3B8", width=12)
+    table.add_column("Val", style="#F8FAFC")
+
+    distro = "Linux"
+    if Path("/etc/os-release").exists():
+        try:
+            for line in Path("/etc/os-release").read_text().splitlines():
+                if line.startswith("PRETTY_NAME="):
+                    distro = line.split("=", 1)[1].strip('"')
+                    break
+        except Exception:
+            pass
+    table.add_row("OS / Kernel", f"[#2DD4BF]{distro}[/] [dim]({platform.release()})[/]")
+    table.add_row("Uptime", f"[#F8FAFC]{_get_uptime_str()}[/] [dim]· {socket.gethostname()}[/]")
+
+    try:
+        import psutil
+        cpu_pct = psutil.cpu_percent(interval=None)
+        cores = psutil.cpu_count(logical=True)
+        table.add_row("CPU Load", f"{_make_motd_bar(cpu_pct)} [dim]({cores}t)[/]")
+
+        mem = psutil.virtual_memory()
+        mem_used = mem.used / (1024 ** 3)
+        mem_total = mem.total / (1024 ** 3)
+        table.add_row("Memory", f"{_make_motd_bar(mem.percent)} [dim]{mem_used:.1f}/{mem_total:.1f}G[/]")
+
+        disk = psutil.disk_usage("/")
+        disk_used = disk.used / (1024 ** 3)
+        disk_total = disk.total / (1024 ** 3)
+        table.add_row("Disk (/)", f"{_make_motd_bar(disk.percent)} [dim]{disk_used:.0f}/{disk_total:.0f}G[/]")
+    except Exception:
+        pass
+
+    if hasattr(os, "getloadavg"):
+        try:
+            l1, l5, l15 = os.getloadavg()
+            table.add_row("Load Avg", f"[#38BDF8]{l1:.2f}[/], [#38BDF8]{l5:.2f}[/], [#38BDF8]{l15:.2f}[/]")
+        except Exception:
+            pass
+    return table
+
+
+def _build_haos_runtime_table(model: str, provider: str, session_id: str, tools_count: int, skills_by_category: dict, term_cols: int = 100) -> "Table":
+    from rich.table import Table
+    table = Table(box=None, show_header=False, expand=True, padding=(0, 1))
+    table.add_column("Key", style="bold #94A3B8", width=14)
+    table.add_column("Val", style="#F8FAFC")
+
+    ts_ip = _get_tailscale_ip()
+
+    cp_online = _check_port_listening("127.0.0.1", 8788)
+    cp_badge = "[#10B981]● ONLINE[/]" if cp_online else "[#EF4444]○ OFFLINE[/]"
+    table.add_row("Control Plane", f"{cp_badge}  [#00F0FF]http://{ts_ip}:8788/[/]")
+
+    dash_online = _check_port_listening("127.0.0.1", 9191)
+    dash_badge = "[#10B981]● ONLINE[/]" if dash_online else "[#EF4444]○ OFFLINE[/]"
+    table.add_row("Hermes Config", f"{dash_badge}  [#00F0FF]http://{ts_ip}:9191/[/]")
+
+    prov_str = f" [dim]via[/] [#2DD4BF]{provider}[/]" if provider else ""
+    table.add_row("Model", f"[#A855F7]{model or 'default'}[/]{prov_str}")
+    table.add_row("Topology", "[#2DD4BF]GasTown[/] [dim](Mayor · Witness · Polecat)[/]")
+
+    if session_id:
+        table.add_row("Session", f"[#94A3B8]{session_id}[/]")
+    table.add_row("Tools & Data", f"[#10B981]{tools_count} tools[/] · [#10B981]SQLite WAL[/]")
+
+    if skills_by_category:
+        avail_width = max(term_cols // 2 + 15, 30)
+        for cat, items in sorted(skills_by_category.items())[:3]:
+            cat_avail = max(avail_width - len(cat) - 2, 20)
+            skills_str = _pack_skill_names(sorted(items), cat_avail)
+            table.add_row(f"{cat}", f"[#38BDF8]{skills_str}[/]")
+    return table
+
+
 def build_welcome_banner(
     console: "Console", model: str, cwd: str, tools: List[dict] = None, enabled_toolsets: List[str] = None,
     session_id: str = None, get_toolset_for_tool=None, context_length: int = None, provider: str = None,
     availability: Dict[str, Any] = None, skills_by_category: Dict[str, List[str]] = None,
 ):
-    """Build and print a welcome banner with caduceus on left and info on right.
-
-    When ``provider == "moa"``, ``model`` is a MoA preset name and the aggregator is rendered.
-    Passing a precomputed ``availability`` together with ``get_toolset_for_tool`` avoids any
-    ``model_tools`` import (banner snapshot replay).
-    """
+    """Build and print the HAOS executive MOTD startup dashboard."""
     from rich.panel import Panel
     from rich.table import Table
-    if get_toolset_for_tool is None:
-        from model_tools import get_toolset_for_tool
+    from rich.columns import Columns
+    from rich.box import ROUNDED
+
     tools = tools or []
-    enabled_toolsets = enabled_toolsets or []
-    if availability is None:
-        availability = compute_toolset_availability(enabled_toolsets)
-    _enabled_ts = {str(t) for t in enabled_toolsets}
-    # Resolve skin colors once for the entire banner
-    accent = _skin_color("banner_accent", "#FFBF00")
-    dim = _skin_color("banner_dim", "#B8860B")
-    text = _skin_color("banner_text", "#FFF8DC")
-    # Use skin's custom caduceus art if provided
-    _bskin = _quiet(_active_skin)
-    left_lines = ["", getattr(_bskin, "banner_hero", None) or HERMES_CADUCEUS, ""]
-    left_lines += _banner_left_lines(model, cwd, session_id, context_length, provider, accent=accent, dim=dim)
-    right_lines = _banner_tool_lines(
-        tools, availability.get("unavailable_toolsets", []), get_toolset_for_tool,
-        lazy_tools=set(availability.get("lazy_tools", [])), disabled_tools=set(availability.get("disabled_tools", [])),
-        accent=accent, dim=dim, text=text)
-    # MCP Servers section (only if configured) — see ``_mcp_configured`` for why the cheap probe.
-    mcp_status = _quiet(_probe_mcp_status, []) if _mcp_configured() else []
-    if mcp_status:
-        right_lines += ["", f"[bold {accent}]MCP Servers[/]"]
-        right_lines.extend(_mcp_server_line(srv, dim=dim, text=text) for srv in mcp_status)
-    right_lines += ["", f"[bold {accent}]Available Skills[/]"]
-    # The skills catalog is only reachable when the `skills` toolset is enabled (skill_view /
-    # skill_manage). When disabled (Blank Slate) the agent cannot load any skill, so advertising
-    # the on-disk catalog would be misleading — reflect the real state.
-    _skills_enabled = (not _enabled_ts) or ("skills" in _enabled_ts)
-    if not _skills_enabled:
-        skills_by_category = {}
-    elif skills_by_category is None:
+    if skills_by_category is None:
         skills_by_category = get_available_skills()
     total_skills = sum(len(s) for s in skills_by_category.values())
     right_lines += _banner_skill_lines(skills_by_category, _skills_enabled, dim=dim, text=text)
@@ -966,11 +1058,78 @@ def build_welcome_banner(
     release_info = get_latest_release_tag()
     if release_info:
         version_label = f"[link={release_info[1]}]{version_label}[/link]"
-    outer_panel = Panel(
-        layout_table, title=f"[bold {_skin_color('banner_title', '#FFD700')}]{version_label}[/]",
-        border_style=_skin_color("banner_border", "#CD7F32"), padding=(0, 2))
+
+    term_cols = shutil.get_terminal_size().columns
+
+    if term_cols < 80:
+        # Fallback compact banner for narrow screens
+        console.print(f"[bold #00E5FF]{version_label}[/]")
+        console.print(f"[dim]{model} · {len(tools)} tools · {total_skills} skills[/dim]\n")
+        return
+
+    # 1. Header Banner Panel
+    header_table = Table(box=None, show_header=False, expand=True, padding=(0, 2))
+    header_table.add_column("Logo", justify="left", width=42)
+    header_table.add_column("Meta", justify="left")
+
+    meta_text = f"""
+[bold #00F0FF]HAOS · Hermes Agentic Operating System[/]
+[bold #F8FAFC]Industrial Multi-Agent Distributed Execution Platform[/]
+[dim #94A3B8]Fork Architecture v0.21.0 · PEP-420 Canonical Freeze[/]
+[dim #2DD4BF]Tailscale Active: [/][bold #2DD4BF]{_get_tailscale_ip()}[/]
+"""
+    header_table.add_row(HERMES_AGENT_LOGO.strip(), meta_text.strip())
+
+    header_panel = Panel(
+        header_table,
+        title=f"[bold {_skin_color('banner_title', '#00E5FF')}]{version_label}[/]",
+        border_style=_skin_color("banner_border", "#0284C7"),
+        box=ROUNDED,
+        padding=(0, 1),
+    )
+
+    # 2. Dual-card columns: System Vitals & HAOS Runtime
+    left_panel = Panel(
+        _build_system_vitals_table(),
+        title="[bold #38BDF8]🖥️  SYSTEM VITALS[/]",
+        border_style="#0284C7",
+        box=ROUNDED,
+        padding=(0, 1),
+    )
+
+    right_panel = Panel(
+        _build_haos_runtime_table(model, provider, session_id, len(tools), skills_by_category, term_cols),
+        title="[bold #2DD4BF]⚡ HAOS MULTI-AGENT RUNTIME[/]",
+        border_style="#0284C7",
+        box=ROUNDED,
+        padding=(0, 1),
+    )
+
+    columns = Columns([left_panel, right_panel], expand=True, equal=True)
+
+    # 3. Footer Shortcuts Panel
+    shortcuts = Table(box=None, show_header=False, expand=True, padding=(0, 1))
+    shortcuts.add_column("C1", justify="center")
+    shortcuts.add_column("C2", justify="center")
+    shortcuts.add_column("C3", justify="center")
+    shortcuts.add_column("C4", justify="center")
+
+    shortcuts.add_row(
+        "[bold #00F0FF]haos[/] [dim]Interactive Agent[/]",
+        "[bold #2DD4BF]haos status[/] [dim]Diagnostics[/]",
+        "[bold #A855F7]haos-controlplane[/] [dim]Services[/]",
+        "[bold #F8FAFC]/help[/] [dim]Commands[/]",
+    )
+
+    footer_panel = Panel(
+        shortcuts,
+        border_style="#64748B",
+        box=ROUNDED,
+        padding=(0, 1),
+    )
+
     console.print()
-    if shutil.get_terminal_size().columns >= 95:
-        console.print(getattr(_bskin, "banner_logo", None) or HERMES_AGENT_LOGO)
-        console.print()
-    console.print(outer_panel)
+    console.print(header_panel)
+    console.print(columns)
+    console.print(footer_panel)
+

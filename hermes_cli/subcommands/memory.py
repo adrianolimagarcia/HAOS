@@ -30,4 +30,15 @@ def build_memory_parser(subparsers, *, cmd_memory: Callable) -> None:
     _reset_parser.add_argument(
         "--target", choices=["all", "memory", "user"], default="all",
         help="Which store to reset: 'all' (default), 'memory', or 'user'")
+
+    # HAOS Dream subcommands (idle consolidation + git audit trail)
+    _dream_parser = memory_sub.add_parser("dream", help="Run HAOS dream consolidation over recent sessions")
+    _dream_parser.add_argument("--dry-run", action="store_true", help="Inspect what would be consolidated without writing")
+
+    _log_parser = memory_sub.add_parser("log", help="Show HAOS memory git audit trail")
+    _log_parser.add_argument("-n", "--limit", type=int, default=10, help="Number of commits to show (default 10)")
+
+    _revert_parser = memory_sub.add_parser("revert", help="Rollback a dream consolidation commit")
+    _revert_parser.add_argument("sha", help="Git commit SHA to revert")
+
     memory_parser.set_defaults(func=cmd_memory)

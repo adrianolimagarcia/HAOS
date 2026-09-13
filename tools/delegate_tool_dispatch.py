@@ -96,6 +96,11 @@ def _report_child_done(parent_agent, spinner_ref, entry, tag, task_labels, n_tas
     if _err_line:
         completion_line += f" — {_err_line}"
     _print_completion_line(parent_agent, spinner_ref, completion_line)
+    try:
+        from hermes.platform.tasks.haos_delegation_bridge import haos_bridge_child_done
+        haos_bridge_child_done(tag or "", idx, entry)
+    except Exception:
+        pass
     if spinner_ref and remaining > 0:
         with _quiet("Spinner update_text failed: %s"):
             spinner_ref.update_text(f"🔀 {'[' + tag + '] ' if tag else ''}{remaining} task{'s' if remaining != 1 else ''} remaining")
@@ -174,6 +179,11 @@ def _execute_and_aggregate(batch: _Batch, *, honor_parent_interrupt: bool = True
                 batch.live_writers[_idx].finalize(entry)
             if _idx < len(batch.live_paths):
                 entry["live_transcript"] = batch.live_paths[_idx]
+        try:
+            from hermes.platform.tasks.haos_delegation_bridge import haos_bridge_child_done
+            haos_bridge_child_done(batch.live_deleg_id, _idx, entry)
+        except Exception:
+            pass
     update_manifest_statuses(batch.live_deleg_id, results)
 
     combined: Dict[str, Any] = {"results": results, "total_duration_seconds": total_duration}
@@ -427,6 +437,11 @@ def _dispatch_background(batch: _Batch) -> str:
 
 def _run_batch(batch: _Batch, background: bool) -> str:
     """Tool result JSON: a dispatch handle (background) or the joined combined results."""
+    try:
+        from hermes.platform.tasks.haos_delegation_bridge import haos_bridge_spawn_batch
+        haos_bridge_spawn_batch(batch)
+    except Exception:
+        pass
     if background:
         return _dispatch_background(batch)
     return json.dumps(_execute_and_aggregate(batch), ensure_ascii=False)

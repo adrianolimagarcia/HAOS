@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None
 import shlex
 import time
 import uuid

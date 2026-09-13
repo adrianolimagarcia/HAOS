@@ -72,11 +72,11 @@ def active_profile_may_override_home(hermes_root: str) -> bool:
 
 
 def _default_home() -> str:
-    return os.path.join(os.path.expanduser("~"), ".hermes")
+    return os.environ.get("HAOS_HOME", "").strip() or os.path.join(os.path.expanduser("~"), ".hermes")
 
 
 def _resolved_home() -> str:
-    return os.environ.get("HERMES_HOME", "").strip() or _default_home()
+    return os.environ.get("HAOS_HOME", "").strip() or os.environ.get("HERMES_HOME", "").strip() or _default_home()
 
 
 def container_mode_may_be_active() -> bool:

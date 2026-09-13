@@ -1,0 +1,4 @@
+name: hermes-fabric
+description: "HAOS Memory Fabric provider: unified federation of Obsidian, GraphRAG and DecisionStore"
+version: "1.0.0"
+entrypoint: "provider.py"

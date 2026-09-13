@@ -55,7 +55,73 @@ def _prune(worktree_gc, repo_root: str, args) -> int:
     return 0
 
 
-_ACTIONS = {"list": _list, "prune": _prune}
+def _create(worktree_gc, repo_root: str, args) -> int:
+    task_id = getattr(args, "task_id", None)
+    if not task_id:
+        print("Error: task_id is required for create (e.g. haos worktree create T-101)")
+        return 1
+    from pathlib import Path
+    from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+    mgr = GitWorktreeManager(repo_root=Path(repo_root))
+    base_branch = getattr(args, "base", None)
+    try:
+        wt_path = mgr.create_worktree(task_id=task_id, base_branch=base_branch)
+        print("✓ Worktree created successfully:")
+        print(f"  • Path:   {wt_path}")
+        print(f"  • Branch: haos/task-{task_id}")
+        return 0
+    except Exception as exc:
+        print(f"✗ Failed to create worktree: {exc}")
+        return 1
+
+
+def _remove(worktree_gc, repo_root: str, args) -> int:
+    task_id = getattr(args, "task_id", None)
+    if not task_id:
+        print("Error: task_id is required for remove")
+        return 1
+    from pathlib import Path
+    from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+    mgr = GitWorktreeManager(repo_root=Path(repo_root))
+    force = bool(getattr(args, "force", True))
+    delete_branch = bool(getattr(args, "delete_branch", False))
+    removed = mgr.remove_worktree(task_id=task_id, force=force, delete_branch=delete_branch)
+    if removed:
+        print(f"✓ Worktree task-{task_id} removed.")
+        return 0
+    else:
+        print(f"✗ Worktree task-{task_id} not found.")
+        return 1
+
+
+def _merge(worktree_gc, repo_root: str, args) -> int:
+    task_id = getattr(args, "task_id", None)
+    if not task_id:
+        print("Error: task_id is required for merge")
+        return 1
+    from pathlib import Path
+    from hermes.platform.workspaces.git_worktree import GitWorktreeManager
+    mgr = GitWorktreeManager(repo_root=Path(repo_root))
+    target = getattr(args, "target", None)
+    squash = bool(getattr(args, "squash", False))
+    res = mgr.merge_worktree(task_id=task_id, target_branch=target, squash=squash)
+    if res.get("success"):
+        print(f"✓ Worktree task-{task_id} merged into {res.get('target_branch')}:")
+        if res.get("output"):
+            print(f"  {res['output']}")
+        return 0
+    else:
+        print(f"✗ Merge failed: {res.get('error')}")
+        return 1
+
+
+_ACTIONS = {
+    "list": _list,
+    "prune": _prune,
+    "create": _create,
+    "remove": _remove,
+    "merge": _merge,
+}
 
 
 def cmd_worktree(args) -> int:

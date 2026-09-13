@@ -338,7 +338,55 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
 [#F29C38]⠀⠀⠀⠀⠀⠀⠀⠀⣰⡿⢿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
 [#F29C38]⠀⠀⠀⠀⠀⠀⠀⣼⡟⠀⠀⢻⣧⠀⠀⠀⠀⠀⠀⠀⠀[/]
 [dim #7A3511]⠀⠀⠀⠀⠀⠀⠀tail flame lit⠀⠀⠀⠀⠀⠀⠀⠀[/]""",
-    }}
+    },
+    "haos": {
+        "name": "haos", "description": "Official HAOS Theme — Cybernetic Cyan & Lightning Core",
+        "colors": {
+            "banner_border": "#00E5FF", "banner_title": "#00E5FF", "banner_accent": "#00B0FF",
+            "banner_dim": "#00838F", "banner_text": "#E0F7FA", "ui_accent": "#00E5FF",
+            "ui_label": "#00E5FF", "ui_ok": "#00E676", "ui_error": "#FF1744", "ui_warn": "#FFD600",
+            "prompt": "#00E5FF", "input_rule": "#00838F", "response_border": "#00E5FF",
+            "status_bar_bg": "#001E26", "status_bar_text": "#E0F7FA",
+            "status_bar_strong": "#00E5FF", "status_bar_dim": "#00838F",
+            "status_bar_good": "#00E676", "status_bar_warn": "#FFD600", "status_bar_bad": "#FF1744",
+            "status_bar_critical": "#FF1744", "session_label": "#00E5FF",
+            "session_border": "#00838F", "completion_menu_bg": "#001E26",
+            "completion_menu_current_bg": "#00363A", "completion_menu_meta_bg": "#00141A",
+            "completion_menu_meta_current_bg": "#004D40", "selection_bg": "#004D40",
+            "shell_dollar": "#00E5FF", "voice_status_bg": "#001E26"},
+        "spinner": {
+            "waiting_faces": ["(⚡)", "(◈)", "(⚙)", "(❖)", "(✦)"],
+            "thinking_faces": ["(⚡)", "(◈)", "(⚙)", "(❖)", "(✦)"],
+            "thinking_verbs": [
+                "routing dispatch", "evaluating posture", "syncing kanban",
+                "orchestrating team", "persisting event stream", "compiling context",
+                "ouroboros loop", "executing lane worker"],
+            "wings": _wings("⚡", "◈", "⚙", "✦")},
+        "branding": _branding("HAOS", "⚡", "HAOS Kernel Standby. ⚡", prompt="⚡", help_header="(⚡) HAOS Agent Commands"),
+        "tool_prefix": "┊",
+        "banner_logo": """[bold #00E5FF]██╗  ██╗ █████╗  ██████╗ ███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
+[bold #00E5FF]██║  ██║██╔══██╗██╔═══██╗██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝[/]
+[#00B0FF]███████║███████║██║   ██║███████╗█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║[/]
+[#00B0FF]██╔══██║██╔══██║██║   ██║╚════██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║[/]
+[#2979FF]██║  ██║██║  ██║╚██████╔╝███████║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║[/]
+[#00838F]╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝[/]
+[dim #00E5FF] ⚡ HAOS · Hermes Agent Operating System v1.1[/]""",
+        "banner_hero": """[bold #00E5FF]      .---.     [/]
+[bold #00E5FF]     /     \\    [/]
+[#00B0FF] .--+   ⚡   +--.[/]
+[#00B0FF]  \\  \\     /  / [/]
+[#2979FF]   +  H---A  +  [/]
+[#2979FF]    \\   ⚡   /   [/]
+[#00E5FF]     +--|--+    [/]
+[#00B0FF]    /   ⚡   \\   [/]
+[#00B0FF]   +  O---S  +  [/]
+[#2979FF]  /  /     \\  \\ [/]
+[#2979FF] '--+   ⚡   +--'[/]
+[bold #00838F]     \\     /    [/]
+[bold #00838F]      '---'     [/]
+[bold #00E5FF]   [ H A O S ]  [/]""",
+    },
+}
 
 _active_skin: Optional[SkinConfig] = None
 _active_skin_name: str = "default"
@@ -423,9 +471,12 @@ def load_skin(name: str) -> SkinConfig:
     """Load a skin by name: user skins first, then built-in, then default."""
     user_file = _skins_dir() / f"{name}.yaml"
     data = _load_skin_from_yaml(user_file) if user_file.is_file() else None
-    if not data and name not in _BUILTIN_SKINS:
+    if not data:
+        data = _BUILTIN_SKINS.get(name)
+    if not data:
         logger.warning("Skin '%s' not found, using default", name)
-    return _build_skin_config(data or _BUILTIN_SKINS.get(name) or _BUILTIN_SKINS["default"])
+        data = _BUILTIN_SKINS["default"]
+    return _build_skin_config(data)
 
 
 def get_active_skin() -> SkinConfig:

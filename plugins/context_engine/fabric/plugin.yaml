@@ -1,0 +1,4 @@
+name: fabric
+description: "HAOS Context Fabric engine: compile task context, enforce posture isolation, prevent injection and maintain stable prefix caching"
+version: "1.0.0"
+entrypoint: "engine.py"

@@ -31,6 +31,9 @@ from urllib.parse import urlparse
 from hermes_cli.config import (
     get_hermes_home, get_config_path, read_raw_config, require_readable_config_before_write)
 from hermes_constants import OPENROUTER_BASE_URL, hermes_home_key, secure_parent_dir
+
+from hermes_constants import OPENROUTER_BASE_URL, secure_parent_dir
+from hermes_constants import product_command as _product_cmd  # noqa: PLC0415
 from agent.credential_persistence import sanitize_borrowed_credential_payload
 from utils import atomic_json_write, atomic_yaml_write, env_float, is_truthy_value  # noqa: F401  (env_float: agent.credential_pool reads auth_mod.env_float)
 from hermes_cli.auth_zai_kimi import (  # noqa: F401  re-exported
@@ -1213,7 +1216,7 @@ def _get_config_hint_for_unknown_provider(provider_name: str) -> str:
         issues = validate_config_structure()
         if not issues:
             return ""
-        lines = ["Config issue detected — run 'hermes doctor' for full diagnostics:"]
+        lines = [f"Config issue detected — run '{_product_cmd('doctor')}' for full diagnostics:"]
         for ci in issues:
             lines.append(f"  [{'ERROR' if ci.severity == 'error' else 'WARNING'}] {ci.message}")
             if ci.hint and ci.hint.splitlines()[0]:
@@ -1241,7 +1244,7 @@ def _refuse_env_adoption_if_config_corrupt() -> None:
     raise AuthError(
         f"config.yaml at {path} is corrupt ({err}) — refusing to auto-select "
         f"an inference provider from environment keys. Fix the YAML (a backup "
-        f"was saved next to it) or run hermes setup.",
+        f"was saved next to it) or run {_product_cmd('setup')}.",
         code="corrupt_config")
 
 
@@ -1429,8 +1432,8 @@ def resolve_provider(
         return normalized
     if normalized != "auto":
         hint = _get_config_hint_for_unknown_provider(normalized)
-        tail = (f"\n\n{hint}" if hint else " Check 'hermes model' for available providers, "
-                "or run 'hermes doctor' to diagnose config issues.")
+        tail = (f"\n\n{hint}" if hint else f" Check '{_product_cmd('model')}' for available providers, "
+                f"or run '{_product_cmd('doctor')}' to diagnose config issues.")
         raise AuthError(f"Unknown provider '{normalized}'." + tail, code="invalid_provider")
 
     if explicit_api_key or explicit_base_url:  # one-off CLI creds always mean openrouter/custom
@@ -1486,10 +1489,12 @@ def resolve_provider(
             return "bedrock"
     except ImportError:
         pass  # boto3 not installed
+    from hermes_constants import get_hermes_home
+    _env_hint = get_hermes_home() / ".env"
     raise AuthError(
-        "No inference provider configured. Run 'hermes model' to choose a "
-        "provider and model, or set an API key (OPENROUTER_API_KEY, "
-        "OPENAI_API_KEY, etc.) in ~/.hermes/.env.",
+        f"No inference provider configured. Run '{_product_cmd('model')}' to choose a "
+        f"provider and model, or set an API key (OPENROUTER_API_KEY, "
+        f"OPENAI_API_KEY, etc.) in {_env_hint}.",
         code="no_provider_configured")
 
 
@@ -2006,7 +2011,7 @@ def _get_azure_foundry_auth_status() -> Dict[str, Any]:
                 credential_verified=False, logged_in=bool(installed),
                 hint=(
                     "azure-identity is installed; live credential validation "
-                    "is skipped here. Run `hermes doctor` to verify token acquisition."
+                    f"is skipped here. Run `{_product_cmd('doctor')}` to verify token acquisition."
                 ) if installed else (
                     "azure-identity not installed. Install with: "
                     "pip install azure-identity  (or rely on Hermes' "
@@ -2307,3 +2312,4 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----
+

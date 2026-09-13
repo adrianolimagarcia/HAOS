@@ -218,16 +218,18 @@ class CLIAgentSetupMixin:
                     base_url, runtime.get("source", ""))
             else:
                 _prov = (resolved_provider or self.requested_provider or "").strip()
+                from hermes_constants import product_command
                 if _prov and _prov != "auto":
                     print(f"\n⚠️  No API key found for provider '{_prov}'.")
                 else:
                     print("\n⚠️  No inference provider is configured.")
-                print("   Run 'hermes model' to choose a provider, or "
-                      "'hermes setup' for first-time setup.")
+                print(f"   Run '{product_command('model')}' to choose a provider, or "
+                      f"'{product_command('setup')}' for first-time setup.")
                 return False
         if not isinstance(base_url, str) or not base_url:
+            from hermes_constants import product_command
             print("\n⚠️  Provider resolver returned an empty base URL. "
-                  "Check your provider config or run: hermes setup")
+                  f"Check your provider config or run: {product_command('setup')}")
             return False
         credentials_changed = api_key != self.api_key or base_url != self.base_url
         routing_changed = resolved_routing != (self.provider, self.api_mode, self.acp_command, self.acp_args)

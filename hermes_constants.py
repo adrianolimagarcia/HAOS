@@ -43,7 +43,9 @@ def get_hermes_home_override() -> str | None:
 
 
 def _get_platform_default_hermes_home() -> Path:
-    """Return the platform-native default Hermes home path."""
+    """Return the platform-native default Hermes home path (HAOS_HOME takes precedence)."""
+    if "HAOS_HOME" in os.environ and os.environ["HAOS_HOME"].strip():
+        return Path(os.environ["HAOS_HOME"].strip()).expanduser()
     if sys.platform == "win32":
         local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
         base = Path(local_appdata) if local_appdata else Path.home() / "AppData" / "Local"
@@ -68,6 +70,32 @@ def sudo_invoker_default_home() -> Path | None:
         return Path(pwd.getpwnam(sudo_user).pw_dir) / ".hermes"
     except KeyError:  # SUDO_USER not in passwd (chroot/container)
         return None
+
+def is_haos_environment() -> bool:
+    """Return True if running under HAOS context (HAOS_HOME is set, or active home is ~/.haos)."""
+    explicit_hermes = os.environ.get("HERMES_HOME", "").strip()
+    if explicit_hermes and not ("haos" in explicit_hermes.lower()):
+        return False
+    if "HAOS_HOME" in os.environ and os.environ["HAOS_HOME"].strip():
+        return True
+    try:
+        home_str = str(get_hermes_home())
+        if ".haos" in home_str or "haos" in home_str.lower():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def product_cli_name() -> str:
+    """Canonical user-facing CLI name for the active product: ``"haos"`` under HAOS, else ``"hermes"``."""
+    return "haos" if is_haos_environment() else "hermes"
+
+
+def product_command(*words: str) -> str:
+    """Brand a suggested command line for the active product, e.g. ``product_command("doctor")`` → ``"haos doctor"``."""
+    return " ".join((product_cli_name(),) + tuple(w for w in words if w))
+
 
 
 def _warn_profile_fallback_once() -> None:
@@ -153,7 +181,7 @@ def get_process_hermes_home() -> Path:
     For process-level assets (theme YAML, dashboard plugin manifests) that must stay visible while a
     request is scoped to another profile (e.g. embedded ``/chat`` under ``--open-profile``).
     """
-    val = os.environ.get("HERMES_HOME", "").strip()
+    val = os.environ.get("HERMES_HOME", "").strip() or os.environ.get("HAOS_HOME", "").strip()
     return Path(val) if val else _get_platform_default_hermes_home()
 
 
@@ -1291,3 +1319,4 @@ def emit_partial_update_hint(exc: BaseException, *, file=None) -> bool:
     for line in (f"Error: {exc}", *lines):
         print(line, file=sys.stderr if file is None else file)
     return True
+

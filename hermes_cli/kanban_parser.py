@@ -195,6 +195,8 @@ _SPECS = [
                   "keeps going in the same session until the judge agrees it's "
                   "complete (or the turn budget runs out, which blocks the card for "
                   "review). Best for open-ended cards one shot rarely finishes."),
+        _arg("-u", "--ultrawork", action="store_true", dest="ultrawork",
+             help="Run the worker in Ultrawork mode (OmO-inspired): autonomous high-intensity execution with enforced testing and self-healing."),
         _arg("--goal-max-turns", type=int, metavar="N", dest="goal_max_turns",
              help="Turn budget for --goal workers (default 20). Ignored without --goal."),
         _arg("--initial-status", choices=sorted(kb.VALID_INITIAL_STATUSES), default="running",

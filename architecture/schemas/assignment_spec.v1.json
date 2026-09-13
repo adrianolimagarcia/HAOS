@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssignmentSpec",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["schema_version", "task_id", "task_revision", "run_id", "execution_shape", "lane", "agent_mode", "posture_id", "model_profile_id"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "task_id": { "type": "string" },
+    "task_revision": { "type": "integer" },
+    "run_id": { "type": "string" },
+    "execution_shape": { "type": "string" },
+    "lane": { "type": "string" },
+    "agent_mode": { "type": "string" },
+    "posture_id": { "type": "string" },
+    "model_profile_id": { "type": "string" },
+    "resolved_model_family": { "type": "string" },
+    "resolved_model_variant": { "type": "string" },
+    "posture_version": { "type": "integer", "default": 1 },
+    "model_profile_version": { "type": "integer", "default": 1 }
+  }
+}

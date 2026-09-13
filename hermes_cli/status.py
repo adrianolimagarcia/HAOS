@@ -348,8 +348,9 @@ def _render_deep(ctx):
 
 
 def _render_footer(ctx):
-    _banner(("─" * 60, "  Run 'hermes doctor' for detailed diagnostics", "  Run 'hermes setup' to configure"),
-            Colors.DIM)
+    from hermes_constants import product_command
+    _banner(("─" * 60, f"  Run '{product_command('doctor')}' for detailed diagnostics",
+             f"  Run '{product_command('setup')}' to configure"), Colors.DIM)
     print()
 
 

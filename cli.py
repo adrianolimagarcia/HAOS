@@ -2747,6 +2747,18 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self.disabled_toolsets = parse_config_string_list(CLI_CONFIG["agent"].get("disabled_toolsets"))
 
         if toolsets and "all" not in toolsets and "*" not in toolsets:
+            # Plugin toolset names (e.g. `a2a`, `dsh-bridge`) only enter the registry
+            # when plugin discovery runs (a side effect of importing model_tools). A
+            # fresh `hermes chat` worker validates toolsets here before that import,
+            # so a real plugin toolset would be misreported as unknown even though it
+            # resolves later in the same process. Discovery is idempotent; run it first
+            # so validation sees plugin-registered toolsets (see plugins/AGENTS.md).
+            try:
+                from hermes_cli.plugins import discover_plugins
+
+                discover_plugins()
+            except Exception:
+                logger.debug("plugin discovery failed during toolset validation", exc_info=True)
             # MCP server names only resolve after discover_mcp_tools runs; skip them here.
             mcp_names = set((CLI_CONFIG.get("mcp_servers") or {}).keys())
             invalid = [t for t in toolsets if not validate_toolset(t) and t not in mcp_names]
@@ -3643,7 +3655,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self._display_resumed_history()
 
         _welcome_skin = None  # stays None when the skin engine failed
-        _welcome_text = "Welcome to Hermes Agent! Type your message or /help for commands."
+        _welcome_text = "Welcome to HAOS (Hermes Agentic OS)! Type your message or /help for commands."
         _welcome_color = "#FFF8DC"
         try:
             from hermes_cli.skin_engine import get_active_skin
@@ -4265,6 +4277,8 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
             from hermes_cli.tools_config import _get_platform_tools
             toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
 
+    if not skills:
+        skills = (CLI_CONFIG.get("skills") or {}).get("default_skills") or CLI_CONFIG.get("default_skills") or ["haos-control-plane", "haos-lane-execution"]
     parsed_skills = _parse_skills_argument(skills)
 
     try:
