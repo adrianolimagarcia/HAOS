@@ -859,9 +859,10 @@ class KanbanAdapter:
 
     def _touch_run(self, task_id: str) -> None:
         run = self._load_run(task_id)
-        if run is not None:
-            run.heartbeat_at = time.time()
-            self._store_run(task_id, run)
+        if run is None or run.status == "ended":
+            return  # P10: missão longa nunca reanima um run encerrado
+        run.heartbeat_at = time.time()
+        self._store_run(task_id, run)
 
     # ------------------------------------------------------------------ #
     # execution plan persistence

@@ -13,6 +13,7 @@ These are HAOS presentation/extensions of the canonical upstream Kanban run
 additive meta table — they never own lifecycle state of their own.
 """
 
+import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
 
@@ -63,8 +64,60 @@ class TaskRun:
         return asdict(self)
 
     def end(self, exit_reason: str) -> None:
+        """Terminal idempotente (HAOS P10 — run contract): o PRIMEIRO
+        exit_reason vence. Um run encerrado não muda de causa depois;
+        chamadas seguintes são no-op."""
+        if self.status == "ended":
+            return
         self.status = "ended"
         self.exit_reason = exit_reason
+
+    _VALID_STATUSES = frozenset({"running", "ended"})
+
+    def validate_contract(
+        self,
+        now: Optional[float] = None,
+        max_idle_seconds: Optional[float] = None,
+    ) -> List[str]:
+        """Verifica os invariantes do run (HAOS P10 — run contract nas
+        missões longas do kanban). Devolve a lista de violações (vazia =
+        contrato válido); determinística, nunca levanta.
+
+        Invariantes: status ∈ {running, ended}; started_at > 0; heartbeat_at
+        (quando presente) nunca anterior a started_at; um run ``ended`` exige
+        exit_reason preenchido; um run ``running`` com heartbeat ausente/velho
+        além de ``max_idle_seconds`` está PRESO (violação). Sem
+        ``max_idle_seconds``, nenhum run running é acusado de preso por tempo.
+        """
+        violations: List[str] = []
+        if self.status not in self._VALID_STATUSES:
+            violations.append(
+                f"status invalido: {self.status!r} (esperado running|ended)"
+            )
+        if not (isinstance(self.started_at, (int, float)) and self.started_at > 0):
+            violations.append("started_at deve ser > 0")
+        if self.heartbeat_at is not None:
+            if not (
+                isinstance(self.heartbeat_at, (int, float))
+                and self.heartbeat_at >= self.started_at
+            ):
+                violations.append(
+                    "heartbeat_at nao pode ser anterior a started_at"
+                )
+        if self.status == "ended" and not (
+            self.exit_reason and str(self.exit_reason).strip()
+        ):
+            violations.append("run encerrado (ended) exige exit_reason preenchido")
+        if self.status == "running" and max_idle_seconds is not None and max_idle_seconds > 0:
+            ref = self.heartbeat_at if self.heartbeat_at is not None else self.started_at
+            now = now if now is not None else time.time()
+            idle = now - ref
+            if idle > max_idle_seconds:
+                violations.append(
+                    f"run preso (running) sem heartbeat ha {idle:.0f}s "
+                    f"> max_idle_seconds={max_idle_seconds:g}"
+                )
+        return violations
 
 
 @dataclass
