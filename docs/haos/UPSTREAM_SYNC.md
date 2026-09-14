@@ -322,16 +322,46 @@ são não relacionadas com a do fork antigo, então `pull --ff-only` não serve 
    o usuário `haos` de escrever na árvore (e quebrou `git checkout`/`reset`). Corrigido com
    `chown -R haos:haos /opt/haos`; num próximo deploy, extrair como o usuário do serviço (ou
    `tar --no-same-owner`) evita o problema.
-5. **Trabalho local da VM que NÃO está no repo** (untracked, preservado, aguardando decisão):
-   `plugins/model-providers/a6api/`, `plugins/model-providers/antigravity/`,
-   `wrapper-antigravity/`, `tests/e2e/restart_safe_scope_smoke.py`,
-   `tests/e2e/test_restart_safe_scope_smoke.py`, `tests/install/install-update-e2e.sh` e
-   `distro/haos-linux/config/includes.chroot/etc/skel/seed-haos/`.
+5. **Arquivos untracked em `/opt/haos` — investigados, NÃO é trabalho perdido** (ver a seção
+   "WIP da VM" abaixo): os plugins `model-providers/a6api/`, `model-providers/antigravity/` e
+   `wrapper-antigravity/` são o payload da ISO que vive no repo em
+   `distro/haos-linux/config/includes.chroot/opt/haos/...`; o deploy apenas os copiou para o
+   layout de runtime do appliance.
 
 Verificação final: `haos doctor` rc=0 na árvore local; VM com `haos-gateway`, `haos-edge`,
 `haos-dns` e `haos-mesh` ativos; job nativo `SYSTEM - cron: manutencao noturna` presente com
 execuções `source=builtin`; ticker do cron com heartbeat; DNS do nó resolvendo; host e VM no
 mesmo commit — **E2E PASS=8 FAIL=0** (igual ao baseline).
+
+### Auditoria de perda contra o tip do fork (após a certificação)
+
+`git ls-tree -r 362abab470` vs `HEAD` deu 645 arquivos ausentes. Discriminadores, em ordem:
+**blob idêntico em outro caminho** (440 — só mudaram de lugar), **nome normalizado igual sem os
+números de issue** (196 — o upstream renomeou), e o resto revisado à mão. Sobraram 9 candidatos:
+
+| Candidato | Veredito |
+|---|---|
+| `tests/cron/test_cron_drift_alert_once.py` (3 testes) | **recuperado** — o guard de drift existe e alerta uma vez por job; o upstream cobre o formato alert-once em `test_preflight_config.py`, mas não o ramo de drift |
+| `tests/hermes_cli/test_model_picker_scroll.py` (8 testes) | **recuperado** — é o viewport do picker em curses; o `test_model_picker_viewport.py` do upstream é o do prompt_toolkit (arquivos distintos, ambos existiam no fork) |
+| `tests/test_process_loop_event_loop_warning.py` (5 testes) | **recuperado** — cobre o `get_running_loop()` documentado em `cli.py:1643`; nenhum teste do upstream cita #19285 |
+| `tests/gateway/test_max_tokens_propagation.py` | descartado — **obsoleto**: o upstream removeu de propósito os caps de geração impostos pelo usuário (`tests/gateway/test_output_caps_removed.py`) e o teste assere o comportamento antigo |
+| `hermes_cli/plugin_index.py`, `hermes_cli/data/plugin_index.json`, `tests/hermes_cli/test_plugin_index_search.py` | descartados — índice comunitário aposentado pelo upstream (`46ab5aa365`) |
+| `tests/install/install-update-e2e.sh` | descartado — aposentado pelo upstream; a função vive em `tests/scripts/install/` + `tests/scripts/desktop_update/` |
+| `tests/test_minisweagent_path.py` | descartado — placeholder vazio de propósito ("minisweagent_path.py was removed — see PR #2804") |
+
+Verificação: 4 arquivos, 18 testes passando (inclui `tests/test_tests_tree_layout.py`), e
+`tests/cron/` + `tests/gateway/test_output_caps_removed.py` = 111 arquivos, 1315 passando, 0
+falhando.
+
+### WIP da VM que aparece como untracked (investigado)
+
+Os plugins `model-providers/a6api/`, `model-providers/antigravity/` e `wrapper-antigravity/` são o
+**payload da ISO** que vive no repo em `distro/haos-linux/config/includes.chroot/opt/haos/...`
+(presentes no tip do fork E na árvore sincronizada) — o deploy os copiou para o layout de runtime
+do appliance, e é por isso que aparecem como untracked. Os que realmente não existem em nenhum
+branch (`tests/e2e/restart_safe_scope_smoke.py`, `tests/e2e/test_restart_safe_scope_smoke.py`,
+`skel/seed-haos/`) foram verificados com `git log --all` (vazio para esses caminhos) e ficaram
+preservados no appliance.
 
 ## Pendência futura (registrada)
 
@@ -340,6 +370,7 @@ mesmo commit — **E2E PASS=8 FAIL=0** (igual ao baseline).
   o upstream avançar de novo.
 - **672 arquivos classe "ambos"**: revisão por arquivo (nossa mudança + upstream).
 - **232 módulos novos do upstream**: entraram junto com o port do core (fase futura).
-- **WIP local da VM** (item 5 acima): decidir se entra no repo (o do host já entrou).
+- **WIP local da VM**: investigado e resolvido — era o payload da ISO em `distro/` (ver a seção
+  "WIP da VM que aparece como untracked"); nada a resgatar.
 - **ISO**: bloqueado por ordem do dono — será o último passo, após todas as pendências,
   com autorização explícita. (Registrado em 19/09/2026; não criar.)
