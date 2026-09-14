@@ -501,12 +501,53 @@ lados** (58 auto-mergeados + **7 com conflito textual**, os mesmos 7 que o `merg
   aparecem falhadas na máquina. O `pool-rank` roda de `/run/media/.../hermes/pool-rank/`
   (fora deste repositório) e já falhava **44 vezes em 3 dias** antes deste deploy.
 
+## Quarta passada de sync (1ad89ac018 → 40f2702b22, 7 commits)
+
+Passada curta e limpa, executada sob autorização explícita do dono com guardrails (branch
+dedicada + rollback, snapshot do lab antes de mutar, ISO intocada, testes alvo, parada/escalada
+em conflito não resolvível, mutação irreversível, risco fora do lab, falha real de teste ou
+mudança de prioridade).
+
+- Escopo: **27 arquivos**, +507/−26, **4 arquivos tocados pelos dois lados**, **0 deleções e 0
+  renames**, **0 conflitos** (o `merge-tree --write-tree` deu exit 0 e o merge real confirmou).
+- Conteúdo do upstream: font picker do desktop (nova chave `desktop.font_family` em
+  `config_defaults.py`), `manage_connections` ausente para contas não habilitadas no portal,
+  guard de plugin (confirmação de capacidades JS ambíguas) e doc do instalador macOS.
+- Merge commit **`36f6ae26d8`** (pais `a71f089d24` + `40f2702b22`), feito na branch dedicada
+  `haos-sync-4` (preservada) e só então fast-forwarded em `main`/`haos-standalone`.
+- Rollback: tag `rollback-pre-sync4` (local **e** no remoto) + branch `haos-rollback-pre-sync4`,
+  ambas em `a71f089d24`.
+- **Lab**: não existia nenhum snapshot (`virsh snapshot-list` vazio) — criado
+  `pre-sync4-40f2702b22` (checkpoint com memória, 20:05:48) **antes** de qualquer mutação; host e
+  VM estavam em `a71f089d24` e foram para `36f6ae26d8`.
+
+### Auditorias desta passada
+
+| Verificação | Resultado |
+|---|---|
+| Guard de branding | exit 0 (0 violações novas) |
+| Marca do fork nos 4 arquivos dos dois lados | intacta (46/46, 9/9, 1/1, 0/0 linhas) |
+| Delta do fork (linha a linha) | **760/760 arquivos preservados, 0 linhas ausentes** |
+| Arquivos ausentes / novos | 0 ausentes; 3 novos (font picker do desktop) |
+| Estática F811 / F821 | 89 = 89 / 2475 = 2475 (idêntico ao pré-merge) |
+| 4 guards (`brand_hints`, `legacy_hermes_home`, `compat_pointers`, `profile_archive_boundary`) | exit 0 |
+| ISO | **não tocada** (0 arquivos do upstream em `distro/`) |
+| Testes alvo | **23 arquivos, 508 testes, 0 falhas** |
+| E2E | **PASS=8 FAIL=0** com host e VM em `36f6ae26d8` |
+
+**Lacuna registrada (honestidade de escopo):** nesta passada rodamos **testes alvo**, não a suíte
+completa (a baseline certificada é a da 3ª passada: 50511 passando). Os arquivos `.tsx` do font
+picker do desktop não têm cobertura pytest por regra do próprio repositório (asserções de JS
+pertencem ao vitest) e o vitest não roda aqui porque `apps/desktop/node_modules` está ausente —
+então a mudança de UI do desktop entrou **sem teste executado neste lab**.
+
 ## Pendência futura (registrada)
 
-- **Sync total**: 1ª passada (graft + replay), 2ª passada (merge de 3 vias de `3f86ed75da` →
-  `5eb99eb284`) e **3ª passada** (`5eb99eb284` → `1ad89ac018`, 140 commits) **executadas e
-  certificadas** (ver as seções acima). O método já está estabelecido: merge de 3 vias direto
-  enquanto o merge-base for o merge anterior. Próxima passada só quando o upstream avançar.
+- **Sync total**: 1ª passada (graft + replay), 2ª (`3f86ed75da` → `5eb99eb284`), 3ª
+  (`5eb99eb284` → `1ad89ac018`, 140 commits) e **4ª** (`1ad89ac018` → `40f2702b22`, 7 commits)
+  **executadas e certificadas** (ver as seções acima). Método estabelecido: merge de 3 vias
+  direto enquanto o merge-base for o merge anterior. Próxima passada só quando o upstream
+  avançar.
 - **672 arquivos classe "ambos"**: revisão por arquivo (nossa mudança + upstream).
 - **232 módulos novos do upstream**: entraram junto com o port do core (fase futura).
 - **WIP local da VM**: investigado e resolvido — era o payload da ISO em `distro/` (ver a seção
