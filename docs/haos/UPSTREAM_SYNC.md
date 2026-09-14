@@ -353,6 +353,19 @@ Verificação: 4 arquivos, 18 testes passando (inclui `tests/test_tests_tree_lay
 `tests/cron/` + `tests/gateway/test_output_caps_removed.py` = 111 arquivos, 1315 passando, 0
 falhando.
 
+### Segunda certificação (estado final) e o que ela pegou
+
+Suíte completa na árvore final: **4269 arquivos, 49771 testes passando, 5 falhando, 434 skipped**
+em 2226.4s. As 5 falhas: 3 são flakes de carga que **passam com a máquina ociosa**
+(`test_shell_hooks_tree_kill`, `test_gateway_shutdown`, `test_session_db_recovery` — 31 testes,
+0 falhando em isolamento) e 2 são as ambientais do quickstart (GPU pequena). A quinta era **real
+e minha**: `tests/scripts/test_windows_footguns_full_repo_scan.py` reprovou porque o
+`scripts/haos_stt_server.py` resgatado do host fazia `yaml.safe_load(open(...))` **sem
+`encoding=`** — o default da plataforma é cp1252/mbcs no Windows, então um `config.yaml` com
+acento voltaria como mojibake. Corrigido com bloco `with` + `encoding="utf-8"` (e `config.yaml`
+ausente devolve `{}` em vez de estourar no primeiro request). Checker limpo: 1587 arquivos, 0
+footguns; serviço `haos-stt` reiniciado e respondendo.
+
 ### WIP da VM que aparece como untracked (investigado)
 
 Os plugins `model-providers/a6api/`, `model-providers/antigravity/` e `wrapper-antigravity/` são o
