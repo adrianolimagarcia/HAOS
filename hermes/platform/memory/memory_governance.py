@@ -53,7 +53,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +244,42 @@ class MemoryIntegrityChecker:
             encoding="utf-8",
         )
         return manifest
+
+    def register_files(self, paths: Iterable[Path]) -> Dict[str, Any]:
+        """Registra no baseline APENAS os arquivos gravados por uma tool canônica.
+
+        ``register_write()`` recalcula o baseline INTEIRO: chamado a cada escrita
+        de tool, absorveria silenciosamente qualquer mudança fora de banda feita
+        no mesmo intervalo — o detector viraria decorativo. Aqui entram só os
+        arquivos que o fluxo legítimo (OKF/vault) acabou de escrever; o resto do
+        baseline permanece intacto, então ``verify()`` continua acusando o que
+        não passou pelo fluxo de escrita.
+        """
+        manifest: Dict[str, Any] = {"version": 1, "written_at": time.time(), "files": {}}
+        if self.baseline_path.exists():
+            try:
+                loaded = json.loads(self.baseline_path.read_text(encoding="utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("baseline ilegível (%s) — recomeçando o manifest", exc)
+                loaded = None
+            if isinstance(loaded, dict) and isinstance(loaded.get("files"), dict):
+                manifest["files"] = dict(loaded["files"])
+
+        registered: List[str] = []
+        for raw in paths:
+            p = Path(raw)
+            if not p.is_file():
+                continue
+            rel = _rel_from_home(p, self.home)
+            manifest["files"][rel] = self._sha256(p)
+            registered.append(rel)
+
+        self.baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        self.baseline_path.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True),
+            encoding="utf-8",
+        )
+        return {"registered": registered, "written_at": manifest["written_at"]}
 
     def verify(self) -> List[Dict[str, Any]]:
         """Detecta mudança FORA DE BANDA: hash dos canônicos difere do baseline

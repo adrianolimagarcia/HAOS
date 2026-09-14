@@ -229,6 +229,55 @@ def test_integridade_detecta_mudanca_fora_de_banda(tmp_path, monkeypatch):
     assert checker.verify() == []
 
 
+def test_register_files_fecha_o_falso_positivo_sem_cegar_o_detector(tmp_path, monkeypatch):
+    """register_files() registra só o arquivo escrito pela tool.
+
+    Contrato: (1) a escrita legítima deixa de aparecer como "nova sem escrita
+    registrada"; (2) um arquivo criado FORA do fluxo continua sendo acusado —
+    o que register_write() (baseline inteiro) mascararia.
+    """
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    checker = MemoryIntegrityChecker(home=home)
+    store = OKFStore(home / "okf")
+
+    store.save_document(title="Licao A", content=LESSON, doc_type="concept", filename="lesson_a.md")
+    checker.register_files([home / "okf" / "lesson_a.md"])
+    assert checker.verify() == [], "escrita legítima registrada deve passar limpa"
+
+    # Arquivo criado fora do fluxo legítimo: o detector continua funcionando
+    intruso = home / "okf" / "lesson_intruso.md"
+    intruso.write_text(LESSON, encoding="utf-8")
+    violations = checker.verify()
+    assert [(v["kind"], v["rel"]) for v in violations] == [("new", "okf/lesson_intruso.md")], violations
+
+    # Registrar OUTRA escrita legítima não pode absorver o intruso no baseline
+    store.save_document(title="Licao B", content=LESSON_2, doc_type="concept", filename="lesson_b.md")
+    checker.register_files([home / "okf" / "lesson_b.md"])
+    restantes = [(v["kind"], v["rel"]) for v in checker.verify()]
+    assert restantes == [("new", "okf/lesson_intruso.md")], restantes
+
+
+def test_register_files_preserva_o_resto_do_baseline(tmp_path, monkeypatch):
+    """Registro cirúrgico não apaga entradas anteriores nem a versão do manifest."""
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    checker = MemoryIntegrityChecker(home=home)
+    store = OKFStore(home / "okf")
+
+    store.save_document(title="Licao A", content=LESSON, doc_type="concept", filename="lesson_a.md")
+    store.save_document(title="Licao B", content=LESSON_2, doc_type="concept", filename="lesson_b.md")
+    checker.register_files([home / "okf" / "lesson_a.md"])
+    checker.register_files([home / "okf" / "lesson_b.md"])
+
+    manifest = json.loads((home / "memory" / "integrity" / "baseline.json").read_text(encoding="utf-8"))
+    assert manifest["version"] == 1
+    assert sorted(manifest["files"]) == ["okf/lesson_a.md", "okf/lesson_b.md"]
+    assert checker.verify() == []
+
+
 def test_integridade_detecta_json_de_staging_corrompido(tmp_path, monkeypatch):
     home = tmp_path / ".hermes"
     home.mkdir()

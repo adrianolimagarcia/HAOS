@@ -66,6 +66,28 @@ def obsidian_get_adr(adr_id: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+def _register_canonical_write(home: Path, paths) -> dict:
+    """Registra no baseline de integridade APENAS os arquivos recém-escritos.
+
+    Sem isso, toda nota canônica gravada por tool aparece no ``verify()`` horário
+    como "nova sem escrita registrada" — falso positivo crônico que treina o
+    operador a ignorar o detector. Só o dream registrava (register_write()).
+
+    Não usamos ``register_write()`` aqui: ele recalcula o baseline inteiro e
+    absorveria qualquer mudança fora de banda feita no mesmo intervalo. Se o core
+    for antigo e não tiver ``register_files``, caímos nele como último recurso.
+    """
+    try:
+        from hermes.platform.memory.memory_governance import MemoryIntegrityChecker
+
+        checker = MemoryIntegrityChecker(home)
+        if hasattr(checker, "register_files"):
+            return checker.register_files(paths)
+        return checker.register_write()
+    except Exception as exc:  # noqa: BLE001 — registro nunca invalida a escrita
+        return {"register_warning": f"{type(exc).__name__}: {exc}"}
+
+
 def obsidian_save_note(title: str, content: str, folder: str = "") -> str:
     """Salva uma nota ou ADR no Obsidian Vault canônico e sincroniza os stores derivados."""
     try:
@@ -89,7 +111,12 @@ def obsidian_save_note(title: str, content: str, folder: str = "") -> str:
         except Exception as exc:  # noqa: BLE001
             sync_info = {"sync_warning": f"{type(exc).__name__}: {exc}"}
 
-        return json.dumps({"success": True, "path": str(note_path), "sync": sync_info})
+        # Notas do vault hoje NÃO entram em canonical_files() (okf/**/*.md +
+        # staging) — o registro aqui é defensivo/futuro, não muda o verify().
+        register_info = _register_canonical_write(home, [note_path])
+
+        return json.dumps({"success": True, "path": str(note_path), "sync": sync_info,
+                           "integrity": register_info})
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -142,7 +169,11 @@ def haos_okf_save_document(
             owner=owner,
             folder=folder,
         )
-        return json.dumps({"success": True, "path": doc.relative_path, "title": doc.title})
+        # Escrita canônica pelo fluxo legítimo: entra no baseline de integridade
+        # no MESMO turno (senão o verify horário acusa "nova sem escrita").
+        register_info = _register_canonical_write(home, [okf_dir / doc.relative_path])
+        return json.dumps({"success": True, "path": doc.relative_path, "title": doc.title,
+                           "integrity": register_info})
     except Exception as e:
         return json.dumps({"error": str(e)})
 

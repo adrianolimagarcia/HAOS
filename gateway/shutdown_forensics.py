@@ -215,22 +215,36 @@ def check_systemd_timing_alignment(
 
 
 def _systemd_timeout_stop_us(unit_name: str) -> Optional[int]:
-    """``TimeoutStopUSec`` of ``unit_name`` in microseconds; ``--user`` first (hermes' usual)."""
+    """``TimeoutStopUSec`` of ``unit_name`` in microseconds; ``--user`` first (hermes' usual).
+
+    Only trust a scope that actually LOADS the unit. A reachable user bus answers for any
+    name with the manager default (10s) and rc=0, so without the ``LoadState`` guard the
+    user scope silently shadows the real system-scope value (observed: gateway warned
+    "TimeoutStopSec=10s" while the unit said 70s).
+    """
     for flag in (["--user"], []):
         try:
             result = subprocess.run(
-                ["systemctl", *flag, "show", unit_name, "--property=TimeoutStopUSec"],
+                ["systemctl", *flag, "show", unit_name,
+                 "--property=LoadState", "--property=TimeoutStopUSec"],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=2.0,
             )
         except (subprocess.TimeoutExpired, OSError):
             continue
+        if result.returncode != 0:
+            continue
+        props = dict(
+            line.split("=", 1) for line in result.stdout.splitlines() if "=" in line
+        )
+        if props.get("LoadState") in (None, "not-found"):
+            continue  # unit absent from this scope: its default is not our answer
         # Output: "TimeoutStopUSec=1min 30s" or "TimeoutStopUSec=90000000"
-        for line in result.stdout.splitlines() if result.returncode == 0 else ():
-            if line.startswith("TimeoutStopUSec="):
-                value = line.split("=", 1)[1].strip()
-                timeout_us = int(value) if value.isdigit() else parse_systemd_duration_to_us(value)
-                if timeout_us is not None:
-                    return timeout_us
+        value = (props.get("TimeoutStopUSec") or "").strip()
+        if not value:
+            continue
+        timeout_us = int(value) if value.isdigit() else parse_systemd_duration_to_us(value)
+        if timeout_us is not None:
+            return timeout_us
     return None
 
 
