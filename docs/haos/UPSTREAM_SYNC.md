@@ -541,13 +541,64 @@ picker do desktop não têm cobertura pytest por regra do próprio repositório 
 pertencem ao vitest) e o vitest não roda aqui porque `apps/desktop/node_modules` está ausente —
 então a mudança de UI do desktop entrou **sem teste executado neste lab**.
 
+## Quinta passada de sync (40f2702b22 → bb1d255a77, 5 commits)
+
+Passada de higiene dos scanners, autorizada pelo dono com os mesmos guardrails da anterior
+(snapshot recente reutilizável, branch/rollback preservados, ISO intocada, dry-run, guards,
+testes alvo, deploy só com todos os gates verdes).
+
+- Escopo: **4 arquivos** (`tools/plugin_guard.py`, `tools/skills_guard.py` e seus dois testes),
+  +181/−4, **0 deleções, 0 renames, 0 conflitos** (dry-run `merge-tree` exit 0, confirmado no
+  merge real), **0 arquivos em `distro/`** (ISO intocada).
+- Conteúdo: corta falsos positivos dos scanners de instalação — comentários de linha e
+  changelogs deixam de ser pontuados como crítico inapelável, achados defensivos são
+  contextualizados, e em prosa de doc (`.md/.txt/.rst/.html`) `agent_config_mod` e
+  `hardcoded_secret` caem de critical para high (em código de runtime seguem critical). Inclui
+  o bump `plugin-guard` v2 → v3 e `skills-guard` v3 → v4.
+- Merge commit **`ba103ed1f1`** (pais `4c41cb2ca3` + `bb1d255a77`) na branch dedicada
+  `haos-sync-5` (preservada), depois fast-forward em `main`/`haos-standalone`.
+- Rollback: tag `rollback-pre-sync5` (local **e** remoto) + branch `haos-rollback-pre-sync5` em
+  `4c41cb2ca3`. Conjunto de snapshots do lab: `pre-sync4-40f2702b22` (20:05) e
+  `pre-sync5-bb1d255a77` (20:44), ambos checkpoints com memória criados **antes** das mutações.
+
+| Verificação | Resultado |
+|---|---|
+| Dry-run antes de mutar | exit 0, 0 conflitos |
+| Guard de branding | exit 0 |
+| Marca do fork nos 2 scanners | intacta (1→1 em `plugin_guard.py`; `skills_guard.py` sem linha de marca antes e depois) |
+| Delta do fork (linha a linha) | **760/760 preservados, 0 linhas ausentes** |
+| Arquivos ausentes / novos | 0 / 0 |
+| Estática F811 / F821 | 89 = 89 / 2475 = 2475 |
+| 4 guards | exit 0 |
+| Testes alvo | **7 arquivos, 220 testes, 0 falhas** |
+| E2E | **PASS=8 FAIL=0** com host e VM em `ba103ed1f1` |
+
+### Efeito medido nos nossos plugins (por que esta passada não muda nada aqui)
+
+O scanner foi executado sobre os 15 plugins do fork e o payload da ISO, antes e depois:
+
+- **antes** (v2): 15 permitidos, 5 pedindo confirmação — google_meet 29 findings,
+  hermes-achievements 8, memory 46, platforms 89, security-guidance 5;
+- **depois** (v3/v4): **idêntico** — 15 permitidos, os mesmos 5 `caution` com as mesmas contagens.
+
+Nenhum veredicto muda, nenhum plugin nosso é bloqueado (os 5 são `caution` = requer
+confirmação, nunca deny duro), e o gate não roda no provisionamento do appliance (o
+`distro/` só copia o payload; `should_allow_plugin_install` é chamado apenas no fluxo
+interativo `haos plugins install`). Não há cache de veredicto no appliance para invalidar.
+
+**Nota de rigor:** uma comparação isolada anterior usou o scanner do tip (`1a990f3062`), onde
+`tools/skills_guard.py` já tem +119 linhas posteriores. `tools/plugin_guard.py` é idêntico
+entre o alvo e o tip (sha256 `cd345703da05...`), então a diferença de 1 finding em
+`plugins/memory` vem de commit **fora** desta passada — não dela.
+
 ## Pendência futura (registrada)
 
 - **Sync total**: 1ª passada (graft + replay), 2ª (`3f86ed75da` → `5eb99eb284`), 3ª
-  (`5eb99eb284` → `1ad89ac018`, 140 commits) e **4ª** (`1ad89ac018` → `40f2702b22`, 7 commits)
-  **executadas e certificadas** (ver as seções acima). Método estabelecido: merge de 3 vias
-  direto enquanto o merge-base for o merge anterior. Próxima passada só quando o upstream
-  avançar.
+  (`5eb99eb284` → `1ad89ac018`, 140 commits), **4ª** (`1ad89ac018` → `40f2702b22`, 7 commits) e
+  **5ª** (`40f2702b22` → `bb1d255a77`, 5 commits) **executadas e certificadas** (ver as seções
+  acima). Método estabelecido: merge de 3 vias direto enquanto o merge-base for o merge
+  anterior. **O upstream segue avançando rápido**: ao fim da 5ª passada o tip era `1a990f3062`,
+  **31 commits à frente** do alvo autorizado — próxima passada pendente de autorização.
 - **672 arquivos classe "ambos"**: revisão por arquivo (nossa mudança + upstream).
 - **232 módulos novos do upstream**: entraram junto com o port do core (fase futura).
 - **WIP local da VM**: investigado e resolvido — era o payload da ISO em `distro/` (ver a seção
