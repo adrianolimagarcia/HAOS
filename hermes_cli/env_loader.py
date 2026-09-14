@@ -580,4 +580,6 @@ def _process_hermes_home() -> Path:
 
         return get_process_hermes_home()
     except Exception:
-        return Path.home() / ".hermes"
+        from hermes_constants import _get_platform_default_hermes_home
+
+        return _get_platform_default_hermes_home()

@@ -598,7 +598,7 @@ def _print_fetch_failure(c: Console, sources, identifier: str, meta=None, source
         c.print(f"[bold red]Error:[/] '{identifier}' is listed in the {src_id} index, "
                 f"but its files no longer exist upstream.")
         c.print("[dim]Stale index entry: the skill was likely renamed or removed by "
-                "its author. Try `hermes skills search` for an alternative.[/]\n")
+                "its author. Try `" + product_command("skills") + " search` for an alternative.[/]\n")
         return
     c.print(f"[bold red]Error:[/] Could not fetch '{identifier}' from any source.")
     if rate_limited:
@@ -823,7 +823,7 @@ def do_check(name: Optional[str] = None, console: Optional[Console] = None) -> N
     if orphaned:
         c.print(f"[yellow]Orphaned:[/] {', '.join(orphaned)} — lock-file entries whose local "
                 "directory is missing or replaced by a non-directory. For missing directories, "
-                "remove the stale entry with: hermes skills uninstall <name>\n")
+                "remove the stale entry with: " + product_command("skills") + " uninstall <name>\n")
 
 
 def _has_local_edits(installed: dict) -> bool:

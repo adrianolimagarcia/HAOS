@@ -70,13 +70,16 @@ SCAN_DIRS = (
 # Subcomandos reais do CLI (``haos --help``) + as frases de marca que a varredura de
 # branding converteu ("hermes models"/"hermes plugin"). Um subcomando novo que falte
 # aqui e um falso NEGATIVO (deixa passar), nunca um falso positivo (barra codigo bom).
+# ``vault`` entrou junto com o registro de ``build_vault_parser`` em hermes_cli/main.py:
+# ate entao o comando nao existia no ``--help`` e as strings de hermes_cli/vault.py
+# mandavam o operador rodar ``hermes vault add`` (binario ausente no appliance).
 COMMANDS = (
     "acp|approvals|auth|backup|browser|bundles|chat|checkpoints|claw|codebase-wiki|completion|"
     "computer-use|config|console|cron|curator|dashboard|debug|doctor|dump|egress|fallback|"
     "gateway|hooks|import|import-agent|insights|kanban|logout|logs|lsp|mcp|memory|migrate|moa|"
     "model|monitoring|pairing|pause|peer|pets|plugins|portal|profile|project|prompt-size|proxy|"
     "resume|secrets|security|send|serve|sessions|setup|skills|skin|slack|status|sync|tools|"
-    "uninstall|update|verify|webhook|whatsapp|whatsapp-cloud|worktree|models|plugin|skins"
+    "uninstall|update|vault|verify|webhook|whatsapp|whatsapp-cloud|worktree|models|plugin|skins"
 )
 
 # Conteudo markdown que o agente executa (skill) + docs do fork.
@@ -89,6 +92,11 @@ MARKER_RE = re.compile(re.escape(MARKER) + r"\s*\S")
 
 
 def _iter_files():
+    # Modulos root-level (cli.py, run_agent.py, hermes_state*.py, toolsets.py, ...) sao
+    # runtime do fork e ficaram fora do SCAN_DIRS ate 19/09/2026: 47 hints passaram
+    # despercebidos e `haos doctor` imprimia "Run 'hermes setup'". Varre-los aqui.
+    for path in sorted(REPO_ROOT.glob("*.py")):
+        yield path
     for d in SCAN_DIRS:
         root = REPO_ROOT / d
         if not root.is_dir():

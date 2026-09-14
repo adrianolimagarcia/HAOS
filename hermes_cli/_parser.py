@@ -4,7 +4,7 @@ Only the top-level parser and the ``chat`` subparser live here. Every other subp
 gateway, sessions, …) is built by ``hermes_cli/subcommands/<group>.py`` and wired in
 ``main._build_cli_parser`` with its ``cmd_*`` handler injected.
 """
-from hermes_constants import product_command
+from hermes_constants import product_cli_name, product_command
 
 import argparse
 from functools import lru_cache
@@ -295,7 +295,7 @@ def build_top_level_parser():
     ``subparsers.add_parser(...)``.
     """
     parser = argparse.ArgumentParser(
-        prog="hermes", description="Hermes Agent - AI assistant with tool-calling capabilities",
+        prog=product_cli_name(), description="Hermes Agent - AI assistant with tool-calling capabilities",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=_EPILOGUE)
     _add_top_level_flags(parser)
     subparsers = parser.add_subparsers(dest="command", help="Command to run")

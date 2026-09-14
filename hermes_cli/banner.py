@@ -186,7 +186,7 @@ def _git_run(args: list[str], *, cwd: Optional[Path] = None, timeout: int = 5, t
     from hermes_cli._subprocess_compat import noninteractive_git_env, windows_hide_flags
 
     # The banner/update probes run from GUI-hosted backends too (desktop-spawned
-    # ``hermes serve``), where a bare git child flashes a console window.
+    # ``haos serve``), where a bare git child flashes a console window.
     kwargs: dict = {"creationflags": windows_hide_flags()}
     if network:
         kwargs.update({"stdin": subprocess.DEVNULL, "env": noninteractive_git_env()})
@@ -343,58 +343,33 @@ def _check_via_rev(local_rev: str) -> Optional[int]:
 
 
 def _check_via_local_git(repo_dir: Path) -> Optional[int]:
-    """Count commits behind origin/main in a local checkout."""
-    origin_url = _git_stdout(["remote", "get-url", "origin"], cwd=repo_dir)
-    if _is_official_ssh_remote(origin_url):
-        head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
-        if not head_rev:
-            return None
-        # Passive probe via HTTPS ls-remote (never SSH — no hardware-key prompts). Tip SHAs alone
-        # can't distinguish "behind" from a local commit AHEAD of origin/main, and misreporting an
-        # ahead checkout nudges the user into `haos update`, which can wipe carried work — hence
-        # the ancestor check, against the FRESH upstream SHA (a stale tracking ref can't fake an
-        # up-to-date report).
-        return _tips_behind(head_rev, _upstream_main_sha(), repo_dir)
+    """Count commits behind origin/main in a local checkout.
 
-    # Installer checkouts are shallow (`git clone --depth 1`): a plain `git fetch` would unshallow
-    # the repo and `rev-list --count HEAD..origin/main` would report a bogus "12492 commits
-    # behind". Fetch with --depth 1 to preserve the boundary and compare tip SHAs instead. Full
-    # clones keep the exact count path. Mirrors apps/desktop/electron/main.cjs.
-    is_shallow = _git_stdout(["rev-parse", "--is-shallow-repository"], cwd=repo_dir) == "true"
-
-    def _fetch() -> bool:
-        # Self-heal abandoned git lock files first. A stale .git/shallow.lock from a crashed fetch
-        # makes every fetch fail silently and stale refs get compared against HEAD until a human
-        # removes the lock. This passive check is also the main tmp_pack GENERATOR on flaky lines,
-        # so it must be the janitor too (#93732).
-        from hermes_cli.gitlock import clear_stale_git_locks, clear_stale_tmp_packs
-        clear_stale_git_locks(repo_dir)
-        clear_stale_tmp_packs(repo_dir)
-
-        # Scope the fetch to the one branch compared against: an unscoped ``git fetch origin``
-        # transfers ~1,400 remote heads (3.0 s vs 0.55 s measured) and can burn the full timeout.
-        # A scoped fetch still updates ``origin/main`` and FETCH_HEAD; ``--depth 1`` preserves
-        # the shallow boundary.
-        fetch_args = ["fetch", "origin", "main", *(["--depth", "1"] if is_shallow else []), "--quiet"]
-        return _git_ok(fetch_args, cwd=repo_dir, timeout=10, network=True)
-
-    fetch_ok = _quiet(_fetch, False)  # Offline or timeout — don't use stale refs
-    # When the fetch fails the local origin/main ref is stale: it cannot prove *currentness*, but
-    # if it already shows HEAD behind, that is sound evidence an update exists. Return the positive
-    # stale count; None (inconclusive) otherwise so the caller doesn't cache a false "up to date".
-    if is_shallow:
-        # (#82166, review #92578)
-        if not fetch_ok:
-            return None
-        # No history across the shallow boundary. `origin/main` may not be a tracking ref in a
-        # `clone --depth 1`, so prefer FETCH_HEAD (just updated) and fall back to origin/main.
-        head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
-        target_rev = (
-            _git_stdout(["rev-parse", "FETCH_HEAD"], cwd=repo_dir)
-            or _git_stdout(["rev-parse", "origin/main"], cwd=repo_dir))
-        return _tips_behind(head_rev, target_rev)
-    behind = _git_count(["rev-list", "--count", "HEAD..origin/main"], cwd=repo_dir)
-    return behind if fetch_ok or (behind is not None and behind > 0) else None
+    Passive checks never run ``git fetch``: every CLI/TUI/gateway start used to negotiate a pack
+    with GitHub, and across the install base that was tens of millions of fetch requests a day
+    (GitHub asked us to poll the API instead). Two tip SHAs are enough — the remote one from the
+    API, the local one from ``rev-parse`` — and ``_tips_behind`` recovers the exact count through
+    the compare API when they differ. ``git fetch`` happens only inside ``haos update``.
+    """
+    # Probe the origin URL under the config-isolated env: a global url.<https>.insteadOf rewrite
+    # otherwise makes an SSH origin masquerade as HTTPS (#104591).
+    origin_url = _git_stdout(["remote", "get-url", "origin"], cwd=repo_dir, network=True)
+    head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
+    if not head_rev:
+        return None
+    canonical = _canonical_github_remote(origin_url)
+    if canonical.startswith("github.com/"):
+        target_rev = _github_branch_tip(canonical.removeprefix("github.com/"), "main")
+    else:
+        # Non-GitHub origin: one ls-remote for the tip (ref advertisement only, no pack transfer).
+        result = _git_run(["ls-remote", "origin", "refs/heads/main"], cwd=repo_dir, timeout=10, network=True)
+        target_rev = result.stdout.split()[0] if result is not None and result.returncode == 0 and result.stdout else None
+    global _last_target_rev
+    _last_target_rev = target_rev
+    # Tip SHAs alone can't distinguish "behind" from a local commit AHEAD of origin/main, and
+    # misreporting an ahead checkout nudges the user into `haos update`, which can wipe carried
+    # work — hence the ancestor check inside _tips_behind, against the FRESH upstream SHA.
+    return _tips_behind(head_rev, target_rev, repo_dir)
 
 
 def _read_json(path: Path) -> Optional[dict]:
@@ -428,7 +403,7 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
     if _quiet(_install_method) in {"docker", "apt"}:
         return None
     # Cache is invalidated when the embedded rev OR installed version changed since the last check.
-    # For a git checkout the local HEAD is part of the key too: `hermes update` moves HEAD, and a
+    # For a git checkout the local HEAD is part of the key too: `haos update` moves HEAD, and a
     # stale "3 behind" must not survive the update it just prompted.
     now = time.time()
     repo_dir = None if embedded_rev else _resolve_repo_dir()
@@ -838,6 +813,25 @@ def _route_model_for_banner(provider: Any) -> str:
     return GUEST_MODEL if guest_carries_inference() else ""
 
 
+def _model_markup(model: str) -> str:
+    """Model cell for the banner, or the red "unconfigured" line when no route resolves."""
+    if (model or "").strip() and (model or "").strip().lower() != "unknown":
+        return f"[#A855F7]{model}[/]"
+    # Unconfigured install: the clearest place to say what is wrong and how to fix it.
+    return f"[bold red]no model configured[/] [dim]— run /model or {product_command('setup')}[/]"
+
+
+def _resolved_banner_model(model: str, provider: Any) -> str:
+    """The model the route will actually serve when config names none: today only the Nous free
+    tier (welcome host -> ``nous/welcome``). Credentials resolve lazily on the first message, so
+    ``model`` is empty when the banner prints; asking the route the same question keeps a fresh
+    free-tier install from showing the red "unconfigured" line. Empty when nothing resolves, so
+    callers keep that line."""
+    if (model or "").strip():
+        return model
+    return _quiet(lambda: _route_model_for_banner(provider), "") or model
+
+
 def _banner_left_lines(model: str, cwd: str, session_id, context_length, provider, *, accent: str, dim: str) -> list:
     """Model / cwd / session lines under the hero art."""
     def _dim_sep(label: str) -> str:
@@ -846,10 +840,7 @@ def _banner_left_lines(model: str, cwd: str, session_id, context_length, provide
     ctx_str = _dim_sep(f"{_format_context_length(context_length)} context") if context_length else ""
     nous_str = _dim_sep("HAOS Engineering")
 
-    if not (model or "").strip():
-        # Credentials resolve lazily on the first message; the banner prints first. Ask the route
-        # the same question so a fresh free-tier install shows its model, not a red "unconfigured".
-        model = _quiet(lambda: _route_model_for_banner(provider), "") or model
+    model = _resolved_banner_model(model, provider)
     if (provider or "").strip().lower() == "moa":
         # MoA virtual provider: ``model`` is a preset name; show it with its aggregator.
         agg_label = _quiet(lambda: _moa_aggregator_label(model), "")
@@ -1017,7 +1008,7 @@ def _build_haos_runtime_table(model: str, provider: str, session_id: str, tools_
     table.add_row("Hermes Config", f"{dash_badge}  [#00F0FF]http://{ts_ip}:9191/[/]")
 
     prov_str = f" [dim]via[/] [#2DD4BF]{provider}[/]" if provider else ""
-    table.add_row("Model", f"[#A855F7]{model or 'default'}[/]{prov_str}")
+    table.add_row("Model", f"{_model_markup(model)}{prov_str}")
     table.add_row("Topology", "[#2DD4BF]GasTown[/] [dim](Mayor · Witness · Polecat)[/]")
 
     if session_id:
@@ -1048,37 +1039,8 @@ def build_welcome_banner(
     if skills_by_category is None:
         skills_by_category = get_available_skills()
     total_skills = sum(len(s) for s in skills_by_category.values())
-    right_lines += _banner_skill_lines(skills_by_category, _skills_enabled, dim=dim, text=text)
-    right_lines.append("")
-    mcp_connected = sum(1 for s in mcp_status if s["connected"])
-    summary_parts = [f"{len(tools)} tools", f"{total_skills} skills"]
-    if mcp_connected:
-        summary_parts.append(f"{mcp_connected} MCP servers")
-    summary_parts.append("/help for commands")
-    # Flag the codex_app_server runtime so users understand why tool counts may not match what's
-    # reachable (codex builds its own tool list inside the spawned subprocess).
-    if _quiet(_codex_runtime_active, False):
-        right_lines.append(f"[bold {accent}]Runtime:[/] [{text}]codex app-server[/] "
-                           f"[dim {dim}](terminal/file ops/MCP run inside codex)[/]")
-    # Show active profile name when not 'default'. Never break the banner over a profiles.py bug.
-    _profile_name = _quiet(_active_profile_name)
-    if _profile_name and _profile_name != "default":
-        right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")
-    right_lines.append(f"[dim {dim}]{' · '.join(summary_parts)}[/]")
-    # Update check — NEVER block the banner on it: the prefetch does git/network work that rarely
-    # finishes before render, so a blocking wait adds its full timeout to every startup. If not
-    # ready, a daemon thread prints the same notice above the prompt when it lands.
-    def _update_line():
-        behind = get_update_result(timeout=0.05)
-        if behind is None and not _update_check_done.is_set():
-            _defer_update_notice()
-        elif behind is not None and behind != 0:
-            right_lines.append(_format_update_notice(behind))
-    _quiet(_update_line)  # Never break the banner over an update check
-    layout_table = Table.grid(padding=(0, 2))
-    layout_table.add_column("left", justify="left")
-    layout_table.add_column("right", justify="left")
-    layout_table.add_row("\n".join(left_lines), "\n".join(right_lines))
+    model = _resolved_banner_model(model, provider)
+
     version_label = format_banner_version_label()
     release_info = get_latest_release_tag()
     if release_info:
@@ -1086,31 +1048,52 @@ def build_welcome_banner(
 
     term_cols = shutil.get_terminal_size().columns
 
+    # Update check — NEVER block the banner on it: the prefetch does git/network work that rarely
+    # finishes before render, so a blocking wait adds its full timeout to every startup. If not
+    # ready, a daemon thread prints the same notice above the prompt when it lands.
+    def _update_line() -> Optional[str]:
+        behind = get_update_result(timeout=0.05)
+        if behind is None:
+            if not _update_check_done.is_set():
+                _defer_update_notice()
+            return None
+        return _format_update_notice(behind) if behind != 0 else None
+    update_line = _quiet(_update_line)  # Never break the banner over an update check
+
     if term_cols < 80:
         # Fallback compact banner for narrow screens
         console.print(f"[bold #00E5FF]{version_label}[/]")
-        console.print(f"[dim]{model} · {len(tools)} tools · {total_skills} skills[/dim]\n")
+        console.print(f"{_model_markup(model)} [dim]· {len(tools)} tools · {total_skills} skills[/dim]")
+        if update_line:
+            console.print(update_line)
+        console.print()
         return
 
-    # 1. Header Banner Panel
-    header_table = Table(box=None, show_header=False, expand=True, padding=(0, 2))
+    # 1. Header Banner Panel — the skin's hero art opens the logo column flush at the column
+    # start; centering it inserts ASCII spaces around a braille silhouette and distorts it (#9879).
+    _bskin = _quiet(_active_skin)
+    hero_art = getattr(_bskin, "banner_hero", None) or HERMES_CADUCEUS
+    logo_art = getattr(_bskin, "banner_logo", None) or HERMES_AGENT_LOGO
+    header_table = Table(box=None, show_header=False, expand=True, padding=(0, 2), pad_edge=False)
     header_table.add_column("Logo", justify="left", width=42)
     header_table.add_column("Meta", justify="left")
 
-    meta_text = f"""
-[bold #00F0FF]HAOS · Hermes Agentic Operating System[/]
-[bold #F8FAFC]Industrial Multi-Agent Distributed Execution Platform[/]
-[dim #94A3B8]Fork Architecture v0.21.0 · PEP-420 Canonical Freeze[/]
-[dim #2DD4BF]Tailscale Active: [/][bold #2DD4BF]{_get_tailscale_ip()}[/]
-"""
-    header_table.add_row(HERMES_AGENT_LOGO.strip(), meta_text.strip())
+    meta_lines = [
+        "[bold #00F0FF]HAOS · Hermes Agentic Operating System[/]",
+        "[bold #F8FAFC]Industrial Multi-Agent Distributed Execution Platform[/]",
+        "[dim #94A3B8]Fork Architecture v0.21.0 · PEP-420 Canonical Freeze[/]",
+        f"[dim #2DD4BF]Tailscale Active: [/][bold #2DD4BF]{_get_tailscale_ip()}[/]",
+    ]
+    if update_line:
+        meta_lines.append(update_line)
+    header_table.add_row(f"{hero_art}\n{logo_art.strip()}", "\n".join(meta_lines))
 
     header_panel = Panel(
         header_table,
         title=f"[bold {_skin_color('banner_title', '#00E5FF')}]{version_label}[/]",
         border_style=_skin_color("banner_border", "#0284C7"),
         box=ROUNDED,
-        padding=(0, 1),
+        padding=(0, 2),
     )
 
     # 2. Dual-card columns: System Vitals & HAOS Runtime

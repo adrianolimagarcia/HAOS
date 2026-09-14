@@ -1378,7 +1378,7 @@ class GatewayShutdownMixin:
 
     def _describe_active_work(self) -> list:
         """One dict per in-flight work unit the restart wait is holding for, so an observer
-        (``hermes update``, ``hermes gateway status``) can name it instead of printing a bare count.
+        (``haos update``, ``haos gateway status``) can name it instead of printing a bare count.
 
         ``kind`` ∈ ``chat`` (session turn), ``cron`` (job id + external worker pid when the run was
         handed to a restart-safe scope), ``api`` / ``deferred`` (count only — those sources expose

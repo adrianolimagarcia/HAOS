@@ -458,7 +458,7 @@ def _run_install_with_heartbeat(
         # both pipes) only drain the child's stdout, so a full stderr
         # pipe (~64KB) blocks the installer forever. Merged into stdout,
         # the output rides the pipe old hand-offs DO drain. This module
-        # is imported when `hermes update` starts, so an update running
+        # is imported when `haos update` starts, so an update running
         # from an old base executes the old copy regardless of the git
         # reset — this protects updates initiated from bases that ship
         # it. (managed_uv.py gets the same fix AND is imported lazily

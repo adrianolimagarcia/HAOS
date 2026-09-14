@@ -401,7 +401,7 @@ def cron_status():
         # `_builtin_gateway_liveness`, which `cron list` uses -- the two must not disagree).
         print(color("✓ Gateway is running via the default-profile multiplexer — it ticks this profile's jobs.",
                     Colors.GREEN))
-        print(color("  Ticker health is reported by `hermes cron status` on the default profile.", Colors.DIM))
+        print(color("  Ticker health is reported by `" + product_command("cron") + " status` on the default profile.", Colors.DIM))
     else:
         pids = find_gateway_pids()
         gateway_alive_via_lock = False
@@ -791,7 +791,7 @@ def cron_command(args):
 
 
 def _cron_resnap(args) -> int:
-    """Handle `hermes cron resnap [job_id] [--all]`."""
+    """Handle `haos cron resnap [job_id] [--all]`."""
     if bool(getattr(args, "all", False)):
         result = _cron_api(action="resnap", all=True)
         if not result.get("success"):
@@ -808,7 +808,7 @@ def _cron_resnap(args) -> int:
     job_id = getattr(args, "job_id", None)
     if not job_id:
         print(color("resnap requires either a <job_id> or --all.", Colors.RED))
-        print("Usage: hermes cron resnap <job_id> | hermes cron resnap --all")
+        print("Usage: " + product_command("cron") + " resnap <job_id> | " + product_command("cron") + " resnap --all")
         return 1
     result = _cron_api(action="resnap", job_id=job_id)
     if not result.get("success"):

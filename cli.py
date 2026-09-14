@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hermes Agent CLI — interactive terminal interface (``python cli.py --help`` for usage)."""
 
-# Must be the very first import (UTF-8 stdio on Windows). Missing only mid-``hermes update``.
+# Must be the very first import (UTF-8 stdio on Windows). Missing only mid-``haos update``.
 try:
     import hermes_bootstrap  # noqa: F401
 except ModuleNotFoundError:
@@ -168,7 +168,7 @@ _COMMAND_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧
 
 
 # ~/.hermes/.env first, project .env as dev fallback; user env files override stale shell exports.
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_state_ids import new_session_id
 from hermes_cli.env_loader import load_hermes_dotenv
 from utils import base_url_host_matches, base_url_hostname, fast_safe_load
@@ -490,7 +490,7 @@ def load_cli_config() -> Dict[str, Any]:
     defaults = _expand_env_vars(defaults)
 
     # Administrator-pinned (managed scope) values overlay LAST; cli.py builds its config
-    # independently of hermes_cli.config, so this keeps parity with `hermes config`. Fail-open.
+    # independently of hermes_cli.config, so this keeps parity with `haos config`. Fail-open.
     from hermes_cli import managed_scope
 
     defaults = managed_scope.apply_managed_overlay(defaults)
@@ -1133,7 +1133,7 @@ def _run_checkpoint_auto_maintenance() -> None:
             return
         from tools.checkpoint_manager import maybe_auto_prune_checkpoints
         # delete_orphans stays False: a missing workdir at startup is ambiguous (unmounted
-        # volume / VPN down); orphans are only reclaimed by `hermes checkpoints prune`.
+        # volume / VPN down); orphans are only reclaimed by `haos checkpoints prune`.
         maybe_auto_prune_checkpoints(
             retention_days=int(cfg.get("retention_days", 7)),
             min_interval_hours=int(cfg.get("min_interval_hours", 24)),
@@ -2444,7 +2444,7 @@ def save_config_value(key_path: str, value: any) -> bool:
             os.chmod(config_path, 0o600)
         except (OSError, NotImplementedError):
             pass
-        # Same unpinned-cron notice as `hermes config set` for every model switch.
+        # Same unpinned-cron notice as `haos config set` for every model switch.
         from hermes_cli.config import warn_unpinned_cron_jobs_after_model_config_change
 
         warn_unpinned_cron_jobs_after_model_config_change(key_path, value)
@@ -2458,7 +2458,7 @@ def _normalize_moa_model(model: Optional[str]) -> tuple[Optional[str], Optional[
     """``moa:<preset>`` -> ``("moa", preset)`` (same routing as ``/moa``); anything else -> ``(None, model)``.
 
     Returns ``("moa", "<preset>")`` when *model* selects the MoA virtual provider, otherwise ``(None,
-    model)`` unchanged. This gives non-interactive ``hermes chat -Q -m moa:<preset>`` the same routing the
+    model)`` unchanged. This gives non-interactive ``haos chat -Q -m moa:<preset>`` the same routing the
     interactive ``/moa`` command and the model picker already use: ``resolve_runtime_provider`` handles
     ``requested_provider == "moa"`` and ``agent_init`` builds the MoAClient off ``provider == "moa"``.
     Without this the raw ``moa:<preset>`` string is sent to the real provider and rejected with a 401/400
@@ -2781,7 +2781,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         if toolsets and "all" not in toolsets and "*" not in toolsets:
             # Plugin toolset names (e.g. `a2a`, `dsh-bridge`) only enter the registry
             # when plugin discovery runs (a side effect of importing model_tools). A
-            # fresh `hermes chat` worker validates toolsets here before that import,
+            # fresh `haos chat` worker validates toolsets here before that import,
             # so a real plugin toolset would be misreported as unknown even though it
             # resolves later in the same process. Discovery is idempotent; run it first
             # so validation sees plugin-registered toolsets (see plugins/AGENTS.md).
@@ -2904,7 +2904,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     "this conversation will [bold]NOT be saved[/bold] to disk and "
                     "cannot be resumed later. Searching past sessions is also disabled.\n"
                     f"  Reason: {e}\n"
-                    "  Fix the state.db store (e.g. `hermes update` to rebuild the venv) to restore persistence."
+                    "  Fix the state.db store (e.g. `" + product_command("update") + "` to rebuild the venv) to restore persistence."
                 )
             except Exception:
                 print(
@@ -3129,7 +3129,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 logger.warning(
                     "Unknown skill(s) requested, skipping: %s. "
                     "Continuing with: %s. "
-                    "List available skills with `hermes skills list`.",
+                    "List available skills with `" + product_command("skills") + " list`.",
                     missing_display,
                     ", ".join(loaded_skills),
                 )
@@ -3152,7 +3152,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 self._console_print("[yellow]⚠️  Some tools disabled (missing API keys):[/]")
                 for item in api_key_missing:
                     self._console_print(f"   [dim]• {item['name']}[/] [dim italic]({', '.join(item['missing_vars'])})[/]")
-                self._console_print("[dim]   Run 'hermes setup' to configure[/]")
+                self._console_print("[dim]   Run '" + product_command("setup") + "' to configure[/]")
         except Exception:
             pass
 
@@ -3847,7 +3847,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             print(
                 "Error: stdin (fd 0) is not available.\n"
                 "This can happen with certain Python installations (e.g. uv-managed cPython on macOS).\n"
-                "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                "Try reinstalling Python via pyenv or Homebrew, then re-run: " + product_command("setup")
             )
             return False
         if sys.platform == "darwin":
@@ -3967,7 +3967,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     f"\nError: stdin is not usable ({_stdin_err}).\n"
                     "This can happen with certain Python installations (e.g. uv-managed cPython on macOS)\n"
                     "where kqueue cannot register fd 0.\n"
-                    "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                    "Try reinstalling Python via pyenv or Homebrew, then re-run: " + product_command("setup")
                 )
             else:
                 raise
@@ -4310,7 +4310,17 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
             toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
 
     if not skills:
-        skills = (CLI_CONFIG.get("skills") or {}).get("default_skills") or CLI_CONFIG.get("default_skills") or ["haos-control-plane", "haos-lane-execution"]
+        skills = (CLI_CONFIG.get("skills") or {}).get("default_skills") or CLI_CONFIG.get("default_skills")
+        if not skills:
+            # Preload default do appliance HAOS. Resolve contra o que este perfil realmente tem:
+            # um default IMPLICITO nao pode abortar a execucao num checkout limpo ou num perfil
+            # recem-criado (sem `skills/` instalado). Um `-s <skill>` explicito continua falhando
+            # alto em finalize_preloaded_skills(), que e o contrato de la.
+            try:
+                skills = build_preloaded_skills_prompt(
+                    ["haos-control-plane", "haos-lane-execution"])[1] or None
+            except Exception:
+                skills = None
     parsed_skills = _parse_skills_argument(skills)
 
     try:

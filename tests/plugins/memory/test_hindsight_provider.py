@@ -380,7 +380,7 @@ class TestEmbeddedDaemonRootGuard:
     PostgreSQL's initdb refuses root, so ``_start_embedded_daemon`` must refuse
     to spawn the daemon thread when euid == 0 (disabling the mode so the caller
     sees a deterministic state) and start it otherwise. The euid is fed as data
-    (the branch's only input); ``_context_thread`` is stubbed so the worker
+    (the branch's only input); ``spawn_context_thread`` is stubbed so the worker
     never really runs — the invariant is the *decision*: thread requested or not.
     """
 
@@ -398,7 +398,7 @@ class TestEmbeddedDaemonRootGuard:
 
         monkeypatch.setattr("plugins.memory.hindsight.os.geteuid", lambda: euid)
         monkeypatch.setattr(
-            "plugins.memory.hindsight._context_thread",
+            "plugins.memory.hindsight.spawn_context_thread",
             lambda target, name: _FakeThread(name),
         )
         return provider, started

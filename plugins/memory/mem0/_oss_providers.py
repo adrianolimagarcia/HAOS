@@ -17,10 +17,19 @@ EMBEDDER_PROVIDERS: dict[str, dict[str, Any]] = {
     "ollama": {"label": "Ollama (local)", "needs_key": False, "default_model": "nomic-embed-text", "default_url": "http://localhost:11434", "base_url_key": "ollama_base_url", "dims": 768, "pip_dep": "ollama"},
 }
 
+def _default_qdrant_path() -> str:
+    """Canonical profile home for the mem0 Qdrant store — never a hardcoded ``~/.hermes``.
+
+    Named helper (not just an inline lambda) because the HAOS home contract test asserts the
+    resolver per call-site; both callers resolve through the same canonical resolver.
+    """
+    return str(get_hermes_home() / "mem0_qdrant")
+
+
 VECTOR_PROVIDERS: dict[str, dict[str, Any]] = {
     # Resolved lazily (see ``vector_default_config``): the profile home is a ContextVar at call time,
     # not an import-time constant, and ``~/.hermes`` is wrong on Windows and under profiles.
-    "qdrant": {"label": "Qdrant", "default_config": {"path": lambda: str(get_hermes_home() / "mem0_qdrant")}, "pip_dep": "qdrant-client"},
+    "qdrant": {"label": "Qdrant", "default_config": {"path": lambda: _default_qdrant_path()}, "pip_dep": "qdrant-client"},
     "pgvector": {
         "label": "PGVector",
         "default_config": {"host": "localhost", "port": 5432, "user": os.getenv("USER", "postgres"), "dbname": "postgres"},

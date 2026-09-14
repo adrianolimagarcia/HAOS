@@ -51,7 +51,7 @@ Blunt instruments: `web.cache_ttl_minutes: 1` (min) or
 ### Skills not showing
 1. `haos skills list` — verify installed
 2. `haos skills config` — check platform enablement
-3. Load explicitly: `hermes -s name` (or the skill's own `/<name>` slash command)
+3. Load explicitly: `haos -s name` (or the skill's own `/<name>` slash command)
 
 ### Gateway issues
 Check logs first:

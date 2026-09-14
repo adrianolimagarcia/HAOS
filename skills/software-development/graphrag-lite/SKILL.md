@@ -42,7 +42,7 @@ historico de sessoes (use o sistema de memoria de sessoes).
 
 ## Prerequisites
 
-- Toolset `memory` habilitado (`hermes tools`): expoe `graphrag_query`,
+- Toolset `memory` habilitado (`haos tools`): expoe `graphrag_query`,
   `haos_hybrid_memory_query`, `haos_okf_save_document`, `obsidian_get_adr`,
   `obsidian_save_note`.
 - `$HERMES_HOME/memory/graphrag.db` presente (produzido pela stack A: notas do

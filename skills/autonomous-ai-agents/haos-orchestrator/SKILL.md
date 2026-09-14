@@ -51,7 +51,7 @@ python3 skills/autonomous-ai-agents/haos-orchestrator/scripts/task_spec_check.py
 
 1. **Escreva a spec da tarefa** (≤ 4 KB) a partir do template `templates/task_spec.md`. Inclua: papel único, restrições de pastas, arquivos a inspecionar primeiro, contratos de funções/classes, testes com valores concretos e os comandos exatos de verificação. Nunca restrinja ferramentas por prosa na spec — o escopo de ferramentas vem do papel/postura no harness.
 2. **Valide a spec** com `task_spec_check.py --spec`. Se rejeitar, divida a tarefa ou corrija antes de despachar (specs oversized são o preditor nº1 de falha).
-3. **Despache o worker** com `delegate_task` (ou processo `hermes -z` para worker isolado) em background, e registre a spec versionada.
+3. **Despache o worker** com `delegate_task` (ou processo `haos -z` para worker isolado) em background, e registre a spec versionada.
 4. **Monitore ativamente**: verifique se o processo segue vivo e progride; se parecer travado, interrompa antes do timeout, inspecione o que aconteceu e decida entre corrigir ou dividir a spec.
 5. **Verifique de forma independente** ao terminar: rode os MESMOS comandos do CI (`scripts/run_tests.sh`, lint, typecheck) você mesmo — não aceite "testes passaram" do worker como verificação.
 6. **Envie o diff ao revisor** com escopo estreito (PASS/REWORK + arquivo:linha). REWORK pequeno corrija direto; problema maior vira nova tarefa de worker.

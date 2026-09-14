@@ -247,7 +247,7 @@ _NIX_STORE = Path("/nix/store")
 # detection instead of blocking config writes.
 _IGNORED_MANAGED_VALUES = frozenset({"brew", "homebrew"})
 # Explicit opt-out (``HERMES_MANAGED=false``): without this a bool-shaped value became a package
-# manager literally named "false" and is_managed() blocked `hermes update` (#12864).
+# manager literally named "false" and is_managed() blocked `haos update` (#12864).
 _MANAGED_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 
 
@@ -1188,8 +1188,12 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
     if config is None:
         try:
             config = load_config()
-        except Exception:
-            return [ConfigIssue("error", "Could not load config.yaml", "Run '" + product_command("setup") + "' to create a valid config")]
+        except Exception as exc:
+            # Delega ao classificador do upstream: um home indisponivel (link para alvo
+            # inexistente, mount ausente, permissao) precisa ser reportado como storage
+            # indisponivel COM o caminho — nao como "rode o setup" (config.yaml esta intacto).
+            from hermes_cli.config_home import config_load_issue
+            return [config_load_issue(exc)]
 
     issues: List[ConfigIssue] = []
     _validate_voice(config, issues)
@@ -2143,7 +2147,7 @@ def _last_known_good_fallback(config_path: Path, path_key: str, cache_sig, exc: 
     lkg = _LAST_EXPANDED_CONFIG_BY_PATH.get(path_key)
     fallback = "last-known-good"
     if lkg is None:
-        # Fresh process (CLI restart, `hermes config get`): nothing loaded yet in this process, so
+        # Fresh process (CLI restart, `haos config get`): nothing loaded yet in this process, so
         # fall back to the newest byte-exact copy the last successful parse left in backups/config/.
         # It holds the raw file (``${VAR}`` templates intact), so it goes through the same
         # canonicalize -> expand -> managed-overlay pipeline as a normal load.
@@ -3139,11 +3143,10 @@ def warn_unpinned_cron_jobs_after_model_config_change(
 
     noun, verb = ("job", "keeps") if affected == 1 else ("jobs", "keep")
     print(
-        f"⚠️  {affected} enabled unpinned cron {noun} {verb} stored "
-        f"{axis}_snapshot values that differ from the new global {axis}. "
-        "They will fail closed on their next run instead of silently using the changed " +
-        "model/provider. Inspect with `" + product_command("cron") + " list`, then pin the intended values with " +
-        "`" + product_command("cron") + " edit <job_id> --provider <provider> --model <model>`.")
+        f"ℹ️  {affected} unpinned cron {noun} {verb} running on the {axis} it was created under "
+        f"(its {axis}_snapshot), not the new global {axis}. To move it, pin it with "
+        "`" + product_command("cron") + " edit <job_id> --provider <provider> --model <model>` or set a fleet default "
+        "with `" + product_command("config") + " set cron.model <model>`.")
 
 
 def _default_value_for_key(dotted_key: str):

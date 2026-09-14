@@ -242,9 +242,24 @@ def get_default_hermes_root() -> Path:
     result = native_home
     if env_home:
         env_path = Path(env_home)
+        # A home under ANY layout root anchors at that root, not at itself. The pre-rename
+        # ``~/.hermes`` is still a layout root (``_is_hermes_profiles_root`` accepts it), so an
+        # install carried over from the hermes layout keeps resolving ``profile=default`` to the
+        # store it was created in; without it, ``<legacy>/.hermes/custom-home`` read as a
+        # Docker-style custom root and the DEFAULT profile answered with the SERVING home's rows.
         try:
-            env_path.resolve().relative_to(native_home.resolve())  # under ~/.hermes (normal or profile mode)
-        except ValueError:  # Docker/custom root: <root>/profiles/<name> -> <root>, else HERMES_HOME itself
+            legacy_home: "Path | None" = Path.home() / ".hermes"
+        except RuntimeError:  # HOME unset in a service session: no legacy layout to anchor on
+            legacy_home = None
+        roots = (native_home,) if legacy_home is None or legacy_home == native_home else (native_home, legacy_home)
+        for root in roots:
+            try:
+                env_path.resolve().relative_to(root.resolve())  # normal or profile mode
+            except ValueError:
+                continue
+            result = root
+            break
+        else:  # Docker/custom root: <root>/profiles/<name> -> <root>, else HERMES_HOME itself
             result = env_path.parent.parent if env_path.parent.name == "profiles" else env_path
     _default_hermes_root_memo = (str(native_home), env_home, result)
     return result
@@ -553,7 +568,7 @@ def _print_managed_node_in_use_notice() -> None:
     _managed_node_in_use_notice_printed = True
     print(
         "→ Hermes-managed Node.js is in use by a running app; deferring its "
-        "upgrade until the app is closed (re-run `hermes update` afterwards).", flush=True,
+        "upgrade until the app is closed (re-run `" + product_command("update") + "` afterwards).", flush=True,
     )
 
 
@@ -813,7 +828,7 @@ def agent_browser_runnable(path: str | None) -> bool:
 
     A bare presence check (``shutil.which`` / ``Path.exists``) is not enough: agent-browser's npm
     ``postinstall`` re-points a *global* install symlink (e.g. ``/opt/homebrew/bin/agent-browser``) at our
-    local ``node_modules/agent-browser/bin/...`` binary, which then disappears on the next ``hermes update``
+    local ``node_modules/agent-browser/bin/...`` binary, which then disappears on the next ``haos update``
     — leaving a **dangling symlink** that ``which`` still reports but exec fails on with exit 127 (issue
     #48521). Callers that trust such a path silently break every browser tool.
     """
@@ -1383,7 +1398,7 @@ def partial_update_hint(exc: BaseException) -> list[str]:
         "This looks like a partially-updated install: one module was refreshed "
         "and a related one was not.",
         "Re-run the update to bring the whole tree to the same version:",
-        "    hermes update",
+        "    " + product_command("update"),
         "If that also fails, reinstall: https://hermes-agent.nousresearch.com",
     ]
 

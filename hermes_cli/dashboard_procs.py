@@ -495,7 +495,7 @@ def _is_desktop_local_serve_cmdline(command: str) -> bool:
     """
     from hermes_cli.update_cmd_windows import _hermes_holder_subcommand
     # Canonical token matcher, never argv substrings: ``kanban --preserve-cache`` contains "serve" and
-    # ``vim notes about hermes serve`` contains both markers — this predicate decides a kill.
+    # ``vim notes about haos serve`` contains both markers — this predicate decides a kill.
     if _hermes_holder_subcommand(command) != "serve":
         return False
     tokens = command.lower().split()

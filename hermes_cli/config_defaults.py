@@ -1984,11 +1984,11 @@ DEFAULT_CONFIG = {
         "write_sessions_json": True,
         # One gateway for every profile on this host: the DEFAULT profile's gateway also connects
         # each named profile's bots (their own .env / config.yaml, per-profile secret scope) and
-        # stamps the profile into session keys. Flip with `hermes gateway migrate --multiplex`
-        # (records a rollback manifest; `--standalone` undoes it) or `hermes config set
-        # gateway.multiplex_profiles true` + `hermes gateway restart`. GATEWAY_MULTIPLEX_PROFILES
+        # stamps the profile into session keys. Flip with `haos gateway migrate --multiplex`
+        # (records a rollback manifest; `--standalone` undoes it) or `haos config set
+        # gateway.multiplex_profiles true` + `haos gateway restart`. GATEWAY_MULTIPLEX_PROFILES
         # in the environment overrides. Two profiles configuring the same bot token cannot be
-        # served together — the duplicate adapter is parked; `hermes profile create --clone`
+        # served together — the duplicate adapter is parked; `haos profile create --clone`
         # therefore leaves messaging channels behind unless --clone-channels is passed.
         "multiplex_profiles": False,
         # Route inbound chats of the default profile's bots to another profile
@@ -2156,7 +2156,7 @@ DEFAULT_CONFIG = {
     },
 
     "updates": {
-        # Passive version/banner checks only; explicit `hermes update --check` remains enabled.
+        # Passive version/banner checks only; explicit `haos update --check` remains enabled.
         "check": True,
         # Pre-update backup. quick = snapshot small critical state (pairing JSONs, cron jobs,
         # config.yaml, .env, auth.json, profile DBs) into <HERMES_HOME>/state-snapshots/, skipping
@@ -2226,7 +2226,7 @@ DEFAULT_CONFIG = {
     # External secret sources — pull credentials from secret managers at startup instead of storing
     # them in ~/.hermes/.env.
     # Browser credential vault: which login sources browser_vault_list/fill may draw from. The local
-    # encrypted vault (`hermes vault add`, Desktop → Settings → Credential Vault) is always on.
+    # encrypted vault (`haos vault add`, Desktop → Settings → Credential Vault) is always on.
     # External password managers are unlocked per session with a masked master-password prompt;
     # headless sessions (cron, webhook, API) never prompt and see them as locked.
     "vault": {
@@ -2404,7 +2404,7 @@ DEFAULT_CONFIG = {
         "anthropic_wire": "chat",
         # Nous free tier: with no other provider configured, Hermes sets up a free Nous identity on
         # first use (inference on nous/welcome + connectors) and offers `/login` (terminal:
-        # `hermes auth upgrade`) to sign in. false turns the free tier off entirely: nothing is set
+        # `haos auth upgrade`) to sign in. false turns the free tier off entirely: nothing is set
         # up and nothing is used.
         "guest": True,
     },

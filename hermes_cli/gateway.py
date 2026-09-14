@@ -1988,8 +1988,8 @@ def _native_service_homes() -> set[Path]:
     return homes
 
 
-def _bare_unit_pinned_home() -> Path | None:
-    """Resolved ``HERMES_HOME`` pinned by an installed ``hermes-gateway.service``, or None. The unit is the
+def _is_bare_unit_pinned_home(home: Path) -> bool:
+    """True when *home* is the ``HERMES_HOME`` pinned by an installed ``hermes-gateway.service``. The unit is the
     one naming basis that holds still across the sudo mid-command switch (see ``_profile_suffix``) and it
     covers every elevated identity — ``sudo -i`` and cron included, where SUDO_USER is absent.
 
@@ -2000,16 +2000,19 @@ def _bare_unit_pinned_home() -> Path | None:
     ``is_linux()`` is a plain ``sys.platform`` test; ``supports_systemd_services()`` would be wrong here,
     since it can shell out to ``systemctl is-system-running`` on WSL/containers and this runs on every
     name resolution.
+
+    Compares RESOLVED PATHS rather than materializing one: the caller asks a yes/no question, and the
+    pinned value is arbitrary text from a hand-editable unit file (``~nouser``, an embedded NUL).
     """
     if not is_linux() or os.geteuid() != 0:  # windows-footgun: ok — behind is_linux()
-        return None
+        return False
     pinned = _hermes_home_pinned_by_unit(_SYSTEM_UNIT_DIR / f"{_SERVICE_BASE}.service")
     if not pinned:
-        return None
+        return False
     try:
-        return Path(pinned).expanduser().resolve()
+        return os.path.realpath(os.path.expanduser(pinned)) == str(home)
     except (RuntimeError, ValueError):  # hand-edited unit: ``~nouser`` or an embedded NUL
-        return None
+        return False
 
 
 def _profile_suffix() -> str:
@@ -2021,7 +2024,7 @@ def _profile_suffix() -> str:
     naming basis moves MID-COMMAND — sudo strips HERMES_HOME and sets HOME=/root, then
     ``_sync_hermes_home_from_systemd_unit()`` adopts the unit's own HERMES_HOME into ``os.environ`` — so a
     basis derived from the process alone names one unit before the adoption and another after it. The
-    unit-pinned check must precede the profile branch: ``sudo hermes gateway install --system`` resolves
+    unit-pinned check must precede the profile branch: ``sudo haos gateway install --system`` resolves
     the BARE name from root's default, then pins the invoking user's remapped home, so the bare unit
     legitimately carries a ``<root>/profiles/<name>`` home.
 
@@ -2034,7 +2037,7 @@ def _profile_suffix() -> str:
     import hashlib
     from hermes_constants import get_default_hermes_root
     home = get_hermes_home().resolve()
-    if home in _native_service_homes() or home == _bare_unit_pinned_home():
+    if home in _native_service_homes() or _is_bare_unit_pinned_home(home):
         return ""
     name = _profile_name_from_home(home, get_default_hermes_root().resolve())
     return name or hashlib.sha256(str(home).encode()).hexdigest()[:8]
@@ -4072,7 +4075,7 @@ def launchd_install(force: bool = False):
                 from hermes_constants import display_hermes_home
                 print(
                     "⚠ Service definition could not be reloaded with launchd. "
-                    "Run 'hermes gateway install --force' or check "
+                    "Run '" + product_command("gateway") + " install --force' or check "
                     f"{display_hermes_home()}/logs/launchd-reload.log for details."
                 )
             return
@@ -6210,8 +6213,8 @@ def _cmd_stop(args):
         )
         print("  Stop or restart the multiplexer from the default profile instead:")
         print()
-        print("    hermes gateway stop      # takes every served profile offline")
-        print("    hermes gateway restart")
+        print("    " + product_command("gateway") + " stop      # takes every served profile offline")
+        print("    " + product_command("gateway") + " restart")
         sys.exit(GATEWAY_FATAL_CONFIG_EXIT_CODE)
     # Under s6 a bare pkill is seen as a crash and restarted; go through the supervisor.
     if stop_all and _dispatch_all_via_service_manager_if_s6("stop"):
@@ -6277,7 +6280,7 @@ def _cmd_restart(args):
             pass
 
     # Linger only explains a FAILED systemd unit restart. Without an installed unit the
-    # detached run below is the restart; bailing here left `hermes gateway restart` a
+    # detached run below is the restart; bailing here left `haos gateway restart` a
     # silent exit-0 no-op on any Linux login session (Desktop read it as success).
     if kind == "systemd" and supports_systemd_services():
         linger_ok, _detail = get_systemd_linger_status()

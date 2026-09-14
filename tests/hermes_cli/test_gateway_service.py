@@ -195,20 +195,21 @@ class TestServiceIdentityForForeignHome:
         foreign.mkdir()
         monkeypatch.setenv("HERMES_HOME", str(foreign))
 
-        default_unit = machine_home / ".config" / "systemd" / "user" / "hermes-gateway.service"
-        assert gateway_cli.get_service_name() != "hermes-gateway"
+        default_unit = machine_home / ".config" / "systemd" / "user" / f"{gateway_cli._SERVICE_BASE}.service"
+        assert gateway_cli.get_service_name() != gateway_cli._SERVICE_BASE
         assert gateway_cli.get_systemd_unit_path() != default_unit
         assert gateway_cli.get_systemd_unit_path().parent == default_unit.parent
 
     def test_default_and_named_profile_homes_keep_their_names(self, machine_home, monkeypatch):
-        default_home = machine_home / ".hermes"
+        # Nome do home default resolvido pelo brand (HAOS: ~/.haos), nunca literal.
+        default_home = machine_home / _get_platform_default_hermes_home().name
         (default_home / "profiles" / "alpha").mkdir(parents=True)
 
         monkeypatch.setenv("HERMES_HOME", str(default_home))
-        assert gateway_cli.get_service_name() == "hermes-gateway"
+        assert gateway_cli.get_service_name() == gateway_cli._SERVICE_BASE
 
         monkeypatch.setenv("HERMES_HOME", str(default_home / "profiles" / "alpha"))
-        assert gateway_cli.get_service_name() == "hermes-gateway-alpha"
+        assert gateway_cli.get_service_name() == f"{gateway_cli._SERVICE_BASE}-alpha"
 
     def test_sudo_user_default_home_keeps_bare_service_name(self, machine_home, tmp_path, monkeypatch):
         sudo_home = tmp_path / "alice"
@@ -220,11 +221,11 @@ class TestServiceIdentityForForeignHome:
 
         # Before unit sync, sudo resolves the root process's native home.
         monkeypatch.delenv("HERMES_HOME", raising=False)
-        assert gateway_cli.get_service_name() == "hermes-gateway"
+        assert gateway_cli.get_service_name() == gateway_cli._SERVICE_BASE
 
         # After unit sync, HERMES_HOME points at the invoking user's native home.
         monkeypatch.setenv("HERMES_HOME", str(sudo_default))
-        assert gateway_cli.get_service_name() == "hermes-gateway"
+        assert gateway_cli.get_service_name() == gateway_cli._SERVICE_BASE
 
 
 class TestUninstallRefusesForeignUnit:
@@ -1561,7 +1562,7 @@ class TestGeneratedUnitIncludesLocalBin:
         monkeypatch.setattr(
             gateway_cli,
             "_system_service_identity",
-            lambda run_as_user=None: ("alice", "alice", "/home/alice"),
+            lambda run_as_user=None: ("alice", "alice", "/home/alice", 1001),
         )
         unit = gateway_cli.generate_systemd_unit(system=True)
         # System unit uses the resolved home dir from _system_service_identity
@@ -2720,7 +2721,7 @@ class TestUnitAnchoredServiceIdentity:
     """The installed ``hermes-gateway.service`` owns the bare name: under ``sudo`` the naming basis moves
     mid-command when ``_sync_hermes_home_from_systemd_unit()`` adopts the unit's HERMES_HOME (#108674).
 
-    ``linux_only`` because ``_bare_unit_pinned_home()`` is Linux- and root-gated on purpose: a systemd unit
+    ``linux_only`` because ``_is_bare_unit_pinned_home()`` is Linux- and root-gated on purpose: a systemd unit
     is not an identity authority for launchd labels, Windows tasks, or s6 slots, which share the same
     resolver, and only an elevated process operates the system unit.
     """
@@ -2760,7 +2761,7 @@ class TestUnitAnchoredServiceIdentity:
         monkeypatch.setattr(Path, "home", lambda: tmp_path / "alice")
         monkeypatch.setattr(os, "geteuid", lambda: 1000)
         monkeypatch.setenv("HERMES_HOME", str(profile_home))
-        assert gateway_cli.get_service_name() == "hermes-gateway-kimi"
+        assert gateway_cli.get_service_name() == f"{gateway_cli._SERVICE_BASE}-kimi"
 
     @pytest.mark.linux_only
     def test_bare_unit_pinning_a_named_profile_home_keeps_the_bare_name(self, tmp_path, monkeypatch):

@@ -154,7 +154,7 @@ async def gateway_migrate_plan():
 
 @router.post("/api/gateway/migrate")
 async def gateway_migrate():
-    """Run ``hermes gateway migrate --multiplex --yes`` detached; the CLI re-runs the preflight and
+    """Run ``haos gateway migrate --multiplex --yes`` detached; the CLI re-runs the preflight and
     refuses (exit 1 into the action log) when blocked, so the UI should gate on the plan first."""
     from hermes_cli.web_server_gateway import _spawn_hermes_action
     with http_failure("Failed to spawn gateway migrate", 500, "Failed to start gateway migration"):

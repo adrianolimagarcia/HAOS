@@ -474,7 +474,7 @@ def _run_delivery(argv: list[str], dm_file: str, *, stdin_file: bool,
     retain their intent/payload and immutable receipt; only CLI/peer payloads are
     removed after consumption. The CLI turn window holds the profile lock, so two
     deliveries into one profile queue; a bounded wait ends in a 'target_busy' refusal.
-    ``author`` rides to the child as HERMES_TURN_AUTHOR; ``hermes peer dm`` forwards it in the request body.
+    ``author`` rides to the child as HERMES_TURN_AUTHOR; ``haos peer dm`` forwards it in the request body.
 
     Local (query-file) turns get one policy-gated retry (#93091 item 5): transient failures re-run the same
     session; a context_overflow re-run lets the retried turn's pre-API compaction pass compact the Bot Chat

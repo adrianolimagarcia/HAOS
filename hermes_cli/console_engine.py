@@ -1,7 +1,7 @@
 """Safe Hermes Console command engine."""
 
 from __future__ import annotations
-from hermes_constants import product_command
+from hermes_constants import product_cli_name, product_command
 
 import argparse
 import contextlib
@@ -201,7 +201,7 @@ class _CliSurface:
 
     def build(self, root: str, *, live: bool) -> _ArgumentParser:
         """Build a throwaway parser; ``live=False`` wires no-op handlers (summary extraction)."""
-        parser = _ArgumentParser(prog="hermes", add_help=False)
+        parser = _ArgumentParser(prog=product_cli_name(), add_help=False)
         subparsers = parser.add_subparsers(dest="_console_command")
         module = importlib.import_module(self.module)
         entry = getattr(module, self.builder)

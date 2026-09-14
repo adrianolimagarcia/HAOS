@@ -15,6 +15,7 @@ import time
 from typing import Any, Dict, Optional
 
 from hermes_cli.sqlite_runtime import is_sqlite_wal_reset_vulnerable as _is_sqlite_wal_reset_vulnerable
+from hermes_constants import product_command
 
 # Log-record parity with the origin module (caplog tests pin "hermes_state").
 logger = logging.getLogger("hermes_state")
@@ -371,7 +372,7 @@ def _apply_delete_for_wal_reset_bug(conn: sqlite3.Connection, *, db_label: str, 
 
 
 def _wal_reset_repair_hint() -> str:
-    """Repair hint matching what ``hermes update`` can actually do for this install type.
+    """Repair hint matching what ``haos update`` can actually do for this install type.
 
     See #75153.
     """
@@ -400,7 +401,7 @@ _ONCE_LOGS = {
         # Install-type-aware so the warning never promises a repair path that doesn't exist for git/pip installs.
         "%s: linked SQLite %s (interpreter %s) is vulnerable to the WAL-reset corruption bug "
         "(https://sqlite.org/wal.html#walresetbug) — %s. Upgrade to SQLite 3.51.3+ (or backports 3.50.7 / 3.44.6); "
-        "%s. See `hermes doctor`. This warning fires once per process per database."),
+        "%s. See `" + product_command("doctor") + "`. This warning fires once per process per database."),
     "journal_upgrade": (_journal_upgrade_warned_lock, "_journal_upgrade_warned_paths", logging.WARNING,
         # journal_mode is a property of the FILE: switching an existing DB to WAL rewrites its header and outlives
         # the process. Operators set DELETE on the file (the WAL-reset-bug mitigation) and nothing told them the

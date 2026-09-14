@@ -100,6 +100,13 @@ _DEFAULT_OFF_TOOLSETS = {"homeassistant", "spotify", "discord", "discord_admin",
 # schemas, own switch (``stt.enabled``), never in ``platform_toolsets`` or the per-platform checklist.
 _CONFIG_ONLY_TOOLSETS = {"stt"}
 
+# Toolsets cujas tools ja vivem em `_HERMES_CORE_TOOLS` (sempre enviadas): o NOME do toolset nunca
+# precisa ser reinjetado numa lista salva ou de sessao, entao `_recover_platform_native_toolsets`
+# nao deve recupera-lo. Sem isso `mcp_gateway` (toolset do fork HAOS) reaparece numa lista que
+# nunca o ofereceu, e a assercao de `tui_gateway.server._load_enabled_toolsets` — que tolera
+# apenas `project` e os `_RECENTLY_SHIPPED_TOOLSETS` — quebra.
+_NEVER_RECOVERED_TOOLSETS = {"mcp_gateway"}
+
 
 def _xai_credentials_present() -> bool:
     """Cheap offline check for xAI credentials (auth store + env only); the runtime ``check_fn`` still gates
@@ -433,6 +440,10 @@ def enabled_mcp_server_names(config: dict) -> Set[str]:
 #: toolset on a checklist, an unchecking user's config is byte-identical to one saved before it existed and this
 #: rule would turn the opt-out back on (stuck checkbox). ``check_fn``-gated toolsets cost nothing here; never
 #: probe a remote service from this path — it runs on every CLI start, gateway session and cron tick.
+# Vazio e o estado estavel entre releases (upstream: `frozenset()`). Preencher aqui destrava os
+# testes de `test_tools_config.py` decorados com `_requires_recently_shipped`, que so valem
+# durante a primeira release de um toolset novo — e `mcp_gateway` nao esta em
+# CONFIGURABLE_TOOLSETS, entao o caminho de opt-out (checkbox travado) nao se aplica a ele.
 _RECENTLY_SHIPPED_TOOLSETS: frozenset = frozenset()
 
 
@@ -632,7 +643,7 @@ def _recover_platform_native_toolsets(enabled_toolsets: Set[str], platform: str,
     platform_tool_universe = set(resolve_toolset(_platform_default_toolset(platform)))
     configurable_tool_universe = {t for ts_key, _, _ in CONFIGURABLE_TOOLSETS for t in resolve_toolset(ts_key)}
     claimed = {t for ts_key in enabled_toolsets for t in resolve_toolset(ts_key)}
-    skip = skip | {k for k in TOOLSETS if k.startswith("hermes-")} | (set(_DEFAULT_OFF_TOOLSETS) - {platform})
+    skip = skip | _NEVER_RECOVERED_TOOLSETS | {k for k in TOOLSETS if k.startswith("hermes-")} | (set(_DEFAULT_OFF_TOOLSETS) - {platform})
     for ts_key, ts_def in TOOLSETS.items():
         # Posture toolsets (``coding``) are session-level selections made by agent/coding_context.py, not
         # per-platform capabilities to recover.

@@ -148,7 +148,7 @@ def _record_update_step(step: str, ok: bool, detail: str = "") -> None:
 
 
 # A fetch whose transport dead-stalls (HTTP/2 to GitHub on some networks, a black-holed proxy)
-# otherwise leaves `hermes update` on "Fetching updates..." forever (#93759, #95777). Five
+# otherwise leaves `haos update` on "Fetching updates..." forever (#93759, #95777). Five
 # minutes is generous for a scoped single-branch fetch and still ends in a real error.
 NETWORK_GIT_TIMEOUT_SECONDS = 300
 

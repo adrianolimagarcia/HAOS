@@ -26,7 +26,7 @@ from hermes_cli.secret_prompt import masked_secret_prompt
 # Providers that support OAuth login in addition to API keys.
 _OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"}
 # ...and default to it when ``--type`` is omitted. OpenRouter stays API-key-first: the documented
-# ``hermes auth add openrouter --api-key sk-or-...`` must keep working with no ``--type``.
+# ``haos auth add openrouter --api-key sk-or-...`` must keep working with no ``--type``.
 _OAUTH_DEFAULT_PROVIDERS = _OAUTH_CAPABLE_PROVIDERS - {"openrouter"}
 
 
@@ -405,7 +405,7 @@ def _add_credential(args, provider: str, pool, requested_type: str) -> PooledCre
 def _report_priority(provider: str, pool, moved, requested: int, verb: str, prep: str) -> None:
     """Print the effective priority and say why it differs from the request, if it does."""
     print(f'{verb} {provider} credential "{moved.label}" {prep} priority {moved.priority} '
-          f"(#{moved.priority + 1} in `hermes auth list {provider}`)")
+          f"(#{moved.priority + 1} in `" + product_command("auth") + f" list {provider}`)")
     size = len(pool.entries())
     if moved.priority != requested:
         if requested < 0 or requested >= size:
@@ -421,7 +421,7 @@ def _report_priority(provider: str, pool, moved, requested: int, verb: str, prep
 
 
 def auth_priority_command(args) -> None:
-    """`hermes auth priority <provider> <target> <priority>`: reorder one pooled credential."""
+    """`haos auth priority <provider> <target> <priority>`: reorder one pooled credential."""
     provider = _normalize_provider(getattr(args, "provider", ""))
     pool = load_pool(provider)
     index, matched, error = pool.resolve_target(getattr(args, "target", None))
@@ -535,7 +535,7 @@ def auth_reset_command(args) -> None:
 
 
 def auth_refresh_command(args) -> None:
-    """`hermes auth refresh <provider> [target]`: force one pooled OAuth entry to refresh.
+    """`haos auth refresh <provider> [target]`: force one pooled OAuth entry to refresh.
 
     A successful refresh rotates the stored tokens and clears the entry's local
     exhaustion block, returning it to rotation before its persisted
@@ -553,7 +553,7 @@ def auth_refresh_command(args) -> None:
         if len(entries) != 1:
             raise SystemExit(
                 f"{provider} has {len(entries)} credentials; pass an index, entry id, or exact "
-                f"label (see `hermes auth list {provider}`).")
+                "label (see `" + product_command("auth") + f" list {provider}`).")
         index, matched = 1, entries[0]
     else:
         index, matched, error = pool.resolve_target(target)
@@ -569,7 +569,7 @@ def auth_refresh_command(args) -> None:
         raise SystemExit(
             f"nous credential #{index} ({matched.label}) is not a refreshable OAuth "
             "credential: only the device_code singleton supports refresh. "
-            "Reauthenticate with `hermes auth add nous --type oauth`.")
+            "Reauthenticate with `" + product_command("auth") + " add nous --type oauth`.")
     refreshed = pool.try_refresh_matching(credential_id=matched.id)
     if refreshed is None:
         after = next((e for e in pool.entries() if e.id == matched.id), None)
@@ -795,7 +795,7 @@ def _interactive_strategy() -> None:
 
 
 def auth_upgrade_command(args) -> None:
-    """``hermes auth upgrade``: sign the free tier into a Nous account, keeping its connectors."""
+    """``haos auth upgrade``: sign the free tier into a Nous account, keeping its connectors."""
     from hermes_cli.anon_auth import upgrade_guest
     code = upgrade_guest(args)
     if code:

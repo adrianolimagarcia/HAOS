@@ -3,7 +3,7 @@
 The footer tells the model (and user) when a claimed file mutation did not land; the explainer
 summarises why a turn ended without a final answer. Every method resolves through ``AIAgent``'s MRO.
 """
-from hermes_constants import product_command
+from hermes_constants import product_cli_name, product_command
 import os
 import re
 from contextlib import suppress
@@ -85,6 +85,12 @@ _EXIT_REASON_PREFIX_EXPLANATIONS = (
     )),
 )
 
+# Branded CLI prefix for the copy-pasteable recovery hints ("hermes "/"haos "); the templates below
+# append ``{profile_arg}`` before the subcommand, resolved per session in
+# ``_format_turn_completion_explanation`` — a bare CLI follows the sticky ``active_profile`` file,
+# so an unpinned command repairs the wrong database (#105887).
+_CLI = product_cli_name() + " "
+
 # ``session_persistence_failed`` refined by the classified cause (lock contention ≠ disk full).
 _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
     "compression": (
@@ -127,8 +133,8 @@ _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
         "do not overwrite the current state.db or delete its sidecars. "
         "Check the logs for whether Hermes captured the retired generation, "
         "then read the adjacent state.db.retired-wal-*/manifest.json. If "
-        "manifest.main.mode is `copied`, inspect that artifact with `hermes "
-        "sessions recover --source <state.db.retired-wal-*/state.db> "
+        "manifest.main.mode is `copied`, inspect that artifact with `" + product_command("sessions") +
+        " recover --source <state.db.retired-wal-*/state.db> "
         "--inspect-only` before deciding whether its committed frames belong "
         "on the current database. A `header_only` artifact is forensic and "
         "does not contain a copied state.db to inspect. Unwritten messages "
@@ -140,10 +146,10 @@ _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
         "reported structural corruption (the transcript would " +
         "have been lost on restart). Freeing disk space will " +
         "not help. Recovery options:\n" +
-        "1. Run `" + product_command("doctor") + " --fix`\n" +
+        "1. Run `" + _CLI + "{profile_arg}doctor --fix`\n" +
         "2. Stop the gateway, then recover with:\n" +
-        "   " + product_command("sessions") + " recover --source {db_path} --inspect-only\n" +
-        "   (if it reports recoverable) " + product_command("sessions") + " recover " +
+        "   " + _CLI + "{profile_arg}sessions recover --source {db_path} --inspect-only\n" +
+        "   (if it reports recoverable) " + _CLI + "{profile_arg}sessions recover " +
         "--source {db_path} --output recovered-state.db\n" +
         "   — recovery snapshots the damaged file first; do NOT " +
         "run `sqlite3 ... \".recover\"` against the live " +
@@ -158,7 +164,7 @@ _PERSISTENCE_CAUSE_EXPLANATIONS: Dict[str, str] = {
         "the turn was stopped because the session search index (FTS5) "
         "is corrupt and could not be detached, so this message was not "
         "saved. The message store itself is not damaged: do not run "
-        "recovery tools or restore a backup. Run `" + product_command("doctor") + " --fix` "
+        "recovery tools or restore a backup. Run `" + _CLI + "{profile_arg}doctor --fix` "
         "(or restart Hermes, which repairs the index on open), then "
         "send your message again."
     ),

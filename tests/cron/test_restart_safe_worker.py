@@ -381,14 +381,21 @@ def test_launch_external_worker_degrades_by_default_with_real_helper(
     tmp_path, monkeypatch,
 ):
     """Managed gateway + no bus, through the real helper and real config
-    plumbing: the default still Popens the job externally with the #101940
-    handoff (never in-process)."""
+    plumbing: the job still Popens externally with the #101940 handoff
+    (never in-process).
+
+    HAOS: a politica de scope e `cron.restart_safe_scope` (fork), com default
+    `require` (fail-closed) — o appliance declara `prefer` no haos-setup, e e
+    esse caminho de degradacao que este teste exercita. Sem declarar a politica,
+    o default do fork derruba a execucao de proposito (ver
+    tests/cron/test_scheduler_restart_safe_scope.py)."""
     import cron.scheduler as scheduler
     import tools.process_registry as process_registry
 
     job = {"id": "job-1", "execution_id": "exec-1", "prompt": "work"}
     monkeypatch.setattr(scheduler, "_get_hermes_home", lambda: tmp_path)
     monkeypatch.setattr(scheduler, "load_config_readonly", lambda: {})
+    monkeypatch.setattr(scheduler, "load_config", lambda: {"cron": {"restart_safe_scope": "prefer"}})
     monkeypatch.setattr(process_registry, "_is_supervised_gateway_process", lambda: True)
     monkeypatch.setenv("INVOCATION_ID", "managed-service")
     monkeypatch.setattr(process_registry, "_systemd_run_user_scope_available", lambda: False)

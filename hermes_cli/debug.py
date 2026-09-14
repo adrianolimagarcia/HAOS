@@ -114,7 +114,7 @@ after 6 hours, but may be archived by third parties in the meantime.
 
 If paste.rs is unreachable, uploads fall back to dpaste.com: those pastes
 stay public for the --expire window (default: 1 day) and CANNOT be deleted
-with `hermes debug delete`.
+with `""" + product_command("debug") + """ delete`.
 
 Use --local to view the report without uploading.
 """

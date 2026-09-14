@@ -294,7 +294,7 @@ def _profile_create(args):
         print("  (served now by the running multiplexed gateway — add its bot token and it connects)")
     elif served is not None:
         # The multiplexer did not pick the profile up (older gateway or the signal failed): a restart serves it.
-        print("  hermes gateway restart    Serve this profile from the running multiplexed gateway")
+        print("  " + product_command("gateway") + " restart    Serve this profile from the running multiplexed gateway")
     else:
         print(f"  {name} gateway start      Start the messaging gateway")
     if clone or clone_all:

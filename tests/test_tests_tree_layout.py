@@ -28,6 +28,10 @@ _NON_MIRROR_DIRS = {
     "fakes", "fixtures", "honcho_plugin", "install", "integration", "manual",
     "monitoring", "openviking_plugin", "perf_guards", "scripts", "secret_sources",
     "security", "skills", "verify", "website", "computer_use", "hermes_state",
+    # Suíte do HAOS para o pacote `hermes/platform/` (camada platform do appliance:
+    # observability, webui, memory, workers). O pacote vive sob `hermes/`, então o
+    # diretório não espelha um pacote de topo.
+    "platform",
 }
 
 # Root-level modules whose tests sit directly in tests/ (no package to mirror).

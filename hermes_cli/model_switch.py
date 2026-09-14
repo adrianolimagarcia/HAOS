@@ -1582,7 +1582,7 @@ def persist_model_selection(result: ModelSwitchResult, config_path: Any = None) 
     path = Path(config_path) if config_path else get_config_path()
     for key, value in model_selection_config_updates(result, read_user_config_raw(path).get("model")).items():
         atomic_roundtrip_yaml_update(path, f"model.{key}", value)
-        # Same unpinned-cron notice as `hermes config set` for every model switch.
+        # Same unpinned-cron notice as `haos config set` for every model switch.
         warn_unpinned_cron_jobs_after_model_config_change(f"model.{key}", value)
     try:  # owner-only: config files contain API keys
         os.chmod(path, 0o600)

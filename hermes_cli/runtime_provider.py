@@ -485,7 +485,7 @@ def _openrouter_should_use_pool(requested_provider, model_cfg, explicit_api_key,
     cfg_base_url = str(model_cfg.get("base_url") or "").strip()
     env_base_urls = get_secret_str("OPENAI_BASE_URL", "").strip() or get_secret_str("OPENROUTER_BASE_URL", "").strip()
     # A config base_url under provider: openrouter is a mirror only when it is NOT the canonical
-    # OpenRouter host — `hermes setup` persists https://openrouter.ai/api/v1 for plain installs,
+    # OpenRouter host — `haos setup` persists https://openrouter.ai/api/v1 for plain installs,
     # and treating that as custom would drop the auth.json pool (empty key).
     cfg_is_mirror = bool(cfg_base_url) and (
         _cfg_provider(model_cfg) in {"auto", "custom"}

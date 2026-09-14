@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Sequence
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_state_common import (FTS_CJK_STALE_KEY, FTS_STALE_KEY, _FTS_CJK_TRIGGERS, _FTS_TRIGGERS,
     routed_sessions_setting)
 from hermes_state_errors import is_fts_scoped_corruption_error
@@ -233,7 +233,7 @@ class SessionFtsSetupMixin:
         self._fts_unavailable_warned = True
         logger.warning(
             "SQLite FTS5 unavailable for %s; full-text session search "
-            "disabled. Run `hermes update` to rebuild the venv with a "
+            "disabled. Run `" + product_command("update") + "` to rebuild the venv with a "
             "current Python (managed uv guarantees FTS5). (underlying error: %s)",
             self.db_path,
             exc,
@@ -263,7 +263,7 @@ class SessionFtsSetupMixin:
                             "cjk_unicode61 tokenizer is unavailable (%s) — "
                             "dropping the cjk triggers so message writes keep "
                             "working. CJK search falls back to trigram/LIKE; "
-                            "run `hermes sessions optimize-storage` on a host "
+                            "run `" + product_command("sessions") + " optimize-storage` on a host "
                             "with the extension to rebuild.",
                             fts5_cjk_so_path(),
                         )

@@ -48,7 +48,7 @@ See: https://docs.honcho.dev/v3/guides/integrations/hermes#running-honcho-locall
 ### Verify
 
 ```bash
-hermes honcho status    # shows resolved config, connection test, peer info
+haos honcho status    # shows resolved config, connection test, peer info
 ```
 
 ## Architecture
@@ -123,7 +123,7 @@ Honcho sessions scope where messages and observations land. Strategy options:
 | `per-session` | New Honcho session each Hermes run |
 | `global` | Single session across all directories |
 
-Manual override: `hermes honcho map my-project-name`
+Manual override: `haos honcho map my-project-name`
 
 ### Recall Modes
 
@@ -218,7 +218,7 @@ What `--clone` does for Honcho:
 ### Backfill existing profiles
 
 ```bash
-hermes honcho sync    # creates host blocks for all profiles that don't have one yet
+haos honcho sync    # creates host blocks for all profiles that don't have one yet
 ```
 
 ### Per-profile config
@@ -389,13 +389,13 @@ This fix addresses edge cases where raw user conclusions containing markup or sp
 ## Troubleshooting
 
 ### "Honcho not configured"
-Run `hermes honcho setup`. Ensure `memory.provider: honcho` is in `~/.hermes/config.yaml`.
+Run `haos honcho setup`. Ensure `memory.provider: honcho` is in `~/.hermes/config.yaml`.
 
 ### Memory not persisting across sessions
-Check `hermes honcho status` -- verify `saveMessages: true` and `writeFrequency` isn't `session` (which only writes on exit).
+Check `haos honcho status` -- verify `saveMessages: true` and `writeFrequency` isn't `session` (which only writes on exit).
 
 ### Profile not getting its own peer
-Use `--clone` when creating: `haos profile create <name> --clone`. For existing profiles: `hermes honcho sync`.
+Use `--clone` when creating: `haos profile create <name> --clone`. For existing profiles: `haos honcho sync`.
 
 ### Observation changes in dashboard not reflected
 Observation config is synced from the server on each session init. Start a new session after changing settings in the Honcho UI.
@@ -413,19 +413,19 @@ Session summary requires at least one prior turn in the current Honcho session. 
 
 | Command | Description |
 |---------|-------------|
-| `hermes honcho setup` | Interactive setup wizard (cloud/local, identity, observation, recall, sessions) |
-| `hermes honcho status` | Show resolved config, connection test, peer info for active profile |
-| `hermes honcho enable` | Enable Honcho for the active profile (creates host block if needed) |
-| `hermes honcho disable` | Disable Honcho for the active profile |
-| `hermes honcho peer` | Show or update peer names (`--user <name>`, `--ai <name>`, `--reasoning <level>`) |
-| `hermes honcho peers` | Show peer identities across all profiles |
-| `hermes honcho mode` | Show or set recall mode (`hybrid`, `context`, `tools`) |
-| `hermes honcho tokens` | Show or set token budgets (`--context <N>`, `--dialectic <N>`) |
-| `hermes honcho sessions` | List known directory-to-session-name mappings |
-| `hermes honcho map <name>` | Map current working directory to a Honcho session name |
-| `hermes honcho identity` | Seed AI peer identity or show both peer representations |
-| `hermes honcho sync` | Create host blocks for all Hermes profiles that don't have one yet |
-| `hermes honcho migrate` | Step-by-step migration guide from OpenClaw native memory to Hermes + Honcho |
+| `haos honcho setup` | Interactive setup wizard (cloud/local, identity, observation, recall, sessions) |
+| `haos honcho status` | Show resolved config, connection test, peer info for active profile |
+| `haos honcho enable` | Enable Honcho for the active profile (creates host block if needed) |
+| `haos honcho disable` | Disable Honcho for the active profile |
+| `haos honcho peer` | Show or update peer names (`--user <name>`, `--ai <name>`, `--reasoning <level>`) |
+| `haos honcho peers` | Show peer identities across all profiles |
+| `haos honcho mode` | Show or set recall mode (`hybrid`, `context`, `tools`) |
+| `haos honcho tokens` | Show or set token budgets (`--context <N>`, `--dialectic <N>`) |
+| `haos honcho sessions` | List known directory-to-session-name mappings |
+| `haos honcho map <name>` | Map current working directory to a Honcho session name |
+| `haos honcho identity` | Seed AI peer identity or show both peer representations |
+| `haos honcho sync` | Create host blocks for all Hermes profiles that don't have one yet |
+| `haos honcho migrate` | Step-by-step migration guide from OpenClaw native memory to Hermes + Honcho |
 | `haos memory setup` | Generic memory provider picker (selecting "honcho" runs the same wizard) |
 | `haos memory status` | Show active memory provider and config |
 | `haos memory off` | Disable external memory provider |

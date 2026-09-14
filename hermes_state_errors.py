@@ -6,6 +6,8 @@ import errno
 import re
 import sqlite3
 
+from hermes_constants import product_command
+
 # Malformed schema: ``sqlite_master`` itself is inconsistent (typically a DUPLICATE
 # ``CREATE VIRTUAL TABLE messages_fts`` row). SQLite parses the whole schema while
 # preparing the FIRST statement, so EVERY statement raises (even ``PRAGMA
@@ -205,7 +207,7 @@ _STATE_DB_CORRUPT_MSG = (
     "FATAL: state.db reported structural corruption (database disk image is "
     "malformed outside the FTS shadow tables) on a live handle; refusing further "
     "writes, automatic reopen, and the close-time WAL checkpoint on this file. "
-    "Stop the gateway, then run `hermes sessions recover --source <state.db> "
+    "Stop the gateway, then run `" + product_command("sessions") + " recover --source <state.db> "
     "--inspect-only` or restore a snapshot. Unwritten transcripts are diverted to "
     "sessions/<id>.jsonl (and the gateway pending_messages spool)."
 )

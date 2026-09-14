@@ -680,45 +680,6 @@ def _install_plugin_core(
     return target, installed_manifest, installed_manifest.get("name") or target.name
 
 
-def _looks_like_bare_index_name(identifier: str) -> bool:
-    """True for a bare plugin name (no slash, no URL scheme) — resolved via the community index."""
-    return "/" not in identifier and "\\" not in identifier and not identifier.startswith(_URL_SCHEMES)
-
-
-def _resolve_index_name(identifier: str, console) -> tuple[str, Optional[str]]:
-    """Resolve a bare plugin name to ``(install_identifier, pinned_ref)``; exit 1 when unknown or
-    ambiguous. The ref is only pinned when it is an exact 40-char SHA; tags are advisory output."""
-    from hermes_cli.plugin_index import SECURITY_FOOTER, load_index, resolve_name
-    entries, source = load_index()
-    entry, candidates = resolve_name(entries, identifier)
-    if entry is None:
-        if len(candidates) > 1:
-            console.print(
-                f"[red]Error:[/red] Plugin name '{identifier}' is ambiguous in the "
-                f"community index ({source}). Candidates:")
-            for c in candidates:
-                console.print(f"  {c.name}  →  {c.install_identifier}")
-            _fail(console, "Re-run with the exact name or the owner/repo identifier.")
-        _fail(console, (
-            f"[red]Error:[/red] Plugin '{identifier}' was not found in the "
-            f"community index ({source}). Use `{product_command('plugins')} search <term>` to "
-            "browse, or install directly with an owner/repo identifier."))
-
-    pinned_ref: Optional[str] = None
-    if entry.ref and _EXACT_COMMIT_RE.fullmatch(entry.ref):
-        pinned_ref = entry.ref.lower()
-    elif entry.ref:
-        console.print(
-            f"[dim]Index pins ref '{entry.ref}' (not an exact commit SHA); "
-            "installing the default branch head instead.[/dim]")
-    console.print(
-        f"[dim]Resolved '{entry.name}' via community index ({source}) → "
-        f"{entry.install_identifier}"
-        + (f" @ {pinned_ref[:12]}[/dim]" if pinned_ref else "[/dim]"))
-    console.print(f"[dim]{SECURITY_FOOTER}[/dim]")
-    return entry.install_identifier, pinned_ref
-
-
 def cmd_install(
     identifier: str,
     force: bool = False,
@@ -2043,39 +2004,6 @@ def cmd_plugin_doctor(target: str = ".", *, ci: bool = False) -> None:
     _console().print(report.format_text())
     if ci and not report.ok:
         raise SystemExit(1)
-
-
-def cmd_search(
-    term: str = "",
-    *,
-    json_output: bool = False,
-    capability: Optional[str] = None,
-    refresh: bool = False,
-) -> None:
-    """Search the community plugin index (fuzzy on name/description/tags)."""
-    from hermes_cli.plugin_index import SECURITY_FOOTER, load_index, search_index
-    console = _console()
-    entries, source = load_index(refresh=refresh)
-    results = search_index(entries, term, capability=capability)
-    if json_output:
-        print(json.dumps(
-            {"source": source, "query": term, "results": [e.to_dict() for e in results], "note": SECURITY_FOOTER},
-            indent=2))
-        return
-
-    if not results:
-        console.print(f"[yellow]No plugins matched '{term}'[/yellow] [dim](index source: {source})[/dim]")
-        return
-
-    table = _table(
-        (("Name", "bold"), ("Description", None), ("Author", None), ("Tags", "dim")),
-        title=f"Community plugins ({len(results)} match{'es' if len(results) != 1 else ''})")
-    for e in results:
-        desc = e.description if len(e.description) <= 70 else e.description[:67] + "..."
-        table.add_row(e.name, desc, e.author, ", ".join(e.tags))
-    console.print(table)
-    console.print(f"[dim]Index source: {source}. Install: {product_command('plugins')} install <name>[/dim]")
-    console.print(f"[dim]{SECURITY_FOOTER}[/dim]")
 
 
 def _tri_state_flag(args, yes_attr: str, no_attr: str) -> Optional[bool]:

@@ -1351,7 +1351,7 @@ class GatewayStartupMixin:
         if self._start_check_access_policy():
             return True
         await self._start_recover_previous_run()
-        # The gateway is a boot owner of the Nous free tier, beside `cmd_chat` and `hermes serve`: every
+        # The gateway is a boot owner of the Nous free tier, beside `cmd_chat` and `haos serve`: every
         # demand-time site (provider resolution, /login, the connector token) is a read that needs the
         # identity to already exist. Blocking here, before any adapter connects, is what keeps a fast
         # first DM from arriving with nothing to resolve. With the launch gate unset this is a local

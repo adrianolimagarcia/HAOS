@@ -2,6 +2,8 @@
 
 from typing import Dict, List, Any, Set, Optional, Tuple
 
+from hermes_constants import product_command
+
 
 # Shared tool list for CLI and all messaging platform toolsets (edit once, all
 # platforms follow). Desktop GUI affordances are deliberately NOT here: they live
@@ -80,7 +82,7 @@ TOOLSETS = {
         "Search X (Twitter) posts and threads via xAI's built-in x_search Responses "
         "tool. Read-only public X discovery; use the xurl skill for authenticated X "
         "API reads and account actions. Available when xAI credentials are configured "
-        "(SuperGrok OAuth or XAI_API_KEY). Off by default; enable in `hermes tools` → "
+        "(SuperGrok OAuth or XAI_API_KEY). Off by default; enable in `" + product_command("tools") + "` → "
         "X (Twitter) Search.",
         ["x_search"],
     ),
@@ -91,7 +93,7 @@ TOOLSETS = {
         "Video generation tools. Single ``video_generate`` tool covers text-to-video "
         "(prompt only) and image-to-video (prompt + image_url), plus "
         "reference-to-video. Provider-specific edit/extend workflows may appear as "
-        "separate tools. Configure via ``hermes tools`` → Video Generation.",
+        "separate tools. Configure via ``" + product_command("tools") + "`` → Video Generation.",
         ["video_generate", "xai_video_edit", "xai_video_extend"],
     ),
     "computer_use": _ts(
@@ -205,9 +207,9 @@ TOOLSETS = {
     ),
     "hermes-cli": _bundle("Full interactive CLI toolset - all default tools plus cronjob management"),
 
-    # Mirrors hermes-cli; `hermes tools` platform config filters it down and
+    # Mirrors hermes-cli; `haos tools` platform config filters it down and
     # _get_platform_tools() drops _DEFAULT_OFF_TOOLSETS unless user-enabled.
-    "hermes-cron": _bundle("Default cron toolset - same core tools as hermes-cli; gated by `hermes tools`"),
+    "hermes-cron": _bundle("Default cron toolset - same core tools as hermes-cli; gated by `" + product_command("tools") + "`"),
     "hermes-telegram": _bundle("Telegram bot toolset - full access for personal use (terminal has safety checks)"),
     "hermes-discord": _bundle(
         "Discord bot toolset - full access (terminal has safety checks via dangerous "

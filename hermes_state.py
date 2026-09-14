@@ -24,7 +24,7 @@ from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
 
-from hermes_constants import get_hermes_home, mkdir_under_hermes_home
+from hermes_constants import get_hermes_home, mkdir_under_hermes_home, product_command
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, TypeVar, cast
 
 from hermes_state_common import escape_like as _escape_like, stat_db_file_identity as _stat_db_file_identity
@@ -228,7 +228,7 @@ def _secure_state_db_files(db_path: Path, *, create_main: bool = False) -> None:
     connection to the same database. A lock-losing close in one process lets a
     sibling's connection take the shared-memory DMS exclusively at its own
     close, checkpoint, and unlink the sidecars while long-lived holders
-    (gateway, desktop ``hermes serve``) keep using the deleted inodes.
+    (gateway, desktop ``haos serve``) keep using the deleted inodes.
     """
     if os.name == "nt":
         return
@@ -656,9 +656,9 @@ class SessionDB(
         msg = (
             f"state.db has no SQLite header ({zsize} bytes). "
             f"Preserved at {qpath or '(quarantine failed — file left in place)'}. "
-            f"Restore from {self.db_path.parent / 'state-snapshots'} via `hermes snapshot list` / "
-            f"`hermes snapshot restore <id>` if available, or salvage the preserved bytes with "
-            f"`hermes sessions recover --source {qpath or self.db_path}`. "
+            f"Restore from {self.db_path.parent / 'state-snapshots'} via `" + product_command("snapshot") + " list` / "
+            f"`" + product_command("snapshot") + " restore <id>` if available, or salvage the preserved bytes with "
+            f"`" + product_command("sessions") + f" recover --source {qpath or self.db_path}`. "
             "Opening a fresh empty database so the agent can start."
         )
         logger.error(msg)
@@ -1196,7 +1196,7 @@ class SessionDB(
             "state.db %s reported structural corruption outside the FTS "
             "indexes (%s); quarantining this handle: no further writes, no "
             "automatic reopen, no explicit WAL checkpoint at close. Stop the "
-            "gateway and run `hermes sessions recover --source %s --inspect-only`.", self.db_path, exc,
+            "gateway and run `" + product_command("sessions") + " recover --source %s --inspect-only`.", self.db_path, exc,
             self.db_path,
         )
         err = self._corrupt_error()
@@ -1389,7 +1389,7 @@ class SessionDB(
                     logger.warning(
                         "Skipping the close-time WAL checkpoint for %s: this "
                         "handle observed %s. Take a snapshot of state.db, -wal and -shm "
-                        "before restarting, then run `hermes sessions recover --source %s --inspect-only`.",
+                        "before restarting, then run `" + product_command("sessions") + " recover --source %s --inspect-only`.",
                         self.db_path, quarantine_reason, self.db_path,
                     )
                 elif not self.read_only and not generation_lost:  # PASSIVE, not TRUNCATE (see docstring)

@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_startup_watchdog import report_startup_progress
 from hermes_state_common import (
     _acquire_db_flock, _clear_lock_holder_record, _describe_lock_holder, _read_lock_holder_record,
@@ -65,7 +65,7 @@ _REPAIR_BACKUP_MIN_FREE_BYTES = 256 * 1024 * 1024  # 256 MiB absolute floor
 _REPAIR_BACKUP_FREE_FRACTION = 0.02  # plus 2% of the volume
 _FTS_TABLES = ("messages_fts", "messages_fts_trigram", "messages_fts_cjk")
 _MANUAL_RECOVER_HINT = ("Free disk space, then retry (or recover manually with "
-                        "`hermes sessions recover --source {db_path} --inspect-only` first).")
+                        "`" + product_command("sessions") + " recover --source {db_path} --inspect-only` first).")
 
 
 def _sidecars(db_path: Path):
@@ -489,7 +489,7 @@ def _backup_db_file(db_path: Path) -> "Tuple[Optional[Path], Optional[str]]":
     partials, deleted intact copies) and dedupe could return one with no real forensic copy on disk.
 
     Refusal reasons (``_backup_free_space_error`` / ``_MANUAL_RECOVER_HINT``) point operators at the safe lane,
-    `hermes sessions recover --source <db> --inspect-only`, never at a raw sqlite3 shell on the live file.
+    `haos sessions recover --source <db> --inspect-only`, never at a raw sqlite3 shell on the live file.
 
     See #69603.
     """
@@ -899,7 +899,7 @@ def repair_state_db_schema(db_path: Path, *, backup: bool = True) -> Dict[str, A
         # exclusive guard in the locked routine excludes writers through promotion and sees DELETE-mode readers too.
         elif _live_writer_holds_db(db_path):
             _repair_skip(report, "skipped", "a live writer still holds state.db; skipped schema surgery to avoid tearing "
-                         "b-tree pages under a concurrent writer. Stop the gateway (hermes gateway stop) and retry.")
+                         "b-tree pages under a concurrent writer. Stop the gateway (" + product_command("gateway") + " stop) and retry.")
         else:
             # Probe journal mode BEFORE surgery: a rebuilt file comes back in the default (delete) mode and nothing
             # else records the flip. Unprobeable (damaged file) -> database.journal_mode is the restore target.

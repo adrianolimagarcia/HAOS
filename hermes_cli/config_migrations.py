@@ -660,7 +660,7 @@ MIGRATIONS: Tuple[Tuple[int, Callable[[Dict[str, Any], bool], None]], ...] = (
         added="curator.archive_after_days=30 (was: 90)",
         message=(
             "  ✓ curator.archive_after_days 90→30 — skills unused for a month are archived to "
-            "skills/.archive/ (recoverable with `hermes curator restore`). Set it back to 90 to keep the old window."))),
+            "skills/.archive/ (recoverable with `" + product_command("curator") + " restore`). Set it back to 90 to keep the old window."))),
 )
 
 

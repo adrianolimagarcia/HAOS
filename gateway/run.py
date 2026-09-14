@@ -1804,7 +1804,7 @@ async def _discover_gateway_mcp_tools(config: object) -> None:
     No gateway run can complete a browser OAuth flow (nobody watches its stdout; on Windows its
     DEVNULL stdin even passes ``isatty``), so discovery runs with interactive OAuth suppressed — the
     same gate the CLI's background discovery uses. An expired token then parks the server with an
-    actionable ``hermes mcp login`` warning instead of opening an authorize tab.
+    actionable ``haos mcp login`` warning instead of opening an authorize tab.
     """
     from tools.mcp_oauth import suppress_interactive_oauth
     from tools.mcp_tool_discovery import discover_mcp_tools
@@ -5044,7 +5044,7 @@ async def _start_gateway_start_control_socket(runner):
                 "pid": os.getpid(), "drain_timeout": _drain}
 
         def _rescan_profiles_handler() -> dict:
-            """``hermes profile create/delete`` asks the multiplexer to reconcile ``profiles/`` now
+            """``haos profile create/delete`` asks the multiplexer to reconcile ``profiles/`` now
             (the watcher also rescans periodically). Runs on the socket executor: marshal onto the loop
             and wait briefly so the caller learns whether the profile is served."""
             if not getattr(runner.config, "multiplex_profiles", False):

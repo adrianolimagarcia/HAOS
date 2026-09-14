@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from hermes_constants import product_command
 from toolsets import get_toolset_names
 
 _log = logging.getLogger(__name__)
@@ -3214,7 +3215,7 @@ def promote_task(
             f"unsatisfied parent dependencies: {', '.join(unsatisfied)} "
             f"(the ready -> running claim re-checks parents, so promotion cannot "
             f"bypass them; complete the parents or drop the link with "
-            f"`hermes kanban unlink <parent_id> {task_id}`)"
+            "`" + product_command("kanban") + f" unlink <parent_id> {task_id}`)"
         )
 
     if dry_run:

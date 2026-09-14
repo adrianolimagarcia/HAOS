@@ -2251,7 +2251,7 @@ def _try_nous(vision: bool = False) -> Tuple[Optional[OpenAI], Optional[str]]:
         if not api_key:
             logger.warning(
                 "Auxiliary Nous client unavailable: no usable inference JWT found "
-                "(run: hermes auth add nous)."
+                "(run: " + product_command("auth") + " add nous)."
             )
             _mark_provider_unhealthy("nous", ttl=60)
             return None, None
@@ -4260,7 +4260,8 @@ def _discovery_chain_allowed(main_provider: str, task: Optional[str] = None) -> 
         return True
     logger.warning(
         "Auxiliary %s: main provider %s is unavailable and no fallback_chain / fallback_providers is "
-        "configured — refusing to guess another logged-in provider. Re-authenticate (`hermes model`) "
+        "configured — refusing to guess another logged-in provider. Re-authenticate (`"
+        + product_command("model") + "`) "
         "or declare a fallback.", task or "call", main_provider)
     return False
 

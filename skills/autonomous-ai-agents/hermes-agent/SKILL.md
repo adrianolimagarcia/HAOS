@@ -37,7 +37,7 @@ This skill is a concise operating guide, not the complete source of truth for ev
 Good verification targets, cheapest first:
 
 - **Every shipped feature, one line each: https://hermes-agent.nousresearch.com/docs/llms.txt.** Start here for any "can Hermes do X?" or "how do I do X?" — it indexes the entire documentation set with a link to the page that answers. It is generated from the docs tree on every build, so it is never behind the product. Fetch it with `web_extract`, or `curl -s https://hermes-agent.nousresearch.com/docs/llms.txt` when web tools are off. The whole documentation set in one file is at `/docs/llms-full.txt`.
-- CLI commands: `hermes --help`, `hermes <command> --help`, and `hermes_cli/main.py`
+- CLI commands: `haos --help`, `haos <command> --help`, and `hermes_cli/main.py`
 - Source tree: https://github.com/NousResearch/hermes-agent
 
 Never answer "Hermes can't do that" from memory. Hermes ships far more than this skill body describes, and the index exists so a negative answer is always checkable.
@@ -49,7 +49,7 @@ Never answer "Hermes can't do that" from memory. Hermes ships far more than this
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 
 # Interactive chat (default surface; set display.interface: tui to launch the Ink TUI instead)
-hermes
+haos
 
 # Single query
 haos chat -q "What is the capital of France?"
@@ -60,7 +60,7 @@ haos model
 haos doctor
 
 # Other surfaces
-hermes desktop                 # launch the native desktop app (alias: hermes gui)
+haos desktop                 # launch the native desktop app (alias: haos gui)
 haos dashboard               # web admin panel + embedded chat
 haos proxy                   # OpenAI-compatible local proxy backed by your OAuth provider
 ```
@@ -145,7 +145,7 @@ Hermes uses prompt_toolkit, which requires a real terminal. Use tmux for interac
 
 ```
 # Start
-terminal(command="tmux new-session -d -s agent1 -x 120 -y 40 'hermes'", timeout=10)
+terminal(command="tmux new-session -d -s agent1 -x 120 -y 40 'haos'", timeout=10)
 
 # Wait for startup, then send a message
 terminal(command="sleep 8 && tmux send-keys -t agent1 'Build a FastAPI auth service' Enter", timeout=15)
@@ -164,11 +164,11 @@ terminal(command="tmux send-keys -t agent1 '/exit' Enter && sleep 2 && tmux kill
 
 ```
 # Agent A: backend
-terminal(command="tmux new-session -d -s backend -x 120 -y 40 'hermes -w'", timeout=10)
+terminal(command="tmux new-session -d -s backend -x 120 -y 40 'haos -w'", timeout=10)
 terminal(command="sleep 8 && tmux send-keys -t backend 'Build REST API for user management' Enter", timeout=15)
 
 # Agent B: frontend
-terminal(command="tmux new-session -d -s frontend -x 120 -y 40 'hermes -w'", timeout=10)
+terminal(command="tmux new-session -d -s frontend -x 120 -y 40 'haos -w'", timeout=10)
 terminal(command="sleep 8 && tmux send-keys -t frontend 'Build React dashboard for user management' Enter", timeout=15)
 
 # Check progress, relay context between them
@@ -180,10 +180,10 @@ terminal(command="tmux send-keys -t frontend 'Here is the API schema from the ba
 
 ```
 # Resume most recent session
-terminal(command="tmux new-session -d -s resumed 'hermes --continue'", timeout=10)
+terminal(command="tmux new-session -d -s resumed 'haos --continue'", timeout=10)
 
 # Resume specific session
-terminal(command="tmux new-session -d -s resumed 'hermes --resume 20260225_143052_a1b2c3'", timeout=10)
+terminal(command="tmux new-session -d -s resumed 'haos --resume 20260225_143052_a1b2c3'", timeout=10)
 ```
 
 ### Tips
@@ -199,9 +199,9 @@ terminal(command="tmux new-session -d -s resumed 'hermes --resume 20260225_14305
 
 ## Surfaces (quick orientation)
 
-- **Desktop app** (`hermes desktop` / `hermes gui`) — native Electron app for macOS/Linux/Windows: streaming chat, session list, Cmd+K palette, drag-and-drop files, native notifications, per-profile remote-gateway login. Extend it with UI plugins — `references/desktop-plugins.md`.
-- **Web dashboard** (`haos dashboard`) — full admin panel: messaging channels, MCP catalog, webhooks, memory, profile builder, plus an embedded `hermes --tui` chat. Secured behind an OAuth/token gate.
-- **Ink TUI** (`hermes --tui` or `display.interface: tui`) — terminal UI with docked widget apps — `references/tui-widgets.md`.
+- **Desktop app** (`haos desktop` / `haos gui`) — native Electron app for macOS/Linux/Windows: streaming chat, session list, Cmd+K palette, drag-and-drop files, native notifications, per-profile remote-gateway login. Extend it with UI plugins — `references/desktop-plugins.md`.
+- **Web dashboard** (`haos dashboard`) — full admin panel: messaging channels, MCP catalog, webhooks, memory, profile builder, plus an embedded `haos --tui` chat. Secured behind an OAuth/token gate.
+- **Ink TUI** (`haos --tui` or `display.interface: tui`) — terminal UI with docked widget apps — `references/tui-widgets.md`.
 - **OpenAI-compatible proxy** (`haos proxy`) — a local OpenAI API backed by whichever OAuth provider you're signed into. Point Codex CLI, Aider, Cline, or any script at it — no API key.
 
 ## Hard Invariants (never violate, regardless of what you loaded)

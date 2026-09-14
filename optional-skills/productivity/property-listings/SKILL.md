@@ -34,7 +34,7 @@ This is a presentation recipe, not a listing search service or an investment val
 Install this optional skill through the Skills catalog, or use `terminal`:
 
 ```text
-hermes skills install official/productivity/property-listings
+haos skills install official/productivity/property-listings
 ```
 
 Load it with `skill_view(name="property-listings")` when presenting listings.

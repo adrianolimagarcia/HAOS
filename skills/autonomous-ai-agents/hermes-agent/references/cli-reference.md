@@ -1,12 +1,12 @@
 # Hermes CLI Reference
 
-Live sources when anything looks stale: `hermes --help`, `hermes <command> --help`,
+Live sources when anything looks stale: `haos --help`, `haos <command> --help`,
 https://hermes-agent.nousresearch.com/docs/reference/cli-commands
 
 ### Global Flags
 
 ```
-hermes [flags] [command]        (no subcommand = interactive chat)
+haos [flags] [command]        (no subcommand = interactive chat)
 
   --version, -V             Show version
   -z, --oneshot PROMPT      One-shot: print ONLY the final response (for scripts/pipes)
@@ -44,7 +44,7 @@ haos setup [section]      Wizard (model|tts|terminal|gateway|tools|agent)
 haos model                Interactive model/provider picker
 haos fallback [add|remove|list]  Fallback provider chain
 haos config [show|edit|get|set|unset|path|env-path|check|migrate]
-hermes login / logout       OAuth sign-in / clear stored auth
+haos login / logout       OAuth sign-in / clear stored auth
 haos doctor [--fix]       Check dependencies and config
 haos status [--all]       Component status
 ```
@@ -78,7 +78,7 @@ Details (transport, tool discovery, catalog): `references/native-mcp.md`.
 haos gateway run|install|start|stop|restart|status|setup
 ```
 
-20+ platforms: Telegram, Discord, Slack, WhatsApp (Baileys + Business Cloud API), iMessage (Photon — `hermes photon setup`), Signal, Email, SMS, Matrix, Mattermost, Teams, LINE, SimpleX, ntfy, Google Chat, Home Assistant, DingTalk, Feishu, WeCom, Weixin, API Server, Webhooks. Open WebUI connects via the API Server adapter. Most adapters ship under `plugins/platforms/`.
+20+ platforms: Telegram, Discord, Slack, WhatsApp (Baileys + Business Cloud API), iMessage (Photon — `haos photon setup`), Signal, Email, SMS, Matrix, Mattermost, Teams, LINE, SimpleX, ntfy, Google Chat, Home Assistant, DingTalk, Feishu, WeCom, Weixin, API Server, Webhooks. Open WebUI connects via the API Server adapter. Most adapters ship under `plugins/platforms/`.
 Docs: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
 
 ### Sessions
@@ -115,7 +115,7 @@ Multiple credentials per provider form a pool that rotates automatically and ski
 ### Other
 
 ```
-hermes desktop / gui        Native desktop app
+haos desktop / gui        Native desktop app
 haos dashboard            Web admin panel + embedded chat (--stop / --status)
 haos proxy                OpenAI-compatible local proxy backed by an OAuth provider
 haos portal               Quick setup / sign in via Nous Portal
@@ -135,7 +135,7 @@ haos completion bash|zsh|fish
 haos update / uninstall / claw migrate
 ```
 
-Plugin- and provider-supplied subcommands (e.g. `hermes photon setup`) only appear once their plugin is installed/active.
+Plugin- and provider-supplied subcommands (e.g. `haos photon setup`) only appear once their plugin is installed/active.
 
 ### Where to Find Things
 

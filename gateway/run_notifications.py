@@ -6,7 +6,7 @@ so ``patch("gateway.run.X")`` keeps intercepting them at call time.
 """
 
 from __future__ import annotations
-from hermes_constants import product_command
+from hermes_constants import product_cli_name, product_command
 
 import asyncio
 import contextlib
@@ -849,23 +849,24 @@ class GatewayNotificationsMixin:
         # Copy-pasteable, so name the real store and pin the profile: a bare `hermes` follows
         # active_profile, which may be a different database (#105887).
         profile_arg = profile_cli_selector()
+        cli = product_cli_name() + " "
         if cause == "corrupt":
             db_path = _default_db_path()
             backups_dir = get_default_hermes_root() / "backups"
             message = (
                 "⚠️ Session database corruption detected. Messages may not be " +
                 "persisted. Recovery options:\n" +
-                "1. Run `" + product_command("doctor") + " --fix`\n" +
+                f"1. Run `{cli}{profile_arg}doctor --fix`\n" +
                 "2. Stop the gateway, then recover with:\n" +
-                f"   {product_command('sessions')} recover --source {db_path} "
+                f"   {cli}{profile_arg}sessions recover --source {db_path} "
                 "--inspect-only\n" +
-                "   (if it reports recoverable) " + product_command("sessions") + " recover "
+                f"   (if it reports recoverable) {cli}{profile_arg}sessions recover "
                 f"--source {db_path} --output recovered-state.db\n" +
                 "   — recovery snapshots the damaged file first; do NOT run " +
                 "`sqlite3 ... \".recover\"` against the live state.db, a " +
                 "vulnerable sqlite3 CLI can corrupt it further\n" +
                 f"3. Restore from a backup in {backups_dir}/\n" +
-                "Run `" + product_command("doctor") + "` for sanitized diagnostics."
+                f"Run `{cli}{profile_arg}doctor` for sanitized diagnostics."
             )
         elif cause == "fts_index":
             # Index-scoped corruption: the message tables are not damaged, so the recover /
@@ -873,8 +874,8 @@ class GatewayNotificationsMixin:
             message = (
                 "⚠️ Session database reported a corruption error confined to the search index "
                 "(FTS5); the message tables are not damaged. Messages may not be persisted until "
-                f"it is repaired: run `hermes {profile_arg}doctor --fix`, then restart the gateway. Do not run "
-                "recovery tools or restore a backup unless `hermes doctor` confirms damage."
+                f"it is repaired: run `{cli}{profile_arg}doctor --fix`, then restart the gateway. Do not run "
+                "recovery tools or restore a backup unless `" + product_command("doctor") + "` confirms damage."
             )
         else:
             message = (

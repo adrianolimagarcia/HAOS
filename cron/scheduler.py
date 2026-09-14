@@ -588,7 +588,7 @@ def get_running_job_ids() -> "frozenset[str]":
 
 def get_running_job_details() -> list[dict]:
     """Per in-flight job: ``{"job_id", "elapsed_s", "worker_pid"}`` (``worker_pid`` None for in-process
-    runs). The drain wait publishes this so ``hermes update`` can say WHICH job it is waiting on."""
+    runs). The drain wait publishes this so ``haos update`` can say WHICH job it is waiting on."""
     now = time.time()
     with _running_lock:
         return [
@@ -1381,8 +1381,8 @@ def _snapshot_pin(job: dict, axis: str, current: str, job_id: str) -> str:
     if snapshot and current and snapshot.lower() != current.lower():
         logger.info(
             "Job '%s': running on creation-snapshot %s %r (global default is now %r); "
-            "`hermes cron resnap %s` adopts the new default (stays unpinned), "
-            "`hermes cron edit %s --%s <value>` or cron.%s in config.yaml pins it.",
+            "`" + product_command("cron") + " resnap %s` adopts the new default (stays unpinned), "
+            "`" + product_command("cron") + " edit %s --%s <value>` or cron.%s in config.yaml pins it.",
             job_id, axis, snapshot, current, job_id, job_id, axis,
             "model" if axis == "model" else "model_provider")
     return snapshot
@@ -1518,11 +1518,12 @@ def _preflight_or_block(job: dict, job_id: str, job_name: str, cfg: dict) -> Opt
     return False, blocked_doc, "", f"{marker} {_pf_reason}"
 
 
-def _resolve_job_runtime(job: dict, job_id: str, jc: _CronJobConfig) -> tuple[dict, str]:
+def _resolve_job_runtime(job: dict, job_id: str, jc: _CronJobConfig) -> tuple[dict, str, bool]:
     """Resolve the runtime, walking the fallback chain on auth/transient-network errors. Returns
-    ``(runtime, model)``; provider+model swap atomically (never swap only the provider while keeping
+    ``(runtime, model, used_fallback)``; provider+model swap atomically (never swap only the provider while keeping
     a paid primary model). Provider precedence: per-job pin > cron.model_provider > creation
-    snapshot > persisted global config."""
+    snapshot > persisted global config. ``used_fallback`` marks a run whose primary provider could
+    not be resolved, so the spend-drift guard does not read the fallback as a config change."""
     from hermes_cli.runtime_provider import (
         resolve_runtime_provider, format_runtime_provider_error)
     from hermes_cli.auth import AuthError
@@ -1545,7 +1546,7 @@ def _resolve_job_runtime(job: dict, job_id: str, jc: _CronJobConfig) -> tuple[di
         }
         if job.get("base_url"):
             runtime_kwargs["explicit_base_url"] = job.get("base_url")
-        return resolve_runtime_provider(**runtime_kwargs), model
+        return resolve_runtime_provider(**runtime_kwargs), model, False
     except Exception as resolve_exc:
         # Walk the fallback chain on AuthError AND transient network/DNS failures (e.g. during
         # OAuth refresh); anything else re-raises.
@@ -1577,7 +1578,7 @@ def _resolve_job_runtime(job: dict, job_id: str, jc: _CronJobConfig) -> tuple[di
                 logger.info(
                     "Job '%s': fallback resolved to %s model %s",
                     job_id, runtime.get("provider"), fb_model)
-                return runtime, fb_model
+                return runtime, fb_model, True
             except Exception as fb_exc:
                 logger.debug("Job '%s': fallback %s failed: %s", job_id, fb_provider, fb_exc)
         raise RuntimeError(format_runtime_provider_error(resolve_exc)) from resolve_exc
@@ -1586,12 +1587,22 @@ def _resolve_job_runtime(job: dict, job_id: str, jc: _CronJobConfig) -> tuple[di
 def _check_model_drift(
     job: dict, job_id: str, cfg: dict, runtime: dict,
     primary_provider_for_drift: Optional[str], primary_model_for_drift: str,
+    *, used_fallback: bool = False,
 ) -> None:
     """Fail-closed provider/model drift guard; raises RuntimeError (with drift marker) on drift.
     An unpinned job follows the global default, which may have switched to a paid provider/model:
     each unpinned axis whose creation snapshot (job["<axis>_snapshot"]) now resolves differently
     skips the run and alerts to pin. No snapshot, pinned axes, or the cron.model fleet default
-    never count as drift."""
+    never count as drift.
+
+    ``used_fallback`` short-circuits the guard: the run already left the primary provider through
+    the user-configured ``fallback_providers`` chain (auth or transient-network failure), so the
+    provider/model it carries is a deliberate degradation, not a global config change — reading it
+    as drift would block the very fallback the operator configured."""
+    if used_fallback:
+        logger.debug(
+            "Job '%s': resolved through the fallback chain — drift guard not applicable", job_id)
+        return
     if not cron_model_drift_guard_enabled(cfg):
         return
     _current_provider = str(
@@ -2246,10 +2257,17 @@ def _resolve_cron_agent_setup(job: dict, job_id: str, job_name: str, jc) -> _Cro
         return setup
 
     # Drift guard (spend protection): the requested model is setup.model BEFORE the runtime
-    # resolution overwrites it; provider falls back to the resolved runtime's provider.
+    # resolution overwrites it; provider falls back to the resolved runtime's provider. Uma
+    # resolucao que passou pela CADEIA DE FALLBACK (falha de auth/rede no provider primario) nao
+    # e drift da config global: o fallback e escolha explicita do usuario, e o teste do upstream
+    # `test_auth_fallback_switches_provider_and_model_together` prende exatamente esse caminho.
     _creation_model_for_drift = setup.model
-    setup.runtime, setup.model = _resolve_job_runtime(job, job_id, jc)
-    _check_model_drift(job, job_id, _cfg, setup.runtime, None, _creation_model_for_drift)
+    setup.runtime, setup.model, _runtime_used_fallback = _resolve_job_runtime(job, job_id, jc)
+    _check_model_drift(
+        job, job_id, _cfg, setup.runtime,
+        None, _creation_model_for_drift,
+        used_fallback=_runtime_used_fallback,
+    )
     setup.reasoning_config = _resolve_job_reasoning_config(
         job, _cfg if isinstance(_cfg, dict) else {}, str(setup.model)
     )
@@ -3239,6 +3257,7 @@ def _launch_external_cron_worker(job: dict) -> bool:
     from hermes_cli.env_loader import hydrate_profile_secret_sources
     from tools.environments.local import build_subprocess_env, strip_launch_profile_env
     from tools.process_registry import (
+        GatewayChildDispatch,
         restart_safe_gateway_child_argv,
         systemd_user_bus_env,
     )
@@ -3247,7 +3266,9 @@ def _launch_external_cron_worker(job: dict) -> bool:
         cron_cfg = (load_config_readonly() or {}).get("cron") or {}
         cron_cfg = cron_cfg if isinstance(cron_cfg, dict) else {}
         if "require_restart_safe_scope" in cron_cfg:
-            # Upstream key (new dispatch API): an explicit value wins over the fork policy.
+            # Chave do upstream (API nova de dispatch). Ela SEMPRE existe no DEFAULT_CONFIG
+            # (com False), entao o que decide e o VALOR: True = fail-closed explicito;
+            # False = o helper degrada por conta propria. Presenca nao e pedido.
             require_restart_safe_scope = bool(cron_cfg.get("require_restart_safe_scope"))
         else:
             require_restart_safe_scope = _restart_safe_scope_policy() == "require"
@@ -3261,25 +3282,31 @@ def _launch_external_cron_worker(job: dict) -> bool:
             require_restart_safe_scope=require_restart_safe_scope,
         )
     except RuntimeError as scope_error:
-        if _restart_safe_scope_policy() != "prefer":
+        # O helper do upstream so levanta quando require_restart_safe_scope=True (a chave
+        # upstream em True, ou a politica do fork em `require`). Com a politica `prefer`
+        # (sem pedido explicito de fail-closed) o helper devolve `degraded`; se um helper
+        # antigo levantar mesmo assim, degradamos aqui em vez de derrubar o run.
+        if require_restart_safe_scope or _restart_safe_scope_policy() != "prefer":
             raise
         logger.warning(
-            "cron: restart-safe scope unavailable (%s) — running job '%s' inside the "
-            "gateway cgroup; a gateway restart mid-run will interrupt it. Set "
-            "cron.restart_safe_scope: require to fail closed instead.",
+            "cron: restart-safe scope unavailable (%s) — running job '%s' as an external "
+            "worker without cgroup isolation; a gateway restart mid-run will interrupt it. "
+            "Set cron.restart_safe_scope: require to fail closed instead.",
             scope_error,
             job_id,
         )
-        return False
-    if dispatch.mode == "degraded" and _restart_safe_scope_policy() == "prefer":
-        # Fork prefer: a run a gateway restart may interrupt is strictly better than none.
+        dispatch = GatewayChildDispatch("degraded", command)
+    if dispatch.mode == "degraded":
+        # `prefer` (o appliance declara isso no haos-setup) degrada para um subprocesso
+        # EXTERNO com o handoff #101940: a separacao de processo continua, so a isolacao de
+        # cgroup se perde. Rodar in-process seria pior (bloqueia o gateway e tambem morre
+        # no restart), e e o contrato que o upstream passou a exigir.
         logger.warning(
-            "cron: restart-safe scope unavailable — running job '%s' inside the "
-            "gateway cgroup; a gateway restart mid-run will interrupt it. Set "
+            "cron: restart-safe scope unavailable — running job '%s' as an external worker "
+            "without cgroup isolation; a gateway restart mid-run will interrupt it. Set "
             "cron.restart_safe_scope: require to fail closed instead.",
             job_id,
         )
-        return False
     if dispatch.mode == "in_process":
         return False
 
