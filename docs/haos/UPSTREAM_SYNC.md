@@ -435,11 +435,78 @@ arquivo**), superfície de conflito (arquivos tocados pelos dois lados) = **102*
   noturna` com 5 execuções `source=builtin`; ticker com heartbeat; DNS resolvendo; host e VM no
   mesmo commit; 7 arquivos untracked da VM preservados).
 
+## Terceira passada de sync (5eb99eb284 → 1ad89ac018, 140 commits)
+
+O upstream avançou de novo (140 commits, 424 arquivos, 61645 inserções, 8537 remoções) e o
+merge-base continuou sendo exatamente o merge anterior (`5eb99eb284`) — de novo merge de 3 vias
+normal, numa branch `haos-sync-3`. Superfície de conflito: **59 arquivos tocados pelos dois
+lados** (58 auto-mergeados + **7 com conflito textual**, os mesmos 7 que o `merge-tree` previu).
+
+### Resolução dos 7 conflitos + 1 deleção (todos por união)
+
+| Arquivo | Resolução |
+|---|---|
+| `hermes_cli/config_migrations.py` | marca do fork (`product_command("curator")`) + passo novo `(45, _migrate_to_45)` do upstream |
+| `hermes_cli/doctor_state.py` | lógica nova do upstream (holder scan + `_exclusive_repair_db_guard` + `_SKIP`) com o branding restaurado nas 3 mensagens user-facing |
+| `hermes_cli/web_server_config.py` | mantém `"model": "general"` (fork) + `"connections": "agent"` (upstream) |
+| `hermes_state_dbfile.py` | união dos imports (`product_command` + `canonical_sqlite_path`) |
+| `tests/agent/test_compression_stall_fallback.py` | **lado do upstream** (idle 0.05 << teto 2.0): o upstream resolveu o mesmo flake que o fork mitigava com constantes, então a mitigação local deixou de ser necessária |
+| `ui-tui/src/components/branding.tsx` (2 hunks) | null-safety `(info.model ?? '')` do upstream + marca `HAOS Engineering` do fork |
+| `tools/setup_mcp_tool.py` (UD) | **aposentadoria aceita**: o upstream removeu a ferramenta (o `manage_connections` cobre MCP local) e mantém o replay shim `_setup_mcp_shim`; o delta do fork ali era só branding de strings que deixaram de existir |
+
+### O que a certificação pegou e corrigiu
+
+1. **Branding**: 9 violações novas dos 140 commits. 8 eram literais em docstrings/comentários
+   (`gateway_windows.py` ×3, `update_cmd_windows.py` ×2, `quiet_single_query.py` ×2,
+   `cron/incidents.py`) → `haos <cmd>`. A nona (`tools/connectors/mcp.py`) era um hint
+   user-facing numa **constante de módulo**: virou a função `unavailable_hint()`, porque
+   `product_command()` resolve o nome pelo ambiente em tempo de chamada e uma constante
+   congelaria a marca no import. Guard exit 0.
+2. **Preservação do delta do fork (linha a linha)**: 758 arquivos com linhas adicionadas pelo
+   fork conferidos, 756 preservados integralmente e 2 "ausências" que são as resoluções
+   deliberadas desta passada (o `_SKIP` do upstream carrega a mesma marca do fork; e o teste de
+   compressão, onde adotamos o lado do upstream). **0 perdas.**
+3. **Nível de arquivo (ponto cego fechado)**: a auditoria de linhas pulava em silêncio arquivos
+   que o merge deletava (lia o working tree, caía em `OSError` e seguia). Reconciliado à parte:
+   **24 arquivos do pré-merge ausentes = exatamente as 24 deleções reais do upstream** (13
+   deleções + 11 origens de rename, com detecção de rename desligada). Todos os 11 destinos de
+   rename existem e são byte-idênticos ao upstream (`tools/tool_gateway/*` →
+   `tools/connectors/gateway/*`, `model_tools_connectors.py` → `tools/connectors/dispatch.py`,
+   `tools/connector_search.py` → `tools/connectors/search.py`). Das 24, **só o
+   `setup_mcp_tool.py` tinha delta do fork** — o UD tratado acima.
+4. **Estática**: F811 89 antes = 89 depois; F821 com **0 arquivos suspeitos** (53 arquivos com
+   F821 no merged = exatamente os 53 do pré-merge; o upstream puro tem 43 — os 10 a mais são
+   arquivos do próprio fork, padrão `bind_module(globals(), server)` pré-existente). Duplicatas
+   AST no mesmo escopo: 28 = 28. Os 4 guards (`brand_hints`, `legacy_hermes_home`,
+   `compat_pointers`, `profile_archive_boundary`) exit 0.
+5. **Versão e migração**: `pyproject.toml` 0.21.2 → **0.21.3** (bump do upstream veio junto) e
+   `_config_version` 44 → **45** com `_migrate_to_45` definido (linha 546) e registrado (linha
+   712) — a união do conflito era justamente essa entrada.
+
+### Certificação e deploy
+
+- Suíte completa: **4340 arquivos, 50511 testes passando, 6 falhando, 472 skipped em 2379.9s**
+  (22 arquivos / 170 testes a mais que a 2ª passada). Triagem das 6: **4 são flakes de carga** e
+  passam isolados com a máquina ociosa (`test_shell_hooks_tree_kill`, `test_session_db_recovery`
+  — 20.6s sob carga vs 1.6s isolado —, `test_profiles_sidebar_cache`,
+  `test_refresh_singleflight`: 37 testes, 0 falhando) e **2 são ambientais** do quickstart
+  (mesmo `409 == 200`, `usable_vram = 2 GiB` nesta GPU). Nenhuma falha real na árvore mesclada.
+- Deploy: host `/usr/local/lib/haos-agent` e VM `/opt/haos` em **`8483f728ca`**, serviços
+  reiniciados dos dois lados (host 3/3, VM 4/4), 0 units falhadas na VM e os 7 untracked
+  preservados.
+- **E2E: PASS=8 FAIL=0** (doctor rc=0; 4 serviços ativos na VM; job `SYSTEM - cron: manutencao
+  noturna` com 5 execuções `source=builtin`; ticker com heartbeat; DNS resolvendo; host e VM no
+  mesmo commit).
+- Nota de host (não é regressão do sync): `pool-rank.service` e `haos-nightly-maintenance.service`
+  aparecem falhadas na máquina. O `pool-rank` roda de `/run/media/.../hermes/pool-rank/`
+  (fora deste repositório) e já falhava **44 vezes em 3 dias** antes deste deploy.
+
 ## Pendência futura (registrada)
 
-- **Sync total**: 1ª passada (graft + replay) **executada** e a **2ª passada** (merge de 3 vias de
-  `3f86ed75da` → `5eb99eb284`) também **executada e certificada** (ver as seções acima). Próxima
-  passada só quando o upstream avançar de novo.
+- **Sync total**: 1ª passada (graft + replay), 2ª passada (merge de 3 vias de `3f86ed75da` →
+  `5eb99eb284`) e **3ª passada** (`5eb99eb284` → `1ad89ac018`, 140 commits) **executadas e
+  certificadas** (ver as seções acima). O método já está estabelecido: merge de 3 vias direto
+  enquanto o merge-base for o merge anterior. Próxima passada só quando o upstream avançar.
 - **672 arquivos classe "ambos"**: revisão por arquivo (nossa mudança + upstream).
 - **232 módulos novos do upstream**: entraram junto com o port do core (fase futura).
 - **WIP local da VM**: investigado e resolvido — era o payload da ISO em `distro/` (ver a seção
