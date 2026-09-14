@@ -34,8 +34,13 @@ _state = {"model": None, "key": None, "last_used": 0.0, "effective": None}
 
 
 def _stt_config():
-    cfg = yaml.safe_load(open(os.path.join(HERMES_HOME, "config.yaml")))
-    return cfg.get("stt") or {}
+    path = os.path.join(HERMES_HOME, "config.yaml")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+    except FileNotFoundError:
+        return {}
+    return (cfg or {}).get("stt") or {}
 
 
 def _unload_after_idle_seconds():
