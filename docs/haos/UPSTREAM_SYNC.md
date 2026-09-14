@@ -376,11 +376,70 @@ branch (`tests/e2e/restart_safe_scope_smoke.py`, `tests/e2e/test_restart_safe_sc
 `skel/seed-haos/`) foram verificados com `git log --all` (vazio para esses caminhos) e ficaram
 preservados no appliance.
 
+## Segunda passada de sync (3f86ed75da → 5eb99eb284, 249 commits)
+
+O upstream avançou 249 commits depois da primeira passada. Desta vez não houve graft: o
+`git merge-base` entre o HEAD do fork e o upstream novo é **exatamente `3f86ed75da`** (o replay da
+primeira passada deixou a árvore descendente), então a operação é um **merge de 3 vias normal**
+(num branch dedicado `haos-sync-2`, mergido em `main`/`haos-standalone` só depois da certificação).
+
+Recon: 449 arquivos tocados pelo upstream (24315 inserções, 1525 remoções — **nenhuma remoção de
+arquivo**), superfície de conflito (arquivos tocados pelos dois lados) = **102**, dos quais apenas
+**5 com conflito textual** — o `git merge-tree --write-tree` previu exatamente os mesmos 5.
+
+### Resolução dos 5 conflitos (todos por UNIÃO, nunca um lado só)
+
+| Arquivo | Resolução |
+|---|---|
+| `cron/scheduler.py` (import) | mantém `DRIFT_SKIP_MARKER`/`DRIFT_SKIP_SILENT_MARKER` do fork + `_empty_requested_mcp_toolsets` do upstream |
+| `hermes_cli/gateway_migrate.py` | adota o opt-out `auto_migration_opted_out` (novo; o `auto_migration_blockers` já era usado no corpo) mantendo `haos update` na docstring |
+| `hermes_cli/profile_channels.py` | adota a docstring de inventário por OWNERSHIP (superset do upstream) com `haos gateway migrate --multiplex` |
+| `hermes_cli/webhook.py` | adota `_route_url(name, subs[name])` (correção de rota/assinatura) mantendo `product_command("webhook")` |
+| `hermes_cli/worktree_cmd.py` (2 hunks) | docstring nova (`--json`/`--older-than`) com `haos worktree`; guard `if records:` + seção `external` do upstream com `product_command('worktree')` |
+
+### O que a certificação pegou e corrigiu
+
+1. **Branding**: o guard `check_haos_brand_hints.py` reprovou (exit 1) com **14 violações**, todas
+   em linhas novas do upstream citando o CLI `hermes`. Corrigidas: 12 literais `haos <cmd>` em
+   docstrings/comentários e 3 strings user-facing convertidas para `product_command(...)`
+   (`gateway_migrate.py`, `webhook.py`, `google_chat/oauth.py` — este último restaurado para a
+   forma do fork). Guard limpo depois.
+2. **Preservação do delta do fork**: auditoria por linha (para cada um dos 449 arquivos do merge,
+   cada linha que o fork adicionou sobre `3f86ed75da` deve continuar existindo) → **0 perdas**;
+   os únicos 2 "ausentes" eram falsos positivos (rewrap do import de `cron/scheduler.py` e a
+   docstring antiga de `worktree_cmd.py`, substituída de propósito).
+3. **Estática**: F811 (redefinição) 8 antes = 8 depois; F821 (nome indefinido) 1371 → 1369, nenhum
+   novo (os "indefinidos" dos `methods_*.py` são o padrão `__getattr__` de compat, pré-existente).
+4. **Falha real de doc**: o teste NOVO do upstream `test_slash_commands_doc_parity.py` exige que
+   todo comando registrado apareça em `website/docs/reference/slash-commands.md` — o `/haos` do
+   fork não tinha linha. Adicionada a linha na tabela Tools & Skills (teste 3/3 passando). De
+   quebra, a referência órfã `:func:`reset_profile`` (função removida pelo próprio upstream,
+   docstring ficou para trás) agora aponta para `reset_hermes_home_override`.
+5. **Aposentadorias do upstream**: nenhuma remoção de arquivo no delta novo; dos 37 símbolos
+   removidos nível-definição, o único "órfão" era a docstring acima.
+
+### Certificação e deploy
+
+- Suíte completa na árvore mesclada: **4318 arquivos, 50341 testes passando, 5 falhando, 434
+  skipped em 2252.4s** (49 arquivos / 570 testes a mais que na primeira certificação). As 5
+  falhas: a de doc (item 4, **corrigida**) + 2 flakes de carga que passam ociosos
+  (`test_shell_hooks_tree_kill`, `test_gateway_shutdown` — 26 testes, 0 falhando em isolamento) +
+  2 ambientais do quickstart (mesmo `409 Conflict` do env, `usable_vram = 2 GiB` nesta GPU;
+  o código de `local_runtime/` agora é o upstream puro, então a classificação ambiental ficou
+  mais forte, não mais fraca).
+- Deploy: host `/usr/local/lib/haos-agent` e VM `/opt/haos` em **`a2f38d2d72`** (VM foi parada
+  pelo dono no meio da passada e depois reiniciada — o E2E no final já rodou com os dois lados no
+  commit novo). Unit `haos-gateway` no appliance faz `PYTHONPATH=/opt/haos` (fix da 1ª passada)
+  e continua funcionando — desta vez não houve crash loop na VM.
+- **E2E: PASS=8 FAIL=0** (doctor rc=0; 4 serviços ativos na VM; job `SYSTEM - cron: manutencao
+  noturna` com 5 execuções `source=builtin`; ticker com heartbeat; DNS resolvendo; host e VM no
+  mesmo commit; 7 arquivos untracked da VM preservados).
+
 ## Pendência futura (registrada)
 
-- **Sync total (graft + replay)**: **executado** nesta sessão (ver as seções acima). O que
-  sobra para uma próxima passada é só a revisão das 5 classes de falha que o replay expôs, se
-  o upstream avançar de novo.
+- **Sync total**: 1ª passada (graft + replay) **executada** e a **2ª passada** (merge de 3 vias de
+  `3f86ed75da` → `5eb99eb284`) também **executada e certificada** (ver as seções acima). Próxima
+  passada só quando o upstream avançar de novo.
 - **672 arquivos classe "ambos"**: revisão por arquivo (nossa mudança + upstream).
 - **232 módulos novos do upstream**: entraram junto com o port do core (fase futura).
 - **WIP local da VM**: investigado e resolvido — era o payload da ISO em `distro/` (ver a seção
