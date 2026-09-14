@@ -25,6 +25,15 @@ Environment="XDG_RUNTIME_DIR=/run/user/1000"
 # the ISO bakes Chromium (iso-from-vm.sh --include='/home/haos/.cache/ms-playwright/').
 Environment="PATH=/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="LD_PRELOAD=/usr/local/lib/libsqlite3.so.0"
+# A árvore tem módulos na RAIZ (`hermes_state_ids`, `hermes_constants`, ...) que o código de
+# pacote importa em tempo de import — `agent/conversation_compression.py` importa
+# `hermes_state_ids` no topo. Lançar `python /opt/haos/gateway/run.py` deixa `sys.path[0]` em
+# `/opt/haos/gateway`, e o reparo de sys.path do próprio run.py roda DEPOIS desses imports:
+# o gateway morre com `ModuleNotFoundError: No module named 'hermes_state_ids'` em loop de
+# restart. A forma documentada no docstring do run.py (`python -m gateway.run`) funciona
+# porque o `-m` põe o CWD (= WorkingDirectory acima) no sys.path; o PYTHONPATH explícito
+# garante o mesmo para qualquer forma de lançamento.
+Environment="PYTHONPATH=/opt/haos"
 ExecStart=/opt/haos/venv/bin/python /opt/haos/gateway/run.py
 Restart=always
 RestartSec=3
