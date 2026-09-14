@@ -287,11 +287,59 @@ upstream) + **2 arquivos do índice** (aposentados pelo upstream). Nada mais se 
 - Rollback: o trabalho vive em branch dedicada; `main` e `haos-standalone` não são
   tocados até o passo 5. Nenhum passo deste plano mexe na ISO.
 
+## Deploy do sync (host + VM) — o que quebrou e por quê
+
+Deploy feito em `1da580047c` (branch `haos-standalone` e `main`, ambos forçados: as histórias
+são não relacionadas com a do fork antigo, então `pull --ff-only` não serve — é
+`fetch` + `reset --hard`).
+
+1. **Push recusado pelo GitHub (`remote unpack failed: index-pack failed`, e depois
+   `remote: fatal: did not receive expected object <sha>`).** Causa-raiz: o clone de trabalho
+   era **shallow** (`.git/shallow` com 10 boundaries de 20/08 a 09/09) — o pack enviado era
+   incompleto e o `index-pack` do servidor não tinha as bases. O objeto que o servidor dizia
+   faltar nem existia localmente, que é a assinatura do problema. Correção:
+   `git fetch --unshallow upstream`. O push de 538 MB / 31944 commits entrou de uma vez depois
+   disso (o host e a VM também estavam shallow e precisaram do mesmo tratamento).
+2. **`haos-gateway` em loop de restart na VM** (`restart counter is at 116`) com
+   `ModuleNotFoundError: No module named 'hermes_state_ids'`. Causa-raiz: a árvore tem módulos
+   na RAIZ que o código de pacote importa no topo (`agent/conversation_compression.py` importa
+   `hermes_state_ids`), e a unit lançava `python /opt/haos/gateway/run.py` — o que deixa
+   `sys.path[0]` em `/opt/haos/gateway`. O reparo de `sys.path` do próprio `gateway/run.py`
+   (linha ~425) roda muito depois desses imports. O host não é afetado porque sua unit usa
+   `-m hermes_cli.main gateway run` e `hermes_cli/main.py:40` insere a raiz no `sys.path`.
+   Correção: `Environment="PYTHONPATH=/opt/haos"` no template
+   (`distro/haos-linux/.../haos-gateway.service`) e na unit instalada. A forma documentada no
+   docstring do run.py (`python -m gateway.run`) já funcionava pelo mesmo motivo (`-m` põe o
+   CWD, que é o `WorkingDirectory`, no `sys.path`).
+3. **WIP não commitado encontrado no host** (`/usr/local/lib/haos-agent`): guarda `LoadState`
+   em `gateway/shutdown_forensics.py`, `register_files()` em
+   `hermes/platform/memory/memory_governance.py` + `_register_canonical_write()` em
+   `tools/haos_memory_tools.py` (+ teste) e o servidor STT. Resgatado para o repo como commit
+   próprio (`9e272ae126`) por merge 3-way sobre a árvore sincronizada — nunca sobrescrevendo o
+   upstream. A unit `haos-stt.service` do host passou a apontar para
+   `scripts/haos_stt_server.py` (arquivo versionado) e o arquivo solto na raiz foi removido.
+4. **Extração do tar na VM rodava como root**: 9430 arquivos ficaram root-owned, o que impedia
+   o usuário `haos` de escrever na árvore (e quebrou `git checkout`/`reset`). Corrigido com
+   `chown -R haos:haos /opt/haos`; num próximo deploy, extrair como o usuário do serviço (ou
+   `tar --no-same-owner`) evita o problema.
+5. **Trabalho local da VM que NÃO está no repo** (untracked, preservado, aguardando decisão):
+   `plugins/model-providers/a6api/`, `plugins/model-providers/antigravity/`,
+   `wrapper-antigravity/`, `tests/e2e/restart_safe_scope_smoke.py`,
+   `tests/e2e/test_restart_safe_scope_smoke.py`, `tests/install/install-update-e2e.sh` e
+   `distro/haos-linux/config/includes.chroot/etc/skel/seed-haos/`.
+
+Verificação final: `haos doctor` rc=0 na árvore local; VM com `haos-gateway`, `haos-edge`,
+`haos-dns` e `haos-mesh` ativos; job nativo `SYSTEM - cron: manutencao noturna` presente com
+execuções `source=builtin`; ticker do cron com heartbeat; DNS do nó resolvendo; host e VM no
+mesmo commit — **E2E PASS=8 FAIL=0** (igual ao baseline).
+
 ## Pendência futura (registrada)
 
-- **Sync total (graft + replay)**: aguarda sessão dedicada com remedição das 36
-  superfícies de conflito contra o upstream atual.
+- **Sync total (graft + replay)**: **executado** nesta sessão (ver as seções acima). O que
+  sobra para uma próxima passada é só a revisão das 5 classes de falha que o replay expôs, se
+  o upstream avançar de novo.
 - **672 arquivos classe "ambos"**: revisão por arquivo (nossa mudança + upstream).
 - **232 módulos novos do upstream**: entraram junto com o port do core (fase futura).
+- **WIP local da VM** (item 5 acima): decidir se entra no repo (o do host já entrou).
 - **ISO**: bloqueado por ordem do dono — será o último passo, após todas as pendências,
   com autorização explícita. (Registrado em 19/09/2026; não criar.)
