@@ -49,7 +49,7 @@ def resolve_profile(rid, params, err_fn) -> Tuple[Optional[Any], Optional[dict]]
     Returns ``(token, error)``: ``token`` is None for the launch profile (no
     override) or an opaque reset token; ``error`` is a JSON-RPC error dict
     (built via ``err_fn``) when the named profile doesn't exist. Callers reset
-    ``token`` in a finally via :func:`reset_profile`.
+    ``token`` in a finally via :func:`reset_hermes_home_override`.
     """
     profile = str(params.get("profile") or "").strip()
     if not profile:
