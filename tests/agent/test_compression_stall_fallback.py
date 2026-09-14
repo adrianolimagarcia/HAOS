@@ -90,25 +90,7 @@ class _StalledSummaryWorker:
             fence.finish_commit()
 
 
-# Margens de tempo: o idle PRECISA disparar muito antes do teto, senão o teste
-# mede o teto em vez da recuperação. Com 0.05/0.2 s e 16 arquivos em paralelo, o
-# teto disparava primeiro: `attempts == 2` virava 1 (vermelho falso) e
-# `test_hard_interrupt_suppresses_the_fallback_attempt` passava com `attempts == 1`
-# pelo motivo errado (teto, não supressão) — verde falso. 6x de folga resolve sem
-# mudar o contrato medido.
-_IDLE_TIMEOUT_SECONDS = 0.25
-_TOTAL_CEILING_SECONDS = 1.5
-
-
-def _run(
-    worker,
-    *,
-    chain,
-    timeouts,
-    messages,
-    idle=_IDLE_TIMEOUT_SECONDS,
-    ceiling=_TOTAL_CEILING_SECONDS,
-):
+def _run(worker, *, chain, timeouts, messages, idle=0.05, ceiling=2.0):
     with _patch_chain(chain):
         return run_compress_context_with_progress_timeout(
             worker=worker,
@@ -169,8 +151,8 @@ def test_retry_runs_on_a_host_published_fence():
                 worker=worker,
                 messages=original,
                 system_prompt_fallback="degraded-prompt",
-                idle_timeout_seconds=_IDLE_TIMEOUT_SECONDS,
-                total_ceiling_seconds=_TOTAL_CEILING_SECONDS,
+                idle_timeout_seconds=0.05,
+                total_ceiling_seconds=2.0,
                 new_fence=_new_fence,
             )
     finally:
@@ -199,8 +181,8 @@ def test_hard_interrupt_suppresses_the_fallback_attempt():
                 worker=worker,
                 messages=original,
                 system_prompt_fallback="degraded-prompt",
-                idle_timeout_seconds=_IDLE_TIMEOUT_SECONDS,
-                total_ceiling_seconds=_TOTAL_CEILING_SECONDS,
+                idle_timeout_seconds=0.05,
+                total_ceiling_seconds=2.0,
                 on_timeout=lambda *args: timeouts.append(args),
                 telemetry_agent=agent,
             )

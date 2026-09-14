@@ -747,6 +747,10 @@ DEFAULT_CONFIG = {
         # enabled=false skips auto spawns (/refine still works). max_input_tokens caps the SUM of
         # replayed input tokens over the review loop (iterations capped at 16); the loop stops
         # before crossing it. <= 0 = unlimited.
+        # reasoning_effort is IGNORED while the review stays on the main model: the fork inherits the
+        # conversation's reasoning config verbatim so its request bytes keep the parent's warm
+        # prompt-cache prefix (#30532). Set provider/model below to route the review to another model
+        # if you want a different effort level; a one-time warning says so when the key is set.
         "background_review": {"enabled": True, **_aux(120), "max_input_tokens": 600000},
         # No reasoning_effort on MoA blocks by design — configured PER SLOT in the preset
         # (moa.presets.<name>.reference_models[].reasoning_effort / aggregator.reasoning_effort).
@@ -2443,7 +2447,7 @@ DEFAULT_CONFIG = {
         # Extra ports detection probes for an external llama-server (besides 8080).
         "detect_ports": [],
     },
-    "_config_version": 44,  # Config schema version - bump this when adding new required fields
+    "_config_version": 45,  # Config schema version - bump this when adding new required fields
 }
 
 

@@ -201,6 +201,7 @@ _CATEGORY_MERGE: Dict[str, str] = {
     # `model` / `model_context_length` fields the page edits are virtual, see
     # `_config_schema_with_virtual_fields`), so the section would be a one-field orphan tab.
     "model": "general",
+    "connections": "agent",
 }
 
 
