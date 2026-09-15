@@ -105,6 +105,40 @@ else
     echo "--> 3. Grafo AST do código: pulado (defina HAOS_MAINTENANCE_AST=1 para ativar)"
 fi
 
+# --- 4. drift dev <-> deploy ------------------------------------------------
+# O que o unit executa e uma COPIA em <home>/scripts; editar o repo de dev sem
+# redeployar deixa rodando um arquivo diferente do que foi testado. O ponteiro
+# haos_dev_source aponta para o diretorio de scripts do repo (sem ponteiro ou
+# com a fonte desmontada = pulado, nunca falha por causa do disco externo).
+DEV_PTR="${SCRIPT_DIR}/haos_dev_source"
+if [ -f "${DEV_PTR}" ] && [ -d "$(cat "${DEV_PTR}" 2>/dev/null)" ]; then
+    DEV_SRC="$(cat "${DEV_PTR}")"
+    echo "--> 4. Drift dev <-> deploy (${DEV_SRC})"
+    for f in haos_nightly_maintenance.sh haos_memory_populate.py; do
+        src="${DEV_SRC}/${f}"
+        dst="${SCRIPT_DIR}/${f}"
+        if [ ! -f "${src}" ]; then
+            echo "    ⊘ ${f}: ausente na fonte (repo desatualizado?)"
+            continue
+        fi
+        if [ ! -f "${dst}" ]; then
+            echo "    ✗ ${f}: ausente no deploy"
+            FAILED=1
+            continue
+        fi
+        h_src="$(sha256sum "${src}" | cut -d' ' -f1)"
+        h_dst="$(sha256sum "${dst}" | cut -d' ' -f1)"
+        if [ "${h_src}" = "${h_dst}" ]; then
+            echo "    ✓ ${f}: em sincronia"
+        else
+            echo "    ✗ DRIFT ${f}: fonte=${h_src:0:12} deploy=${h_dst:0:12} - redeploy necessario"
+            FAILED=1
+        fi
+    done
+else
+    echo "--> 4. Drift dev <-> deploy: ⊘ pulado (sem ponteiro haos_dev_source ou fonte indisponivel)"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
     echo "=== [Nightly Maintenance concluída com sucesso] ==="
 else

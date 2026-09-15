@@ -1,3 +1,7 @@
+# HAOS local deployment pointers
+scripts/haos_agent_dir
+scripts/haos_dev_source
+
 .DS_Store
 /venv/
 /venv.old/
