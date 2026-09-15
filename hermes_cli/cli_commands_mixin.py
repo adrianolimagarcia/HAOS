@@ -2757,7 +2757,7 @@ title="⚕  Update Hermes Agent",
                 f"Diretrizes obrigatórias:\n"
                 f"1. Se a meta for vaga, faça perguntas de alinhamento para fechar requisitos e critérios de aceite.\n"
                 f"2. Estruture a demanda no Kanban chamando a ferramenta kanban_create com status='READY', posture='implementer' e team_id='software_engineering'.\n"
-                f"3. Ao executar a tarefa no workspace isolado, certifique-se de produzir o código/testes e concluir chamando kanban.complete_task para que o card avance para DONE e fique pronto para aprovação humana no dashboard.\n"
+                f"3. Ao executar a tarefa no workspace isolado, certifique-se de produzir o código/testes e concluir chamando kanban_complete para que o card avance para DONE e fique pronto para aprovação humana no dashboard.\n"
                 f"Proceda agora com o acolhimento da demanda e o plano inicial."
             )
             self.agent.run_conversation(prompt)

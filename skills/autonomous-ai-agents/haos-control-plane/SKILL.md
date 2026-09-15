@@ -85,7 +85,7 @@ Execute no terminal Hermes com `/haos status` ou `/haos dispatch`, ou via ferram
   regra do job `no_agent`) e reponte o unit; remova o `RequiresMountsFor` do disco se o script não lê
   mais nada dele. Confirme com `systemctl show <unit> -p Result -p ExecMainStatus` (`Result=success`,
   `ExecMainStatus=0`) depois de `systemctl start` — não basta `systemctl status` dizer `inactive (dead)`.
-- Não deixe cards concluídos sem invocar `complete_task`.
+- Não deixe cards concluídos sem invocar `kanban_complete`.
 - Evite despachar tarefas sem critérios de aceite claros.
 
 ## Verification
