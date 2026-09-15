@@ -131,7 +131,7 @@ if [ -f "${DEV_PTR}" ] && [ -d "$(cat "${DEV_PTR}" 2>/dev/null)" ]; then
         if [ "${h_src}" = "${h_dst}" ]; then
             echo "    ✓ ${f}: em sincronia"
         else
-            echo "    ✗ DRIFT ${f}: fonte=${h_src:0:12} deploy=${h_dst:0:12} - redeploy necessario"
+            echo "    ✗ DRIFT ${f}: fonte=${h_src:0:12} deploy=${h_dst:0:12} - reconciliar (redeploy OU commitar a versao do deploy)"
             FAILED=1
         fi
     done
