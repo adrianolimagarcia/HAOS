@@ -574,6 +574,35 @@ BROWSER_TOOL_SCHEMAS = [
             "required": []
         }
     },
+    {
+        "name": "browser_network_requests",
+        "description": "List the HTTP requests the current page made — method, URL, HTTP status, resource type and MIME type. Use this to debug failed API calls, 4xx/5xx responses, blocked resources and requests that never fired, instead of inferring them from the DOM. Set only_failures to see just status >= 400, and include_headers for request/response headers (bulky; credentials are redacted). Requires browser_navigate to be called first.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "clear": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, empty the request buffer after reading it"
+                },
+                "filter_pattern": {
+                    "type": "string",
+                    "description": "Only return requests whose URL contains this substring. Example: '/api/user'"
+                },
+                "only_failures": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, return only requests that failed with HTTP status >= 400"
+                },
+                "include_headers": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, include request and response headers for each entry"
+                }
+            },
+            "required": []
+        }
+    },
 ]
 
 from tools import browser_tool_snapshot as _snapshot
@@ -975,6 +1004,91 @@ def browser_console(clear: bool = False, expression: Optional[str] = None, task_
     return _dumps(response)
 
 
+# Headers whose VALUE is a credential regardless of its shape. The generic text
+# redactor only recognises known credential formats, so an opaque bearer token, a
+# ``Cookie``/``Set-Cookie`` pair or ``Basic <blob>`` would otherwise reach the model
+# verbatim — the exact values a network view must never leak.
+_SENSITIVE_HEADER_NAMES = frozenset({
+    "authorization", "proxy-authorization", "www-authenticate", "proxy-authenticate",
+    "cookie", "set-cookie", "cookie2", "set-cookie2",
+    "x-api-key", "api-key", "apikey", "x-auth-token", "x-access-token",
+    "x-csrf-token", "x-xsrf-token", "x-session-token", "x-amz-security-token",
+})
+
+
+def _redact_header_values(headers: Any) -> Any:
+    """Blank credential-bearing header values by header NAME (shape-independent)."""
+    if not isinstance(headers, dict):
+        return headers
+    return {
+        name: "***" if isinstance(name, str) and name.strip().lower() in _SENSITIVE_HEADER_NAMES else value
+        for name, value in headers.items()
+    }
+
+
+def browser_network_requests(
+    clear: bool = False,
+    filter_pattern: Optional[str] = None,
+    only_failures: bool = False,
+    include_headers: bool = False,
+    task_id: Optional[str] = None,
+) -> str:
+    """HTTP requests the current page issued — method, URL, status, resource type.
+
+    Closes the "the button does nothing" debugging gap: the agent sees the request that
+    actually 500'd instead of inferring it from the DOM. ``clear`` empties the buffer
+    AFTER the read, because the CLI's own ``--clear`` returns no requests — reading
+    first is what makes the flag non-destructive. Headers are opt-in: they are bulky and
+    carry credentials (redaction still applies to everything returned).
+    """
+    if _is_camofox_mode():
+        return _dumps(_err("browser_network_requests is not available in Camofox mode (no network command)."))
+
+    effective_task_id = _last_session_key(task_id or "default")
+    blocked = _blocked_private_page_content(effective_task_id)
+    if blocked is not None:
+        return blocked
+
+    args = ["requests"] + (["--filter", filter_pattern] if filter_pattern else [])
+    result = _session._run_browser_command(effective_task_id, "network", args)
+    if not result.get("success"):
+        return _dumps(_err(result.get("error") or "Failed to read network requests."))
+
+    raw = result.get("data", {}).get("requests") or []
+    entries = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        status = item.get("status")
+        if only_failures and not (isinstance(status, int) and status >= 400):
+            continue
+        entry = {
+            "method": item.get("method"),
+            "url": item.get("url"),
+            "status": status,
+            "resource_type": item.get("resourceType"),
+            "mime_type": item.get("mimeType"),
+        }
+        if include_headers:
+            entry["headers"] = _redact_header_values(item.get("headers") or {})
+            entry["response_headers"] = _redact_header_values(item.get("responseHeaders") or {})
+        entries.append(entry)
+
+    response = {
+        "success": True,
+        "requests": _snapshot._redact_browser_output(entries),
+        "total_requests": len(entries),
+        "requests_seen": len(raw),
+    }
+
+    _lp._copy_fallback_warning(response, result)
+    if clear:
+        cleared = _session._run_browser_command(effective_task_id, "network", ["requests", "--clear"])
+        response["cleared"] = bool(cleared.get("success"))
+        _merge_fallback_warning(response, cleared)
+    return _dumps(response)
+
+
 from tools import browser_tool_eval_policy as _eval_policy
 
 
@@ -1290,6 +1404,7 @@ _BROWSER_TOOL_TABLE = (
     ("browser_get_images", "🖼️", _install.check_browser_requirements, {}),
     ("browser_vision", "👁️", _install.check_browser_vision_requirements, {"question": "", "annotate": False}),
     ("browser_console", "🖥️", _install.check_browser_requirements, {"clear": False, "expression": None}),
+    ("browser_network_requests", "🌐", _install.check_browser_requirements, {"clear": False, "filter_pattern": None, "only_failures": False, "include_headers": False}),
 )
 
 

@@ -41,7 +41,7 @@ _POLISHED_TOOLS = {
     # Skills / web / browser / media
     "skill_view", "skills_list", "skill_manage", "web_search", "web_extract",
     "browser_navigate", "browser_click", "browser_type", "browser_press", "browser_scroll",
-    "browser_back", "browser_snapshot", "browser_console", "browser_get_images", "browser_vision",
+    "browser_back", "browser_snapshot", "browser_console", "browser_network_requests", "browser_get_images", "browser_vision",
     "vision_analyze", "image_generate", "text_to_speech",
     # Schedulers / platform integrations
     "cronjob", "send_message", "clarify", "discord", "discord_admin",
