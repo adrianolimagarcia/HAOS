@@ -220,6 +220,20 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # tree converges on ONE hub version (tests/test_project_metadata.py enforces both). When bumping: update
     # here AND `uv lock --upgrade-package huggingface-hub` in lockstep.
     "tool.trace_upload": ("huggingface-hub==1.24.0",),
+
+    # ─── Code intelligence ─────────────────────────────────────────────────
+    # Multi-language symbol extraction for `haos graph build` (graphify). Python is
+    # parsed with the stdlib `ast`; everything else needs a grammar. Opt-in because
+    # the pack is ~6 MB and downloads each grammar once into
+    # `<cache>/tree-sitter-language-pack/<ver>/libs` — an offline appliance that never
+    # pre-warms it simply keeps Python-only coverage. Pins mirror the
+    # `graph-treesitter` extra in pyproject.toml (tests/test_project_metadata.py).
+    # 1.15.8 is the newest pack release BEFORE the supply-chain `exclude-newer` cutoff
+    # (1.16.1+ are quarantined); do not bump past the cutoff.
+    "graphify.treesitter": (
+        "tree-sitter==0.26.0",
+        "tree-sitter-language-pack==1.15.8",
+    ),
 }
 
 

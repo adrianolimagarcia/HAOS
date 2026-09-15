@@ -489,17 +489,32 @@ def cmd_haos_graph_build(args: argparse.Namespace) -> int:
     out_dir = getattr(args, "out", None) or os.path.join(target_dir, ".haos", "graphify-out")
 
     graph = CodeSymbolGraph()
-    print(f"[*] Varrendo base de código com AST nativo em: {target_dir}")
+    print(f"[*] Varrendo base de código (ast + tree-sitter) em: {target_dir}")
     symbols_found = graph.scan_directory(target_dir)
 
     artifacts = graph.export_graph_report(out_dir)
     gods = graph.identify_god_components(top_k=5)
+
+    stats = graph.last_scan_stats or {}
+    languages = sorted(stats.get("languages") or [])
 
     print("=" * 65)
     print("      HAOS CODE KNOWLEDGE GRAPH (GRAPHIFY ENGINE)      ")
     print("=" * 65)
     print(f"Símbolos indexados : {symbols_found}")
     print(f"Arquivos mapeados  : {len(graph.file_symbols)}")
+    if languages:
+        print(f"Linguagens         : python, {', '.join(languages)}")
+    else:
+        # Silence here would read as "there is no non-Python code" instead of
+        # "the grammar pack is missing" — say which one it is.
+        from hermes.platform.capabilities.lsp import treesitter_symbols as _ts
+
+        print("Linguagens         : python (apenas)")
+        print(f"  [!] Demais linguagens nao indexadas: {_ts.unavailable_reason()}")
+        print('      Habilite: uv pip install "tree-sitter==0.26.0" "tree-sitter-language-pack==1.15.8"')
+    if stats.get("parse_errors"):
+        print(f"Parse errors       : {stats['parse_errors']} arquivo(s) (recuperacao de erro)")
     print(f"Grafo JSON         : {artifacts['graph_json']}")
     print(f"Relatório Markdown : {artifacts['graph_report']}")
     print("-" * 65)

@@ -200,6 +200,16 @@ firecrawl = ["firecrawl-py==4.17.0"]
 # stay identical (tests/test_project_metadata.py::test_pyproject_pins_match_lazy_deps_pins).
 # Manual install: uv pip install "scrapling[fetchers]==0.4.15"
 fetch = ["scrapling[fetchers]==0.4.15"]
+# Multi-language symbol extraction for `haos graph build` (graphify). Opt-in: the core
+# parses Python with the stdlib `ast`, and the pack is only pulled when non-Python files
+# must be indexed. Lazy-covered backend (policy 2026-05-12): it must NOT be in [all], and
+# the pins are mirrored by LAZY_DEPS["graphify.treesitter"] — the two must stay identical
+# (tests/test_project_metadata.py::test_pyproject_pins_match_lazy_deps_pins).
+# Grammars download once per language into <cache>/tree-sitter-language-pack/<ver>/libs.
+# 1.15.8 is the newest pack release before the supply-chain `exclude-newer` cutoff
+# (1.16.1+ are quarantined) — do not bump past the cutoff.
+# Manual install: uv pip install "tree-sitter==0.26.0" "tree-sitter-language-pack==1.15.8"
+graph-treesitter = ["tree-sitter==0.26.0", "tree-sitter-language-pack==1.15.8"]
 parallel-web = ["parallel-web==0.4.2"]
 # Image generation backends
 fal = ["fal-client==0.13.1"]

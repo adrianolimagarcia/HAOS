@@ -3,7 +3,9 @@
 CodeSymbolGraph (symbols, definitions, references, call hierarchy) and
 ImpactAnalyzer (blast radius calculation and affected test suite discovery).
 
-Strict stdlib-only; PEP-420 namespace compliant.
+Python is parsed with the stdlib ``ast``; other languages go through the OPTIONAL
+Tree-sitter path in the `treesitter_symbols` sibling (absent pack = Python-only, never
+an error). No hard third-party dependency; PEP-420 namespace compliant.
 """
 
 from __future__ import annotations
@@ -91,6 +93,8 @@ class CodeSymbolGraph:
         self.call_callees: Dict[str, Set[str]] = collections.defaultdict(set)
         # callee_id -> Set[caller_id]
         self.call_callers: Dict[str, Set[str]] = collections.defaultdict(set)
+        # Coverage of the last scan_directory(): languages seen, parse errors, skipped files.
+        self.last_scan_stats: Dict[str, Any] = {}
 
     def add_symbol(self, node: SymbolNode) -> None:
         """Add or update a symbol in the graph."""
@@ -164,6 +168,13 @@ class CodeSymbolGraph:
         count = 0
         root_path = pathlib.Path(root_dir)
 
+        # Late import (sibling convention): Tree-sitter extraction is optional and must
+        # not be pulled in — or fail — when only Python is being scanned.
+        from hermes.platform.capabilities.lsp import treesitter_symbols as _ts
+
+        stats: Dict[str, Any] = {"languages": set(), "parse_errors": 0, "calls": 0, "skipped": 0}
+        self.last_scan_stats = stats
+
         class _ASTCallVisitor(ast.NodeVisitor):
             def __init__(self, rel_p: str, graph: CodeSymbolGraph):
                 self.rel_p = rel_p
@@ -200,7 +211,8 @@ class CodeSymbolGraph:
         for dirpath, dirnames, filenames in os.walk(root_path):
             dirnames[:] = [d for d in dirnames if d not in excludes and not d.startswith(".")]
             for fname in filenames:
-                if not fname.endswith(".py"):
+                is_python = fname.endswith(".py")
+                if not is_python and _ts.language_for_path(fname) is None:
                     continue
                 full_path = pathlib.Path(dirpath) / fname
                 try:
@@ -210,8 +222,21 @@ class CodeSymbolGraph:
 
                 try:
                     code_text = full_path.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    stats["skipped"] += 1
+                    continue
+
+                if not is_python:
+                    # Optional Tree-sitter path; a no-op when the grammar pack is absent.
+                    count += _ts.extract_symbols(rel_path, code_text, self, stats)
+                    if count >= max_files * 10:
+                        break
+                    continue
+
+                try:
                     tree = ast.parse(code_text, filename=rel_path)
                 except Exception:
+                    stats["skipped"] += 1
                     continue
 
                 current_container = None
