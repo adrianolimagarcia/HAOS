@@ -14,7 +14,6 @@ Usage:
 """
 
 from __future__ import annotations
-from hermes_constants import product_command
 
 import argparse
 import json
@@ -35,7 +34,7 @@ def default_graph_path() -> Path:
 
 def load_graph(path: Path) -> Dict[str, Any]:
     if not path.is_file():
-        sys.exit(f"graph not found: {path} — run `{product_command('codebase-wiki')}` first")
+        sys.exit(f"graph not found: {path} — run `haos codebase-wiki` first")
     return json.loads(path.read_text(encoding="utf-8"))
 
 

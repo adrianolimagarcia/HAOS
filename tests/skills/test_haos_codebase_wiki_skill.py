@@ -149,3 +149,20 @@ def test_helper_defaults_to_hermes_home(tmp_path: Path, monkeypatch: pytest.Monk
         capture_output=True, text=True,
     )
     assert "graph not found" in res.stderr  # no graph yet in HERMES_HOME
+
+
+def test_helper_is_stdlib_only(tmp_path: Path) -> None:
+    """The helper promises "stdlib-only and offline so it can run anywhere the wiki lives".
+
+    ``-S`` skips site processing, which is what makes ``hermes_constants`` (reachable only
+    through the agent venv's editable-install finder) unimportable; a neutral cwd keeps the
+    repo root off ``sys.path``. Both hold for the eval gate, which drives the helper with
+    ``/usr/bin/python3`` — an interpreter that has no ``hermes_constants``.
+    """
+    root = _write_graph(tmp_path)
+    res = subprocess.run(
+        [sys.executable, "-S", str(HELPER), "--root", str(root), "--gods"],
+        capture_output=True, text=True, cwd=tmp_path,
+    )
+    assert res.returncode == 0, res.stderr
+    assert "god nodes" in res.stdout
