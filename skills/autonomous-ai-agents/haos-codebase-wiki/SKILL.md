@@ -75,6 +75,23 @@ generated yet (generate it first — see Prerequisites).
 6. **Report honestly**: if the wiki has no node for a concept, say the map was generated from
    `.py` only and the symbol may live in non-indexed code or not exist yet.
 
+## Como é gerada e quando atualizar
+
+- **Geração**: `haos codebase-wiki [raiz]` — parsing determinístico com `ast` do stdlib, **sem LLM
+  e sem rede**. Saída em `~/.hermes/codebase-wiki/` (`index.md`, `modules/*.md`, `graph.json`,
+  `cache/` por sha256).
+- **Cache incremental**: reindexar é barato quando pouco mudou (1755 arquivos em ~4-26s); o custo
+  alto só aparece na primeira indexação.
+- **Frescor é responsabilidade sua**: nada reindexava automaticamente até 2026-09-11; agora a
+  manutenção diária (04:30) roda o refresh. Antes de responder arquitetura com base na wiki,
+  confira `graph.json` (mtime) e re-rode `haos codebase-wiki .` se o código mudou depois.
+- **Pitfall do `--mcp`**: `haos codebase-wiki --mcp` registra as tools
+  (`codebase-wiki_wiki_status|search|edges|path|god_nodes`) num **agregador em processo**
+  (`get_local_aggregator()` é singleton de módulo) e **sai** — o registro morre com o processo, e
+  **nada o chama no boot do gateway** neste build. Ou seja: rodar o `--mcp` pela CLI **não** expõe
+  as tools ao agente. Use o helper `scripts/haos_wiki_query.py` via terminal (funciona) ou crie um
+  servidor MCP stdio dedicado e registre-o no `mcp_servers` do config.
+
 ## Pitfalls
 
 - Do not treat `INFERRED` edges as fact — they are resolution leads, verify in source.
