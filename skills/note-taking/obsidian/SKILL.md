@@ -17,9 +17,18 @@ Use this skill for filesystem-first Obsidian vault work: reading notes, listing 
 
 ## Vault path
 
-Use a known or resolved vault path before calling file tools.
+**No HAOS o vault canônico é `<HERMES_HOME>/obsidian_vault`** (aqui: `/root/.haos/obsidian_vault`);
+o OKF é `<HERMES_HOME>/okf`. Isso é definido no código
+(`hermes/platform/context/memory/provider.py`, `hermes/platform/memory/dream.py`,
+`hermes/platform/memory/haos_memory_sync.py`) — não é convenção de usuário.
 
-The documented vault-path convention is the `OBSIDIAN_VAULT_PATH` environment variable, for example from `${HERMES_HOME:-~/.hermes}/.env`. If it is unset, use `~/Documents/Obsidian Vault`.
+**Pitfall que já custou um split-brain (2026-09-11)**: escrever em `<home>/vault` (sem o prefixo
+`obsidian_`) cria um vault que **nenhum leitor do HAOS enxerga** — as tools de memória, o hybrid
+router e o dream resolvem tudo por `obsidian_vault`. Confirme o caminho antes de criar nota
+(`ls <home>/obsidian_vault`).
+
+Fora do HAOS, a convenção documentada é a env `OBSIDIAN_VAULT_PATH` (ex.: de
+`${HERMES_HOME:-~/.hermes}/.env`); sem ela, `~/Documents/Obsidian Vault`.
 
 File tools do not expand shell variables. Do not pass paths containing `$OBSIDIAN_VAULT_PATH` to `read_file`, `write_file`, `patch`, or `search_files`; resolve the vault path first and pass a concrete absolute path. Vault paths may contain spaces, which is another reason to prefer file tools over shell commands.
 
@@ -66,3 +75,25 @@ Use `patch` for focused note changes when the current content gives you stable c
 ## Wikilinks
 
 Obsidian links notes with `[[Note Name]]` syntax. When creating notes, use these to link related content.
+
+## HAOS: ADRs, OKF e as tools de memória (preferir as tools)
+
+No HAOS não escreva o arquivo à mão quando existir tool — as tools gravam no caminho canônico e
+sincronizam os stores de memória:
+
+| objetivo | tool | observação |
+|---|---|---|
+| gravar/atualizar nota no vault | `obsidian_save_note(title, content, folder)` | `folder="adrs"` para ADRs |
+| ler uma ADR canônica | `obsidian_get_adr(adr_id)` | ex.: `ADR-001` |
+| consultar conhecimento canônico (OKF) | `haos_hybrid_memory_query(query, mode="okf")` | resposta determinística, com fonte |
+| gravar spec/contrato canônico | `haos_okf_save_document(...)` | OKF em `<home>/okf` |
+| recall relacional do histórico | `mcp__graphrag__recall(pergunta)` | ver skill `hermes-graph` |
+
+**Convenções do vault canônico:**
+
+- ADR: `adrs/ADR-###-slug.md`, com linha `**Status:** Aceito|Proposto|Substituído`. ADR aceita é
+  **imutável** — correção vira ADR novo, nunca edição da história.
+- Diário: `diario/YYYY-MM-DD.md` — gravado automaticamente pela manutenção diária (04:30); não
+  duplicar à mão.
+- O vault entra no corpus do GraphRAG como perfil `vault` (via `refresh.sh`); nota nova só é
+  pesquisável depois do próximo refresh.
