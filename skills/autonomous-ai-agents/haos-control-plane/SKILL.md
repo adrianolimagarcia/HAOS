@@ -20,7 +20,7 @@ Use para monitorar status do board, orquestrar subagentes, gerenciar cards e dis
 ## Prerequisites
 
 - Base de dados Kanban ativa (`HERMES_KANBAN_DB` ou canônica).
-- Ferramentas de Kanban (`kanban_list_tasks`, `kanban_create_task`, `kanban_update_task`).
+- Ferramentas de Kanban (`kanban_list`, `kanban_create`).
 
 ## How to Run
 
