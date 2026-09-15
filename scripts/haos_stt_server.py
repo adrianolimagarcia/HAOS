@@ -9,10 +9,13 @@ Auth: Authorization: Bearer *** — token read from HAOS_STT_TOKEN env var
 (stored in ~/.haos/.env as HAOS_STT_TOKEN). If unset, server binds loopback-only
 and requires no auth.
 """
+import asyncio
+import gc
 import io
 import os
 import sys
 import time
+from contextlib import asynccontextmanager, suppress
 
 # Repo root (this file lives in <root>/scripts/) so the host install path is not baked in.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,8 +32,54 @@ API_TOKEN = os.environ.get("HAOS_STT_TOKEN", "")
 # Usado apenas quando config.yaml nao define stt.local.model.
 HAOS_STT_FALLBACK_MODEL = "large-v3"
 
-app = FastAPI(title="HAOS STT", version="1.0.0")
-_state = {"model": None, "key": None, "last_used": 0.0, "effective": None}
+# Unload por ociosidade de verdade (correcao 2026-09-15): antes o check rodava no
+# `finally` do handler, depois de `_get_model()` renovar `last_used`, entao a
+# ociosidade media ~0s e o modelo NUNCA saia da VRAM — a GTX 1050 Ti (4 GB) e
+# compartilhada com o docling-serve, que ficava sem placa.
+_IDLE_CHECK_SECONDS = 15.0
+_state = {"model": None, "key": None, "last_used": 0.0, "effective": None, "inflight": 0}
+
+
+def _release_model():
+    """Solta o modelo e devolve a VRAM ao host."""
+    _state["model"] = None
+    _state["key"] = None
+    _state["effective"] = None  # /health nao pode reportar "loaded_as" com o modelo solto
+    gc.collect()
+    try:
+        import torch  # opcional: installs so-CTranslate2 nao tem torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass
+    print("[haos-stt] model unloaded after idle", flush=True)
+
+
+async def _idle_unload_loop():
+    while True:
+        await asyncio.sleep(_IDLE_CHECK_SECONDS)
+        try:
+            _maybe_unload()
+        except Exception as exc:  # noqa: BLE001
+            print("[haos-stt] idle unload check falhou:", exc, flush=True)
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    task = None
+    if _unload_after_idle_seconds():
+        task = asyncio.create_task(_idle_unload_loop())
+        print("[haos-stt] idle unload ativo:", _unload_after_idle_seconds(), "s", flush=True)
+    yield
+    if task:
+        # Await the cancellation: returning with the task still pending lets the loop
+        # close under it and asyncio reports "Task was destroyed but it is pending".
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+app = FastAPI(title="HAOS STT", version="1.0.0", lifespan=_lifespan)
 
 
 def _stt_config():
@@ -99,10 +148,12 @@ def _get_model():
 
 def _maybe_unload():
     secs = _unload_after_idle_seconds()
-    if secs and _state["model"] is not None and time.time() - _state["last_used"] > secs:
-        _state["model"] = None
-        _state["key"] = None
-        print("[haos-stt] model unloaded after idle", flush=True)
+    if not secs or _state["model"] is None:
+        return
+    if _state.get("inflight"):  # nunca soltar o modelo com requisicao em andamento
+        return
+    if time.time() - _state["last_used"] > secs:
+        _release_model()
 
 
 def _check_auth(request: Request):
@@ -149,12 +200,13 @@ async def transcriptions(
     if not data:
         raise HTTPException(status_code=400, detail="empty file")
     t0 = time.time()
+    _state["inflight"] += 1
     try:
         text, info = _transcribe_bytes(data, file.filename or "audio.ogg")
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"transcription failed: {e}")
     finally:
-        _maybe_unload()
+        _state["inflight"] -= 1
 
     if response_format == "text":
         return PlainTextResponse(text)
