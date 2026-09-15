@@ -112,7 +112,7 @@ class FederatedMemoryCoordinator:
         self.decisions = decision_store or DecisionStore()
         self.event_bus = event_bus or KnowledgeEventBus()
 
-        # Store persistente do grafo (ADR-008): quando o fabric sincroniza
+        # Store persistente do grafo (GOV-008): quando o fabric sincroniza
         # conhecimento, cada KnowledgeEvent publicado é espelhado no store
         # canônico ($HERMES_HOME/memory/graphrag.db) e sobrevive a reinícios,
         # legível pela ferramenta graphrag_query (stack B). Criação é LAZY (na

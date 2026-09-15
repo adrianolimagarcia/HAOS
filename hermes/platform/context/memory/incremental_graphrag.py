@@ -450,7 +450,7 @@ class IncrementalGraphRAGUpdater:
                 # Delta fresco do evento (não o acumulado do adapter): o merge
                 # idempotente por conteúdo acontece dentro do store.
                 self.store.upsert_community(community_id, community_summary)
-            # Supersessão temporal (ADR-008): arestas "supersedes" deste evento
+            # Supersessão temporal (GOV-008): arestas "supersedes" deste evento
             # marcam o alvo como supersedido pelo emissor.
             for rel in relations:
                 if rel.relation_type == "supersedes":

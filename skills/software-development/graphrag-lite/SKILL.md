@@ -26,7 +26,7 @@ esta skill apenas ensina o fluxo de consulta e verificacao.
 E uma skill de CONSULTA. Ela nao escreve no grafo diretamente: fatos novos
 entram pelo vault (`obsidian_save_note`), por contratos OKF
 (`haos_okf_save_document`) ou pelo fluxo de KnowledgeEvent da stack A; o grafo
-e uma projecao derivada (ADR-008), nunca editado na mao.
+e uma projecao derivada (GOV-008), nunca editado na mao.
 
 ## When to Use
 

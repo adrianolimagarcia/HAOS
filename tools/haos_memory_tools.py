@@ -32,7 +32,7 @@ def _get_graphrag_client():
     if not gr_dir.exists():
         gr_dir.mkdir(parents=True, exist_ok=True)
     from hermes.platform.memory.graphrag import GraphRAGClient
-    # store_path = store canônico (ADR-008) escrito pela stack A
+    # store_path = store canônico (GOV-008) escrito pela stack A
     # (IncrementalGraphRAGUpdater -> GraphRAGStore); index_dir fica como
     # fallback CSV de demo/CI. available() é fail-closed por arquivo.
     from hermes.platform.context.memory.graphrag_store import default_graphrag_db_path

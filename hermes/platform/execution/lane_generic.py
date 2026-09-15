@@ -1,4 +1,4 @@
-"""Canonical GenericWorkerLane Contract (Step 4.4 / ADR-010).
+"""Canonical GenericWorkerLane Contract (Step 4.4 / GOV-010).
 
 Defines the universal lifecycle for all execution substrates:
 prepare -> spawn -> heartbeat -> collect_result -> cancel -> cleanup.

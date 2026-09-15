@@ -20,7 +20,7 @@ Uso (a partir da raiz do repo, venv ativo):
   python3 skills/software-development/graphrag-lite/scripts/recall_probe.py [--home DIR]
 
 Esta skill nao cria ferramenta nova nem altera o grafo: so exercita a
-maquinaria existente (ADR-008) e reporta o que mediu.
+maquinaria existente (GOV-008) e reporta o que mediu.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Golden Tasks Benchmark Suite (Step 5.4 / ADR-002 / ADR-010).
+"""Golden Tasks Benchmark Suite (Step 5.4 / ADR-002 / GOV-010).
 
 Formalizes the 10 canonical evaluation scenarios (G001 to G010)
 to measure and compare upstream Hermes vs HAOS platform improvements:
@@ -76,7 +76,7 @@ GOLDEN_TASKS: Dict[str, GoldenTaskSpec] = {
         expected_artifacts=["architecture_note.md"],
         max_tokens_budget=1536,
         deterministic_assertions=["mentions_model_route_exhausted_exception"],
-        description="Assesses grounding against ADR-003 without hallucinations.",
+        description="Assesses grounding against GOV-004 without hallucinations.",
     ),
     "G004": GoldenTaskSpec(
         id="G004",

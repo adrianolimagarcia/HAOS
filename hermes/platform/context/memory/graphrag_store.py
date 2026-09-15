@@ -1,4 +1,4 @@
-"""GraphRAGStore — Store canônico SQLite do grafo GraphRAG (ADR-008).
+"""GraphRAGStore — Store canônico SQLite do grafo GraphRAG (GOV-008).
 
 O GraphRAG é uma projeção relacional derivada do corpus canônico; esta store
 é a cópia PERSISTENTE dessa projeção (entidades, arestas tipadas e resumos de
@@ -240,7 +240,7 @@ class GraphRAGStore:
     def mark_superseded(self, entity: str, by_entity: str) -> None:
         """Marca supersessão temporal: ``entity.superseded_by = by_entity``.
 
-        Semântica do ADR-008: fato obsoleto é supersedido, não duplicado nem
+        Semântica do GOV-008: fato obsoleto é supersedido, não duplicado nem
         apagado — a linha permanece com o ponteiro temporal.
         """
         now = time.time()

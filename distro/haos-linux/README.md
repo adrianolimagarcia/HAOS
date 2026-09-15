@@ -109,7 +109,7 @@ sessões e cache do agente.
    - O que ele faz: `PRAGMA integrity_check` nos SQLite do nó + popula a memória
      canônica (`scripts/haos_memory_populate.py`): notas do vault →
      `memory/ragflow.db` (DeepDoc/RAG FTS5), → `memory/graphrag.db` (store
-     canônico, ADR-008) e consolidação do dream (`memory/reconciled_memories.db`
+     canônico, GOV-008) e consolidação do dream (`memory/reconciled_memories.db`
      + lições OKF). AST do código é opt-in (`HAOS_MAINTENANCE_AST=1`).
    - Rodar à mão: `haos cron run <job-id>`; a saída fica em `~/.haos/cron/output/<job-id>/`.
    - **Não remover este job.** A escrita de nota via `obsidian_save_note` já

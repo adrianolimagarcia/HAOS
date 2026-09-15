@@ -4,7 +4,7 @@ Validates:
 1. All 21 tasks (TASK-0001 to TASK-0021) in MASTER-BACKLOG-M0-M20 are well-formed.
 2. Backlog DAG has NO cycles and all depends_on references exist.
 3. Architecture contracts in architecture/contracts/contracts.py serialize/deserialize.
-4. All 12 ADRs exist and are non-empty.
+4. All 15 governance ADRs (GOV-001..GOV-015) exist and are non-empty.
 """
 
 import unittest
@@ -29,11 +29,16 @@ class TestArchitectureAndBacklogDAG(unittest.TestCase):
         self.backlog_path = self.root / "docs" / "architecture" / "MASTER-BACKLOG-M0-M20.yaml"
 
     def test_all_15_adrs_exist(self):
+        # The governance series is the `GOV-NNN` namespace; `ADR-NNN` is reserved for the
+        # platform series in `docs/architecture/`. See architecture/ADRs/INDEX.md.
         adrs_dir = self.root / "architecture" / "ADRs"
         self.assertTrue(adrs_dir.exists())
         for i in range(1, 16):
-            matches = list(adrs_dir.glob(f"ADR-{str(i).zfill(3)}*"))
-            self.assertGreaterEqual(len(matches), 1, f"Missing ADR-{str(i).zfill(3)}")
+            matches = list(adrs_dir.glob(f"GOV-{str(i).zfill(3)}*"))
+            self.assertGreaterEqual(len(matches), 1, f"Missing GOV-{str(i).zfill(3)}")
+            for match in matches:
+                self.assertGreater(len(match.read_text(encoding="utf-8").strip()), 0,
+                                   f"{match.name} is empty")
 
     def test_core_patches_catalog_exists(self):
         core_patches_path = self.root / "architecture" / "core-patches.md"

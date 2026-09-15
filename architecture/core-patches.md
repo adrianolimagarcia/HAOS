@@ -2,7 +2,7 @@
 
 This document tracks all intentional, temporary, or permanent modifications made directly to the upstream Hermes core codebase (`gateway/`, `agent/`, `tools/`, `hermes_cli/`).
 
-In accordance with **ADR-001 (Hermes Kernel)** and **ADR-012 (Plugin-first)**, our overarching goal is:
+In accordance with **GOV-001 (Hermes Kernel)** and **GOV-012 (Plugin-first)**, our overarching goal is:
 > **Minimum Permanent Core Diff.** Every capability should ideally live under `hermes/platform/` (PEP-420 namespace) or as a plugin.
 
 ---

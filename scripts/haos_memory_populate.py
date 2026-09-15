@@ -6,7 +6,7 @@ Três passos, cada um independente (uma falha não impede os outros):
   1. DeepDoc/RAG — indexa as notas do vault em ``<home>/memory/ragflow.db``
      (FTS5 + breadcrumbs de header), o store que o ``haos-edge doc search`` lê.
   2. GraphRAG    — reconstrói o store canônico ``<home>/memory/graphrag.db``
-     (ADR-008) a partir das notas, pela mesma cadeia que o dashboard usa
+     (GOV-008) a partir das notas, pela mesma cadeia que o dashboard usa
      (ObsidianAdapter → GraphRAGAdapter → IncrementalGraphRAGUpdater).
   3. Dream       — consolida sessões em memórias reconciliadas + lições OKF.
   4. Skill evolution (Etapa 3/P2) — lições canônicas classificadas como "skill"
@@ -75,7 +75,7 @@ def index_vault_rag(home: Path) -> dict:
 
 
 def build_graphrag_store(home: Path) -> dict:
-    """Passo 2: vault -> memory/graphrag.db (store canônico, ADR-008)."""
+    """Passo 2: vault -> memory/graphrag.db (store canônico, GOV-008)."""
     from hermes.platform.context.memory.obsidian import ObsidianAdapter
     from hermes.platform.memory.haos_memory_sync import graphrag_upsert_note
 

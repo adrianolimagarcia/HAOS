@@ -1,5 +1,5 @@
 """B4 — GraphRAG real: memória relacional via SERVIÇO (forma B) + fallback de
-índice local determinístico + store SQLite canônico (ADR-008).
+índice local determinístico + store SQLite canônico (GOV-008).
 
 Três modos, fail-closed:
 - serviço (``service_url``): cliente HTTP (urllib seam injetável) sobre
