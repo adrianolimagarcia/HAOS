@@ -1,5 +1,6 @@
 """Tests for HAOS RAGFlow Engine (Deep Document Understanding, Breadcrumbs & RRF)."""
 
+import sqlite3
 from pathlib import Path
 from hermes.platform.memory.ragflow_engine import (
     DocumentChunk,
@@ -142,3 +143,62 @@ def test_hybrid_knowledge_router_with_ragflow(tmp_path):
     assert "AES-256-GCM" in res["content"]
     assert "docs/security.md" in res["doc_path"]
     assert res["provenance_anchor"].startswith("[ref: docs/security.md#L")
+
+
+def _indexed_paths(db_path):
+    with sqlite3.connect(db_path) as conn:
+        return {r[0] for r in conn.execute("SELECT DISTINCT doc_path FROM haos_rag_chunks")}
+
+
+def test_deleted_note_leaves_no_phantom_in_index_or_recall(tmp_path):
+    """Nota apagada não pode sobreviver no índice nem voltar pelo recall.
+
+    Regressão medida: indexar só acrescenta, então apagar (ou renomear) uma nota
+    deixava o doc_path antigo no índice para sempre e hybrid_search devolvia um
+    arquivo inexistente — em primeiro lugar, com aparência de memória válida.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    keep = vault / "mantida.md"
+    gone = vault / "apagada.md"
+    keep.write_text("# Nota mantida\n\nConteúdo sobre reconciliação de índice.\n", encoding="utf-8")
+    gone.write_text("# Nota apagada\n\nDocumento sintético sobre tokens de indexação.\n", encoding="utf-8")
+
+    db_path = tmp_path / "ragflow.db"
+    store = RAGFlowStore(db_path=db_path)
+    store.index_directory(vault)
+    assert _indexed_paths(db_path) == {str(keep), str(gone)}
+
+    gone.unlink()
+    pruned = store.remove_documents_missing_on_disk(vault)
+
+    assert pruned == [str(gone)]
+    assert _indexed_paths(db_path) == {str(keep)}
+    with sqlite3.connect(db_path) as conn:
+        fts = {r[0] for r in conn.execute("SELECT DISTINCT doc_path FROM haos_rag_fts")}
+    assert str(gone) not in fts, "linha órfã no FTS faria o recall devolver o arquivo apagado"
+    assert all(
+        Path(hit.doc_path).exists()
+        for hit in store.hybrid_search("tokens de indexação sintético", limit=5)
+    )
+
+
+def test_prune_is_scoped_to_the_given_root(tmp_path):
+    """Podar sob uma raiz não pode apagar o que foi indexado fora dela."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    outside = tmp_path / "fora"
+    outside.mkdir()
+    live = vault / "viva.md"
+    live.write_text("# Viva\n\nNota que permanece.\n", encoding="utf-8")
+    elsewhere = outside / "alheia.md"
+    elsewhere.write_text("# Alheia\n\nIndexada de outro diretório.\n", encoding="utf-8")
+
+    db_path = tmp_path / "ragflow.db"
+    store = RAGFlowStore(db_path=db_path)
+    store.index_directory(vault)
+    store.index_directory(outside)
+    elsewhere.unlink()
+
+    assert store.remove_documents_missing_on_disk(vault) == []
+    assert _indexed_paths(db_path) == {str(live), str(elsewhere)}

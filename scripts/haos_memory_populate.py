@@ -60,12 +60,17 @@ def index_vault_rag(home: Path) -> dict:
         return {"status": "skipped", "reason": f"vault ausente: {vault}"}
 
     store = RAGFlowStore(db_path=home / "memory" / "ragflow.db")
+    # O vault É a fonte da verdade aqui: sem podar, renomear ou apagar uma nota
+    # deixa o caminho antigo no índice para sempre e o recall devolve arquivo
+    # inexistente (medido: hybrid_search devolvia a nota apagada em 1º lugar).
+    pruned = store.remove_documents_missing_on_disk(vault)
     indexed = store.index_directory(vault, glob_pattern="**/*.md")
     return {
         "status": "ok",
         "db": str(store.db_path),
         "files": len(indexed),
         "chunks": sum(indexed.values()),
+        "pruned": len(pruned),
     }
 
 

@@ -393,7 +393,11 @@ class RAGFlowStore:
         return self.index_document(doc_path=str(path), text=text)
 
     def index_directory(self, dir_path: Path | str, glob_pattern: str = "**/*.md") -> Dict[str, int]:
-        """Indexes all matching files in a directory."""
+        """Indexes all matching files in a directory.
+
+        Adding only: a document that vanished keeps its entry unless the caller
+        reconciles with :meth:`remove_documents_missing_on_disk`.
+        """
         root = Path(dir_path)
         indexed: Dict[str, int] = {}
         for p in root.glob(glob_pattern):
@@ -404,6 +408,30 @@ class RAGFlowStore:
                 except Exception as exc:
                     logger.warning("Failed indexing %s: %s", p, exc)
         return indexed
+
+    def remove_documents_missing_on_disk(self, root: Path | str) -> List[str]:
+        """Drops indexed documents under ``root`` whose file no longer exists.
+
+        Indexing only ever adds: without this reconciliation a renamed or deleted
+        note keeps its old ``doc_path`` in the index forever, and ``hybrid_search``
+        returns a path that does not exist. Restricted to ``root`` so a caller
+        cannot prune documents indexed from somewhere else.
+        """
+        root_resolved = Path(root).resolve()
+        removed: List[str] = []
+        with self._lock, self._get_connection() as conn:
+            paths = [row[0] for row in conn.execute(
+                "SELECT DISTINCT doc_path FROM haos_rag_chunks;")]
+            for doc_path in paths:
+                if not Path(doc_path).resolve().is_relative_to(root_resolved):
+                    continue
+                if Path(doc_path).exists():
+                    continue
+                conn.execute("DELETE FROM haos_rag_fts WHERE doc_path = ?;", (doc_path,))
+                conn.execute("DELETE FROM haos_rag_chunks WHERE doc_path = ?;", (doc_path,))
+                removed.append(doc_path)
+            conn.commit()
+        return removed
 
     @staticmethod
     def _sanitize_fts_query(query_str: str) -> str:
