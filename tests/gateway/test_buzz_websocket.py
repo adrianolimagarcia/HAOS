@@ -154,18 +154,30 @@ async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, capl
 
     Reproduces the #98097 shape: a socket stuck in CLOSE_WAIT yields no
     frame and no error, so without a read-side bound the loop would wait
-    forever while the gateway keeps reporting "connected".
+    forever while the gateway keeps reporting "connected". The receive here
+    also ignores cancellation (#112049), which held the bound hostage as long
+    as it was an ``asyncio.wait_for``.
     """
     import logging
 
     adapter = _make_adapter()
     monkeypatch.setattr(_buzz_mod, "_WS_READ_IDLE_TIMEOUT", 0.05)
     caplog.set_level(logging.WARNING)
+    states = []
+    monkeypatch.setattr(adapter, "_write_runtime_status_safe", lambda status, **kw: states.append(kw["platform_state"]))
 
     sockets = []
+    release_parked_receive = asyncio.Event()
 
     async def dead_anext():
-        await asyncio.Event().wait()  # never yields, never raises
+        # Some transports do not acknowledge cancellation while their receive
+        # call is parked.  ``asyncio.wait_for`` then waits for this coroutine
+        # to finish, so its own timeout cannot return.
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await release_parked_receive.wait()
+            raise
 
     def fake_connect(*args, **kwargs):
         ws = _ScriptedWebSocket(dead_anext)
@@ -183,12 +195,17 @@ async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, capl
         while len(sockets) < 2 and time.monotonic() < deadline:
             await asyncio.sleep(0.02)
     finally:
-        terminated = await _cancel_and_join(task)
+        release_parked_receive.set()
+        task.cancel()
+        try:
+            await asyncio.wait_for(task, 5.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
 
     assert len(sockets) >= 2, "idle read watchdog did not force a reconnect"
     assert sockets[0].exited, "the silent connection was not closed before reconnecting"
     assert any("went silent" in record.message for record in caplog.records)
-    assert terminated, "the read-idle watchdog loop ignored cancellation and kept reconnecting"
+    assert states[:2] == ["retrying", "connected"], f"health must flip to retrying and back, got {states}"
 
 
 @pytest.mark.asyncio

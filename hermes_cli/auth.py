@@ -35,7 +35,7 @@ from hermes_constants import OPENROUTER_BASE_URL, hermes_home_key, product_comma
 from hermes_constants import OPENROUTER_BASE_URL, secure_parent_dir
 from hermes_constants import product_command as _product_cmd  # noqa: PLC0415
 from agent.credential_persistence import sanitize_borrowed_credential_payload
-from utils import atomic_json_write, atomic_yaml_write, env_float, is_truthy_value  # noqa: F401  (env_float: agent.credential_pool reads auth_mod.env_float)
+from utils import atomic_json_write, atomic_yaml_write, env_float, file_signature, is_truthy_value  # noqa: F401  (env_float: agent.credential_pool reads auth_mod.env_float)
 from hermes_cli.auth_zai_kimi import (  # noqa: F401  re-exported
     KIMI_CODE_BASE_URL, ZAI_ENDPOINTS, _normalize_lmstudio_runtime_base_url, _resolve_kimi_base_url,
     _resolve_zai_base_url, detect_zai_endpoint)
@@ -509,8 +509,8 @@ def _load_global_auth_store() -> Dict[str, Any]:
         _global_auth_store_cache = None
         return {}
     try:
-        cache_key: Optional[Tuple[str, int]] = (
-            str(global_path.resolve(strict=False)), global_path.stat().st_mtime_ns)
+        cache_key: Optional[Tuple[str, Tuple[int, int, int, int]]] = (
+            str(global_path.resolve(strict=False)), file_signature(global_path.stat()))
     except Exception:
         cache_key = None
     cached = _global_auth_store_cache
@@ -706,7 +706,8 @@ def _load_auth_store(auth_file: Optional[Path] = None) -> Dict[str, Any]:
 def _save_private_json(target: Path, data: Any, *, fsync_dir: bool = False, **dump_kwargs: Any) -> None:
     """0600 credential JSON under a 0700 parent (``secure_parent_dir`` refuses ``/``, top-level dirs
     and the install tree). ``atomic_json_write`` creates the temp file 0600 before any byte lands."""
-    target.parent.mkdir(parents=True, exist_ok=True)
+    from hermes_constants import mkdir_under_hermes_home
+    mkdir_under_hermes_home(target.parent)
     secure_parent_dir(target)
     atomic_json_write(target, data, mode=0o600, fsync_dir=fsync_dir, **dump_kwargs)
 
@@ -1513,12 +1514,12 @@ def resolve_provider(
             return "bedrock"
     except ImportError:
         pass  # boto3 not installed
-    from hermes_constants import get_hermes_home
-    _env_hint = get_hermes_home() / ".env"
+    from hermes_constants import display_hermes_home
     raise AuthError(
-        f"No inference provider configured. Run '{_product_cmd('model')}' to choose a "
-        f"provider and model, or set an API key (OPENROUTER_API_KEY, "
-        f"OPENAI_API_KEY, etc.) in {_env_hint}.",
+        f"Hermes is not connected to any AI provider yet. Run `{_product_cmd('model')}` to pick one (the free "
+        "Nous tier needs no API key), type `/login` in chat, or add a key with "
+        f"`{_product_cmd('auth')} add <provider>`. (Advanced: put an API key such as OPENROUTER_API_KEY in "
+        f"{display_hermes_home()}/.env.)",
         code="no_provider_configured")
 
 

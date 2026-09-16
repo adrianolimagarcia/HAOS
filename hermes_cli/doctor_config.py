@@ -73,7 +73,8 @@ def collect_relay_plugin_cutover_findings(raw_config: dict | None, env_map: dict
             if name not in effective_env and os.environ.get(name) is not None:
                 effective_env[name] = os.environ[name]
     if not str(effective_env.get(RELAY_PLUGINS_CONFIG_ENV, "")).strip():
-        findings += [(name, f"move exporter settings to {RELAY_PLUGINS_CONFIG_ENV}; this variable is now ignored")
+        findings += [(name, f"run `hermes migrate relay` to generate relay-plugins.toml and set {RELAY_PLUGINS_CONFIG_ENV}; "
+                            "this variable is now ignored and no traces are exported")
                      for name in configured_legacy_relay_env_vars(effective_env)]
     return findings
 
@@ -256,9 +257,9 @@ def _validate_model_config(config_path, issues: list) -> None:
         with warn_on_error(""):
             if not _provider_has_credentials(runtime_provider):
                 _fail_and_issue(f"model.provider '{runtime_provider}' is set but no API key is configured",
-                                "(check ~/.hermes/.env or run '" + product_command("setup") + "')",
-                                f"No credentials found for provider '{runtime_provider}'. Run '{product_command('setup')}' or set the provider's "
-                                f"API key in {_DHH}/.env, or switch providers with '{product_command('config')} set model.provider <name>'", issues)
+                                f"(add it to {_DHH}/.env or run '" + product_command("setup") + "')",
+                                f"No credentials found for provider '{runtime_provider}'. Run '" + product_command("setup") + "' or set the provider's "
+                                f"API key in {_DHH}/.env, or switch providers with '" + product_command("config") + " set model.provider <name>'", issues)
 
 
 @doctor_check()

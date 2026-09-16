@@ -75,24 +75,17 @@ class PtySession:
                 await asyncio.sleep(0)
                 continue
             self.buffer.append(chunk)
-            if self._ws is None:
-                continue                             # detached; buffer only
-            stalled_ws = self._ws                    # fixed before the await
+            ws = self._ws
             try:
-                await asyncio.wait_for(
-                    stalled_ws.send_bytes(chunk), timeout=PTY_WS_SEND_TIMEOUT
-                )
+                if ws is not None:
+                    await asyncio.wait_for(
+                        ws.send_bytes(chunk), timeout=PTY_WS_SEND_TIMEOUT
+                    )
             except Exception:
-                # A backgrounded browser can stop draining its socket and the
-                # unbounded await would park the drain loop (PTY backpressure
-                # then wedges the TUI child). Detach — only the socket that
-                # failed, never a newer attach — and keep buffering; the
-                # client's page-resume reconnect reattaches and replays.
-                if self._ws is stalled_ws:
-                    self._ws = None
-                    self.attached = False
-                    self.last_detached_at = time.monotonic()
-                    await _close_ws(stalled_ws, WS_CLOSE_BACKPRESSURE)
+                # The viewer is gone or stalled; nothing else observes this failure (the handler's finally
+                # only runs once ws.receive() sees the disconnect). detach() is a no-op when a
+                # replacement socket attached during the send, so the new viewer keeps its session.
+                self.detach(ws)
 
     async def write(self, ws, data: bytes) -> bool:
         """Serialize input and discard bytes from a superseded socket."""
@@ -130,10 +123,9 @@ class PtySession:
                     ws.send_bytes(snap), timeout=PTY_WS_SEND_TIMEOUT
                 )
             except Exception:
-                # Same bounded-send contract as the drain loop: a stalled
-                # socket must not park the attach. The handler's failure path
-                # (attach returns False) tears the socket down and the client
-                # retries.
+                # Client dropped or stalled mid-replay; the caller never reaches its writer loop, so undo the
+                # attach here or reap_idle() can never reclaim this PTY (#110849).
+                self.detach(ws)
                 return False
         if force_redraw:
             return await self.write(ws, TUI_FORCE_REDRAW)
@@ -170,7 +162,10 @@ class PtySession:
 
 
 class RegistryFull(Exception):
-    pass
+    """Every keep-alive slot holds a PTY that some tab is still attached to."""
+
+    def __init__(self, message: str = "Too many chat terminals are open in other tabs; close one and try again.") -> None:
+        super().__init__(message)
 
 
 async def run_reaper(registry: "PtySessionRegistry", *, interval: float = 60.0) -> None:
