@@ -14,8 +14,11 @@ Existe uma federação orquestrada de fontes:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
+import sqlite3
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -56,7 +59,12 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self._hermes_home: Path = Path(get_hermes_home())
         self._initialized: bool = False
         self._prefetch_cache: Dict[tuple[str, str], str] = {}
+        self._recent_recall: Dict[str, str] = {}
         self._turn_seen: set[tuple[str, str]] = set()
+        self._write_lock = threading.RLock()
+        self._dedupe_path = self._hermes_home / "memory" / "fabric_dedupe.json"
+        self._ledger_path = self._hermes_home / "memory" / "fabric_ledger.db"
+        self._ledger: Optional[sqlite3.Connection] = None
 
     def is_available(self) -> bool:
         """Check that the configured vault is usable without performing network I/O."""
@@ -70,16 +78,61 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self._session_id = session_id
         if "hermes_home" in kwargs:
             self._hermes_home = Path(kwargs["hermes_home"])
+            self._dedupe_path = self._hermes_home / "memory" / "fabric_dedupe.json"
+            self._ledger_path = self._hermes_home / "memory" / "fabric_ledger.db"
+            if self._ledger is not None:
+                self._ledger.close()
+                self._ledger = None
             self.vault_path = self._hermes_home / "obsidian_vault"
             self.obsidian.set_vault_path(self.vault_path)
+        self._load_dedupe_index()
+        self._open_ledger()
 
         self.vault_path.mkdir(parents=True, exist_ok=True)
         self._initialized = True
         logger.info("HermesFabricMemoryProvider initialized for session %s at %s", session_id, self.vault_path)
 
+    def _load_dedupe_index(self) -> None:
+        try:
+            data = json.loads(self._dedupe_path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                self._turn_seen = {tuple(x) for x in data if isinstance(x, list) and len(x) == 2}
+        except (OSError, ValueError, TypeError):
+            self._turn_seen = set()
+
+    def _persist_dedupe_index(self) -> None:
+        self._dedupe_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._dedupe_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(sorted(self._turn_seen)), encoding="utf-8")
+        tmp.replace(self._dedupe_path)
+
+    def _open_ledger(self) -> None:
+        self._ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ledger = sqlite3.connect(self._ledger_path, check_same_thread=False)
+        self._ledger.execute("PRAGMA journal_mode=WAL")
+        self._ledger.execute("PRAGMA busy_timeout=30000")
+        self._ledger.execute(
+            "CREATE TABLE IF NOT EXISTS memories (digest TEXT PRIMARY KEY, memory_id TEXT NOT NULL, scope TEXT NOT NULL, created_at REAL NOT NULL)"
+        )
+        self._ledger.commit()
+
+    def _claim_memory(self, digest: str, memory_id: str, scope: str) -> bool:
+        if self._ledger is None:
+            self._open_ledger()
+        assert self._ledger is not None
+        try:
+            self._ledger.execute(
+                "INSERT INTO memories(digest,memory_id,scope,created_at) VALUES(?,?,?,strftime('%s','now'))",
+                (digest, memory_id, scope),
+            )
+            self._ledger.commit()
+            return True
+        except sqlite3.IntegrityError:
+            self._ledger.rollback()
+            return False
+
     def system_prompt_block(self) -> str:
-        """Bloco de memória resumido injetado no system prompt upstream."""
-        # Mantém curto para preservar cache e não poluir o prompt
+        """Bloco estático, pequeno, que não muta o prompt durante a conversa."""
         return (
             "## Memory Fabric (HAOS Federation)\n"
             "- Architecture & Project Truth: Obsidian Vault (`obsidian://`)\n"
@@ -96,41 +149,53 @@ class HermesFabricMemoryProvider(MemoryProvider):
         """Esquemas de ferramentas de memória exportados para o agente."""
         return []
 
-    def prefetch(self, query: str, *, session_id: str = "") -> str:
-        """Return cached hybrid recall; populate it synchronously on a cold key."""
-        if not self._initialized:
-            return ""
-        key = (session_id or self._session_id, query.strip())
-        cached = self._prefetch_cache.get(key)
-        if cached is not None:
-            return cached
-
+    def _retrieve_into_cache(self, query: str, session_id: str) -> None:
         blocks: List[str] = []
         seen: set[str] = set()
-        for source_items, limit in (
-            (self.obsidian.retrieve(query=query), 3),
-            (self.decisions.retrieve(query=query), 2),
-            (self.graphrag.retrieve(query=query), 2),
-        ):
-            for item in source_items[:limit]:
-                if item.source_uri in seen:
-                    continue
-                seen.add(item.source_uri)
-                blocks.append(f"[{item.source_uri}] {item.get_representation('summary')}")
+        sources = (
+            ("obsidian", lambda: self.obsidian.retrieve(query=query), 3),
+            ("decisions", lambda: self.decisions.retrieve(query=query), 2),
+            ("graphrag", lambda: self.graphrag.retrieve(query=query), 2),
+        )
+        for source_name, retrieve, limit in sources:
+            try:
+                for item in retrieve()[:limit]:
+                    if item.source_uri in seen:
+                        continue
+                    seen.add(item.source_uri)
+                    blocks.append(f"[{item.source_uri}] {item.get_representation('summary')}")
+            except Exception:
+                logger.warning("Hermes Fabric %s recall failed", source_name, exc_info=True)
         result = "\n\n".join(blocks)
-        self._prefetch_cache[key] = result
-        return result
+        key = (session_id, query.strip())
+        with self._write_lock:
+            self._prefetch_cache[key] = result
+            if len(self._prefetch_cache) > 128:
+                self._prefetch_cache.pop(next(iter(self._prefetch_cache)))
+
+    def prefetch(self, query: str, *, session_id: str = "") -> str:
+        """Return prepared recall only; cold retrieval is never on the turn path."""
+        if not self._initialized:
+            return ""
+        sid = session_id or self._session_id
+        normalized = query.strip()
+        with self._write_lock:
+            cached = self._prefetch_cache.get((sid, normalized))
+            if cached is not None:
+                return cached
+            for text, value in self._recent_recall.items():
+                if normalized and normalized.lower() in text.lower():
+                    return value
+            return ""
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
-        """Prepare recall without making the next turn wait on a cold search."""
         if not self._initialized:
             return
         from agent.memory_provider import spawn_context_thread
         thread = spawn_context_thread(
-            self.prefetch,
+            self._retrieve_into_cache,
             name="hermes-fabric-prefetch",
-            args=(query,),
-            kwargs={"session_id": session_id or self._session_id},
+            args=(query, session_id or self._session_id),
         )
         thread.start()
 
@@ -157,7 +222,9 @@ class HermesFabricMemoryProvider(MemoryProvider):
     def shutdown(self) -> None:
         """Encerra recursos de memória de forma graciosa."""
         self._prefetch_cache.clear()
-        self._turn_seen.clear()
+        if self._ledger is not None:
+            self._ledger.close()
+            self._ledger = None
         self._initialized = False
 
     def remember(self, content: str, target: str = "notes", metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -169,28 +236,33 @@ class HermesFabricMemoryProvider(MemoryProvider):
         if not ("ADR" in content or target == "architecture"):
             return
         dec_id = self._stable_memory_id(content, meta)
-        key = (dec_id, hashlib.sha256(content.encode("utf-8")).hexdigest())
-        if key in self._turn_seen:
-            return
-        self._turn_seen.add(key)
-        title = str(meta.get("title") or "Architecture Decision")
-        supersedes = meta.get("supersedes")
-        if isinstance(supersedes, str):
-            supersedes = [supersedes]
-        self.decisions.record_decision(dec_id, title, content, supersedes=supersedes if isinstance(supersedes, list) else None)
-        obs_path = f"20-Architecture/{dec_id}.md"
-        note_path = self.vault_path / obs_path
-        note_body = (
-            f"**Scope:** `{meta.get('scope', 'project')}` | "
-            f"**Confidence:** `{meta.get('confidence', 1.0):.2f}`\n\n"
-            f"{content}"
-        )
-        if not note_path.exists():
-            self.obsidian.write_note(obs_path, title, note_body, doc_type="architecture_decision", metadata=meta)
-        self.graphrag.register_entity(dec_id, "architecture_decision", content)
-        for old_id in supersedes or []:
-            self.graphrag.register_relation(dec_id, str(old_id), "supersedes", "Explicit decision supersession")
-        self._prefetch_cache.clear()
+        digest = hashlib.sha256(content.strip().encode("utf-8")).hexdigest()
+        scope = str(meta.get("scope") or "project")
+        if scope not in {"private", "team", "project", "global"}:
+            raise ValueError(f"Invalid memory scope: {scope}")
+        with self._write_lock:
+            if not self._claim_memory(digest, dec_id, scope):
+                return
+            # The durable claim is made before fan-out; retries are safe and sinks are idempotent.
+            title = str(meta.get("title") or "Architecture Decision")
+            supersedes = meta.get("supersedes")
+            if isinstance(supersedes, str):
+                supersedes = [supersedes]
+            self.decisions.record_decision(dec_id, title, content, supersedes=supersedes if isinstance(supersedes, list) else None)
+            obs_path = f"20-Architecture/{dec_id}.md"
+            note_path = self.vault_path / obs_path
+            note_body = (
+                f"**Scope:** `{meta.get('scope', 'project')}` | "
+                f"**Confidence:** `{meta.get('confidence', 1.0):.2f}`\n\n{content}"
+            )
+            if not note_path.exists():
+                self.obsidian.write_note(obs_path, title, note_body, doc_type="architecture_decision", metadata=meta)
+            self.graphrag.register_entity(dec_id, "architecture_decision", content)
+            for old_id in supersedes or []:
+                self.graphrag.register_relation(dec_id, str(old_id), "supersedes", "Explicit decision supersession")
+            self._persist_dedupe_index()
+            self._recent_recall[content] = f"[decision://{dec_id}] {content}"
+            self._prefetch_cache.clear()
 
     def on_memory_write(self, action: str, target: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """Intercepta comandos de escrita da ferramenta `memory` upstream."""
