@@ -13,7 +13,9 @@ Existe uma federação orquestrada de fontes:
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -53,10 +55,15 @@ class HermesFabricMemoryProvider(MemoryProvider):
 
         self._hermes_home: Path = Path(get_hermes_home())
         self._initialized: bool = False
+        self._prefetch_cache: Dict[tuple[str, str], str] = {}
+        self._turn_seen: set[tuple[str, str]] = set()
 
     def is_available(self) -> bool:
-        """Sempre disponível pois usa estratégias puras e adapters resilientes."""
-        return True
+        """Check that the configured vault is usable without performing network I/O."""
+        try:
+            return self.vault_path.parent.exists()
+        except OSError:
+            return False
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         """Inicializa conexões e diretórios de armazenamento."""
@@ -90,52 +97,103 @@ class HermesFabricMemoryProvider(MemoryProvider):
         return []
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        """Prefetch upstream: busca notas relevantes no Obsidian e decisões ativas."""
+        """Return cached hybrid recall; populate it synchronously on a cold key."""
         if not self._initialized:
             return ""
+        key = (session_id or self._session_id, query.strip())
+        cached = self._prefetch_cache.get(key)
+        if cached is not None:
+            return cached
 
         blocks: List[str] = []
-        # Busca no Obsidian
-        obs_items = self.obsidian.retrieve(query=query)
-        for item in obs_items[:3]:
-            blocks.append(f"[{item.source_uri}] {item.get_representation('summary')}")
+        seen: set[str] = set()
+        for source_items, limit in (
+            (self.obsidian.retrieve(query=query), 3),
+            (self.decisions.retrieve(query=query), 2),
+            (self.graphrag.retrieve(query=query), 2),
+        ):
+            for item in source_items[:limit]:
+                if item.source_uri in seen:
+                    continue
+                seen.add(item.source_uri)
+                blocks.append(f"[{item.source_uri}] {item.get_representation('summary')}")
+        result = "\n\n".join(blocks)
+        self._prefetch_cache[key] = result
+        return result
 
-        # Busca no DecisionStore
-        dec_items = self.decisions.retrieve(query=query)
-        for item in dec_items[:2]:
-            blocks.append(f"[{item.source_uri}] {item.get_representation('summary')}")
+    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+        """Prepare recall without making the next turn wait on a cold search."""
+        if not self._initialized:
+            return
+        from agent.memory_provider import spawn_context_thread
+        thread = spawn_context_thread(
+            self.prefetch,
+            name="hermes-fabric-prefetch",
+            args=(query,),
+            kwargs={"session_id": session_id or self._session_id},
+        )
+        thread.start()
 
-        return "\n\n".join(blocks)
+    @staticmethod
+    def _stable_memory_id(content: str, metadata: Dict[str, Any]) -> str:
+        explicit = metadata.get("id")
+        if explicit:
+            return str(explicit)
+        digest = hashlib.sha256(content.strip().encode("utf-8")).hexdigest()[:20]
+        return f"ADR-{digest}"
 
     def sync_turn(self, user_message: str, assistant_response: str, **kwargs: Any) -> None:
-        """Observa cada turno da conversa para identificar fatos e decisões importantes."""
-        # Se a resposta contiver marcadores formais de decisão (ex: "DECISION:" ou "ADR:"),
-        # pode sugerir ou gravar no store canônico.
-        pass
+        """Persist only explicit decisions from completed turns; ordinary chat stays ephemeral."""
+        if not self._initialized:
+            return
+        content = assistant_response.strip()
+        if not content or not re.search(r"(?:^|\s)(?:ADR|DECISION)\s*[:#-]", content, re.IGNORECASE):
+            return
+        metadata = dict(kwargs.get("metadata") or {})
+        metadata.setdefault("provenance", [f"session://{kwargs.get('session_id') or self._session_id}"])
+        metadata.setdefault("source_turn", user_message[:500])
+        self._upsert_memory(content, target="architecture", metadata=metadata)
 
     def shutdown(self) -> None:
         """Encerra recursos de memória de forma graciosa."""
+        self._prefetch_cache.clear()
+        self._turn_seen.clear()
         self._initialized = False
 
     def remember(self, content: str, target: str = "notes", metadata: Optional[Dict[str, Any]] = None) -> None:
-        """Grava ou notifica o provedor de memória upstream sobre um fato ou decisão."""
-        meta = metadata or {}
-        # Se for decisão de arquitetura, reflete no DecisionStore e Obsidian se não estiverem gravadas
-        if "ADR" in content or target == "architecture":
-            dec_id = meta.get("id", f"ADR-LOCAL-{int(len(content))}")
-            title = meta.get("title", "Architecture Decision")
-            if not self.decisions.get_decision(dec_id):
-                self.decisions.record_decision(dec_id, title, content)
-            obs_path = f"20-Architecture/{dec_id}.md"
-            if not (self.vault_path / obs_path).exists() and not (Path(self.obsidian.vault_path) / obs_path).exists():
-                self.obsidian.write_note(obs_path, title, content, doc_type="architecture_decision", metadata=meta)
+        """Grava de modo idempotente uma decisão ou fato explícito."""
+        self._upsert_memory(content, target=target, metadata=metadata)
+
+    def _upsert_memory(self, content: str, target: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        meta = dict(metadata or {})
+        if not ("ADR" in content or target == "architecture"):
+            return
+        dec_id = self._stable_memory_id(content, meta)
+        key = (dec_id, hashlib.sha256(content.encode("utf-8")).hexdigest())
+        if key in self._turn_seen:
+            return
+        self._turn_seen.add(key)
+        title = str(meta.get("title") or "Architecture Decision")
+        supersedes = meta.get("supersedes")
+        if isinstance(supersedes, str):
+            supersedes = [supersedes]
+        self.decisions.record_decision(dec_id, title, content, supersedes=supersedes if isinstance(supersedes, list) else None)
+        obs_path = f"20-Architecture/{dec_id}.md"
+        note_path = self.vault_path / obs_path
+        note_body = (
+            f"**Scope:** `{meta.get('scope', 'project')}` | "
+            f"**Confidence:** `{meta.get('confidence', 1.0):.2f}`\n\n"
+            f"{content}"
+        )
+        if not note_path.exists():
+            self.obsidian.write_note(obs_path, title, note_body, doc_type="architecture_decision", metadata=meta)
+        self.graphrag.register_entity(dec_id, "architecture_decision", content)
+        for old_id in supersedes or []:
+            self.graphrag.register_relation(dec_id, str(old_id), "supersedes", "Explicit decision supersession")
+        self._prefetch_cache.clear()
 
     def on_memory_write(self, action: str, target: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """Intercepta comandos de escrita da ferramenta `memory` upstream."""
-        meta = metadata or {}
-        # Se for decisão de arquitetura, reflete no DecisionStore e Obsidian
-        if "ADR" in content or target == "architecture":
-            dec_id = meta.get("id", f"ADR-LOCAL-{int(len(content))}")
-            title = meta.get("title", "Architecture Decision")
-            self.decisions.record_decision(dec_id, title, content)
-            self.obsidian.write_note(f"20-Architecture/{dec_id}.md", title, content, doc_type="architecture_decision")
+        if action in {"add", "replace"}:
+            self._upsert_memory(content, target=target, metadata=metadata)
+
