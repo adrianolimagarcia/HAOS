@@ -231,7 +231,22 @@ class TestFederatedMemoryFabric(unittest.TestCase):
         self.assertIn("pull requests", records[0].fact)
 
         self.coordinator.stop_background_worker()
+    def test_explicit_id_collision_across_scopes_is_rejected(self) -> None:
+        self.coordinator.ingest_candidate_fact(
+            fact="ADR-300: Keep the API stable.", scope="project", metadata={"id": "shared-id"}
+        )
+        with self.assertRaises(ValueError):
+            self.coordinator.ingest_candidate_fact(
+                fact="ADR-301: Change the API contract.", scope="team", metadata={"id": "shared-id"}
+            )
+        self.assertEqual(len(self.coordinator.list_facts(scope="project")), 1)
+        self.assertEqual(len(self.coordinator.list_facts(scope="team")), 0)
 
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_provider_sync_turn_persists_explicit_decision(self) -> None:
+        self.provider.sync_turn(
+            "Choose the durable policy",
+            "DECISION: use the canonical event ledger.",
+            session_id="turn-1",
+        )
+        recalled = self.provider.prefetch("canonical event ledger", session_id="turn-1")
+        self.assertIn("canonical event ledger", recalled)

@@ -278,6 +278,18 @@ class FederatedMemoryCoordinator:
 
             record_id = candidate.id or f"fact-{uuid.uuid4().hex[:8]}"
             candidate.id = record_id
+            existing_by_id = self._facts.get(record_id)
+            if existing_by_id is not None:
+                # An explicit ID is an identity claim, not permission to overwrite a
+                # record from another scope or with different content.
+                if (
+                    existing_by_id.scope != scope
+                    or self._normalize(existing_by_id.fact) != self._normalize(candidate.fact)
+                ):
+                    raise ValueError(
+                        f"Memory fact ID collision: '{record_id}' already belongs to "
+                        f"scope '{existing_by_id.scope}'"
+                    )
 
             fact_record = FederatedFactRecord(
                 id=record_id,
