@@ -86,9 +86,9 @@ class HermesFabricMemoryProvider(MemoryProvider):
         # Mantém curto para preservar cache e não poluir o prompt
         return (
             "## Memory Fabric (HAOS Federation)\n"
-            "- Architecture & Project Truth: Obsidian Vault (`obsidian://`)\n"
-            "- Decisions & Governance: DecisionStore (ADRs)\n"
-            "- Relational & Impact Analysis: GraphRAG\n"
+            "- Canonical Truth: transactional Memory Fabric journal\n"
+            "- Human Audit Projection: Obsidian Vault (`obsidian://`)\n"
+            "- Derived Projections: DecisionStore and GraphRAG\n"
             "Use memory queries or context expand tools for deep knowledge retrieval."
         )
 
