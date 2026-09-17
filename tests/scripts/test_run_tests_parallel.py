@@ -460,3 +460,91 @@ def test_drive_letter_colon_is_not_a_path_separator(tmp_path: Path) -> None:
         f"drive letter split off as a phantom root:\n{proc.stdout}"
     )
     assert "Discovered 1 test files" in proc.stdout, proc.stdout
+
+
+def test_flake_ledger_records_the_failing_assertion(tmp_path: Path) -> None:
+    """A flake must outlive the terminal, with the assertion that failed.
+
+    The FLAKY banner only ever went to stdout, so the flake rate was folklore:
+    a full run was the only place a flake reproduced, and rediscovering one
+    meant another expensive run. The ledger is the durable record.
+    """
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    runner = repo_root / "scripts" / "run_tests_parallel.py"
+    marker = tmp_path / "ran-once"
+    probe = tmp_path / "test_flaky_probe.py"
+    probe.write_text(
+        textwrap.dedent(
+            f"""
+            from pathlib import Path
+
+            def test_flaky_once():
+                marker = Path({str(marker)!r})
+                if not marker.exists():
+                    marker.write_text("failed once")
+                    assert 2.0134 < 1.5, "simulated load-induced timing flake"
+                assert True
+            """
+        ),
+        encoding="utf-8",
+    )
+    ledger = tmp_path / "flakes.jsonl"
+
+    proc = subprocess.run(
+        [
+            sys.executable, str(runner),
+            "--files", str(probe),
+            "--file-retries", "1",
+            "--flake-log", str(ledger),
+            "-j", "1", "-q",
+        ],
+        cwd=repo_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=120,
+    )
+
+    assert proc.returncode == 0, proc.stdout
+    records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1, records
+    assert records[0]["file"].endswith("test_flaky_probe.py")
+    assert records[0]["attempts"] == 2
+    # Without the assertion the ledger is a list of filenames and forces
+    # another full run to learn anything.
+    assert "simulated load-induced timing flake" in records[0]["excerpt"]
+
+
+def test_stable_run_writes_no_flake_ledger(tmp_path: Path) -> None:
+    """The ledger records flakes only — a clean run must not create it, and a
+    deterministic failure is not a flake."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    runner = repo_root / "scripts" / "run_tests_parallel.py"
+
+    stable = tmp_path / "test_stable_probe.py"
+    stable.write_text("def test_stable():\n    assert True\n", encoding="utf-8")
+    stable_ledger = tmp_path / "stable.jsonl"
+    proc = subprocess.run(
+        [
+            sys.executable, str(runner), "--files", str(stable),
+            "--file-retries", "1", "--flake-log", str(stable_ledger), "-j", "1", "-q",
+        ],
+        cwd=repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout
+    assert not stable_ledger.exists(), "clean run wrote a flake ledger"
+
+    broken = tmp_path / "test_broken_probe.py"
+    broken.write_text('def test_broken():\n    assert False, "deterministic"\n', encoding="utf-8")
+    broken_ledger = tmp_path / "broken.jsonl"
+    proc = subprocess.run(
+        [
+            sys.executable, str(runner), "--files", str(broken),
+            "--file-retries", "1", "--flake-log", str(broken_ledger), "-j", "1", "-q",
+        ],
+        cwd=repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, timeout=120,
+    )
+    assert proc.returncode != 0, proc.stdout
+    assert not broken_ledger.exists(), "deterministic failure logged as a flake"

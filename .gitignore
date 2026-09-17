@@ -43,6 +43,7 @@ data/
 !hermes_cli/data/
 .pytest_cache/
 test_durations.json
+test_flakes.jsonl
 .pytest-cache/
 tmp/
 temp_vision_images/

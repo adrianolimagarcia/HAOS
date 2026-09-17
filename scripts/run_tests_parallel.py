@@ -52,8 +52,9 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 # Default test discovery roots.
@@ -107,8 +108,21 @@ _DEFAULT_FILE_RETRIES = 1
 
 # Duration cache: maps relative file paths to last-observed subprocess
 # wall-clock seconds. Used by ``--slice`` to distribute files across
-# CI jobs by estimated total time, so no one job gets all the slow files.
+# CI jobs by estimated total time, so no one job gets all the slow jobs.
 _DURATIONS_FILE = "test_durations.json"
+
+# Append-only flake ledger: one JSON line per pass-on-retry event.
+#
+# The FLAKY banner goes to stdout and evaporates with the terminal, so a flake
+# could only ever be rediscovered by tripping over it again — and a full run is
+# the only place it reproduces. This file is the durable record: the flake rate
+# becomes measurable across runs instead of folklore, and a run that flakes is
+# visible after the fact even if nobody read the scrollback.
+_FLAKE_LOG_FILE = "test_flakes.jsonl"
+
+# Bounded excerpt of the first-attempt output. The failing assertion is what
+# makes a flake actionable; without it the ledger is a list of filenames.
+_FLAKE_LOG_MAX_EXCERPT = 2000
 
 
 def _split_pathspec(value: str) -> List[str]:
@@ -365,6 +379,7 @@ def _run_one_file(
     repo_root: Path,
     file_timeout: float,
     retries: int = 0,
+    flake_log: Optional[Path] = None,
 ) -> Tuple[Path, int, str, dict[str, int], float]:
     """Run ``python -m pytest <file> <pytest_args>`` in a fresh subprocess.
 
@@ -376,6 +391,9 @@ def _run_one_file(
     are recorded in ``_FLAKY_RESULTS`` so the summary can call it out. A
     deterministic failure fails every attempt, so real regressions cannot
     be laundered green.
+
+    ``flake_log`` (when given) also appends one JSON line per flake to that
+    path, so the event survives the terminal and the rate is measurable.
 
     ``summary_counts`` is the result of ``_parse_pytest_summary(output)`` —
 
@@ -418,6 +436,7 @@ def _run_one_file(
             )
             with _flaky_lock:
                 _FLAKY_RESULTS.append((file, output))
+            _append_flake_log(flake_log, file, repo_root, attempt + 1, first_output)
     return file, rc, output, summary, subproc_wall
 
 
@@ -427,6 +446,36 @@ def _run_one_file(
 # run to rediscover the race.
 _FLAKY_RESULTS: List[Tuple[Path, str]] = []
 _flaky_lock = threading.Lock()
+_flake_log_lock = threading.Lock()
+
+
+def _append_flake_log(
+    flake_log: Optional[Path],
+    file: Path,
+    repo_root: Path,
+    attempts: int,
+    first_output: str,
+) -> None:
+    """Append one JSON line describing a pass-on-retry event.
+
+    Never raises: the ledger is diagnostics, and losing a line must not turn a
+    green run red. Append + flush per line so a killed run keeps what it saw.
+    """
+    if flake_log is None:
+        return
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "file": _format_file(file, repo_root),
+        "attempts": attempts,
+        "excerpt": first_output[-_FLAKE_LOG_MAX_EXCERPT:],
+    }
+    try:
+        with _flake_log_lock:
+            flake_log.parent.mkdir(parents=True, exist_ok=True)
+            with flake_log.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
 
 
 def _run_one_file_once(
@@ -880,6 +929,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--flake-log",
+        metavar="PATH",
+        help=(
+            "Append one JSON line per pass-on-retry flake to PATH, so the event "
+            "outlives the terminal and the flake rate is measurable across runs. "
+            f"Default: <repo>/%s. Repeated runs append, so a census over several "
+            "runs accumulates in one file." % _FLAKE_LOG_FILE
+        ),
+    )
+    parser.add_argument(
         "--slice",
         metavar="I/N",
         help=(
@@ -941,6 +1000,7 @@ def main() -> int:
     OUR_FLAGS = {
         "-j", "--jobs", "--paths", "--include-integration",
         "--file-timeout", "--file-retries", "--slice", "--generate-slices", "--files",
+        "--flake-log",
     }
     # pytest short flags that consume the NEXT token as their value.
     PYTEST_VALUE_FLAGS = {"-k", "-m", "-p", "-o", "-c", "-r", "-W"}
@@ -1041,6 +1101,10 @@ def main() -> int:
             sys.exit(2)
 
     repo_root = Path(__file__).resolve().parent.parent
+
+    # Flake ledger: repo-local by default (gitignored, like test_durations.json),
+    # overridable so a census can point several runs at one file.
+    flake_log = Path(args.flake_log) if args.flake_log else repo_root / _FLAKE_LOG_FILE
 
     # --files: explicit file list from the CI generate job — skip discovery.
     if args.files:
@@ -1192,6 +1256,7 @@ def main() -> int:
                     file, repo_root, args.file_timeout, timeout_durations
                 ),
                 args.file_retries,
+                flake_log,
             )
             fut.add_done_callback(lambda f, file=file, t0=t0: _on_done(file, t0, f))
             futures.append(fut)
