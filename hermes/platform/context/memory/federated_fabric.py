@@ -2,16 +2,15 @@
 
 Unifica:
 - Hermes Memory (Core / Native Upstream Provider)
-- Obsidian Vault (Canonical Human-Auditable Truth)
-- GraphRAG (Derived Conceptual & Relational Graph Projection)
-- DecisionStore (Architectural Decision Records com rastreamento temporal)
+- CanonicalMemoryStore (durable source of truth)
+- Obsidian Vault (human-auditable derived projection)
+- GraphRAG and DecisionStore (rebuildable derived projections)
 
 Sob um único coordenador autoritativo, suportando:
 - Escopos estritos: `private`, `team`, `project`, `global`.
 - Pipeline de background writing & consolidação assíncrona/síncrona via ingest_candidate_fact().
 - Deduplicação léxica & semântica com detecção de conflitos e tracking de supersedes / superseded_by.
-- Sincronização automática multi-store: escrita de markdown canônico no Obsidian Vault,
-  atualização incremental de relações no GraphRAG e notificação ao provedor upstream de memória.
+- Projeções duráveis e independentes via transactional outbox.
 
 Restrições estritas:
 - Stdlib-only imports em hermes/platform/.
@@ -21,10 +20,8 @@ Restrições estritas:
 from __future__ import annotations
 
 import difflib
-import json
 import logging
 import queue
-import sqlite3
 import re
 import threading
 import time
@@ -53,31 +50,14 @@ from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
 from hermes.platform.context.memory.router import MemoryRouter
 from hermes.platform.context.memory.schemas import KnowledgeItem
+from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
+from hermes.platform.context.memory.projection_runner import ProjectionRunner
+from hermes.platform.context.memory.access import MemoryAccessContext
 
 logger = logging.getLogger(__name__)
 
 VALID_SCOPES: Set[str] = {"private", "team", "project", "global"}
 
-
-@dataclass(frozen=True)
-class MemoryAccessContext:
-    actor: str
-    team: Optional[str] = None
-    project: Optional[str] = None
-    session: Optional[str] = None
-    scopes: frozenset[str] = frozenset()
-
-    def allowed_scopes(self) -> frozenset[str]:
-        if self.scopes:
-            return self.scopes & frozenset(VALID_SCOPES)
-        allowed = {"global"}
-        if self.team:
-            allowed.add("team")
-        if self.project:
-            allowed.add("project")
-        if self.session:
-            allowed.add("private")
-        return frozenset(allowed)
 
 @dataclass
 class FederatedFactRecord:
@@ -89,7 +69,7 @@ class FederatedFactRecord:
     provenance: List[str] = field(default_factory=list)
     confidence: float = 1.0
     proposed_destination: DestinationType = "obsidian"
-    status: StatusType = "consolidated"
+    status: str = "consolidated"
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     supersedes: List[str] = field(default_factory=list)
@@ -134,6 +114,13 @@ class FederatedMemoryCoordinator:
         self.graphrag = graphrag_adapter or GraphRAGAdapter()
         self.decisions = decision_store or DecisionStore()
         self.event_bus = event_bus or KnowledgeEventBus()
+        # Canonical state is SQLite; all other stores below are projections.
+        if vault_path is None:
+            from hermes_constants import get_hermes_home
+            ledger_root = Path(get_hermes_home())
+        else:
+            ledger_root = Path(vault_path).parent
+        self.canonical_store = CanonicalMemoryStore(ledger_root / "memory" / "fabric.db")
 
         # Store persistente do grafo (GOV-008): quando o fabric sincroniza
         # conhecimento, cada KnowledgeEvent publicado é espelhado no store
@@ -157,52 +144,32 @@ class FederatedMemoryCoordinator:
             obsidian_adapter=self.obsidian,
             graphrag_adapter=self.graphrag,
             decision_store=self.decisions,
+            canonical_store=self.canonical_store,
+            write_handler=self.ingest_candidate_fact,
+            recovery_handler=self.recover_projections,
         )
-        self.memory_provider._coordinator = self
-
+        self.projection_runner = ProjectionRunner(
+            self.canonical_store,
+            {
+                "obsidian": self._project_obsidian,
+                "decisions": self._project_decisions,
+                "graphrag": self._project_graphrag,
+            },
+        )
 
         self.router = MemoryRouter()
         self.consolidator = MemoryConsolidator()
 
-        # Armazenamento interno de fatos particionado por escopo
-        self._facts: Dict[str, FederatedFactRecord] = {}
-        self._facts_by_scope: Dict[str, List[str]] = {
-            "private": [],
-            "team": [],
-            "project": [],
-            "global": [],
-        }
+        # CanonicalMemoryStore is the only durable and queryable fact state.
 
         # Fila e thread de background worker para ingestão assíncrona
         self._ingest_queue: queue.Queue[Optional[MemoryCandidate]] = queue.Queue()
         self._worker_thread: Optional[threading.Thread] = None
         self._stop_worker = threading.Event()
         self._lock = threading.RLock()
-        from hermes_constants import get_hermes_home
-        store_home = Path(vault_path).parent if vault_path is not None else Path(get_hermes_home())
-        self._canonical_path = store_home / "memory" / "federated_memory.db"
-        self._canonical_db: Optional[sqlite3.Connection] = None
-        self._open_canonical_store()
+
         if auto_start_worker:
             self.start_background_worker()
-
-    def _open_canonical_store(self) -> None:
-        self._canonical_path.parent.mkdir(parents=True, exist_ok=True)
-        self._canonical_db = sqlite3.connect(self._canonical_path, check_same_thread=False)
-        self._canonical_db.execute("PRAGMA journal_mode=WAL")
-        self._canonical_db.execute("PRAGMA busy_timeout=30000")
-        self._canonical_db.execute("PRAGMA foreign_keys=ON")
-        self._canonical_db.execute("CREATE TABLE IF NOT EXISTS federated_facts (id TEXT PRIMARY KEY, payload TEXT NOT NULL, scope TEXT NOT NULL, updated_at REAL NOT NULL)")
-        self._canonical_db.commit()
-        for raw in self._canonical_db.execute("SELECT payload FROM federated_facts ORDER BY updated_at").fetchall():
-            record = FederatedFactRecord(**json.loads(raw[0]))
-            self._facts[record.id] = record
-            self._facts_by_scope.setdefault(record.scope, []).append(record.id)
-
-    def _persist_record(self, record: FederatedFactRecord) -> None:
-        assert self._canonical_db is not None
-        self._canonical_db.execute("INSERT INTO federated_facts(id,payload,scope,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, scope=excluded.scope, updated_at=excluded.updated_at", (record.id, json.dumps(record.to_dict(), sort_keys=True), record.scope, record.updated_at))
-        self._canonical_db.commit()
 
     def start_background_worker(self) -> None:
         """Inicia a thread de consolidação e escrita em segundo plano."""
@@ -210,29 +177,29 @@ class FederatedMemoryCoordinator:
             if self._worker_thread is not None and self._worker_thread.is_alive():
                 return
             self._stop_worker.clear()
-            self._worker_thread = threading.Thread(target=self._background_worker_loop, daemon=True, name="FederatedMemoryWorker")
+            self._worker_thread = threading.Thread(
+                target=self._background_worker_loop,
+                daemon=True,
+                name="FederatedMemoryWorker",
+            )
             self._worker_thread.start()
 
     def stop_background_worker(self, timeout: float = 2.0) -> None:
-        """Para graciosamente: sinaliza draining, aguarda tarefas e só então encerra."""
+        """Para graciosamente a thread de consolidação em segundo plano."""
         with self._lock:
             if self._worker_thread is None:
                 return
             self._stop_worker.set()
-        self._ingest_queue.join()
-        self._ingest_queue.put(None)
-        self._worker_thread.join(timeout=timeout)
-        with self._lock:
+            self._ingest_queue.put(None)
+            self._worker_thread.join(timeout=timeout)
             self._worker_thread = None
 
     def _background_worker_loop(self) -> None:
         """Loop contínuo de processamento da fila de ingestão."""
-        while True:
+        while not self._stop_worker.is_set():
             try:
                 candidate = self._ingest_queue.get(timeout=0.2)
             except queue.Empty:
-                if self._stop_worker.is_set():
-                    break
                 continue
 
             if candidate is None:
@@ -249,19 +216,22 @@ class FederatedMemoryCoordinator:
     def ingest_candidate_fact(
         self,
         fact: str,
-        scope: Optional[ScopeType] = None,
+        scope: ScopeType = "project",
         provenance: Optional[List[str] | str] = None,
         confidence: float = 1.0,
         metadata: Optional[Dict[str, Any]] = None,
         sync: bool = True,
+        access_context: Optional[MemoryAccessContext] = None,
     ) -> MemoryCandidate:
         """Ingere um fato candidato, validando escopo, executando deduplicação e sincronização.
 
         Se sync=True, executa imediatamente a consolidação e sync multi-store no chamador.
         Se sync=False, enfileira para a thread em background.
         """
-        if scope is None or scope not in VALID_SCOPES:
+        if scope not in VALID_SCOPES:
             raise ValueError(f"Escopo inválido: '{scope}'. Deve ser um dos: {sorted(VALID_SCOPES)}")
+        if access_context is not None:
+            access_context.require_write(scope, metadata or {})
 
         prov_list: List[str] = []
         if isinstance(provenance, str):
@@ -300,29 +270,18 @@ class FederatedMemoryCoordinator:
         3. Criação ou atualização do FederatedFactRecord.
         4. Sincronização multi-store (Obsidian, GraphRAG, Upstream Hermes Memory).
         """
-        if not candidate.is_high_confidence():
-            self.router.stage_candidate(candidate, reason="below_confidence_threshold")
-            return False
-
         with self._lock:
             scope = candidate.scope
-            existing_records = [
-                self._facts[fid] for fid in self._facts_by_scope.get(scope, [])
-                if self._facts[fid].superseded_by is None
-            ]
+            # Dedupe and supersession must survive restart; read the journal.
+            existing_records = self.list_facts(scope=scope, include_superseded=False)
 
             # 1. Deduplicação léxica / semântica
             exact_or_dup_id = self._find_duplicate_fact(candidate, existing_records)
             if exact_or_dup_id is not None:
-                dup_record = self._facts[exact_or_dup_id]
-                dup_record.confidence = max(dup_record.confidence, candidate.confidence)
-                for p in candidate.provenance:
-                    if p not in dup_record.provenance:
-                        dup_record.provenance.append(p)
-                dup_record.updated_at = time.time()
+                # Canonical dedupe is append-only; do not mutate an in-memory
+                # shadow record and accidentally diverge provenance/state.
                 candidate.status = "consolidated"
-                candidate.id = dup_record.id
-                self._persist_record(dup_record)
+                candidate.id = exact_or_dup_id
                 return True
 
             # 2. Detecção de conflito e supersessão temporal
@@ -330,18 +289,6 @@ class FederatedMemoryCoordinator:
 
             record_id = candidate.id or f"fact-{uuid.uuid4().hex[:8]}"
             candidate.id = record_id
-            existing_by_id = self._facts.get(record_id)
-            if existing_by_id is not None:
-                # An explicit ID is an identity claim, not permission to overwrite a
-                # record from another scope or with different content.
-                if (
-                    existing_by_id.scope != scope
-                    or self._normalize(existing_by_id.fact) != self._normalize(candidate.fact)
-                ):
-                    raise ValueError(
-                        f"Memory fact ID collision: '{record_id}' already belongs to "
-                        f"scope '{existing_by_id.scope}'"
-                    )
 
             fact_record = FederatedFactRecord(
                 id=record_id,
@@ -357,18 +304,28 @@ class FederatedMemoryCoordinator:
                 metadata=getattr(candidate, "metadata", {}) if hasattr(candidate, "metadata") else {},
             )
 
-            for old_id in superseded_ids:
-                if old_id in self._facts:
-                    old_rec = self._facts[old_id]
-                    old_rec.superseded_by = record_id
-                    old_rec.updated_at = time.time()
+            # Commit canonical state and durable outbox before any projection.
+            # record_id is the idempotency key, so retries cannot create a second fact.
+            stored_record = self.canonical_store.append(
+                content=fact_record.fact,
+                scope=fact_record.scope,
+                kind="decision" if fact_record.proposed_destination == "obsidian" else "fact",
+                logical_id=fact_record.metadata.get("logical_id") or fact_record.id,
+                provenance=tuple({"uri": uri} for uri in fact_record.provenance),
+                confidence=fact_record.confidence,
+                metadata=fact_record.metadata,
+                supersedes=fact_record.supersedes,
+                idempotency_key=fact_record.id,
+                valid_from=fact_record.created_at,
+            )
+            # A restart has no in-memory dedupe index. The journal therefore
+            # decides whether this command was a duplicate; never project a
+            # synthetic ID that did not become a canonical record.
+            if stored_record.record_id != fact_record.id:
+                candidate.id = stored_record.record_id
+                candidate.status = "consolidated"
+                return True
 
-            self._facts[record_id] = fact_record
-            self._facts_by_scope.setdefault(scope, []).append(record_id)
-            for old_id in superseded_ids:
-                if old_id in self._facts:
-                    self._persist_record(self._facts[old_id])
-            self._persist_record(fact_record)
             candidate.status = "consolidated"
 
             # 3. Sincronização Multi-Store
@@ -454,136 +411,91 @@ class FederatedMemoryCoordinator:
             self.graphrag_updater.store = self.graphrag_store
         return self.graphrag_store
 
-    def _sync_stores(self, record: FederatedFactRecord, superseded_ids: List[str]) -> None:
-        """Executa a sincronização multi-store do fato:
-        - Obsidian Vault: Escreve nota canônica em markdown se for decisão, convenção ou projeto.
-        - GraphRAG: Emite KnowledgeEvent para atualizar entidades e relacionamentos no grafo.
-        - Upstream Hermes Memory: Notifica provider upstream.
-        """
-        is_decision = (
-            record.proposed_destination == "obsidian"
-            or "ADR" in record.fact
+    @staticmethod
+    def _from_stored(stored: MemoryRecord) -> FederatedFactRecord:
+        return FederatedFactRecord(
+            id=stored.record_id, fact=stored.content, scope=stored.scope,
+            provenance=[str(p.get("uri", "")) for p in stored.provenance if p.get("uri")],
+            confidence=stored.confidence, status=stored.status,
+            proposed_destination="obsidian" if stored.kind == "decision" else "memory",
+            created_at=stored.valid_from, updated_at=stored.valid_from,
+            supersedes=list(stored.supersedes), metadata=stored.metadata,
+        )
+
+    @staticmethod
+    def _is_decision(record: FederatedFactRecord) -> bool:
+        return (record.proposed_destination == "obsidian" or "ADR" in record.fact
             or "decision" in record.fact.lower()
-            or "decision" in record.metadata.get("type", "").lower()
-        )
+            or "decision" in str(record.metadata.get("type", "")).lower())
 
-        # Persistência do grafo: cria (lazy) o store canônico e liga no
-        # updater antes do publish, para o KnowledgeEvent abaixo ser espelhado.
-        self._ensure_graphrag_store()
+    @staticmethod
+    def _projection_meta(record: FederatedFactRecord) -> Dict[str, Any]:
+        return {**record.metadata, "id": record.id, "scope": record.scope,
+            "confidence": record.confidence, "provenance": record.provenance,
+            "supersedes": record.supersedes, "created_at": record.created_at,
+            "updated_at": record.updated_at, "fabric_committed": True}
 
-        title = record.metadata.get("title") or f"Memory Note - {record.id}"
-        meta = {
-            "id": record.id,
-            "scope": record.scope,
-            "confidence": record.confidence,
-            "provenance": record.provenance,
-            "supersedes": record.supersedes,
-            "created_at": record.created_at,
-            "updated_at": record.updated_at,
-        }
-
-        # 1. Sincronização com Obsidian Vault & DecisionStore
-        relative_path = f"20-Architecture/{record.id}.md" if is_decision else f"10-Memory/{record.scope}/{record.id}.md"
-        doc_type = "architecture_decision" if is_decision else "memory_fact"
-
-        if is_decision:
-            self.decisions.record_decision(
-                decision_id=record.id,
-                title=title,
-                content=record.fact,
-                supersedes=record.supersedes,
-            )
-
-        content_lines = [
-            f"# {title}\n",
-            f"**Scope:** `{record.scope}` | **Confidence:** `{record.confidence:.2f}`\n",
-            f"**Status:** `{record.status}`\n",
-        ]
+    def _project_obsidian(self, stored: MemoryRecord) -> None:
+        record = self._from_stored(stored)
+        is_decision = self._is_decision(record)
+        title = record.metadata.get("title") or "Memory Note - %s" % record.id
+        relative_path = ("20-Architecture/%s.md" % record.id if is_decision
+            else "10-Memory/%s/%s.md" % (record.scope, record.id))
+        lines = ["# %s\n" % title, "**Scope:** `%s` | **Confidence:** `%.2f`\n" % (record.scope, record.confidence), "**Status:** `consolidated`\n"]
         if record.supersedes:
-            content_lines.append(f"**Supersedes:** {', '.join(record.supersedes)}\n")
-        if record.superseded_by:
-            content_lines.append(f"**Superseded by:** {record.superseded_by}\n")
+            lines.append("**Supersedes:** %s\n" % ", ".join(record.supersedes))
+        lines.extend(["\n## Content\n", record.fact, "\n"])
+        self.obsidian.write_note(relative_path, title, "\n".join(lines),
+            doc_type="architecture_decision" if is_decision else "memory_fact",
+            metadata=self._projection_meta(record))
 
-        content_lines.extend(["\n## Content\n", record.fact, "\n"])
-        obsidian_markdown = "\n".join(content_lines)
+    def _project_decisions(self, stored: MemoryRecord) -> None:
+        record = self._from_stored(stored)
+        if not self._is_decision(record):
+            return
+        title = record.metadata.get("title") or "Decision - %s" % record.id
+        self.decisions.record_decision(record.id, title, record.fact, supersedes=record.supersedes)
 
-        self.obsidian.write_note(
-            relative_path=relative_path,
-            title=title,
-            content=obsidian_markdown,
-            metadata=meta,
-            doc_type=doc_type,
+    def _project_graphrag(self, stored: MemoryRecord) -> None:
+        record = self._from_stored(stored)
+        self._ensure_graphrag_store()
+        title = record.metadata.get("title") or "Memory Note - %s" % record.id
+        event = KnowledgeEvent.create(
+            event_type=KnowledgeEventType.DECISION_RECORDED if self._is_decision(record) else KnowledgeEventType.NOTE_CREATED,
+            event_id="memory.changed:" + record.id, uri="memory://" + record.id,
+            title=title, content=record.fact, metadata=self._projection_meta(record),
         )
+        self.event_bus.publish(event, enqueue=False)
 
-        # 2. Sincronização com GraphRAG via EventBus
-        event_type = KnowledgeEventType.DECISION_RECORDED if is_decision else KnowledgeEventType.NOTE_CREATED
-        k_event = KnowledgeEvent.create(
-            event_type=event_type,
-            uri=f"obsidian://{relative_path}",
-            title=title,
-            content=record.fact,
-            metadata=meta,
-        )
-        self.event_bus.publish(k_event, enqueue=False)
+    def _sync_stores(self, record: FederatedFactRecord, superseded_ids: List[str]) -> None:
+        """Drain durable projection jobs; projections never write canonical state."""
+        self.projection_runner.drain()
 
-        self.memory_provider._recent_recall[record.fact] = f"[memory://{record.id}] {record.fact}"
-        self.memory_provider._prefetch_cache.clear()
-        # O Coordinator é o dono do write path; o provider externo apenas delega
-        # para esta transação e não deve reemitir o mesmo fato.
+    def recover_projections(self, worker_id: str = "fabric-recovery") -> int:
+        self.projection_runner.worker_id = worker_id
+        return self.projection_runner.drain()
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
-        """Obtém um registro de fato por ID."""
-        with self._lock:
-            return self._facts.get(fact_id)
+        """Read through the canonical journal; _facts is only a transient cache."""
+        stored = self.canonical_store.get(fact_id)
+        return self._from_stored(stored) if stored is not None else None
 
-    def list_facts(
-        self,
-        scope: Optional[ScopeType] = None,
-        include_superseded: bool = False,
-        access_context: Optional[MemoryAccessContext] = None,
-    ) -> List[FederatedFactRecord]:
-        """Lista fatos; sem contexto, somente fatos globais são visíveis."""
-        allowed = access_context.allowed_scopes() if access_context else frozenset({"global"})
-        with self._lock:
-            if scope:
-                if scope not in VALID_SCOPES:
-                    raise ValueError(f"Escopo inválido: '{scope}'")
-                if access_context is not None and scope not in allowed:
-                    return []
-                ids = self._facts_by_scope.get(scope, [])
-                records = [self._facts[fid] for fid in ids if fid in self._facts]
-            else:
-                records = [r for r in self._facts.values() if r.scope in allowed]
+    def list_facts(self, scope: Optional[ScopeType] = None, include_superseded: bool = False) -> List[FederatedFactRecord]:
+        if scope and scope not in VALID_SCOPES:
+            raise ValueError("Escopo inválido: %r" % scope)
+        scopes = (scope,) if scope else tuple(sorted(VALID_SCOPES))
+        return [self._from_stored(record) for record in self.canonical_store.list_records(scopes, include_superseded)]
 
-            if not include_superseded:
-                records = [r for r in records if r.superseded_by is None]
-            return records
-
-    def query(
-        self,
-        text: str,
-        scope: Optional[ScopeType] = None,
-        include_superseded: bool = False,
-        access_context: Optional[MemoryAccessContext] = None,
-    ) -> List[FederatedFactRecord]:
-        """Consulta fatos por correspondência textual dentro dos scopes autorizados."""
-        records = self.list_facts(scope=scope, include_superseded=include_superseded, access_context=access_context)
-        query_norm = self._normalize(text)
-        if not query_norm:
-            return records
-
-        matched: List[Tuple[float, FederatedFactRecord]] = []
-        for rec in records:
-            rec_norm = self._normalize(rec.fact)
-            if query_norm in rec_norm:
-                matched.append((1.0, rec))
-            else:
-                score = difflib.SequenceMatcher(None, query_norm, rec_norm).ratio()
-                if score > 0.4:
-                    matched.append((score, rec))
-
-        matched.sort(key=lambda x: x[0], reverse=True)
-        return [r for _, r in matched]
+    def query(self, text: str, scope: Optional[ScopeType] = None, include_superseded: bool = False) -> List[FederatedFactRecord]:
+        if scope and scope not in VALID_SCOPES:
+            raise ValueError("Escopo inválido: %r" % scope)
+        scopes = (scope,) if scope else tuple(sorted(VALID_SCOPES))
+        if not text.strip():
+            return self.list_facts(scope=scope, include_superseded=include_superseded)
+        if not include_superseded:
+            return [self._from_stored(record) for record in self.canonical_store.search_fts(text, scopes)]
+        needle = self._normalize(text)
+        return [record for record in self.list_facts(scope=scope, include_superseded=True) if needle in self._normalize(record.fact)]
 
     def close(self) -> None:
         """Encerra threads em background e fecha recursos."""
@@ -591,6 +503,4 @@ class FederatedMemoryCoordinator:
         self.memory_provider.shutdown()
         if self._owns_graphrag_store and self.graphrag_store is not None:
             self.graphrag_store.close()
-        if self._canonical_db is not None:
-            self._canonical_db.close()
-            self._canonical_db = None
+        self.canonical_store.close()

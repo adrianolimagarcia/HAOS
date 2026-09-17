@@ -1,7 +1,7 @@
-"""ObsidianAdapter — Acesso ao cofre Obsidian (Human-Auditable Canonical Truth).
+"""ObsidianAdapter — projeção Markdown humana e auditável do Memory Fabric.
 
 Implementa acesso ao cofre (Vault) com estratégia Filesystem First + frontmatter parsing.
-O Obsidian é a fonte de verdade canônica humana; o GraphRAG é apenas uma projeção derivada.
+O journal SQLite do Memory Fabric é a fonte canônica; este vault é uma projeção auditável e reconstruível.
 
 ``retrieve(query)`` usa um índice FTS5 derivado (``VaultFTSIndex``, refresh
 incremental por mtime) quando ele é construível; se o índice não puder ser
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import os
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -48,19 +47,13 @@ class ObsidianAdapter(ContextSource):
         self._cache.clear()
         self._fts_idx = None  # index is keyed by vault path; rebuild lazily
 
-    def _safe_path(self, relative_path: str) -> Path:
-        if not relative_path or Path(relative_path).is_absolute():
-            raise ValueError("Vault path must be relative")
-        root = self.vault_path.resolve()
-        candidate = (root / relative_path).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError as exc:
-            raise ValueError("Vault path escapes configured vault") from exc
-        return candidate
-
     def _parse_frontmatter_and_body(self, content: str) -> tuple[Dict[str, Any], str]:
-        """Extrai frontmatter YAML simples e corpo do documento."""
+        """Extrai frontmatter YAML simples e corpo do documento.
+
+        Delegates to the vault_fts parser — the index derives a note's title
+        from the same code, so a query that matches via the stem-fallback title
+        can never disagree between read_note() and the FTS index.
+        """
         return parse_obsidian_frontmatter(content)
 
     def _fts_index(self) -> Optional[VaultFTSIndex]:
@@ -88,7 +81,7 @@ class ObsidianAdapter(ContextSource):
 
     def read_note(self, relative_path: str) -> Optional[ContextItem]:
         """Lê uma nota Markdown do cofre e constrói o ContextItem com metadados."""
-        full_path = self._safe_path(relative_path)
+        full_path = self.vault_path / relative_path
         if not full_path.exists() or not full_path.is_file():
             return None
 
@@ -118,11 +111,11 @@ class ObsidianAdapter(ContextSource):
         return item
 
     def write_note(self, relative_path: str, title: str, content: str, doc_type: str = "project_doc", metadata: Optional[Dict[str, str]] = None) -> ContextItem:
-        """Escreve nota canônica no cofre com frontmatter auditável."""
-        full_path = self._safe_path(relative_path)
+        """Aplica uma nota de projeção no cofre com frontmatter auditável."""
+        full_path = self.vault_path / relative_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
-        meta = dict(metadata or {})
+        meta = metadata or {}
         meta["title"] = title
         meta["type"] = doc_type
 
@@ -131,24 +124,8 @@ class ObsidianAdapter(ContextSource):
             front_lines.append(f"{k}: {v}")
         front_lines.append("---\n")
         full_text = "\n".join(front_lines) + content
-        fd, tmp_name = tempfile.mkstemp(prefix=f".{full_path.name}.", dir=full_path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(full_text)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(tmp_name, full_path)
-            dir_fd = os.open(full_path.parent, os.O_DIRECTORY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except Exception:
-            try:
-                os.unlink(tmp_name)
-            except FileNotFoundError:
-                pass
-            raise
+
+        full_path.write_text(full_text, encoding="utf-8")
         return self.read_note(relative_path)  # type: ignore
 
     def retrieve(
