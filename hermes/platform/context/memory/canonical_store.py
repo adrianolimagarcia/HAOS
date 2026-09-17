@@ -125,6 +125,18 @@ class CanonicalMemoryStore:
         rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (query, *scopes, limit)).fetchall()
         return [self._row(row) for row in rows]
 
+    def active_by_ids(self, record_ids: Sequence[str], scopes: Sequence[str]) -> List[MemoryRecord]:
+        """Resolve index candidates through canonical scope/status policy."""
+        if not record_ids or not scopes:
+            return []
+        ids = ",".join("?" for _ in record_ids)
+        marks = ",".join("?" for _ in scopes)
+        rows = self._conn.execute(
+            "SELECT * FROM memory_records WHERE status='active' AND record_id IN (" + ids + ") AND scope IN (" + marks + ")",
+            (*record_ids, *scopes),
+        ).fetchall()
+        return [self._row(row) for row in rows]
+
     @staticmethod
     def _row(row: sqlite3.Row) -> MemoryRecord:
         return MemoryRecord(row["record_id"], row["logical_id"], row["revision"], row["scope"], row["content"], row["kind"], row["status"], row["confidence"], tuple(json.loads(row["provenance_json"])), row["valid_from"], row["valid_until"], tuple(json.loads(row["supersedes_json"])), json.loads(row["metadata_json"]), row["content_hash"])
