@@ -139,6 +139,8 @@ class FederatedMemoryCoordinator:
             obsidian_adapter=self.obsidian,
             graphrag_adapter=self.graphrag,
             decision_store=self.decisions,
+            canonical_store=self.canonical_store,
+            write_handler=self.ingest_candidate_fact,
         )
 
         self.router = MemoryRouter()
