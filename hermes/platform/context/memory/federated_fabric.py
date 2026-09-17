@@ -160,14 +160,7 @@ class FederatedMemoryCoordinator:
         self.router = MemoryRouter()
         self.consolidator = MemoryConsolidator()
 
-        # Armazenamento interno de fatos particionado por escopo
-        self._facts: Dict[str, FederatedFactRecord] = {}
-        self._facts_by_scope: Dict[str, List[str]] = {
-            "private": [],
-            "team": [],
-            "project": [],
-            "global": [],
-        }
+        # CanonicalMemoryStore is the only durable and queryable fact state.
 
         # Fila e thread de background worker para ingestão assíncrona
         self._ingest_queue: queue.Queue[Optional[MemoryCandidate]] = queue.Queue()
@@ -308,12 +301,6 @@ class FederatedMemoryCoordinator:
                 metadata=getattr(candidate, "metadata", {}) if hasattr(candidate, "metadata") else {},
             )
 
-            for old_id in superseded_ids:
-                if old_id in self._facts:
-                    old_rec = self._facts[old_id]
-                    old_rec.superseded_by = record_id
-                    old_rec.updated_at = time.time()
-
             # Commit canonical state and durable outbox before any projection.
             # record_id is the idempotency key, so retries cannot create a second fact.
             stored_record = self.canonical_store.append(
@@ -336,8 +323,6 @@ class FederatedMemoryCoordinator:
                 candidate.status = "consolidated"
                 return True
 
-            self._facts[record_id] = fact_record
-            self._facts_by_scope.setdefault(scope, []).append(record_id)
             candidate.status = "consolidated"
 
             # 3. Sincronização Multi-Store
