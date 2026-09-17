@@ -19,7 +19,6 @@ rather than an exception.
 from __future__ import annotations
 
 import sqlite3
-import time
 from pathlib import Path
 
 import pytest
@@ -151,6 +150,25 @@ def test_budget_drops_are_counted(tmp_path: Path) -> None:
         coordinator.close()
 
 
+def test_live_lease_cannot_be_stolen(tmp_path: Path) -> None:
+    """A claimed job stays claimed while its lease is valid.
+
+    Split out from the recovery test and given a long lease on purpose: the original
+    version claimed with a 0.01s lease and then immediately asserted a second claim
+    returned nothing, so on a loaded runner more than 10ms elapsed between the two
+    calls, the lease had already expired, and the assertion failed intermittently.
+    """
+    coordinator = _coordinator(tmp_path)
+    try:
+        store = coordinator.canonical_store
+        store.append(content=DECISION, scope="project")
+
+        assert len(store.claim("obsidian", "live-worker", 1, 60.0)) == 1
+        assert store.claim("obsidian", "other-worker", 1, 60.0) == [], "the lease did not hold"
+    finally:
+        coordinator.close()
+
+
 def test_backlog_and_expired_leases_are_reported(tmp_path: Path) -> None:
     coordinator = _coordinator(tmp_path)
     try:
@@ -161,11 +179,10 @@ def test_backlog_and_expired_leases_are_reported(tmp_path: Path) -> None:
         backlog = coordinator.fabric_metrics()["outbox_backlog"]
         assert backlog == {projection: 1 for projection in CanonicalMemoryStore.PROJECTIONS}
 
-        # A worker claims a job and dies holding the lease.
-        claimed = store.claim("obsidian", "dead-worker", 1, 0.01)
-        assert len(claimed) == 1
-        assert store.claim("obsidian", "other-worker", 1, 60.0) == [], "the lease did not hold"
-        time.sleep(0.05)
+        # A worker claims a job and dies holding it. The expired lease is expressed by
+        # the lease timestamp itself (a negative lease) instead of by sleeping, so no
+        # amount of runner load can turn this into a race.
+        assert len(store.claim("obsidian", "dead-worker", 1, -1.0)) == 1
 
         # Recovery reclaims the abandoned lease and drains everything.
         assert coordinator.recover_projections() >= 1

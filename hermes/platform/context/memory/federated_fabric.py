@@ -61,6 +61,34 @@ from hermes.platform.context.memory.shadow import LegacyFederatedRetriever, Shad
 
 logger = logging.getLogger(__name__)
 
+# Antonym pairs: a real contradiction is the same statement with flipped polarity.
+# Kept as explicit surface forms (no stemming) so the rule is auditable and cannot
+# surprise anyone by "understanding" more than it says.
+_POLARITY_PAIRS: Tuple[Tuple[str, str], ...] = (
+    ("enabled", "disabled"),
+    ("enable", "disable"),
+    ("allowed", "forbidden"),
+    ("allow", "forbid"),
+    ("required", "optional"),
+    ("mandatory", "optional"),
+    ("active", "inactive"),
+    ("prohibited", "permitted"),
+)
+
+# Markers that flip the predicate of the sentence they appear in.
+_NEGATION_MARKERS = frozenset(("not", "never", "no", "cannot", "nao", "nunca", "deprecated", "prohibited"))
+
+# How similar the two statements must be, ignoring the negation marker, for the marker to
+# be read as the *only* difference between them. Chosen from a measured gap, not by taste:
+# when the marker is the only difference the ratio lands at 0.919-1.000, and when it is one
+# of several differences it lands at 0.426-0.744, so 0.85 sits inside the empty band.
+# No single threshold separates the two classes in general — a lexically similar pair can
+# be unrelated ("the legacy api is deprecated" vs "… returns 404", 0.744) while a real
+# contradiction can be lexically distant ("… is deprecated" vs "… is supported", 0.667),
+# which is why antonym pairs above carry the polarity cases and this gate only handles
+# "the marker is the difference". The bias stays toward missing a change.
+_NEGATION_SIMILARITY = 0.85
+
 VALID_SCOPES: Set[str] = {"private", "team", "project", "global"}
 
 
@@ -115,19 +143,24 @@ class FederatedMemoryCoordinator:
         projection_lease_seconds: float = 60.0,
         auto_start_worker: bool = False,
     ) -> None:
-        if obsidian_adapter is not None:
-            self.obsidian = obsidian_adapter
-        else:
-            self.obsidian = ObsidianAdapter(vault_path=vault_path)
-        self.graphrag = graphrag_adapter or GraphRAGAdapter()
-        self.decisions = decision_store or DecisionStore()
-        self.event_bus = event_bus or KnowledgeEventBus()
         # Canonical state is SQLite; all other stores below are projections.
         if vault_path is None:
             from hermes_constants import get_hermes_home
             ledger_root = Path(get_hermes_home())
         else:
             ledger_root = Path(vault_path).parent
+
+        if obsidian_adapter is not None:
+            self.obsidian = obsidian_adapter
+        else:
+            self.obsidian = ObsidianAdapter(vault_path=vault_path)
+        self.graphrag = graphrag_adapter or GraphRAGAdapter()
+        # The decisions projection is durable like the others: it used to be a plain
+        # dict, so every restart silently emptied it while `recover_projections()`
+        # had nothing to replay (the outbox was already acknowledged).
+        self._owns_decision_store = decision_store is None
+        self.decisions = decision_store or DecisionStore(ledger_root / "memory" / "decisions.db")
+        self.event_bus = event_bus or KnowledgeEventBus()
         self.canonical_store = CanonicalMemoryStore(ledger_root / "memory" / "fabric.db")
 
         # Store persistente do grafo (GOV-008): quando o fabric sincroniza
@@ -390,7 +423,15 @@ class FederatedMemoryCoordinator:
     def _find_duplicate_fact(
         self, candidate: MemoryCandidate, records: List[FederatedFactRecord]
     ) -> Optional[str]:
-        """Identifica duplicata exata ou quase idêntica (similaridade >= 0.88)."""
+        """Identifica duplicata exata ou quase idêntica (similaridade >= 0.88).
+
+        Wording quase igual **não** implica mesma afirmação. Uma polaridade invertida
+        ou uma negação é uma mudança, não uma recorrência, e absorvê-la como duplicata
+        descartaria a correção e continuaria servindo o valor antigo — medido antes da
+        correção: "the cache layer is disabled" seguido de "the cache layer is enabled"
+        deixava o journal com UM registro, ainda dizendo ``disabled``. Esses casos são
+        encaminhados para a supersessão, que é onde a mudança pertence.
+        """
         cand_norm = self._normalize(candidate.fact)
         for rec in records:
             rec_norm = self._normalize(rec.fact)
@@ -398,6 +439,8 @@ class FederatedMemoryCoordinator:
                 return rec.id
             similarity = difflib.SequenceMatcher(None, cand_norm, rec_norm).ratio()
             if similarity >= 0.88:
+                if self._is_contradiction_or_update(cand_norm, rec_norm):
+                    continue
                 return rec.id
         return None
 
@@ -434,20 +477,61 @@ class FederatedMemoryCoordinator:
         return superseded
 
     def _is_contradiction_or_update(self, text_a: str, text_b: str) -> bool:
-        """Verifica se text_a atualiza/contradiz text_b."""
-        negations = {"not", "never", "no", "cannot", "nao", "nunca", "deprecated", "prohibited", "disabled", "enabled"}
-        words_a = set(text_a.split())
-        words_b = set(text_b.split())
-        has_neg_a = bool(words_a & negations)
-        has_neg_b = bool(words_b & negations)
-        if has_neg_a != has_neg_b:
+        """Verifica se ``text_a`` contradiz ou atualiza ``text_b``.
+
+        A decisão é deliberadamente assimétrica: **preferimos perder uma supersessão a
+        inventar uma**. Uma supersessão perdida deixa um fato antigo ativo — visível,
+        consultável e corrigível por um humano. Uma supersessão falsa marca um fato
+        legítimo como ``superseded`` e o remove do recall sem deixar rastro.
+
+        Por isso uma negação solta (``not``, ``nunca``, ``deprecated``…) só conta quando
+        removê-la deixa as duas frases praticamente idênticas: é o caso "mesma afirmação
+        com a polaridade invertida". Sem essa trava, qualquer frase que mencione "no" ou
+        "deprecated" supersederia um fato não relacionado que compartilhasse duas
+        palavras — medido antes da correção: "the retry queue is enabled by default"
+        era supersedido por "the retry queue stores 100 entries".
+        """
+        # 1. Mesma afirmação com a polaridade invertida (enabled/disabled, allow/forbid…).
+        if self._has_opposite_polarity(text_a, text_b):
             return True
 
+        # 2. Atualização explícita declarada no próprio texto novo.
         update_patterns = [r"instead of", r"supersedes", r"substitui", r"switched to", r"migrated to", r"changed to"]
         if any(re.search(p, text_a) for p in update_patterns):
             return True
 
+        # 3. Negação presente em apenas um lado, sendo ela a única diferença.
+        return self._negation_is_the_difference(text_a, text_b)
+
+    @staticmethod
+    def _has_opposite_polarity(text_a: str, text_b: str) -> bool:
+        """True quando os dois textos usam lados opostos de um par antônimo.
+
+        ``enabled`` e ``disabled`` estavam no MESMO conjunto de "negações", então se
+        anulavam: o par contraditório mais comum era exatamente o que a heurística não
+        enxergava.
+        """
+        words_a = set(text_a.split())
+        words_b = set(text_b.split())
+        for positive, negative in _POLARITY_PAIRS:
+            if (positive in words_a and negative in words_b) or (negative in words_a and positive in words_b):
+                return True
         return False
+
+    @staticmethod
+    def _negation_is_the_difference(text_a: str, text_b: str) -> bool:
+        """Negação em um só lado *e* o resto dos textos quase igual."""
+        words_a = set(text_a.split())
+        words_b = set(text_b.split())
+        neg_a = words_a & _NEGATION_MARKERS
+        neg_b = words_b & _NEGATION_MARKERS
+        if bool(neg_a) == bool(neg_b):
+            return False
+        stripped_a = " ".join(word for word in text_a.split() if word not in _NEGATION_MARKERS)
+        stripped_b = " ".join(word for word in text_b.split() if word not in _NEGATION_MARKERS)
+        if not stripped_a or not stripped_b:
+            return False
+        return difflib.SequenceMatcher(None, stripped_a, stripped_b).ratio() >= _NEGATION_SIMILARITY
 
     def _normalize(self, text: str) -> str:
         """Normalização de texto para deduplicação robusta."""
@@ -728,4 +812,6 @@ class FederatedMemoryCoordinator:
             self.graphrag_store.close()
         if self._owns_vector_index:
             self.vector_index.close()
+        if self._owns_decision_store:
+            self.decisions.close()
         self.canonical_store.close()
