@@ -19,3 +19,11 @@ def test_supersession_hides_old_revision_from_retrieval(tmp_path):
     ids = [record.record_id for record in store.search_fts("Provider", ["project"])]
     assert ids == ["new"]
     store.close()
+
+
+def test_duplicate_content_returns_original_canonical_identity(tmp_path):
+    store = CanonicalMemoryStore(tmp_path / "memory.db")
+    original = store.append(content="Canonical facts survive restart.", scope="project", idempotency_key="before-restart")
+    replay = store.append(content="Canonical facts survive restart.", scope="project", idempotency_key="after-restart")
+    assert replay.record_id == original.record_id
+    store.close()
