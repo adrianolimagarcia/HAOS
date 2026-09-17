@@ -1,7 +1,8 @@
 """Durable outbox worker for rebuildable Memory Fabric projections."""
 from __future__ import annotations
 import logging
-from typing import Callable, Dict
+import time
+from typing import Any, Callable, Dict, Optional
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
 
 logger = logging.getLogger(__name__)
@@ -12,9 +13,12 @@ class ProjectionRunner:
 
     Projectors receive only canonical records. They must perform deterministic
     upserts keyed by record_id; failures remain durable jobs for retry.
+
+    A failure is *recorded, not raised*: one broken sink must not stop the other
+    three from draining, and the job stays durable so a later drain retries it.
     """
 
-    def __init__(self, store: CanonicalMemoryStore, projectors: Dict[str, Projector], worker_id: str = "memory-projection", lease_seconds: float = 60.0) -> None:
+    def __init__(self, store: CanonicalMemoryStore, projectors: Dict[str, Projector], worker_id: str = "memory-projection", lease_seconds: float = 60.0, metrics: Optional[Any] = None) -> None:
         missing = set(store.PROJECTIONS) - set(projectors)
         if missing:
             raise ValueError("missing projectors: %s" % sorted(missing))
@@ -22,17 +26,27 @@ class ProjectionRunner:
         self.projectors = dict(projectors)
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
+        self.metrics = metrics
+
+    def _observe(self, name: str, seconds: float) -> None:
+        if self.metrics is not None:
+            self.metrics.observe(name, seconds)
 
     def drain(self, limit_per_projection: int = 32) -> int:
         applied = 0
         for projection in self.store.PROJECTIONS:
             for event_id, record in self.store.claim(projection, self.worker_id, limit_per_projection, self.lease_seconds):
+                started = time.perf_counter()
                 try:
                     self.projectors[projection](record)
                 except Exception as exc:
                     self.store.fail(event_id, projection, repr(exc))
+                    if self.metrics is not None:
+                        self.metrics.increment("outbox_retries")
                     logger.exception("Memory projection %s failed for %s", projection, event_id)
                 else:
                     self.store.ack(event_id, projection)
                     applied += 1
+                finally:
+                    self._observe("projection.%s_seconds" % projection, time.perf_counter() - started)
         return applied

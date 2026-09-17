@@ -148,37 +148,48 @@ class TestMemoryFabricContract(unittest.TestCase):
             self.assertEqual(facts_after[0].id, first_id)
 
     def test_memory_supersession_lineage(self) -> None:
+        """Supersession is a journal relation, not an in-RAM dict mutation.
+
+        The lineage has to survive restart, so it is asserted through the public
+        API: an explicit `supersedes` list marks the old revision superseded, the
+        new record carries the pointer forward, and the reverse index resolves it.
+        """
         from hermes.platform.context.memory.federated_fabric import (
             FederatedMemoryCoordinator,
-            FederatedFactRecord,
         )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             vault_path = Path(tmp_dir) / "vault"
             coordinator = FederatedMemoryCoordinator(vault_path=vault_path)
+            try:
+                old_record = coordinator.ingest_candidate_fact(
+                    fact="Model routing allows degradation to Haiku",
+                    scope="team",
+                )
 
-            old_record = FederatedFactRecord(
-                id="fact-v1",
-                fact="Model routing allows degradation to Haiku",
-                scope="team",
-                status="consolidated",
-            )
-            coordinator._facts[old_record.id] = old_record
-            coordinator._facts_by_scope.setdefault("team", []).append("fact-v1")
+                # Ingest an updated fact that explicitly supersedes the old one.
+                new_candidate = coordinator.ingest_candidate_fact(
+                    fact="Model routing strictly forbids silent degradation (ExactModelFailoverRouter)",
+                    scope="team",
+                    metadata={"supersedes": [old_record.id]},
+                )
 
-            # Ingest updated fact that explicitly supersedes fact-v1
-            new_candidate = coordinator.ingest_candidate_fact(
-                fact="Model routing strictly forbids silent degradation (ExactModelFailoverRouter)",
-                scope="team",
-                metadata={"supersedes": ["fact-v1"]},
-            )
+                # The old revision is no longer active, and is not listed as a
+                # current fact...
+                active_ids = {fact.id for fact in coordinator.list_facts(scope="team")}
+                self.assertNotIn(old_record.id, active_ids)
+                self.assertIn(new_candidate.id, active_ids)
 
-            # Old record has pointer to superseding fact ID
-            self.assertIsNotNone(coordinator._facts["fact-v1"].superseded_by)
-            new_facts = [f for f in coordinator.list_facts(scope="team") if f.id != "fact-v1"]
-            self.assertEqual(len(new_facts), 1)
-            self.assertEqual(coordinator._facts["fact-v1"].superseded_by, new_facts[0].id)
-            self.assertIn("fact-v1", new_facts[0].supersedes)
+                # ...but it is still resolvable, with a forward pointer, so the
+                # lineage is walkable after a restart.
+                superseded = coordinator.list_facts(scope="team", include_superseded=True)
+                by_id = {fact.id: fact for fact in superseded}
+                self.assertIn(old_record.id, by_id)
+                self.assertEqual(by_id[old_record.id].superseded_by, new_candidate.id)
+                self.assertIsNone(by_id[new_candidate.id].superseded_by)
+                self.assertIn(old_record.id, by_id[new_candidate.id].supersedes)
+            finally:
+                coordinator.close()
 
 
 # ==============================================================================

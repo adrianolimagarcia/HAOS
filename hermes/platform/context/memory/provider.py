@@ -65,6 +65,10 @@ class HermesFabricMemoryProvider(MemoryProvider):
         # Candidate generator for the vector channel, injected by the coordinator
         # that owns the index. None keeps retrieval FTS-only.
         self.vector_search: Optional[Callable[[str, List[str], int], List[str]]] = None
+        # Cutover state and the legacy reader, injected by the coordinator.
+        self.flags: Optional[Any] = None
+        self.metrics: Optional[Any] = None
+        self.legacy_reader: Optional[Callable[[str, MemoryAccessContext], str]] = None
         self._session_scopes: Dict[str, List[str]] = {}
         self._session_access: Dict[str, MemoryAccessContext] = {}
         self._session_id: str = ""
@@ -122,14 +126,40 @@ class HermesFabricMemoryProvider(MemoryProvider):
         return []
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        """Return only canonical, scope-authorized records for the session."""
+        """Return only canonical, scope-authorized records for the session.
+
+        Which reader answers is a cutover decision, not a hardcoded path: until
+        ``canonical_fts`` is enabled the legacy federated context is served, and
+        once legacy readers are switched off that fallback is refused rather than
+        silently returning nothing.
+        """
+        session = session_id or self._session_id
+        scopes = self._session_scopes.get(session, ["project", "global"])
+        access = self._session_access.get(session)
+        if self.flags is not None and not self.flags.enabled("canonical_fts"):
+            if self.flags.enabled("legacy_readers_disabled") or self.legacy_reader is None:
+                if self.metrics is not None:
+                    self.metrics.increment("prefetch.refused_legacy")
+                return ""
+            if self.metrics is not None:
+                self.metrics.increment("prefetch.legacy_reader")
+            return self.legacy_reader(query, access or MemoryAccessContext("anonymous"))
         if not self._initialized or self.canonical_store is None:
             return ""
-        scopes = self._session_scopes.get(session_id or self._session_id, ["project", "global"])
-        return HybridMemoryRetriever(self.canonical_store, self.vector_search).format_context(
-            query, scopes, limit=5, budget_chars=5000,
-            access=self._session_access.get(session_id or self._session_id),
-        )
+        vector = self.vector_search if (self.flags is None or self.flags.enabled("vector_rrf")) else None
+        if self.metrics is not None:
+            self.metrics.increment("prefetch.canonical_reader")
+        try:
+            return HybridMemoryRetriever(self.canonical_store, vector, self.metrics).format_context(
+                query, scopes, limit=5, budget_chars=5000, access=access,
+            )
+        except Exception:  # noqa: BLE001
+            # A dead or locked journal must not break the turn: recall degrades to
+            # nothing and the failure is counted, rather than propagating.
+            if self.metrics is not None:
+                self.metrics.increment("prefetch.failures")
+            logger.warning("Canonical prefetch failed; serving no memory context", exc_info=True)
+            return ""
 
     def _session_scope(self, session_id: str) -> str:
         """Most specific scope the session is allowed to write to."""

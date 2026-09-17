@@ -142,7 +142,7 @@ class RemoteEmbedder:
             reindex_policy=reindex_policy,
         )
         self.base_url = base_url.rstrip("/")
-        self._credential = credential
+        self._credential = api_key
         self.timeout = timeout
 
     @property

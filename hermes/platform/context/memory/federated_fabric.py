@@ -55,6 +55,9 @@ from hermes.platform.context.memory.projection_runner import ProjectionRunner
 from hermes.platform.context.memory.access import MemoryAccessContext
 from hermes.platform.context.memory.embedding import Embedder, HashingEmbedder
 from hermes.platform.context.memory.vector_index import SQLiteVectorIndex
+from hermes.platform.context.memory.flags import FlagError, MemoryFeatureFlags
+from hermes.platform.context.memory.metrics import MemoryFabricMetrics, Timer
+from hermes.platform.context.memory.shadow import LegacyFederatedRetriever, ShadowRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +147,13 @@ class FederatedMemoryCoordinator:
             store=self.graphrag_store,
         )
 
+        self.router = MemoryRouter()
+        self.consolidator = MemoryConsolidator()
+        # Metrics and cutover flags are constructed first: the provider, the
+        # projection runner and the vector index all record into them.
+        self.metrics = MemoryFabricMetrics()
+        self.flags = MemoryFeatureFlags()
+
         # Provedor upstream
         self.memory_provider = memory_provider or HermesFabricMemoryProvider(
             obsidian_adapter=self.obsidian,
@@ -186,9 +196,10 @@ class FederatedMemoryCoordinator:
         )
         self._owns_vector_index = vector_index is None
         self.memory_provider.vector_search = self._vector_search
-
-        self.router = MemoryRouter()
-        self.consolidator = MemoryConsolidator()
+        self.memory_provider.metrics = self.metrics
+        self.memory_provider.flags = self.flags
+        self.memory_provider.legacy_reader = self.legacy_context
+        self.projection_runner.metrics = self.metrics
 
         # CanonicalMemoryStore is the only durable and queryable fact state.
 
@@ -305,6 +316,8 @@ class FederatedMemoryCoordinator:
         """
         with self._lock:
             scope = candidate.scope
+            if not self.flags.enabled("canonical_writes"):
+                return self._legacy_ingest(candidate)
             # Dedupe and supersession must survive restart; read the journal.
             existing_records = self.list_facts(scope=scope, include_superseded=False)
 
@@ -320,6 +333,7 @@ class FederatedMemoryCoordinator:
                     confidence=candidate.confidence,
                     provenance=tuple({"uri": uri} for uri in candidate.provenance),
                 )
+                self.metrics.increment("dedupe_hits")
                 candidate.status = "consolidated"
                 candidate.id = exact_or_dup_id
                 return True
@@ -369,6 +383,7 @@ class FederatedMemoryCoordinator:
             candidate.status = "consolidated"
 
             # 3. Sincronização Multi-Store
+            self.metrics.increment("dedupe_misses")
             self._sync_stores(fact_record, superseded_ids)
             return True
 
@@ -477,7 +492,9 @@ class FederatedMemoryCoordinator:
             "updated_at": record.updated_at, "fabric_committed": True}
 
     def _project_obsidian(self, stored: MemoryRecord) -> None:
-        record = self._from_stored(stored)
+        self._apply_obsidian(self._from_stored(stored))
+
+    def _apply_obsidian(self, record: FederatedFactRecord) -> None:
         is_decision = self._is_decision(record)
         title = record.metadata.get("title") or "Memory Note - %s" % record.id
         relative_path = ("20-Architecture/%s.md" % record.id if is_decision
@@ -491,14 +508,18 @@ class FederatedMemoryCoordinator:
             metadata=self._projection_meta(record))
 
     def _project_decisions(self, stored: MemoryRecord) -> None:
-        record = self._from_stored(stored)
+        self._apply_decisions(self._from_stored(stored))
+
+    def _apply_decisions(self, record: FederatedFactRecord) -> None:
         if not self._is_decision(record):
             return
         title = record.metadata.get("title") or "Decision - %s" % record.id
         self.decisions.record_decision(record.id, title, record.fact, supersedes=record.supersedes)
 
     def _project_graphrag(self, stored: MemoryRecord) -> None:
-        record = self._from_stored(stored)
+        self._apply_graphrag(self._from_stored(stored))
+
+    def _apply_graphrag(self, record: FederatedFactRecord) -> None:
         self._ensure_graphrag_store()
         title = record.metadata.get("title") or "Memory Note - %s" % record.id
         event = KnowledgeEvent.create(
@@ -547,15 +568,93 @@ class FederatedMemoryCoordinator:
         ]
         return self.vector_index.needs_reindex(records)
 
+    def _legacy_ingest(self, candidate: MemoryCandidate) -> bool:
+        """Pre-cutover write path: project directly, with no canonical record.
+
+        This exists solely so ``canonical_writes`` is a reversible flag rather
+        than a one-way door. It is refused outright once the cutover has passed
+        the point where legacy writers are meant to be off.
+        """
+        if self.flags.enabled("legacy_writers_disabled"):
+            raise FlagError("legacy memory writers are disabled; enable canonical_writes instead")
+        record = FederatedFactRecord(
+            id=candidate.id or f"fact-{uuid.uuid4().hex[:8]}",
+            fact=candidate.fact,
+            scope=candidate.scope,
+            provenance=list(candidate.provenance),
+            confidence=candidate.confidence,
+            proposed_destination=candidate.proposed_destination,
+            status="consolidated",
+            created_at=candidate.created_at or time.time(),
+            updated_at=time.time(),
+            metadata=getattr(candidate, "metadata", {}) if hasattr(candidate, "metadata") else {},
+        )
+        candidate.id = record.id
+        candidate.status = "consolidated"
+        self._apply_obsidian(record)
+        self._apply_decisions(record)
+        self._apply_graphrag(record)
+        self.vector_index.index_text(record.id, record.fact, self.embedder)
+        self.metrics.increment("legacy.writes")
+        return True
+
+    def legacy_context(self, query: str, access: MemoryAccessContext) -> str:
+        """The L3/L4/L5 context, for shadow mode and for the reader rollback path.
+
+        Refused once the cutover has decommissioned legacy readers, so the flag
+        has an enforcement point instead of being decorative.
+        """
+        if self.flags.enabled("legacy_readers_disabled"):
+            raise FlagError("legacy memory readers are disabled")
+        return LegacyFederatedRetriever(
+            obsidian=self.obsidian, decisions=self.decisions, graphrag=self.graphrag
+        )(query, access)
+
+    def shadow_retriever(self) -> ShadowRetriever:
+        """Legacy-serving retriever that measures the canonical path alongside it."""
+        return ShadowRetriever(
+            legacy=self.legacy_context,
+            canonical_store=self.canonical_store,
+            vector_search=self._vector_search if self.flags.enabled("vector_rrf") else None,
+            metrics=self.metrics,
+        )
+
     def _sync_stores(self, record: FederatedFactRecord, superseded_ids: List[str]) -> None:
-        """Drain durable projection jobs; projections never write canonical state."""
-        self.projection_runner.drain()
+        """Project the committed record.
+
+        With ``projections_via_outbox`` on (the target state) the durable runner
+        applies and acknowledges every job, so a crash mid-projection is retried.
+        With it off — the pre-cutover behaviour, kept so the flag is genuinely
+        reversible — the same projectors run inline and their jobs are
+        acknowledged immediately, which is correct but has no durable retry.
+        """
+        if self.flags.enabled("projections_via_outbox"):
+            with Timer(self.metrics, "projection.drain_seconds"):
+                self.projection_runner.drain()
+            return
+        event_id = "memory.changed:" + record.id
+        projectors = (
+            ("obsidian", lambda: self._apply_obsidian(record)),
+            ("decisions", lambda: self._apply_decisions(record)),
+            ("graphrag", lambda: self._apply_graphrag(record)),
+            ("embeddings", lambda: self.vector_index.index_text(record.id, record.fact, self.embedder)),
+        )
+        for projection, apply in projectors:
+            with Timer(self.metrics, "projection.%s_seconds" % projection):
+                apply()
+            self.canonical_store.ack(event_id, projection)
 
     def recover_projections(self, worker_id: str = "fabric-recovery") -> int:
         """Reclaim abandoned leases, then drain everything still pending."""
-        self.canonical_store.reclaim_expired_leases()
+        reclaimed = self.canonical_store.reclaim_expired_leases()
+        if reclaimed:
+            self.metrics.increment("expired_leases", reclaimed)
         self.projection_runner.worker_id = worker_id
         return self.projection_runner.drain()
+
+    def fabric_metrics(self) -> Dict[str, Any]:
+        """Metrics snapshot with the live outbox backlog folded in."""
+        return self.metrics.snapshot(backlog=self.canonical_store.pending_by_projection())
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
         """Read through the canonical journal; _facts is only a transient cache."""
