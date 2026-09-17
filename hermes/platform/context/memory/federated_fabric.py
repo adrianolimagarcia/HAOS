@@ -276,22 +276,16 @@ class FederatedMemoryCoordinator:
         """
         with self._lock:
             scope = candidate.scope
-            existing_records = [
-                self._facts[fid] for fid in self._facts_by_scope.get(scope, [])
-                if self._facts[fid].superseded_by is None
-            ]
+            # Dedupe and supersession must survive restart; read the journal.
+            existing_records = self.list_facts(scope=scope, include_superseded=False)
 
             # 1. Deduplicação léxica / semântica
             exact_or_dup_id = self._find_duplicate_fact(candidate, existing_records)
             if exact_or_dup_id is not None:
-                dup_record = self._facts[exact_or_dup_id]
-                dup_record.confidence = max(dup_record.confidence, candidate.confidence)
-                for p in candidate.provenance:
-                    if p not in dup_record.provenance:
-                        dup_record.provenance.append(p)
-                dup_record.updated_at = time.time()
+                # Canonical dedupe is append-only; do not mutate an in-memory
+                # shadow record and accidentally diverge provenance/state.
                 candidate.status = "consolidated"
-                candidate.id = dup_record.id
+                candidate.id = exact_or_dup_id
                 return True
 
             # 2. Detecção de conflito e supersessão temporal
