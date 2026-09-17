@@ -1,7 +1,7 @@
 """HermesFabricMemoryProvider — Provedor de memória federado para o Hermes Agent.
 
 Do ponto de vista do Hermes upstream:
-Existe apenas UM MemoryProvider externo ativo (`memory.provider: hermes-fabric`).
+Existe apenas UM MemoryProvider externo ativo (`memory.provider: hermes_fabric`).
 
 Do ponto de vista interno do HAOS:
 Existe uma federação orquestrada de fontes:
@@ -14,6 +14,7 @@ Existe uma federação orquestrada de fontes:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,6 +27,10 @@ from hermes.platform.context.memory.retrieval import HybridMemoryRetriever
 from hermes.platform.context.memory.access import MemoryAccessContext
 
 logger = logging.getLogger(__name__)
+
+# Formal decision markers only. Prose that merely mentions a decision is not
+# memory; an explicit marker is a deliberate authoring act.
+_RE_EXPLICIT_DECISION = re.compile(r"(?m)^\s*(?:ADR|DECISION)\s*[:\-]\s*\S")
 
 
 class HermesFabricMemoryProvider(MemoryProvider):
@@ -105,7 +110,9 @@ class HermesFabricMemoryProvider(MemoryProvider):
 
     @property
     def name(self) -> str:
-        return "hermes-fabric"
+        # Must match the bundled directory name: memory-provider discovery keys
+        # on the directory, and `memory.provider` is compared against it.
+        return "hermes_fabric"
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         """Esquemas de ferramentas de memória exportados para o agente."""
@@ -121,11 +128,51 @@ class HermesFabricMemoryProvider(MemoryProvider):
             access=self._session_access.get(session_id or self._session_id),
         )
 
+    def _session_scope(self, session_id: str) -> str:
+        """Most specific scope the session is allowed to write to."""
+        scopes = self._session_scopes.get(session_id or self._session_id) or ["project", "global"]
+        for candidate in ("project", "team", "private", "global"):
+            if candidate in scopes:
+                return candidate
+        return scopes[0]
+
+    def _write(self, content: str, *, target: str, scope: str, provenance: Any, metadata: Dict[str, Any], access: Optional[MemoryAccessContext]) -> None:
+        if access is not None:
+            metadata = {**metadata, **access.write_metadata(scope)}
+        if self._write_handler is not None:
+            self._write_handler(content, scope=scope, provenance=provenance, metadata=metadata, sync=True, access_context=access)
+            return
+        if self.canonical_store is None:
+            raise RuntimeError("Memory Fabric writer is not configured")
+        self.canonical_store.append(
+            content=content, scope=scope,
+            kind="decision" if target == "architecture" else "fact",
+            provenance=tuple({"uri": uri} for uri in (provenance or []) if isinstance(uri, str)),
+            metadata=metadata, idempotency_key=metadata.get("id"),
+        )
+
     def sync_turn(self, user_message: str, assistant_response: str, **kwargs: Any) -> None:
-        """Observa cada turno da conversa para identificar fatos e decisões importantes."""
-        # Se a resposta contiver marcadores formais de decisão (ex: "DECISION:" ou "ADR:"),
-        # pode sugerir ou gravar no store canônico.
-        pass
+        """Capture explicit decision markers from a turn into the canonical journal.
+
+        Only formal markers are captured (``ADR:`` / ``DECISION:``); ordinary
+        conversation is not memory. Capture is best-effort: a memory failure must
+        never break the turn that produced it.
+        """
+        session_id = str(kwargs.get("session_id") or self._session_id or "")
+        content = (assistant_response or "").strip()
+        if not content or not _RE_EXPLICIT_DECISION.search(content):
+            return
+        access = self._session_access.get(session_id)
+        scope = self._session_scope(session_id)
+        try:
+            self._write(
+                content, target="architecture", scope=scope,
+                provenance=[f"session://{session_id}"] if session_id else [],
+                metadata={"title": content.splitlines()[0][:120], "source_turn": (user_message or "")[:500]},
+                access=access,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("Fabric decision capture failed for session %s", session_id, exc_info=True)
 
     def shutdown(self) -> None:
         """Encerra recursos de memória de forma graciosa."""
@@ -138,16 +185,9 @@ class HermesFabricMemoryProvider(MemoryProvider):
             return
         scope = meta.get("scope", "project")
         access = meta.pop("_access_context", None)
-        if self._write_handler is not None:
-            self._write_handler(content, scope=scope, provenance=meta.get("provenance"), metadata=meta, sync=True, access_context=access)
-            return
-        if self.canonical_store is None:
-            raise RuntimeError("Memory Fabric writer is not configured")
-        self.canonical_store.append(
-            content=content, scope=scope,
-            kind="decision" if target == "architecture" else "fact",
-            provenance=tuple({"uri": uri} for uri in meta.get("provenance", []) if isinstance(uri, str)),
-            metadata=meta, idempotency_key=meta.get("id"),
+        self._write(
+            content, target=target, scope=scope,
+            provenance=meta.get("provenance"), metadata=meta, access=access,
         )
 
     def on_memory_write(self, action: str, target: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:

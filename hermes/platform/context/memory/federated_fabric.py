@@ -148,6 +148,15 @@ class FederatedMemoryCoordinator:
             write_handler=self.ingest_candidate_fact,
             recovery_handler=self.recover_projections,
         )
+        # An injected provider must share this coordinator's journal, otherwise
+        # prefetch reads a different (or absent) canonical store than the one
+        # the coordinator commits to.
+        if self.memory_provider.canonical_store is None:
+            self.memory_provider.canonical_store = self.canonical_store
+        if self.memory_provider._write_handler is None:
+            self.memory_provider._write_handler = self.ingest_candidate_fact
+        if self.memory_provider._recovery_handler is None:
+            self.memory_provider._recovery_handler = self.recover_projections
         self.projection_runner = ProjectionRunner(
             self.canonical_store,
             {
@@ -231,7 +240,10 @@ class FederatedMemoryCoordinator:
         if scope not in VALID_SCOPES:
             raise ValueError(f"Escopo inválido: '{scope}'. Deve ser um dos: {sorted(VALID_SCOPES)}")
         if access_context is not None:
-            access_context.require_write(scope, metadata or {})
+            # The record must carry the tenancy that authorized it, otherwise a
+            # later read cannot re-authorize the fact it just accepted.
+            metadata = {**(metadata or {}), **access_context.write_metadata(scope)}
+            access_context.require_write(scope, metadata)
 
         prov_list: List[str] = []
         if isinstance(provenance, str):
@@ -278,8 +290,15 @@ class FederatedMemoryCoordinator:
             # 1. Deduplicação léxica / semântica
             exact_or_dup_id = self._find_duplicate_fact(candidate, existing_records)
             if exact_or_dup_id is not None:
-                # Canonical dedupe is append-only; do not mutate an in-memory
-                # shadow record and accidentally diverge provenance/state.
+                # Recurrence is the reinforcement signal: the fact already
+                # exists, so raise its confidence and merge provenance instead
+                # of appending a second record. Restart-safe because the target
+                # is read from the journal, never from an in-memory index.
+                self.canonical_store.reinforce(
+                    exact_or_dup_id,
+                    confidence=candidate.confidence,
+                    provenance=tuple({"uri": uri} for uri in candidate.provenance),
+                )
                 candidate.status = "consolidated"
                 candidate.id = exact_or_dup_id
                 return True
@@ -412,14 +431,15 @@ class FederatedMemoryCoordinator:
         return self.graphrag_store
 
     @staticmethod
-    def _from_stored(stored: MemoryRecord) -> FederatedFactRecord:
+    def _from_stored(stored: MemoryRecord, superseded_by: Optional[str] = None) -> FederatedFactRecord:
         return FederatedFactRecord(
             id=stored.record_id, fact=stored.content, scope=stored.scope,
             provenance=[str(p.get("uri", "")) for p in stored.provenance if p.get("uri")],
             confidence=stored.confidence, status=stored.status,
             proposed_destination="obsidian" if stored.kind == "decision" else "memory",
             created_at=stored.valid_from, updated_at=stored.valid_from,
-            supersedes=list(stored.supersedes), metadata=stored.metadata,
+            supersedes=list(stored.supersedes), superseded_by=superseded_by,
+            metadata=stored.metadata,
         )
 
     @staticmethod
@@ -478,24 +498,66 @@ class FederatedMemoryCoordinator:
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
         """Read through the canonical journal; _facts is only a transient cache."""
         stored = self.canonical_store.get(fact_id)
-        return self._from_stored(stored) if stored is not None else None
+        if stored is None:
+            return None
+        return self._from_stored(stored, self.canonical_store.superseded_by_map().get(fact_id))
 
-    def list_facts(self, scope: Optional[ScopeType] = None, include_superseded: bool = False) -> List[FederatedFactRecord]:
+    @staticmethod
+    def _filter_by_access(records: List[FederatedFactRecord], access: Optional[MemoryAccessContext]) -> List[FederatedFactRecord]:
+        """Fail-closed ACL filter for aggregated reads.
+
+        Without an access context the caller only ever sees the scopes it asked
+        for; with one, every record must additionally prove its tenancy.
+        """
+        if access is None:
+            return records
+        return [record for record in records if access.can_read(record.scope, record.metadata)]
+
+    def list_facts(
+        self,
+        scope: Optional[ScopeType] = None,
+        include_superseded: bool = False,
+        access: Optional[MemoryAccessContext] = None,
+    ) -> List[FederatedFactRecord]:
         if scope and scope not in VALID_SCOPES:
             raise ValueError("Escopo inválido: %r" % scope)
         scopes = (scope,) if scope else tuple(sorted(VALID_SCOPES))
-        return [self._from_stored(record) for record in self.canonical_store.list_records(scopes, include_superseded)]
+        if access is not None and scope is None:
+            scopes = tuple(s for s in access.allowed_scopes() if s in VALID_SCOPES)
+        reverse = self.canonical_store.superseded_by_map()
+        records = [
+            self._from_stored(record, reverse.get(record.record_id))
+            for record in self.canonical_store.list_records(scopes, include_superseded)
+        ]
+        return self._filter_by_access(records, access)
 
-    def query(self, text: str, scope: Optional[ScopeType] = None, include_superseded: bool = False) -> List[FederatedFactRecord]:
+    def query(
+        self,
+        text: str,
+        scope: Optional[ScopeType] = None,
+        include_superseded: bool = False,
+        access: Optional[MemoryAccessContext] = None,
+    ) -> List[FederatedFactRecord]:
         if scope and scope not in VALID_SCOPES:
             raise ValueError("Escopo inválido: %r" % scope)
         scopes = (scope,) if scope else tuple(sorted(VALID_SCOPES))
+        if access is not None and scope is None:
+            scopes = tuple(s for s in access.allowed_scopes() if s in VALID_SCOPES)
         if not text.strip():
-            return self.list_facts(scope=scope, include_superseded=include_superseded)
+            return self.list_facts(scope=scope, include_superseded=include_superseded, access=access)
+        reverse = self.canonical_store.superseded_by_map()
         if not include_superseded:
-            return [self._from_stored(record) for record in self.canonical_store.search_fts(text, scopes)]
+            records = [
+                self._from_stored(record, reverse.get(record.record_id))
+                for record in self.canonical_store.search_fts(text, scopes)
+            ]
+            return self._filter_by_access(records, access)
         needle = self._normalize(text)
-        return [record for record in self.list_facts(scope=scope, include_superseded=True) if needle in self._normalize(record.fact)]
+        return [
+            record
+            for record in self.list_facts(scope=scope, include_superseded=True, access=access)
+            if needle in self._normalize(record.fact)
+        ]
 
     def close(self) -> None:
         """Encerra threads em background e fecha recursos."""

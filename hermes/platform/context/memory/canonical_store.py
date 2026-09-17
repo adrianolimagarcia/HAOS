@@ -93,19 +93,70 @@ class CanonicalMemoryStore:
         with self._tx() as db:
             existing = db.execute("SELECT * FROM memory_records WHERE record_id=?", (record_id,)).fetchone()
             if existing is not None:
+                if existing["content_hash"] != content_hash:
+                    # Same command key, different fact: returning the stored row
+                    # would silently drop the new content.
+                    raise ValueError(
+                        "idempotency key %r already stores different content" % record_id
+                    )
                 return self._row(existing)
             duplicate = db.execute("SELECT * FROM memory_records WHERE scope=? AND kind=? AND content_hash=? AND status='active'", (scope, kind, content_hash)).fetchone()
             if duplicate is not None:
                 return self._row(duplicate)
             revision = db.execute("SELECT COALESCE(MAX(revision), 0) FROM memory_records WHERE logical_id=?", (logical_id,)).fetchone()[0] + 1
             record = MemoryRecord(record_id, logical_id, revision, scope, content, kind, "active", max(0.0, min(1.0, float(confidence))), tuple(dict(x) for x in provenance), now, None, tuple(supersedes), metadata, content_hash)
-            db.execute("INSERT INTO memory_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record.record_id, record.logical_id, record.revision, record.scope, record.kind, record.status, record.content, record.content_hash, record.confidence, json.dumps(record.provenance, sort_keys=True), json.dumps(record.metadata, sort_keys=True), record.valid_from, None, json.dumps(record.supersedes), now))
+            db.execute("INSERT INTO memory_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record.record_id, record.logical_id, record.revision, record.scope, record.kind, record.status, record.content, record.content_hash, record.confidence, json.dumps(record.provenance, sort_keys=True), json.dumps(record.metadata, sort_keys=True), record.valid_from, None, json.dumps(record.supersedes), now))
             if supersedes:
                 db.executemany("UPDATE memory_records SET status='superseded', valid_until=? WHERE record_id=? AND status='active'", [(now, item) for item in supersedes])
             event_id = "memory.changed:" + record.record_id
             db.execute("INSERT INTO memory_outbox VALUES (?,?,?,?,?,?,?,?,?,?)", (event_id, record.record_id, "memory.changed", json.dumps(asdict(record), sort_keys=True, default=list), now, now, 0, None, None, None))
             db.executemany("INSERT INTO memory_projection_jobs(event_id, projection, available_at) VALUES (?,?,?)", [(event_id, projection, now) for projection in self.PROJECTIONS])
             return record
+
+    def reinforce(self, record_id: str, confidence: float = 1.0, provenance: Sequence[Dict[str, Any]] = ()) -> Optional[MemoryRecord]:
+        """Raise confidence and merge provenance of an existing record.
+
+        Recurrence is the signal that promotes a candidate fact, so a repeated
+        observation must be able to strengthen the canonical record. Content is
+        unchanged, therefore no new revision and no new outbox event is created:
+        projections stay keyed to the same record_id.
+        """
+        with self._tx() as db:
+            row = db.execute("SELECT * FROM memory_records WHERE record_id=?", (record_id,)).fetchone()
+            if row is None:
+                return None
+            record = self._row(row)
+            merged = list(record.provenance)
+            for item in provenance:
+                candidate = dict(item)
+                if candidate not in merged:
+                    merged.append(candidate)
+            raised = max(record.confidence, max(0.0, min(1.0, float(confidence))))
+            db.execute(
+                "UPDATE memory_records SET confidence=?, provenance_json=? WHERE record_id=?",
+                (raised, json.dumps(merged, sort_keys=True), record_id),
+            )
+            return self._row(db.execute("SELECT * FROM memory_records WHERE record_id=?", (record_id,)).fetchone())
+
+    def superseded_by_map(self) -> Dict[str, str]:
+        """Reverse index ``superseded record -> superseding record``.
+
+        The forward edge lives in ``supersedes``; the reverse edge is derived so
+        the coordinator view never has to invent state it did not read.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT record_id, supersedes_json FROM memory_records WHERE supersedes_json NOT IN ('[]', '')"
+            ).fetchall()
+        mapping: Dict[str, str] = {}
+        for row in rows:
+            try:
+                targets = json.loads(row["supersedes_json"])
+            except ValueError:
+                continue
+            for target in targets:
+                mapping.setdefault(str(target), row["record_id"])
+        return mapping
 
     def claim(self, projection: str, worker_id: str, limit: int = 32, lease_seconds: float = 60.0) -> List[Tuple[str, MemoryRecord]]:
         if projection not in self.PROJECTIONS:

@@ -17,13 +17,22 @@ import time
 import unittest
 from pathlib import Path
 
+from hermes.platform.context.memory.access import MemoryAccessContext
 from hermes.platform.context.memory.candidate import MemoryCandidate
 from hermes.platform.context.memory.decisions import DecisionStore
 from hermes.platform.context.memory.events import KnowledgeEventBus
-from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator, MemoryAccessContext
+from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
 from hermes.platform.context.memory.graphrag import GraphRAGAdapter
 from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
+
+
+def _principal(principal_id: str = "tester") -> MemoryAccessContext:
+    return MemoryAccessContext(
+        principal_id=principal_id,
+        team_ids=frozenset({"team-a"}),
+        project_ids=frozenset({"project-a"}),
+    )
 
 
 class TestFederatedMemoryFabric(unittest.TestCase):
@@ -60,15 +69,19 @@ class TestFederatedMemoryFabric(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_restart_persists_and_access_isolation(self) -> None:
-        self.coordinator.ingest_candidate_fact(fact="private rule", scope="private", confidence=0.9)
-        self.coordinator.ingest_candidate_fact(fact="global rule", scope="global", confidence=0.9)
+        alice = _principal("alice")
+        bob = MemoryAccessContext("bob", frozenset({"team-b"}), frozenset({"project-b"}))
+        self.coordinator.ingest_candidate_fact(fact="private rule", scope="private", confidence=0.9, access_context=alice)
+        self.coordinator.ingest_candidate_fact(fact="global rule", scope="global", confidence=0.9, access_context=alice)
         self.coordinator.close()
         reopened = FederatedMemoryCoordinator(vault_path=self.vault_path)
         try:
-            self.assertEqual(len(reopened.list_facts(scope="private", access_context=MemoryAccessContext(actor="bob", team="t", project="p"))), 0)
-            ctx = MemoryAccessContext(actor="alice", session="s1")
-            self.assertEqual(len(reopened.list_facts(scope="private", access_context=ctx)), 1)
-            self.assertEqual(len(reopened.list_facts(access_context=ctx)), 2)
+            # Denial survives restart: tenancy is persisted with the record.
+            self.assertEqual(len(reopened.list_facts(scope="private", access=bob)), 0)
+            self.assertEqual(len(reopened.list_facts(scope="private", access=alice)), 1)
+            self.assertEqual(len(reopened.list_facts(access=alice)), 2)
+            # Bob only shares the global scope.
+            self.assertEqual(len(reopened.list_facts(access=bob)), 1)
         finally:
             reopened.close()
 
@@ -77,14 +90,15 @@ class TestFederatedMemoryFabric(unittest.TestCase):
             self.coordinator.ingest_candidate_fact(fact="scope is required", scope=None)  # type: ignore[arg-type]
 
         """Testa ingestão e filtragem com todos os 4 escopos estritos."""
+        tester = _principal()
         scopes = ["private", "team", "project", "global"]
         for sc in scopes:
-            cand = self.coordinator.ingest_candidate_fact(fact=f"Knowledge rule specifically for scope {sc}", scope=sc, provenance=f"session://task-{sc}", confidence=0.9)  # type: ignore
+            cand = self.coordinator.ingest_candidate_fact(fact=f"Knowledge rule specifically for scope {sc}", scope=sc, provenance=f"session://task-{sc}", confidence=0.9, access_context=tester)  # type: ignore
             self.assertEqual(cand.status, "consolidated")
         for sc in scopes:
-            records = self.coordinator.list_facts(scope=sc, access_context=MemoryAccessContext(actor="tester", team="t", project="p", session="s"))  # type: ignore
+            records = self.coordinator.list_facts(scope=sc, access=tester)
             self.assertEqual(len(records), 1)
-        self.assertEqual(len(self.coordinator.list_facts(access_context=MemoryAccessContext(actor="tester", team="t", project="p", session="s"))), 4)
+        self.assertEqual(len(self.coordinator.list_facts(access=tester)), 4)
         with self.assertRaises(ValueError):
             self.coordinator.ingest_candidate_fact(fact="Illegal scope item", scope="universal")  # type: ignore
 

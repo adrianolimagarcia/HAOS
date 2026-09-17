@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -110,12 +111,29 @@ class ObsidianAdapter(ContextSource):
         self._cache[relative_path] = item
         return item
 
+    def _safe_path(self, relative_path: str) -> Path:
+        """Resolve ``relative_path`` inside the vault or refuse it.
+
+        A projection must never be able to write outside the configured vault
+        (``../`` traversal, absolute path, symlinked escape), so containment is
+        checked against the resolved root before any mkdir/write happens.
+        """
+        if not relative_path or Path(relative_path).is_absolute():
+            raise ValueError("Vault path must be a non-empty relative path")
+        root = self.vault_path.resolve()
+        candidate = (root / relative_path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            raise ValueError("Vault path escapes configured vault") from None
+        return candidate
+
     def write_note(self, relative_path: str, title: str, content: str, doc_type: str = "project_doc", metadata: Optional[Dict[str, str]] = None) -> ContextItem:
         """Aplica uma nota de projeção no cofre com frontmatter auditável."""
-        full_path = self.vault_path / relative_path
+        full_path = self._safe_path(relative_path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
-        meta = metadata or {}
+        meta = dict(metadata or {})
         meta["title"] = title
         meta["type"] = doc_type
 
@@ -125,7 +143,23 @@ class ObsidianAdapter(ContextSource):
         front_lines.append("---\n")
         full_text = "\n".join(front_lines) + content
 
-        full_path.write_text(full_text, encoding="utf-8")
+        # Atomic replace + fsync: a crash mid-projection must never leave a
+        # truncated note, because Obsidian is the human-auditable projection.
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{full_path.name}.", dir=full_path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(full_text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, full_path)
+            dir_fd = os.open(full_path.parent, os.O_DIRECTORY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
         return self.read_note(relative_path)  # type: ignore
 
     def retrieve(

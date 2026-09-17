@@ -1,8 +1,8 @@
-"""Plugin entrypoint para o MemoryProvider 'hermes-fabric' descoberto pelo Hermes upstream.
+"""Plugin entrypoint para o MemoryProvider 'hermes_fabric' descoberto pelo Hermes upstream.
 
 Permite configurar no config.yaml:
 memory:
-  provider: hermes-fabric
+  provider: hermes_fabric
 """
 
 from __future__ import annotations
