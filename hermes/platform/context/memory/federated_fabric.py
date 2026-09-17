@@ -466,6 +466,10 @@ class FederatedMemoryCoordinator:
             metadata=meta,
             doc_type=doc_type,
         )
+        self.canonical_store.ack(f"memory.changed:{record.id}", "obsidian")
+        # DecisionStore is a projection too; for facts this acknowledgement is a
+        # deliberate no-op projection, not a missing write.
+        self.canonical_store.ack(f"memory.changed:{record.id}", "decisions")
 
         # 2. Sincronização com GraphRAG via EventBus
         event_type = KnowledgeEventType.DECISION_RECORDED if is_decision else KnowledgeEventType.NOTE_CREATED
@@ -479,6 +483,7 @@ class FederatedMemoryCoordinator:
         # The incremental updater is synchronous; do not enqueue the same event
         # as well, otherwise it is processed twice when the queue is drained.
         self.event_bus.publish(k_event, enqueue=False)
+        self.canonical_store.ack(f"memory.changed:{record.id}", "graphrag")
 
         # 3. Notificação do Upstream Hermes Memory Provider
         self.memory_provider.remember(
@@ -486,6 +491,31 @@ class FederatedMemoryCoordinator:
             target="architecture" if is_decision else "notes",
             metadata={**meta, "fabric_committed": True},
         )
+
+    def recover_projections(self, worker_id: str = "fabric-recovery") -> int:
+        """Replay unacknowledged outbox records after a crash.
+
+        Projection writes are idempotent by stable record ID; an acknowledgement
+        is emitted only after the projection completed. This method is safe to
+        invoke repeatedly and is intentionally synchronous during bootstrap.
+        """
+        recovered = 0
+        for event_id, stored in self.canonical_store.claim("obsidian", worker_id):
+            record = FederatedFactRecord(
+                id=stored.record_id, fact=stored.content, scope=stored.scope,
+                provenance=[str(p.get("uri", "")) for p in stored.provenance if p.get("uri")],
+                confidence=stored.confidence,
+                proposed_destination="obsidian" if stored.kind == "decision" else "memory",
+                created_at=stored.valid_from, updated_at=stored.valid_from,
+                supersedes=list(stored.supersedes), metadata=stored.metadata,
+            )
+            try:
+                self._sync_stores(record, list(stored.supersedes))
+                recovered += 1
+            except Exception as exc:
+                self.canonical_store.fail(event_id, repr(exc))
+                logger.exception("Memory projection recovery failed for %s", event_id)
+        return recovered
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
         """Obtém um registro de fato por ID."""
