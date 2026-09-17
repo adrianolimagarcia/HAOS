@@ -7,6 +7,8 @@ memory:
 
 from __future__ import annotations
 
+from typing import Any
+
 from agent.memory_provider import MemoryProvider
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
 
@@ -15,9 +17,21 @@ class FederatedHermesMemoryProvider(MemoryProvider):
     """Provider externo único; o Coordinator é o dono do pipeline de escrita."""
 
     def __init__(self) -> None:
-        from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
         self._base = HermesFabricMemoryProvider()
-        self.coordinator = FederatedMemoryCoordinator(memory_provider=self._base)
+        self._coordinator: Any = None
+
+    @property
+    def coordinator(self) -> Any:
+        if self._coordinator is None:
+            from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
+            self._coordinator = FederatedMemoryCoordinator(
+                vault_path=self._base.vault_path,
+                memory_provider=self._base,
+                obsidian_adapter=self._base.obsidian,
+                graphrag_adapter=self._base.graphrag,
+                decision_store=self._base.decisions,
+            )
+        return self._coordinator
 
     @property
     def name(self) -> str:
@@ -60,7 +74,10 @@ class FederatedHermesMemoryProvider(MemoryProvider):
             )
 
     def shutdown(self) -> None:
-        self.coordinator.close()
+        if self._coordinator is not None:
+            self._coordinator.close()
+        else:
+            self._base.shutdown()
 
 
 def register(ctx: Any) -> None:
