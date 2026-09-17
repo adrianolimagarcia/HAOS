@@ -14,18 +14,19 @@ class ProjectionRunner:
     upserts keyed by record_id; failures remain durable jobs for retry.
     """
 
-    def __init__(self, store: CanonicalMemoryStore, projectors: Dict[str, Projector], worker_id: str = "memory-projection") -> None:
+    def __init__(self, store: CanonicalMemoryStore, projectors: Dict[str, Projector], worker_id: str = "memory-projection", lease_seconds: float = 60.0) -> None:
         missing = set(store.PROJECTIONS) - set(projectors)
         if missing:
             raise ValueError("missing projectors: %s" % sorted(missing))
         self.store = store
         self.projectors = dict(projectors)
         self.worker_id = worker_id
+        self.lease_seconds = lease_seconds
 
     def drain(self, limit_per_projection: int = 32) -> int:
         applied = 0
         for projection in self.store.PROJECTIONS:
-            for event_id, record in self.store.claim(projection, self.worker_id, limit_per_projection):
+            for event_id, record in self.store.claim(projection, self.worker_id, limit_per_projection, self.lease_seconds):
                 try:
                     self.projectors[projection](record)
                 except Exception as exc:

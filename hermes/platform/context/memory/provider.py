@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from agent.memory_provider import MemoryProvider
 from hermes.platform.context.memory.decisions import DecisionStore
@@ -62,6 +62,9 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self.canonical_store = canonical_store
         self._write_handler = write_handler
         self._recovery_handler = recovery_handler
+        # Candidate generator for the vector channel, injected by the coordinator
+        # that owns the index. None keeps retrieval FTS-only.
+        self.vector_search: Optional[Callable[[str, List[str], int], List[str]]] = None
         self._session_scopes: Dict[str, List[str]] = {}
         self._session_access: Dict[str, MemoryAccessContext] = {}
         self._session_id: str = ""
@@ -123,7 +126,7 @@ class HermesFabricMemoryProvider(MemoryProvider):
         if not self._initialized or self.canonical_store is None:
             return ""
         scopes = self._session_scopes.get(session_id or self._session_id, ["project", "global"])
-        return HybridMemoryRetriever(self.canonical_store).format_context(
+        return HybridMemoryRetriever(self.canonical_store, self.vector_search).format_context(
             query, scopes, limit=5, budget_chars=5000,
             access=self._session_access.get(session_id or self._session_id),
         )

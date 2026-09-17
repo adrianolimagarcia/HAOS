@@ -32,7 +32,7 @@ class MemoryRecord:
 
 class CanonicalMemoryStore:
     """SQLite journal and transactional outbox; projections are never writers."""
-    PROJECTIONS = ("obsidian", "decisions", "graphrag")
+    PROJECTIONS = ("obsidian", "decisions", "graphrag", "embeddings")
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -72,7 +72,15 @@ class CanonicalMemoryStore:
             db.execute("CREATE TABLE IF NOT EXISTS memory_outbox (event_id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES memory_records(record_id), event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at REAL NOT NULL, available_at REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_until REAL, last_error TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS memory_projection_ack (event_id TEXT NOT NULL REFERENCES memory_outbox(event_id), projection TEXT NOT NULL, applied_at REAL NOT NULL, PRIMARY KEY(event_id, projection))")
             db.execute("CREATE TABLE IF NOT EXISTS memory_projection_jobs (event_id TEXT NOT NULL REFERENCES memory_outbox(event_id), projection TEXT NOT NULL, available_at REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_until REAL, last_error TEXT, PRIMARY KEY(event_id, projection))")
-            db.execute("INSERT OR IGNORE INTO memory_projection_jobs(event_id, projection, available_at) SELECT o.event_id, p.projection, o.available_at FROM memory_outbox o CROSS JOIN (SELECT 'obsidian' AS projection UNION ALL SELECT 'decisions' UNION ALL SELECT 'graphrag') p WHERE NOT EXISTS (SELECT 1 FROM memory_projection_ack a WHERE a.event_id=o.event_id AND a.projection=p.projection)")
+            projection_rows = " UNION ALL ".join(
+                "SELECT '%s' AS projection" % projection for projection in self.PROJECTIONS
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO memory_projection_jobs(event_id, projection, available_at) "
+                "SELECT o.event_id, p.projection, o.available_at FROM memory_outbox o CROSS JOIN (%s) p "
+                "WHERE NOT EXISTS (SELECT 1 FROM memory_projection_ack a WHERE a.event_id=o.event_id AND a.projection=p.projection)"
+                % projection_rows
+            )
             db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(record_id UNINDEXED, content, tokenize='unicode61 remove_diacritics 2')")
             db.execute("CREATE TRIGGER IF NOT EXISTS memory_records_ai AFTER INSERT ON memory_records BEGIN INSERT INTO memory_fts(record_id, content) VALUES (new.record_id, new.content); END")
 
@@ -157,6 +165,40 @@ class CanonicalMemoryStore:
             for target in targets:
                 mapping.setdefault(str(target), row["record_id"])
         return mapping
+
+    def reclaim_expired_leases(self, now: Optional[float] = None) -> int:
+        """Release jobs whose worker died holding the lease.
+
+        A crashed projector leaves ``lease_until`` in the future; without this the
+        job is invisible to ``claim`` until the lease lapses, which is the whole
+        point of leasing — but recovery must be able to shorten that wait
+        explicitly rather than guess.
+        """
+        moment = time.time() if now is None else now
+        with self._tx() as db:
+            cursor = db.execute(
+                "UPDATE memory_projection_jobs SET lease_owner=NULL, lease_until=NULL "
+                "WHERE lease_until IS NOT NULL AND lease_until<=?",
+                (moment,),
+            )
+            return cursor.rowcount or 0
+
+    def pending_projections(self) -> int:
+        with self._lock:
+            return self._conn.execute("SELECT COUNT(*) FROM memory_projection_jobs").fetchone()[0]
+
+    def pending_by_projection(self) -> Dict[str, int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT projection, COUNT(*) FROM memory_projection_jobs GROUP BY projection"
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+    def failed_projections(self) -> int:
+        with self._lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM memory_projection_jobs WHERE last_error IS NOT NULL"
+            ).fetchone()[0]
 
     def claim(self, projection: str, worker_id: str, limit: int = 32, lease_seconds: float = 60.0) -> List[Tuple[str, MemoryRecord]]:
         if projection not in self.PROJECTIONS:

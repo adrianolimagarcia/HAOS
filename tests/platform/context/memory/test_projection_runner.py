@@ -7,7 +7,7 @@ def test_each_projection_is_independently_acknowledged(tmp_path):
     store.append(content="memory projection test", scope="project", idempotency_key="one")
     applied = []
     runner = ProjectionRunner(store, {name: lambda record, name=name: applied.append((name, record.record_id)) for name in store.PROJECTIONS})
-    assert runner.drain() == 3
+    assert runner.drain() == len(store.PROJECTIONS)
     assert sorted(name for name, _ in applied) == sorted(store.PROJECTIONS)
     assert runner.drain() == 0
     store.close()
@@ -20,7 +20,9 @@ def test_failed_projection_remains_retryable(tmp_path):
         calls["graph"] += 1
         if calls["graph"] == 1:
             raise RuntimeError("transient")
-    runner = ProjectionRunner(store, {"obsidian": lambda record: None, "decisions": lambda record: None, "graphrag": graph})
+    projectors = {name: (lambda record: None) for name in store.PROJECTIONS}
+    projectors["graphrag"] = graph
+    runner = ProjectionRunner(store, projectors)
     runner.drain()
     assert calls["graph"] == 1
     # Make the test deterministic without waiting for retry backoff.

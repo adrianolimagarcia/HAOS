@@ -28,7 +28,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Set
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple, Set
 
 from hermes.platform.context.memory.candidate import (
     DestinationType,
@@ -53,6 +53,8 @@ from hermes.platform.context.memory.schemas import KnowledgeItem
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
 from hermes.platform.context.memory.projection_runner import ProjectionRunner
 from hermes.platform.context.memory.access import MemoryAccessContext
+from hermes.platform.context.memory.embedding import Embedder, HashingEmbedder
+from hermes.platform.context.memory.vector_index import SQLiteVectorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +107,9 @@ class FederatedMemoryCoordinator:
         decision_store: Optional[DecisionStore] = None,
         event_bus: Optional[KnowledgeEventBus] = None,
         graphrag_store: Optional[GraphRAGStore] = None,
+        embedder: Optional[Embedder] = None,
+        vector_index: Optional[SQLiteVectorIndex] = None,
+        projection_lease_seconds: float = 60.0,
         auto_start_worker: bool = False,
     ) -> None:
         if obsidian_adapter is not None:
@@ -163,8 +168,24 @@ class FederatedMemoryCoordinator:
                 "obsidian": self._project_obsidian,
                 "decisions": self._project_decisions,
                 "graphrag": self._project_graphrag,
+                "embeddings": self._project_embeddings,
             },
+            lease_seconds=projection_lease_seconds,
         )
+
+        # Vector projection: the embedder pins model identity/dimensions, and the
+        # index is keyed by that identity so switching models is a reindex, never
+        # a silent mix of incomparable vectors.
+        self.embedder: Embedder = embedder or HashingEmbedder()
+        self.vector_index = vector_index or SQLiteVectorIndex(
+            ledger_root / "memory" / "vectors.db",
+            self.embedder.model.model_id,
+            dimensions=self.embedder.model.dimensions,
+            normalize=self.embedder.model.normalize,
+            reindex_policy=self.embedder.model.reindex_policy,
+        )
+        self._owns_vector_index = vector_index is None
+        self.memory_provider.vector_search = self._vector_search
 
         self.router = MemoryRouter()
         self.consolidator = MemoryConsolidator()
@@ -487,11 +508,52 @@ class FederatedMemoryCoordinator:
         )
         self.event_bus.publish(event, enqueue=False)
 
+    def _project_embeddings(self, stored: MemoryRecord) -> None:
+        """Fourth durable projection: embed the canonical content under the pinned model."""
+        self.vector_index.index_text(stored.record_id, stored.content, self.embedder)
+
+    def _vector_search(self, query: str, scopes: Sequence[str], limit: int) -> List[str]:
+        """Candidate generation for the retriever; fail-open on any embedder fault.
+
+        Retrieval must degrade to FTS rather than fail the turn, and the retriever
+        re-authorizes every returned ID against the journal, so a stale or
+        over-broad hit here cannot leak content.
+        """
+        try:
+            query_vector = self.embedder.embed(query)
+            return self.vector_index.search(query_vector, limit)
+        except Exception:  # noqa: BLE001
+            logger.warning("Vector search unavailable; falling back to FTS", exc_info=True)
+            return []
+
+    def reindex_vectors(self, *, force: bool = False) -> int:
+        """Rebuild vectors for every active canonical record.
+
+        The policy on a model change is: keep the old model's rows (so rollback
+        to the previous ``model_id`` is instant) and fill in the new model's rows
+        from the journal. ``force=True`` re-embeds even rows that already exist.
+        """
+        records = [
+            (record.record_id, record.content)
+            for record in self.canonical_store.list_records(tuple(sorted(VALID_SCOPES)))
+        ]
+        return self.vector_index.reindex(records, self.embedder, force=force)
+
+    def pending_vector_reindex(self) -> int:
+        """Active records that still have no vector under the current model."""
+        records = [
+            record.record_id
+            for record in self.canonical_store.list_records(tuple(sorted(VALID_SCOPES)))
+        ]
+        return self.vector_index.needs_reindex(records)
+
     def _sync_stores(self, record: FederatedFactRecord, superseded_ids: List[str]) -> None:
         """Drain durable projection jobs; projections never write canonical state."""
         self.projection_runner.drain()
 
     def recover_projections(self, worker_id: str = "fabric-recovery") -> int:
+        """Reclaim abandoned leases, then drain everything still pending."""
+        self.canonical_store.reclaim_expired_leases()
         self.projection_runner.worker_id = worker_id
         return self.projection_runner.drain()
 
@@ -565,4 +627,6 @@ class FederatedMemoryCoordinator:
         self.memory_provider.shutdown()
         if self._owns_graphrag_store and self.graphrag_store is not None:
             self.graphrag_store.close()
+        if self._owns_vector_index:
+            self.vector_index.close()
         self.canonical_store.close()
