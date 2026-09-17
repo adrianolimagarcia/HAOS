@@ -146,6 +146,7 @@ class FederatedMemoryCoordinator:
             decision_store=self.decisions,
             canonical_store=self.canonical_store,
             write_handler=self.ingest_candidate_fact,
+            recovery_handler=self.recover_projections,
         )
         self.projection_runner = ProjectionRunner(
             self.canonical_store,
