@@ -236,3 +236,14 @@ jobs:
             git fetch --no-tags --deepen=1000 origin "${{ github.base_ref }}" "$PR_HEAD"
           done
           python scripts/ci/check_public_surface.py --base "origin/${{ github.base_ref }}" --head origin/pr-head
+
+      # AGENTS.md: "wall-clock bounds >= 2s, event-based sync". scripts/run_tests.sh runs 16
+      # files in parallel, so an absolute wall-clock bound below 2s measures the runner's load
+      # rather than the code — two tests broke exactly that way on 2026-09-17, one of them
+      # failing both retries at 2.013s against a 1.5s bound.
+      # scripts/ci/timing_bounds_baseline.txt grandfathers the bounds that predate this check,
+      # so only NEW tight bounds fail; a baseline entry whose bound is gone fails too, so the
+      # ratchet only ever tightens.
+      #   python scripts/check_timing_bounds.py --all      # list the grandfathered ones
+      - name: Wall-clock bounds in tests are not tighter than 2s
+        run: python scripts/check_timing_bounds.py
