@@ -161,3 +161,109 @@ def test_supersession_lineage_survives_restart(tmp_path: Path) -> None:
         assert lineage[old.id].superseded_by == new.id
     finally:
         reopened.close()
+
+
+# --------------------------------------------------------------------------
+# Recoverability. The bias toward missing a change is only defensible if a wrong
+# guess can be found and undone, so these two properties carry the same weight as
+# the detector contract above.
+# --------------------------------------------------------------------------
+
+
+def test_automatic_supersessions_are_auditable(tmp_path: Path) -> None:
+    """A heuristic supersession must record *why*, and be separable from a decision.
+
+    Without the reason an automatic supersession is indistinguishable from a human
+    one: the fact stops being recalled and nothing records the grounds.
+    """
+    coordinator = _coordinator(tmp_path)
+    try:
+        old = coordinator.ingest_candidate_fact(
+            fact="the cache layer is disabled in production", scope="project",
+        )
+        coordinator.ingest_candidate_fact(
+            fact="the cache layer is enabled in production", scope="project",
+        )
+        declared = coordinator.ingest_candidate_fact(
+            fact="DECISION: ADR-910 we deploy with swarm", scope="project",
+        )
+        coordinator.ingest_candidate_fact(
+            fact="DECISION: ADR-911 deploy tooling changed", scope="project",
+            metadata={"supersedes": [declared.id]},
+        )
+
+        edges = {edge.superseded_id: edge for edge in coordinator.canonical_store.supersession_edges()}
+        assert edges[old.id].reason == "polarity"
+        assert edges[declared.id].reason == "declared"
+
+        # The audit view is for the guesses; a declared supersession is not a guess.
+        audited = {edge.superseded_id for edge in coordinator.auto_supersessions()}
+        assert old.id in audited
+        assert declared.id not in audited
+    finally:
+        coordinator.close()
+
+
+def test_restore_returns_a_wrongly_superseded_fact_to_the_active_set(tmp_path: Path) -> None:
+    """Undo a guess: the fact becomes recallable again and the lineage is cleaned up."""
+    coordinator = _coordinator(tmp_path)
+    try:
+        old = coordinator.ingest_candidate_fact(
+            fact="the cache layer is disabled in production", scope="project",
+        )
+        new = coordinator.ingest_candidate_fact(
+            fact="the cache layer is enabled in production", scope="project",
+        )
+        assert old.id not in _active_ids(coordinator)
+
+        outcome = coordinator.restore_fact(old.id)
+        assert outcome.restored is True
+        assert outcome.reason == "restored"
+
+        active = _active_ids(coordinator)
+        assert old.id in active, "the restored fact is still not active"
+        assert new.id in active, "restoring one fact must not disturb the other"
+
+        lineage = {
+            fact.id: fact
+            for fact in coordinator.list_facts(scope="project", include_superseded=True)
+        }
+        assert lineage[new.id].supersedes == []
+        assert lineage[old.id].superseded_by is None
+        assert coordinator.auto_supersessions() == []
+
+        # Recall is derived from the journal, so the restored fact is retrievable again.
+        hits = coordinator.canonical_store.search_fts("cache layer disabled", ["project"])
+        assert old.id in [hit.record_id for hit in hits]
+    finally:
+        coordinator.close()
+
+
+def test_restore_reports_a_conflict_instead_of_raising(tmp_path: Path) -> None:
+    """``idx_memory_dedupe`` is UNIQUE per active content, so reviving a fact whose
+    content is active again would collide. That has to be a reported outcome, not an
+    opaque IntegrityError, and it must leave the journal untouched."""
+    coordinator = _coordinator(tmp_path)
+    try:
+        old = coordinator.ingest_candidate_fact(
+            fact="the cache layer is disabled in production", scope="project",
+        )
+        coordinator.ingest_candidate_fact(
+            fact="the cache layer is enabled in production", scope="project",
+        )
+        # The same content comes back as its own active record.
+        replacement = coordinator.ingest_candidate_fact(
+            fact="the cache layer is disabled in production", scope="project",
+        )
+        assert replacement.id != old.id
+
+        outcome = coordinator.restore_fact(old.id)
+        assert outcome.restored is False
+        assert outcome.reason == "active_duplicate_exists"
+        assert old.id not in _active_ids(coordinator)
+
+        # Nothing was half-applied.
+        assert coordinator.canonical_store.restore("missing-record").reason == "not_found"
+        assert coordinator.canonical_store.restore(replacement.id).reason == "not_superseded"
+    finally:
+        coordinator.close()

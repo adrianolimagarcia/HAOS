@@ -33,6 +33,7 @@ from hermes.platform.context.memory.vector_index import SQLiteVectorIndex
 
 DECISION = "DECISION: projections are derived state and never write canonical rows."
 OTHER = "DECISION: the outbox owns retries, not the caller."
+PLAIN_FACT = "the cache layer stores 100 entries per node."
 
 
 class BrokenEmbedder:
@@ -333,3 +334,93 @@ def test_contended_journal_serializes_writers_instead_of_failing(tmp_path: Path)
     finally:
         first.close()
         second.close()
+
+
+# --------------------------------------------------------------------------
+# Projection drift. The outbox answers "is there pending work?"; this answers the
+# different question "does what is on disk still match the journal?". A job can be
+# acknowledged and the artifact still be gone — deleted by hand, lost with a swapped
+# database, removed from the vault — and nothing else notices.
+# --------------------------------------------------------------------------
+
+
+def test_verify_projections_reports_a_healthy_fabric(tmp_path: Path) -> None:
+    coordinator = _coordinator(tmp_path)
+    try:
+        coordinator.ingest_candidate_fact(fact=PLAIN_FACT, scope="project")
+        coordinator.ingest_candidate_fact(
+            fact="DECISION: ADR-940 the journal is the source of truth", scope="project",
+        )
+
+        report = coordinator.verify_projections()
+        assert set(report) == {"obsidian", "decisions", "graphrag", "embeddings"}
+        for drift in report.values():
+            assert drift.ok, "%s reports drift on a healthy fabric" % drift.projection
+            assert drift.present == drift.expected
+        # Both records are projected to Obsidian; only the ADR becomes a decision.
+        assert report["obsidian"].expected == 2
+        assert report["decisions"].expected == 1
+    finally:
+        coordinator.close()
+
+
+def test_verify_projections_detects_missing_artifacts(tmp_path: Path) -> None:
+    coordinator = _coordinator(tmp_path)
+    try:
+        fact = coordinator.ingest_candidate_fact(fact=PLAIN_FACT, scope="project")
+        decision = coordinator.ingest_candidate_fact(
+            fact="DECISION: ADR-941 the journal is the source of truth", scope="project",
+        )
+
+        # Remove one artifact per projection, the way an operator's accident would.
+        note = Path(coordinator.obsidian.vault_path) / "10-Memory" / "project" / ("%s.md" % fact.id)
+        note.unlink()
+        coordinator.vector_index.delete(decision.id)
+        coordinator.decisions._delete(decision.id)
+
+        report = coordinator.verify_projections()
+        assert report["obsidian"].missing == (fact.id,)
+        assert report["embeddings"].missing == (decision.id,)
+        assert report["decisions"].missing == (decision.id,)
+        assert not report["obsidian"].ok and not report["embeddings"].ok
+
+        # GraphRAG still has its entities, so it must NOT be reported as drifted.
+        assert report["graphrag"].ok
+    finally:
+        coordinator.close()
+
+
+def test_verify_projections_ignores_notes_the_fabric_did_not_write(tmp_path: Path) -> None:
+    """A human note is source input, not a projection. Reporting it as an orphan would
+    bury the real signal under every note the user ever wrote."""
+    coordinator = _coordinator(tmp_path)
+    try:
+        coordinator.ingest_candidate_fact(fact=PLAIN_FACT, scope="project")
+        vault = Path(coordinator.obsidian.vault_path)
+        project_dir = vault / "10-Memory" / "project"
+        project_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / "orfao-123.md").write_text(
+            "---\nfabric_committed: true\nid: orfao-123\n---\n# derived state, no record\n",
+            encoding="utf-8",
+        )
+        (vault / "nota-humana.md").write_text("# anotação escrita por humano\n", encoding="utf-8")
+
+        drift = coordinator.verify_projections()["obsidian"]
+        assert drift.orphans == ("orfao-123",)
+        assert not drift.ok
+    finally:
+        coordinator.close()
+
+
+def test_verify_projections_does_not_create_a_missing_graphrag_store(tmp_path: Path) -> None:
+    """A verification call must not write. ``_ensure_graphrag_store`` creates the store
+    when absent, so verify reads ``graphrag_store`` directly and reports the absence."""
+    coordinator = _coordinator(tmp_path)
+    try:
+        assert coordinator.graphrag_store is None, "precondition: nothing attached the store yet"
+
+        report = coordinator.verify_projections()
+        assert coordinator.graphrag_store is None, "verify_projections() created the store"
+        assert report["graphrag"].detail == "store not attached"
+    finally:
+        coordinator.close()

@@ -9,7 +9,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 VALID_SCOPES = frozenset(("private", "team", "project", "global"))
 
@@ -29,6 +29,34 @@ class MemoryRecord:
     supersedes: Tuple[str, ...] = ()
     metadata: Dict[str, Any] = field(default_factory=dict)
     content_hash: str = ""
+
+# Supersession reasons. "declared" comes from the caller; the rest are guesses made by
+# the heuristic, and are the ones an operator needs to be able to review and undo.
+SUPERSESSION_DECLARED = "declared"
+SUPERSESSION_POLARITY = "polarity"
+SUPERSESSION_UPDATE_WORDING = "update_wording"
+SUPERSESSION_NEGATION = "negation"
+
+@dataclass(frozen=True)
+class SupersessionEdge:
+    """One record losing its active status to another, and on what grounds.
+
+    ``score`` is the matched rule's own confidence: 1.0 for the exact rules (a declared
+    supersession, an antonym pair, a phrase like "migrated to") and the lexical
+    similarity for the negation rule, which is the only one with a tunable gate.
+    """
+    record_id: str
+    superseded_id: str
+    reason: str
+    score: float
+    created_at: float
+
+@dataclass(frozen=True)
+class RestoreOutcome:
+    """Result of undoing a supersession; ``reason`` is why it did or did not happen."""
+    record_id: str
+    restored: bool
+    reason: str
 
 class CanonicalMemoryStore:
     """SQLite journal and transactional outbox; projections are never writers."""
@@ -83,12 +111,19 @@ class CanonicalMemoryStore:
             )
             db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(record_id UNINDEXED, content, tokenize='unicode61 remove_diacritics 2')")
             db.execute("CREATE TRIGGER IF NOT EXISTS memory_records_ai AFTER INSERT ON memory_records BEGIN INSERT INTO memory_fts(record_id, content) VALUES (new.record_id, new.content); END")
+            # Why a record lost its active status. Without this an automatic supersession
+            # is invisible: the fact simply stops being recalled and nothing records
+            # whether a human declared it or a heuristic guessed. The rows live in the
+            # journal (not in a projection) because the decision is canonical state.
+            db.execute("CREATE TABLE IF NOT EXISTS memory_supersessions (record_id TEXT NOT NULL, superseded_id TEXT NOT NULL, reason TEXT NOT NULL, score REAL NOT NULL, created_at REAL NOT NULL, PRIMARY KEY(record_id, superseded_id))")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_memory_supersessions_reason ON memory_supersessions(reason)")
+            db.execute("UPDATE memory_schema_version SET version=2")
 
     @staticmethod
     def _hash(content: str) -> str:
         return hashlib.sha256(" ".join(content.split()).casefold().encode("utf-8")).hexdigest()
 
-    def append(self, *, content: str, scope: str, kind: str = "fact", logical_id: Optional[str] = None, provenance: Sequence[Dict[str, Any]] = (), confidence: float = 1.0, metadata: Optional[Dict[str, Any]] = None, supersedes: Sequence[str] = (), idempotency_key: Optional[str] = None, valid_from: Optional[float] = None) -> MemoryRecord:
+    def append(self, *, content: str, scope: str, kind: str = "fact", logical_id: Optional[str] = None, provenance: Sequence[Dict[str, Any]] = (), confidence: float = 1.0, metadata: Optional[Dict[str, Any]] = None, supersedes: Sequence[str] = (), idempotency_key: Optional[str] = None, valid_from: Optional[float] = None, supersession_reasons: Optional[Mapping[str, Tuple[str, float]]] = None) -> MemoryRecord:
         if scope not in VALID_SCOPES:
             raise ValueError("invalid scope: %r" % scope)
         if not content or not content.strip():
@@ -116,6 +151,16 @@ class CanonicalMemoryStore:
             db.execute("INSERT INTO memory_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record.record_id, record.logical_id, record.revision, record.scope, record.kind, record.status, record.content, record.content_hash, record.confidence, json.dumps(record.provenance, sort_keys=True), json.dumps(record.metadata, sort_keys=True), record.valid_from, None, json.dumps(record.supersedes), now))
             if supersedes:
                 db.executemany("UPDATE memory_records SET status='superseded', valid_until=? WHERE record_id=? AND status='active'", [(now, item) for item in supersedes])
+                # Written in the same transaction as the status change: a reason row
+                # without the supersession (or the reverse) would be worse than none.
+                reasons = supersession_reasons or {}
+                db.executemany(
+                    "INSERT OR REPLACE INTO memory_supersessions(record_id, superseded_id, reason, score, created_at) VALUES (?,?,?,?,?)",
+                    [
+                        (record.record_id, target) + tuple(reasons.get(target, ("declared", 1.0))) + (now,)
+                        for target in supersedes
+                    ],
+                )
             event_id = "memory.changed:" + record.record_id
             db.execute("INSERT INTO memory_outbox VALUES (?,?,?,?,?,?,?,?,?,?)", (event_id, record.record_id, "memory.changed", json.dumps(asdict(record), sort_keys=True, default=list), now, now, 0, None, None, None))
             db.executemany("INSERT INTO memory_projection_jobs(event_id, projection, available_at) VALUES (?,?,?)", [(event_id, projection, now) for projection in self.PROJECTIONS])
@@ -165,6 +210,81 @@ class CanonicalMemoryStore:
             for target in targets:
                 mapping.setdefault(str(target), row["record_id"])
         return mapping
+
+    def supersession_edges(self, reason: Optional[str] = None) -> List[SupersessionEdge]:
+        """Every supersession edge, newest first, optionally filtered by reason.
+
+        This is the audit view over the automatic decisions: which fact lost its active
+        status, to which record, and on what grounds.
+        """
+        with self._lock:
+            if reason is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM memory_supersessions ORDER BY created_at DESC, superseded_id"
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM memory_supersessions WHERE reason=? ORDER BY created_at DESC, superseded_id",
+                    (reason,),
+                ).fetchall()
+        return [
+            SupersessionEdge(
+                record_id=row["record_id"],
+                superseded_id=row["superseded_id"],
+                reason=row["reason"],
+                score=row["score"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def restore(self, record_id: str) -> RestoreOutcome:
+        """Undo a supersession, returning the record to active status.
+
+        A supersession is a judgment — sometimes made by a heuristic — so it has to be
+        reversible, otherwise a wrong guess removes a fact from recall permanently and
+        silently. The record's content and lineage were never destroyed, so the undo is
+        just the inverse of the two writes ``append`` performed.
+        """
+        with self._tx() as db:
+            row = db.execute("SELECT * FROM memory_records WHERE record_id=?", (record_id,)).fetchone()
+            if row is None:
+                return RestoreOutcome(record_id, False, "not_found")
+            if row["status"] != "superseded":
+                return RestoreOutcome(record_id, False, "not_superseded")
+
+            # ``idx_memory_dedupe`` is UNIQUE on (scope, kind, content_hash, status), so
+            # reviving this row would collide with an identical fact that is already
+            # active. Report it instead of surfacing an opaque IntegrityError: the caller
+            # asked to restore a fact that is already present.
+            clash = db.execute(
+                "SELECT record_id FROM memory_records WHERE scope=? AND kind=? AND content_hash=? AND status='active' AND record_id!=?",
+                (row["scope"], row["kind"], row["content_hash"], record_id),
+            ).fetchone()
+            if clash is not None:
+                return RestoreOutcome(record_id, False, "active_duplicate_exists")
+
+            superseders = db.execute(
+                "SELECT record_id, supersedes_json FROM memory_records WHERE supersedes_json LIKE ?",
+                ("%" + record_id + "%",),
+            ).fetchall()
+            for superseder in superseders:
+                try:
+                    targets = json.loads(superseder["supersedes_json"])
+                except ValueError:
+                    continue
+                if record_id in targets:
+                    remaining = [target for target in targets if target != record_id]
+                    db.execute(
+                        "UPDATE memory_records SET supersedes_json=? WHERE record_id=?",
+                        (json.dumps(remaining), superseder["record_id"]),
+                    )
+            db.execute(
+                "UPDATE memory_records SET status='active', valid_until=NULL WHERE record_id=?",
+                (record_id,),
+            )
+            db.execute("DELETE FROM memory_supersessions WHERE superseded_id=?", (record_id,))
+        return RestoreOutcome(record_id, True, "restored")
 
     def reclaim_expired_leases(self, now: Optional[float] = None) -> int:
         """Release jobs whose worker died holding the lease.

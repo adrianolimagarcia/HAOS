@@ -354,6 +354,20 @@ class GraphRAGStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def source_uris(self) -> List[str]:
+        """Distinct ``source_uri`` values that produced entities.
+
+        ``list_entities`` does not carry the source, so this is how a caller answers
+        "was record X ever projected into the graph?" — the join lives in
+        ``entity_sources``, which ``apply_event`` populates per incoming URI.
+        """
+        with self._lock:
+            conn = self._get_connection()
+            rows = conn.execute(
+                "SELECT DISTINCT source_uri FROM entity_sources ORDER BY source_uri"
+            ).fetchall()
+        return [str(r["source_uri"]) for r in rows if r["source_uri"]]
+
     def list_relations(self) -> List[Dict[str, object]]:
         with self._lock:
             conn = self._get_connection()
@@ -376,6 +390,12 @@ class GraphRAGStore:
 
         Não filtra supersedidas: a linha permanece com o ponteiro
         ``superseded_by`` para o leitor decidir (informação preservada).
+
+        Varredura linear em Python, medida a ~3,6 µs por entidade: 0,3 ms no grafo real
+        (55 entidades), 3,9 ms com 1k, 17 ms com 5k e 178 ms com 50k. Não vale indexar
+        agora — seria otimizar 360x acima do tamanho observado. Um ``LIKE '%termo%'``
+        também não ajudaria, porque nenhum índice serve busca por substring; se um dia
+        incomodar, o caminho é FTS5, como o journal já faz em ``memory_fts``.
         """
         terms = [t.strip().lower() for t in terms if t and t.strip()]
         rows = self.list_entities()

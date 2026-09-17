@@ -50,13 +50,23 @@ from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
 from hermes.platform.context.memory.router import MemoryRouter
 from hermes.platform.context.memory.schemas import KnowledgeItem
-from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
+from hermes.platform.context.memory.canonical_store import (
+    SUPERSESSION_DECLARED,
+    SUPERSESSION_NEGATION,
+    SUPERSESSION_POLARITY,
+    SUPERSESSION_UPDATE_WORDING,
+    CanonicalMemoryStore,
+    MemoryRecord,
+    RestoreOutcome,
+    SupersessionEdge,
+)
 from hermes.platform.context.memory.projection_runner import ProjectionRunner
 from hermes.platform.context.memory.access import MemoryAccessContext
 from hermes.platform.context.memory.embedding import Embedder, HashingEmbedder
 from hermes.platform.context.memory.vector_index import SQLiteVectorIndex
 from hermes.platform.context.memory.flags import FlagError, MemoryFeatureFlags
 from hermes.platform.context.memory.metrics import MemoryFabricMetrics, Timer
+from hermes.platform.context.memory.migration import MemoryMigrator
 from hermes.platform.context.memory.shadow import LegacyFederatedRetriever, ShadowRetriever
 
 logger = logging.getLogger(__name__)
@@ -90,6 +100,39 @@ _NEGATION_MARKERS = frozenset(("not", "never", "no", "cannot", "nao", "nunca", "
 _NEGATION_SIMILARITY = 0.85
 
 VALID_SCOPES: Set[str] = {"private", "team", "project", "global"}
+
+
+@dataclass(frozen=True)
+class SupersessionDecision:
+    """Um fato anterior que o candidato supersede, com o motivo e a confiança.
+
+    ``reason`` é uma das constantes ``SUPERSESSION_*`` do store canônico; ``score`` é a
+    confiança da regra que casou.
+    """
+    superseded_id: str
+    reason: str
+    score: float
+
+
+@dataclass(frozen=True)
+class ProjectionDrift:
+    """Quanto de uma projeção está no disco, comparado ao journal.
+
+    ``expected`` conta os registros **ativos** que deveriam estar projetados; ``missing``
+    são os que não estão. ``orphans`` são artefatos cujo registro não existe no journal em
+    nenhum status. Um registro superseded não é órfão: notas antigas e vetores de modelo
+    antigo são retidos de propósito, para histórico e rollback.
+    """
+    projection: str
+    expected: int
+    present: int
+    missing: Tuple[str, ...] = ()
+    orphans: Tuple[str, ...] = ()
+    detail: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing and not self.orphans
 
 
 @dataclass
@@ -372,7 +415,8 @@ class FederatedMemoryCoordinator:
                 return True
 
             # 2. Detecção de conflito e supersessão temporal
-            superseded_ids = self._detect_supersessions(candidate, existing_records)
+            supersessions = self._detect_supersessions(candidate, existing_records)
+            superseded_ids = [decision.superseded_id for decision in supersessions]
 
             record_id = candidate.id or f"fact-{uuid.uuid4().hex[:8]}"
             candidate.id = record_id
@@ -404,6 +448,10 @@ class FederatedMemoryCoordinator:
                 supersedes=fact_record.supersedes,
                 idempotency_key=fact_record.id,
                 valid_from=fact_record.created_at,
+                supersession_reasons={
+                    decision.superseded_id: (decision.reason, decision.score)
+                    for decision in supersessions
+                },
             )
             # A restart has no in-memory dedupe index. The journal therefore
             # decides whether this command was a duplicate; never project a
@@ -446,22 +494,32 @@ class FederatedMemoryCoordinator:
 
     def _detect_supersessions(
         self, candidate: MemoryCandidate, records: List[FederatedFactRecord]
-    ) -> List[str]:
-        """Detecta se o candidato supersede fatos anteriores (decisões opostas ou regra explícita)."""
-        superseded: List[str] = []
+    ) -> List[SupersessionDecision]:
+        """Detecta se o candidato supersede fatos anteriores, e **por quê**.
+
+        O motivo não é decoração: uma supersessão automática é um palpite, e sem
+        registrá-lo o fato simplesmente deixa de ser lembrado sem que ninguém consiga
+        distinguir "um humano decidiu" de "a heurística achou".
+        """
+        superseded: List[SupersessionDecision] = []
         cand_meta = getattr(candidate, "metadata", {}) if hasattr(candidate, "metadata") else {}
         explicit_supersedes = cand_meta.get("supersedes")
         if isinstance(explicit_supersedes, list):
-            superseded.extend([s for s in explicit_supersedes if isinstance(s, str)])
+            declared = [s for s in explicit_supersedes if isinstance(s, str)]
         elif isinstance(explicit_supersedes, str):
-            superseded.append(explicit_supersedes)
+            declared = [explicit_supersedes]
+        else:
+            declared = []
+        superseded.extend(
+            SupersessionDecision(target, SUPERSESSION_DECLARED, 1.0) for target in declared
+        )
 
         # Heurística de conflito semântico (negação ou mudança de regra sobre mesmo tópico)
         cand_norm = self._normalize(candidate.fact)
         cand_words = set(cand_norm.split())
 
         for rec in records:
-            if rec.id in superseded:
+            if any(decision.superseded_id == rec.id for decision in superseded):
                 continue
 
             rec_norm = self._normalize(rec.fact)
@@ -470,19 +528,28 @@ class FederatedMemoryCoordinator:
             overlap = cand_words & rec_words
             meaningful_overlap = {w for w in overlap if len(w) > 3}
             if len(meaningful_overlap) >= 2:
-                is_contradiction = self._is_contradiction_or_update(cand_norm, rec_norm)
-                if is_contradiction:
-                    superseded.append(rec.id)
+                matched = self._contradiction_reason(cand_norm, rec_norm)
+                if matched is not None:
+                    reason, score = matched
+                    superseded.append(SupersessionDecision(rec.id, reason, score))
 
         return superseded
 
     def _is_contradiction_or_update(self, text_a: str, text_b: str) -> bool:
-        """Verifica se ``text_a`` contradiz ou atualiza ``text_b``.
+        """Se ``text_a`` contradiz ou atualiza ``text_b`` (ver ``_contradiction_reason``)."""
+        return self._contradiction_reason(text_a, text_b) is not None
+
+    def _contradiction_reason(
+        self, text_a: str, text_b: str
+    ) -> Optional[Tuple[str, float]]:
+        """Motivo e confiança da contradição, ou ``None`` se não houver uma.
 
         A decisão é deliberadamente assimétrica: **preferimos perder uma supersessão a
         inventar uma**. Uma supersessão perdida deixa um fato antigo ativo — visível,
-        consultável e corrigível por um humano. Uma supersessão falsa marca um fato
-        legítimo como ``superseded`` e o remove do recall sem deixar rastro.
+        consultável e corrigível por um humano. Uma supersessão falsa remove um fato
+        legítimo do recall, e é por isso que ela também precisa ser auditável e
+        reversível (``supersession_edges`` / ``restore``): o viés só é defensável se o
+        erro for recuperável.
 
         Por isso uma negação solta (``not``, ``nunca``, ``deprecated``…) só conta quando
         removê-la deixa as duas frases praticamente idênticas: é o caso "mesma afirmação
@@ -493,15 +560,20 @@ class FederatedMemoryCoordinator:
         """
         # 1. Mesma afirmação com a polaridade invertida (enabled/disabled, allow/forbid…).
         if self._has_opposite_polarity(text_a, text_b):
-            return True
+            return SUPERSESSION_POLARITY, 1.0
 
         # 2. Atualização explícita declarada no próprio texto novo.
         update_patterns = [r"instead of", r"supersedes", r"substitui", r"switched to", r"migrated to", r"changed to"]
         if any(re.search(p, text_a) for p in update_patterns):
-            return True
+            return SUPERSESSION_UPDATE_WORDING, 1.0
 
-        # 3. Negação presente em apenas um lado, sendo ela a única diferença.
-        return self._negation_is_the_difference(text_a, text_b)
+        # 3. Negação presente em apenas um lado, sendo ela a única diferença. O score é a
+        # similaridade medida: é a única regra com limiar ajustável, então é a única em que
+        # a confiança é um número e não um casamento exato.
+        similarity = self._negation_is_the_difference(text_a, text_b)
+        if similarity is None:
+            return None
+        return SUPERSESSION_NEGATION, similarity
 
     @staticmethod
     def _has_opposite_polarity(text_a: str, text_b: str) -> bool:
@@ -519,19 +591,20 @@ class FederatedMemoryCoordinator:
         return False
 
     @staticmethod
-    def _negation_is_the_difference(text_a: str, text_b: str) -> bool:
-        """Negação em um só lado *e* o resto dos textos quase igual."""
+    def _negation_is_the_difference(text_a: str, text_b: str) -> Optional[float]:
+        """Similaridade do par quando a negação é a única diferença, senão ``None``."""
         words_a = set(text_a.split())
         words_b = set(text_b.split())
         neg_a = words_a & _NEGATION_MARKERS
         neg_b = words_b & _NEGATION_MARKERS
         if bool(neg_a) == bool(neg_b):
-            return False
+            return None
         stripped_a = " ".join(word for word in text_a.split() if word not in _NEGATION_MARKERS)
         stripped_b = " ".join(word for word in text_b.split() if word not in _NEGATION_MARKERS)
         if not stripped_a or not stripped_b:
-            return False
-        return difflib.SequenceMatcher(None, stripped_a, stripped_b).ratio() >= _NEGATION_SIMILARITY
+            return None
+        similarity = difflib.SequenceMatcher(None, stripped_a, stripped_b).ratio()
+        return similarity if similarity >= _NEGATION_SIMILARITY else None
 
     def _normalize(self, text: str) -> str:
         """Normalização de texto para deduplicação robusta."""
@@ -735,6 +808,154 @@ class FederatedMemoryCoordinator:
             self.metrics.increment("expired_leases", reclaimed)
         self.projection_runner.worker_id = worker_id
         return self.projection_runner.drain()
+
+    def auto_supersessions(self) -> List[SupersessionEdge]:
+        """Supersessões decididas por heurística, para revisão humana.
+
+        Exclui as ``declared``: se o chamador passou ``supersedes`` explicitamente, ele já
+        sabia o que estava fazendo. O que precisa de auditoria é o palpite.
+        """
+        return [
+            edge
+            for edge in self.canonical_store.supersession_edges()
+            if edge.reason != SUPERSESSION_DECLARED
+        ]
+
+    def verify_projections(self) -> Dict[str, ProjectionDrift]:
+        """Compara cada projeção com o journal, sem reconstruir nada.
+
+        O outbox responde "há trabalho pendente?"; isto responde a pergunta diferente
+        "o que está no disco corresponde ao journal?". As duas importam: um job pode ter
+        sido *acknowledged* e ainda assim o artefato estar ausente (projeção apagada à
+        mão, banco trocado, nota removida do vault), e nada mais detecta isso.
+
+        Só afirma o que é verificável. Para cada projeção o vínculo é um artefato com
+        nome determinístico a partir do ``record_id``:
+
+        * ``obsidian`` — o arquivo em ``20-Architecture/<id>.md`` (decisão) ou
+          ``10-Memory/<scope>/<id>.md`` (fato);
+        * ``decisions`` — uma decisão no ``DecisionStore`` para cada registro que
+          ``_is_decision`` classifica como decisão;
+        * ``graphrag`` — ao menos uma entidade em ``entity_sources`` com
+          ``memory://<id>``;
+        * ``embeddings`` — uma linha em ``memory_vectors`` sob o modelo fixado.
+
+        ``orphans`` são artefatos cujo registro não existe no journal em *nenhum* status —
+        projeção de algo que nunca foi canônico, ou lixo de um journal substituído. Um
+        registro superseded **não** é órfão: notas antigas e vetores de modelo antigo são
+        retidos de propósito (histórico e rollback).
+        """
+        records = self.canonical_store.list_records(include_superseded=True)
+        active = [record for record in records if record.status == "active"]
+        known = {record.record_id for record in records}
+        report: Dict[str, ProjectionDrift] = {}
+
+        # obsidian -----------------------------------------------------------
+        expected_notes = {
+            record.record_id: ("20-Architecture/%s.md" % record.record_id if record.kind == "decision"
+                               else "10-Memory/%s/%s.md" % (record.scope, record.record_id))
+            for record in active
+        }
+        present_notes = set()
+        for record_id, relative in expected_notes.items():
+            if (Path(self.obsidian.vault_path) / relative).exists():
+                present_notes.add(record_id)
+        note_orphans = []
+        vault_root = Path(self.obsidian.vault_path)
+        if vault_root.exists():
+            for path in vault_root.rglob("*.md"):
+                stem = path.stem
+                if stem in known:
+                    continue
+                # Only notes the fabric itself wrote can be drift. A human's note is
+                # source input, not a projection, and reporting it would drown the
+                # signal the operator is looking for.
+                try:
+                    content = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                if MemoryMigrator.is_projection(content):
+                    note_orphans.append(stem)
+        report["obsidian"] = ProjectionDrift(
+            projection="obsidian",
+            expected=len(expected_notes),
+            present=len(present_notes),
+            missing=tuple(sorted(set(expected_notes) - present_notes)),
+            orphans=tuple(sorted(note_orphans)),
+        )
+
+        # decisions ----------------------------------------------------------
+        expected_decisions = [
+            record.record_id for record in active
+            if self._is_decision(self._from_stored(record))
+        ]
+        present_decisions = [
+            record_id for record_id in expected_decisions
+            if self.decisions.get_decision(record_id) is not None
+        ]
+        report["decisions"] = ProjectionDrift(
+            projection="decisions",
+            expected=len(expected_decisions),
+            present=len(present_decisions),
+            missing=tuple(sorted(set(expected_decisions) - set(present_decisions))),
+            orphans=tuple(sorted(
+                decision_id for decision_id in self.decisions.decision_ids()
+                if decision_id not in known
+            )),
+        )
+
+        # graphrag -----------------------------------------------------------
+        # Read ``graphrag_store`` directly instead of ``_ensure_graphrag_store()``: the
+        # latter creates the store when absent, and a verification call must not write.
+        if self.graphrag_store is None:
+            graph_uris: Set[str] = set()
+            graph_unavailable = True
+        else:
+            graph_uris = set(self.graphrag_store.source_uris())
+            graph_unavailable = False
+        expected_graph = [record.record_id for record in active]
+        present_graph = [
+            record_id for record_id in expected_graph if ("memory://" + record_id) in graph_uris
+        ]
+        report["graphrag"] = ProjectionDrift(
+            projection="graphrag",
+            expected=len(expected_graph),
+            present=len(present_graph),
+            missing=tuple(sorted(set(expected_graph) - set(present_graph))),
+            orphans=tuple(sorted(
+                uri[len("memory://"):] for uri in graph_uris
+                if uri.startswith("memory://") and uri[len("memory://"):] not in known
+            )),
+            detail="store not attached" if graph_unavailable else "",
+        )
+
+        # embeddings ---------------------------------------------------------
+        indexed = set(self.vector_index.indexed_ids())
+        expected_vectors = [record.record_id for record in active]
+        present_vectors = [record_id for record_id in expected_vectors if record_id in indexed]
+        stale = self.vector_index.needs_reindex(expected_vectors)
+        report["embeddings"] = ProjectionDrift(
+            projection="embeddings",
+            expected=len(expected_vectors),
+            present=len(present_vectors),
+            missing=tuple(sorted(set(expected_vectors) - set(present_vectors))),
+            orphans=tuple(sorted(indexed - known)),
+            detail=("%d record(s) need reindex" % stale) if stale else "",
+        )
+
+        return report
+
+    def restore_fact(self, record_id: str) -> RestoreOutcome:
+        """Desfaz uma supersessão, devolvendo o fato ao conjunto ativo.
+
+        É o par do viés da heurística: como preferimos perder uma contradição a inventar
+        uma, o palpite errado precisa ser reversível — e a projeção é refeita a partir do
+        journal, então a leitura volta a enxergar o fato no próximo drain.
+        """
+        outcome = self.canonical_store.restore(record_id)
+        if outcome.restored:
+            self.metrics.increment("supersessions_restored")
+        return outcome
 
     def fabric_metrics(self) -> Dict[str, Any]:
         """Metrics snapshot with the live outbox backlog folded in."""
