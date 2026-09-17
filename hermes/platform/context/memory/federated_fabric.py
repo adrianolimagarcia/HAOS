@@ -53,6 +53,7 @@ from hermes.platform.context.memory.router import MemoryRouter
 from hermes.platform.context.memory.schemas import KnowledgeItem
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
 from hermes.platform.context.memory.projection_runner import ProjectionRunner
+from hermes.platform.context.memory.access import MemoryAccessContext
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +222,7 @@ class FederatedMemoryCoordinator:
         confidence: float = 1.0,
         metadata: Optional[Dict[str, Any]] = None,
         sync: bool = True,
+        access_context: Optional[MemoryAccessContext] = None,
     ) -> MemoryCandidate:
         """Ingere um fato candidato, validando escopo, executando deduplicação e sincronização.
 
@@ -229,6 +231,8 @@ class FederatedMemoryCoordinator:
         """
         if scope not in VALID_SCOPES:
             raise ValueError(f"Escopo inválido: '{scope}'. Deve ser um dos: {sorted(VALID_SCOPES)}")
+        if access_context is not None:
+            access_context.require_write(scope, metadata or {})
 
         prov_list: List[str] = []
         if isinstance(provenance, str):
