@@ -2,16 +2,15 @@
 
 Unifica:
 - Hermes Memory (Core / Native Upstream Provider)
-- Obsidian Vault (Canonical Human-Auditable Truth)
-- GraphRAG (Derived Conceptual & Relational Graph Projection)
-- DecisionStore (Architectural Decision Records com rastreamento temporal)
+- CanonicalMemoryStore (durable source of truth)
+- Obsidian Vault (human-auditable derived projection)
+- GraphRAG and DecisionStore (rebuildable derived projections)
 
 Sob um único coordenador autoritativo, suportando:
 - Escopos estritos: `private`, `team`, `project`, `global`.
 - Pipeline de background writing & consolidação assíncrona/síncrona via ingest_candidate_fact().
 - Deduplicação léxica & semântica com detecção de conflitos e tracking de supersedes / superseded_by.
-- Sincronização automática multi-store: escrita de markdown canônico no Obsidian Vault,
-  atualização incremental de relações no GraphRAG e notificação ao provedor upstream de memória.
+- Projeções duráveis e independentes via transactional outbox.
 
 Restrições estritas:
 - Stdlib-only imports em hermes/platform/.
