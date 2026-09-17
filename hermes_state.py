@@ -24,7 +24,7 @@ from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
 
-from hermes_constants import get_hermes_home, mkdir_under_hermes_home, product_command
+from hermes_constants import get_hermes_home, mkdir_under_hermes_home, product_cli_name, product_command
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, TypeVar, cast
 
 from hermes_state_common import (

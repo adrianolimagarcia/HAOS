@@ -43,6 +43,11 @@ canonical — see §5 for the citing sites.
 | ADR-005 | `docs/architecture/ADR-005-PHASE-4-PROTOCOL-FEDERATION-RUNTIME.md` | Phase 4 — Universal Protocol Gateway & Federation Runtime | Accepted (Canonical Phase 4) | 2026-09-08 |
 | ADR-006 | `docs/architecture/ADR-006-PHASE-5-CONTROL-PLANE.md` | Phase 5 — Comprehensive Control Plane & Team Graph UI | Accepted (Canonical Phase 5) | 2026-09-08 |
 | ADR-007 | `docs/architecture/ADR-007-PHASE-6-7-HARDENING-SCALE.md` | Phase 6 & 7 — Production Hardening, Chaos Resilience & Distributed Scale | Accepted (Canonical Hardening) | 2026-09-08 |
+| ADR-013 | `docs/architecture/ADR-013-CANONICAL-MEMORY-FABRIC.md` | Canonical Memory Fabric | Accepted (Migration Path) | 2026-09-17 |
+
+`ADR-008`–`ADR-012` are unassigned in this namespace: the memory-fabric decision took the next
+number free across the fork's document series, and the numbers between are not gaps to backfill
+(§1: never reuse a number inside a namespace).
 
 The series is self-governing: each document declares `Governed By:` its predecessors
 (`ADR-001 through ADR-00N`). `ADR-001` is the root of the chain and has no predecessor.

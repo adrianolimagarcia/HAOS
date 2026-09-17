@@ -81,3 +81,39 @@ def test_db_unavailable_commands_are_pinned_to_the_failing_profile(monkeypatch, 
     for text in (no_cause, network):
         assert f"`hermes {selector}doctor`" in text and "`hermes doctor`" not in text
         assert "{profile_arg}" not in text
+
+
+def test_quarantine_guidance_is_branded_and_is_actually_built(tmp_path, monkeypatch):
+    """The state.db recovery guidance must be assembled from the active product name.
+
+    Two failures hide here and only one of them is visible as a crash. The message is
+    built eagerly, so a product helper that is called but never imported raises
+    NameError on the exact path whose job is to tell the user how to recover — the
+    user loses the recovery steps precisely when they need them. And a guidance
+    string that hardcodes a product name is wrong for the other brand, silently.
+
+    Asserting the produced text (not the source) covers both: building it must
+    succeed, and under HAOS it must name `haos`.
+    """
+    import hermes_state
+    from hermes_constants import product_cli_name, product_command
+
+    monkeypatch.setenv("HAOS_HOME", str(tmp_path / ".haos"))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".haos"))
+    hermes_state._set_last_init_error(None)
+
+    db = tmp_path / "state.db"
+    db.write_bytes(b"")  # 0-byte: the quarantine path builds the guidance
+
+    sdb = hermes_state.SessionDB(db_path=db)
+    try:
+        guidance = hermes_state.get_last_init_error()
+    finally:
+        sdb.close()
+        hermes_state._set_last_init_error(None)
+
+    assert guidance, "quarantine must record the recovery guidance"
+    assert product_cli_name() == "haos", "HAOS_HOME must select the haos brand"
+    assert product_command("sessions") in guidance
+    assert "hermes sessions" not in guidance
+    assert f"`{product_cli_name()}` chat only" in guidance
