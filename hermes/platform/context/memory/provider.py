@@ -21,6 +21,8 @@ from agent.memory_provider import MemoryProvider
 from hermes.platform.context.memory.decisions import DecisionStore
 from hermes.platform.context.memory.graphrag import GraphRAGAdapter
 from hermes.platform.context.memory.obsidian import ObsidianAdapter
+from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore
+from hermes.platform.context.memory.retrieval import HybridMemoryRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,8 @@ class HermesFabricMemoryProvider(MemoryProvider):
         obsidian_adapter: Optional[ObsidianAdapter] = None,
         graphrag_adapter: Optional[GraphRAGAdapter] = None,
         decision_store: Optional[DecisionStore] = None,
+        canonical_store: Optional[CanonicalMemoryStore] = None,
+        write_handler: Optional[Any] = None,
     ):
         if isinstance(vault_path, str):
             self.vault_path = Path(vault_path)
@@ -48,6 +52,9 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self.obsidian = obsidian_adapter or ObsidianAdapter(self.vault_path)
         self.decisions = decision_store or DecisionStore()
         self.graphrag = graphrag_adapter or GraphRAGAdapter()
+        self.canonical_store = canonical_store
+        self._write_handler = write_handler
+        self._session_scopes: Dict[str, List[str]] = {}
         self._session_id: str = ""
         from hermes_constants import get_hermes_home
 
@@ -67,6 +74,10 @@ class HermesFabricMemoryProvider(MemoryProvider):
             self.obsidian.set_vault_path(self.vault_path)
 
         self.vault_path.mkdir(parents=True, exist_ok=True)
+        scopes = kwargs.get("memory_scopes", ("project", "global"))
+        if not isinstance(scopes, (list, tuple)) or not all(isinstance(scope, str) for scope in scopes):
+            raise ValueError("memory_scopes must be a list of scope strings")
+        self._session_scopes[session_id] = list(scopes)
         self._initialized = True
         logger.info("HermesFabricMemoryProvider initialized for session %s at %s", session_id, self.vault_path)
 
@@ -90,22 +101,13 @@ class HermesFabricMemoryProvider(MemoryProvider):
         return []
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        """Prefetch upstream: busca notas relevantes no Obsidian e decisões ativas."""
-        if not self._initialized:
+        """Return only canonical, scope-authorized records for the session."""
+        if not self._initialized or self.canonical_store is None:
             return ""
-
-        blocks: List[str] = []
-        # Busca no Obsidian
-        obs_items = self.obsidian.retrieve(query=query)
-        for item in obs_items[:3]:
-            blocks.append(f"[{item.source_uri}] {item.get_representation('summary')}")
-
-        # Busca no DecisionStore
-        dec_items = self.decisions.retrieve(query=query)
-        for item in dec_items[:2]:
-            blocks.append(f"[{item.source_uri}] {item.get_representation('summary')}")
-
-        return "\n\n".join(blocks)
+        scopes = self._session_scopes.get(session_id or self._session_id, ["project", "global"])
+        return HybridMemoryRetriever(self.canonical_store).format_context(
+            query, scopes, limit=5, budget_chars=5000,
+        )
 
     def sync_turn(self, user_message: str, assistant_response: str, **kwargs: Any) -> None:
         """Observa cada turno da conversa para identificar fatos e decisões importantes."""
@@ -118,30 +120,23 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self._initialized = False
 
     def remember(self, content: str, target: str = "notes", metadata: Optional[Dict[str, Any]] = None) -> None:
-        """Grava ou notifica o provedor de memória upstream sobre um fato ou decisão."""
-        meta = metadata or {}
-        # A coordinator already committed and projected this record. Re-entering
-        # the provider here would write the DecisionStore/Obsidian a second time.
+        """Route external writes to the coordinator; never write projections directly."""
+        meta = dict(metadata or {})
         if meta.get("fabric_committed"):
             return
-        # Se for decisão de arquitetura, reflete no DecisionStore e Obsidian se não estiverem gravadas
-        if "ADR" in content or target == "architecture":
-            dec_id = meta.get("id", f"ADR-LOCAL-{int(len(content))}")
-            title = meta.get("title", "Architecture Decision")
-            if not self.decisions.get_decision(dec_id):
-                self.decisions.record_decision(dec_id, title, content)
-            obs_path = f"20-Architecture/{dec_id}.md"
-            if not (self.vault_path / obs_path).exists() and not (Path(self.obsidian.vault_path) / obs_path).exists():
-                self.obsidian.write_note(obs_path, title, content, doc_type="architecture_decision", metadata=meta)
+        scope = meta.get("scope", "project")
+        if self._write_handler is not None:
+            self._write_handler(content, scope=scope, provenance=meta.get("provenance"), metadata=meta, sync=True)
+            return
+        if self.canonical_store is None:
+            raise RuntimeError("Memory Fabric writer is not configured")
+        self.canonical_store.append(
+            content=content, scope=scope,
+            kind="decision" if target == "architecture" else "fact",
+            provenance=tuple({"uri": uri} for uri in meta.get("provenance", []) if isinstance(uri, str)),
+            metadata=meta, idempotency_key=meta.get("id"),
+        )
 
     def on_memory_write(self, action: str, target: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
-        """Intercepta comandos de escrita da ferramenta `memory` upstream."""
-        meta = metadata or {}
-        if meta.get("fabric_committed"):
-            return
-        # Se for decisão de arquitetura, reflete no DecisionStore e Obsidian
-        if "ADR" in content or target == "architecture":
-            dec_id = meta.get("id", f"ADR-LOCAL-{int(len(content))}")
-            title = meta.get("title", "Architecture Decision")
-            self.decisions.record_decision(dec_id, title, content)
-            self.obsidian.write_note(f"20-Architecture/{dec_id}.md", title, content, doc_type="architecture_decision")
+        """Compatibility hook; all upstream writes enter the same command path."""
+        self.remember(content, target=target, metadata=metadata)
