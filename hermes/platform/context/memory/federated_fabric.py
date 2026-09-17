@@ -51,7 +51,8 @@ from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
 from hermes.platform.context.memory.router import MemoryRouter
 from hermes.platform.context.memory.schemas import KnowledgeItem
-from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore
+from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
+from hermes.platform.context.memory.projection_runner import ProjectionRunner
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,14 @@ class FederatedMemoryCoordinator:
             decision_store=self.decisions,
             canonical_store=self.canonical_store,
             write_handler=self.ingest_candidate_fact,
+        )
+        self.projection_runner = ProjectionRunner(
+            self.canonical_store,
+            {
+                "obsidian": self._project_obsidian,
+                "decisions": self._project_decisions,
+                "graphrag": self._project_graphrag,
+            },
         )
 
         self.router = MemoryRouter()
@@ -419,116 +428,69 @@ class FederatedMemoryCoordinator:
             self.graphrag_updater.store = self.graphrag_store
         return self.graphrag_store
 
-    def _sync_stores(self, record: FederatedFactRecord, superseded_ids: List[str]) -> None:
-        """Executa a sincronização multi-store do fato:
-        - Obsidian Vault: Escreve nota canônica em markdown se for decisão, convenção ou projeto.
-        - GraphRAG: Emite KnowledgeEvent para atualizar entidades e relacionamentos no grafo.
-        - Upstream Hermes Memory: Notifica provider upstream.
-        """
-        is_decision = (
-            record.proposed_destination == "obsidian"
-            or "ADR" in record.fact
+    @staticmethod
+    def _from_stored(stored: MemoryRecord) -> FederatedFactRecord:
+        return FederatedFactRecord(
+            id=stored.record_id, fact=stored.content, scope=stored.scope,
+            provenance=[str(p.get("uri", "")) for p in stored.provenance if p.get("uri")],
+            confidence=stored.confidence,
+            proposed_destination="obsidian" if stored.kind == "decision" else "memory",
+            created_at=stored.valid_from, updated_at=stored.valid_from,
+            supersedes=list(stored.supersedes), metadata=stored.metadata,
+        )
+
+    @staticmethod
+    def _is_decision(record: FederatedFactRecord) -> bool:
+        return (record.proposed_destination == "obsidian" or "ADR" in record.fact
             or "decision" in record.fact.lower()
-            or "decision" in record.metadata.get("type", "").lower()
-        )
+            or "decision" in str(record.metadata.get("type", "")).lower())
 
-        # Persistência do grafo: cria (lazy) o store canônico e liga no
-        # updater antes do publish, para o KnowledgeEvent abaixo ser espelhado.
-        self._ensure_graphrag_store()
+    @staticmethod
+    def _projection_meta(record: FederatedFactRecord) -> Dict[str, Any]:
+        return {**record.metadata, "id": record.id, "scope": record.scope,
+            "confidence": record.confidence, "provenance": record.provenance,
+            "supersedes": record.supersedes, "created_at": record.created_at,
+            "updated_at": record.updated_at, "fabric_committed": True}
 
-        title = record.metadata.get("title") or f"Memory Note - {record.id}"
-        meta = {
-            "id": record.id,
-            "scope": record.scope,
-            "confidence": record.confidence,
-            "provenance": record.provenance,
-            "supersedes": record.supersedes,
-            "created_at": record.created_at,
-            "updated_at": record.updated_at,
-        }
-
-        # 1. Sincronização com Obsidian Vault & DecisionStore
-        relative_path = f"20-Architecture/{record.id}.md" if is_decision else f"10-Memory/{record.scope}/{record.id}.md"
-        doc_type = "architecture_decision" if is_decision else "memory_fact"
-
-        if is_decision:
-            self.decisions.record_decision(
-                decision_id=record.id,
-                title=title,
-                content=record.fact,
-                supersedes=record.supersedes,
-            )
-
-        content_lines = [
-            f"# {title}\n",
-            f"**Scope:** `{record.scope}` | **Confidence:** `{record.confidence:.2f}`\n",
-            f"**Status:** `{record.status}`\n",
-        ]
+    def _project_obsidian(self, stored: MemoryRecord) -> None:
+        record = self._from_stored(stored)
+        is_decision = self._is_decision(record)
+        title = record.metadata.get("title") or "Memory Note - %s" % record.id
+        relative_path = ("20-Architecture/%s.md" % record.id if is_decision
+            else "10-Memory/%s/%s.md" % (record.scope, record.id))
+        lines = ["# %s\n" % title, "**Scope:** `%s` | **Confidence:** `%.2f`\n" % (record.scope, record.confidence), "**Status:** `consolidated`\n"]
         if record.supersedes:
-            content_lines.append(f"**Supersedes:** {', '.join(record.supersedes)}\n")
-        if record.superseded_by:
-            content_lines.append(f"**Superseded by:** {record.superseded_by}\n")
+            lines.append("**Supersedes:** %s\n" % ", ".join(record.supersedes))
+        lines.extend(["\n## Content\n", record.fact, "\n"])
+        self.obsidian.write_note(relative_path, title, "\n".join(lines),
+            doc_type="architecture_decision" if is_decision else "memory_fact",
+            metadata=self._projection_meta(record))
 
-        content_lines.extend(["\n## Content\n", record.fact, "\n"])
-        obsidian_markdown = "\n".join(content_lines)
+    def _project_decisions(self, stored: MemoryRecord) -> None:
+        record = self._from_stored(stored)
+        if not self._is_decision(record):
+            return
+        title = record.metadata.get("title") or "Decision - %s" % record.id
+        self.decisions.record_decision(record.id, title, record.fact, supersedes=record.supersedes)
 
-        self.obsidian.write_note(
-            relative_path=relative_path,
-            title=title,
-            content=obsidian_markdown,
-            metadata=meta,
-            doc_type=doc_type,
+    def _project_graphrag(self, stored: MemoryRecord) -> None:
+        record = self._from_stored(stored)
+        self._ensure_graphrag_store()
+        title = record.metadata.get("title") or "Memory Note - %s" % record.id
+        event = KnowledgeEvent.create(
+            event_type=KnowledgeEventType.DECISION_RECORDED if self._is_decision(record) else KnowledgeEventType.NOTE_CREATED,
+            event_id="memory.changed:" + record.id, uri="memory://" + record.id,
+            title=title, content=record.fact, metadata=self._projection_meta(record),
         )
-        self.canonical_store.ack(f"memory.changed:{record.id}", "obsidian")
-        # DecisionStore is a projection too; for facts this acknowledgement is a
-        # deliberate no-op projection, not a missing write.
-        self.canonical_store.ack(f"memory.changed:{record.id}", "decisions")
+        self.event_bus.publish(event, enqueue=False)
 
-        # 2. Sincronização com GraphRAG via EventBus
-        event_type = KnowledgeEventType.DECISION_RECORDED if is_decision else KnowledgeEventType.NOTE_CREATED
-        k_event = KnowledgeEvent.create(
-            event_type=event_type,
-            uri=f"obsidian://{relative_path}",
-            title=title,
-            content=record.fact,
-            metadata={**meta, "fabric_committed": True},
-        )
-        # The incremental updater is synchronous; do not enqueue the same event
-        # as well, otherwise it is processed twice when the queue is drained.
-        self.event_bus.publish(k_event, enqueue=False)
-        self.canonical_store.ack(f"memory.changed:{record.id}", "graphrag")
-
-        # 3. Notificação do Upstream Hermes Memory Provider
-        self.memory_provider.remember(
-            content=record.fact,
-            target="architecture" if is_decision else "notes",
-            metadata={**meta, "fabric_committed": True},
-        )
+    def _sync_stores(self, record: FederatedFactRecord, superseded_ids: List[str]) -> None:
+        """Drain durable projection jobs; projections never write canonical state."""
+        self.projection_runner.drain()
 
     def recover_projections(self, worker_id: str = "fabric-recovery") -> int:
-        """Replay unacknowledged outbox records after a crash.
-
-        Projection writes are idempotent by stable record ID; an acknowledgement
-        is emitted only after the projection completed. This method is safe to
-        invoke repeatedly and is intentionally synchronous during bootstrap.
-        """
-        recovered = 0
-        for event_id, stored in self.canonical_store.claim("obsidian", worker_id):
-            record = FederatedFactRecord(
-                id=stored.record_id, fact=stored.content, scope=stored.scope,
-                provenance=[str(p.get("uri", "")) for p in stored.provenance if p.get("uri")],
-                confidence=stored.confidence,
-                proposed_destination="obsidian" if stored.kind == "decision" else "memory",
-                created_at=stored.valid_from, updated_at=stored.valid_from,
-                supersedes=list(stored.supersedes), metadata=stored.metadata,
-            )
-            try:
-                self._sync_stores(record, list(stored.supersedes))
-                recovered += 1
-            except Exception as exc:
-                self.canonical_store.fail(event_id, repr(exc))
-                logger.exception("Memory projection recovery failed for %s", event_id)
-        return recovered
+        self.projection_runner.worker_id = worker_id
+        return self.projection_runner.drain()
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
         """Obtém um registro de fato por ID."""
