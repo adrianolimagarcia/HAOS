@@ -139,6 +139,23 @@ class CanonicalMemoryStore:
             rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (query, *scopes, limit)).fetchall()
         return [self._row(row) for row in rows]
 
+    def get(self, record_id: str) -> Optional[MemoryRecord]:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM memory_records WHERE record_id=?", (record_id,)).fetchone()
+        return self._row(row) if row is not None else None
+
+    def list_records(self, scopes: Sequence[str] = tuple(VALID_SCOPES), include_superseded: bool = False) -> List[MemoryRecord]:
+        if not scopes:
+            return []
+        marks = ",".join("?" for _ in scopes)
+        status = "" if include_superseded else " AND status='active'"
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM memory_records WHERE scope IN (" + marks + ")" + status + " ORDER BY valid_from DESC",
+                tuple(scopes),
+            ).fetchall()
+        return [self._row(row) for row in rows]
+
     def active_by_ids(self, record_ids: Sequence[str], scopes: Sequence[str]) -> List[MemoryRecord]:
         """Resolve index candidates through canonical scope/status policy."""
         if not record_ids or not scopes:
