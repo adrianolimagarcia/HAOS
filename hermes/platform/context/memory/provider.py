@@ -120,6 +120,10 @@ class HermesFabricMemoryProvider(MemoryProvider):
     def remember(self, content: str, target: str = "notes", metadata: Optional[Dict[str, Any]] = None) -> None:
         """Grava ou notifica o provedor de memória upstream sobre um fato ou decisão."""
         meta = metadata or {}
+        # A coordinator already committed and projected this record. Re-entering
+        # the provider here would write the DecisionStore/Obsidian a second time.
+        if meta.get("fabric_committed"):
+            return
         # Se for decisão de arquitetura, reflete no DecisionStore e Obsidian se não estiverem gravadas
         if "ADR" in content or target == "architecture":
             dec_id = meta.get("id", f"ADR-LOCAL-{int(len(content))}")
@@ -133,6 +137,8 @@ class HermesFabricMemoryProvider(MemoryProvider):
     def on_memory_write(self, action: str, target: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """Intercepta comandos de escrita da ferramenta `memory` upstream."""
         meta = metadata or {}
+        if meta.get("fabric_committed"):
+            return
         # Se for decisão de arquitetura, reflete no DecisionStore e Obsidian
         if "ADR" in content or target == "architecture":
             dec_id = meta.get("id", f"ADR-LOCAL-{int(len(content))}")
