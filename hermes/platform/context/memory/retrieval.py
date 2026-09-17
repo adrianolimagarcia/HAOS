@@ -39,9 +39,12 @@ class HybridMemoryRetriever:
             ranks[record.record_id] = ranks.get(record.record_id, 0.0) + self._rrf(rank, 1.0)
             channels.setdefault(record.record_id, []).append("fts")
         if self.vector_search is not None:
-            # Contract: vector search returns canonical record IDs only. We
-            # re-resolve through FTS/canonical store before emitting content.
-            for rank, record_id in enumerate(self.vector_search(query, scopes, max(20, limit * 4)), 1):
+            # Contract: vector search returns canonical record IDs only. Resolve
+            # every ID again through the journal before emitting any content.
+            vector_ids = tuple(self.vector_search(query, scopes, max(20, limit * 4)))
+            for record in self.store.active_by_ids(vector_ids, scopes):
+                by_id[record.record_id] = record
+            for rank, record_id in enumerate(vector_ids, 1):
                 if record_id in by_id:
                     ranks[record_id] = ranks.get(record_id, 0.0) + self._rrf(rank, 0.9)
                     channels.setdefault(record_id, []).append("vector")
