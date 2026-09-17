@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 import time
+import threading
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -36,7 +37,8 @@ class CanonicalMemoryStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path), timeout=30, isolation_level=None)
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(str(self.path), timeout=30, isolation_level=None, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
@@ -44,18 +46,20 @@ class CanonicalMemoryStore:
         self._migrate()
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
-        self._conn.execute("BEGIN IMMEDIATE")
-        try:
-            yield self._conn
-        except Exception:
-            self._conn.execute("ROLLBACK")
-            raise
-        else:
-            self._conn.execute("COMMIT")
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield self._conn
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+            else:
+                self._conn.execute("COMMIT")
 
     def _migrate(self) -> None:
         with self._tx() as db:
@@ -122,7 +126,8 @@ class CanonicalMemoryStore:
         if not query.strip() or not scopes:
             return []
         marks = ",".join("?" for _ in scopes)
-        rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (query, *scopes, limit)).fetchall()
+        with self._lock:
+            rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (query, *scopes, limit)).fetchall()
         return [self._row(row) for row in rows]
 
     def active_by_ids(self, record_ids: Sequence[str], scopes: Sequence[str]) -> List[MemoryRecord]:
@@ -131,10 +136,11 @@ class CanonicalMemoryStore:
             return []
         ids = ",".join("?" for _ in record_ids)
         marks = ",".join("?" for _ in scopes)
-        rows = self._conn.execute(
-            "SELECT * FROM memory_records WHERE status='active' AND record_id IN (" + ids + ") AND scope IN (" + marks + ")",
-            (*record_ids, *scopes),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM memory_records WHERE status='active' AND record_id IN (" + ids + ") AND scope IN (" + marks + ")",
+                (*record_ids, *scopes),
+            ).fetchall()
         return [self._row(row) for row in rows]
 
     @staticmethod
