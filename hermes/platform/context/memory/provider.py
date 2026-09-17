@@ -23,6 +23,7 @@ from hermes.platform.context.memory.graphrag import GraphRAGAdapter
 from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, VALID_SCOPES
 from hermes.platform.context.memory.retrieval import HybridMemoryRetriever
+from hermes.platform.context.memory.access import MemoryAccessContext
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self._write_handler = write_handler
         self._recovery_handler = recovery_handler
         self._session_scopes: Dict[str, List[str]] = {}
+        self._session_access: Dict[str, MemoryAccessContext] = {}
         self._session_id: str = ""
         from hermes_constants import get_hermes_home
 
@@ -80,6 +82,11 @@ class HermesFabricMemoryProvider(MemoryProvider):
         if not isinstance(scopes, (list, tuple)) or not all(isinstance(scope, str) and scope in VALID_SCOPES for scope in scopes):
             raise ValueError("memory_scopes must contain only valid Memory Fabric scopes")
         self._session_scopes[session_id] = list(scopes)
+        access = kwargs.get("memory_access_context")
+        if access is not None:
+            if not isinstance(access, MemoryAccessContext):
+                raise TypeError("memory_access_context must be MemoryAccessContext")
+            self._session_access[session_id] = access
         self._initialized = True
         if self._recovery_handler is not None:
             self._recovery_handler()
@@ -111,6 +118,7 @@ class HermesFabricMemoryProvider(MemoryProvider):
         scopes = self._session_scopes.get(session_id or self._session_id, ["project", "global"])
         return HybridMemoryRetriever(self.canonical_store).format_context(
             query, scopes, limit=5, budget_chars=5000,
+            access=self._session_access.get(session_id or self._session_id),
         )
 
     def sync_turn(self, user_message: str, assistant_response: str, **kwargs: Any) -> None:
@@ -129,8 +137,9 @@ class HermesFabricMemoryProvider(MemoryProvider):
         if meta.get("fabric_committed"):
             return
         scope = meta.get("scope", "project")
+        access = meta.pop("_access_context", None)
         if self._write_handler is not None:
-            self._write_handler(content, scope=scope, provenance=meta.get("provenance"), metadata=meta, sync=True)
+            self._write_handler(content, scope=scope, provenance=meta.get("provenance"), metadata=meta, sync=True, access_context=access)
             return
         if self.canonical_store is None:
             raise RuntimeError("Memory Fabric writer is not configured")
