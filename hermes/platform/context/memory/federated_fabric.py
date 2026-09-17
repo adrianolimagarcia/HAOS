@@ -484,7 +484,7 @@ class FederatedMemoryCoordinator:
         self.memory_provider.remember(
             content=record.fact,
             target="architecture" if is_decision else "notes",
-            metadata=meta,
+            metadata={**meta, "fabric_committed": True},
         )
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
@@ -543,3 +543,4 @@ class FederatedMemoryCoordinator:
         self.memory_provider.shutdown()
         if self._owns_graphrag_store and self.graphrag_store is not None:
             self.graphrag_store.close()
+        self.canonical_store.close()
