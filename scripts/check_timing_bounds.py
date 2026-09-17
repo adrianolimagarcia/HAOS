@@ -37,6 +37,7 @@ import ast
 import json
 import re
 import sys
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Optional, Set, Tuple
@@ -110,9 +111,19 @@ def _test_name_for(node: ast.AST, funcs: List[Tuple[str, ast.AST]]) -> str:
 def scan_file(path: Path, root: Path = ROOT) -> List[Finding]:
     """Tight wall-clock upper bounds in one test file."""
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError):
+        source = path.read_text(encoding="utf-8")
+    except OSError:
         return []
+    # `ast.parse` warns about invalid escape sequences in the file it reads. Those
+    # warnings belong to the scanned file's author, not to this check — a lint that
+    # inspects a file should not print diagnostics about it, or the output reads as
+    # if THIS script had the bad escapes.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
     rel = str(path.relative_to(root))
     funcs = _enclosing_test(tree)
     findings: List[Finding] = []
