@@ -42,6 +42,9 @@ class FederatedHermesMemoryProvider(MemoryProvider):
 
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base.initialize(session_id, **kwargs)
+        if self._coordinator is not None:
+            self._coordinator.close()
+            self._coordinator = None
 
     def system_prompt_block(self) -> str:
         return self._base.system_prompt_block()

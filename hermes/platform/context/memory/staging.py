@@ -33,6 +33,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -71,6 +74,7 @@ class MemoryStagingStore:
         from hermes_constants import get_hermes_home  # function-level: lint A6
 
         self.root = Path(root_dir) if root_dir is not None else Path(get_hermes_home()) / "memory" / "staging"
+        self._lock = threading.RLock()
 
     @property
     def index_file(self) -> Path:
@@ -91,16 +95,32 @@ class MemoryStagingStore:
         try:
             data = json.loads(self.index_file.read_text(encoding="utf-8"))
         except Exception as exc:
-            logger.warning("Staging ilegivel em %s: %s", self.index_file, exc)
-            return {}
+            logger.warning("Staging ilegivel em %s: %s; tentando recovery", self.index_file, exc)
+            self.recover_from_delta()
+            try:
+                data = json.loads(self.index_file.read_text(encoding="utf-8"))
+            except Exception:
+                return {}
         return data if isinstance(data, dict) else {}
 
     def _save(self, records: Dict[str, Dict[str, Any]]) -> None:
         self.root.mkdir(parents=True, exist_ok=True)  # lazy: instanciar o store nao escreve
-        self.index_file.write_text(
-            json.dumps(records, indent=2, ensure_ascii=False, sort_keys=True),
-            encoding="utf-8",
-        )
+        payload = json.dumps(records, indent=2, ensure_ascii=False, sort_keys=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{self.index_file.name}.", dir=self.root)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_name, self.index_file)
+            dir_fd = os.open(self.root, os.O_DIRECTORY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
         self._maybe_compact()
 
     # ── Jornal aditivo (P12 — escrita em delta) ───────────────────────────
