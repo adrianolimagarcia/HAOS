@@ -1,7 +1,7 @@
-"""ObsidianAdapter — Acesso ao cofre Obsidian (Human-Auditable Canonical Truth).
+"""ObsidianAdapter — projeção Markdown humana e auditável do Memory Fabric.
 
 Implementa acesso ao cofre (Vault) com estratégia Filesystem First + frontmatter parsing.
-O Obsidian é a fonte de verdade canônica humana; o GraphRAG é apenas uma projeção derivada.
+O journal SQLite do Memory Fabric é a fonte canônica; este vault é uma projeção auditável e reconstruível.
 
 ``retrieve(query)`` usa um índice FTS5 derivado (``VaultFTSIndex``, refresh
 incremental por mtime) quando ele é construível; se o índice não puder ser
@@ -111,7 +111,7 @@ class ObsidianAdapter(ContextSource):
         return item
 
     def write_note(self, relative_path: str, title: str, content: str, doc_type: str = "project_doc", metadata: Optional[Dict[str, str]] = None) -> ContextItem:
-        """Escreve nota canônica no cofre com frontmatter auditável."""
+        """Aplica uma nota de projeção no cofre com frontmatter auditável."""
         full_path = self.vault_path / relative_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
