@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
+from hermes.platform.context.memory.access import MemoryAccessContext
 
 @dataclass(frozen=True)
 class RetrievalHit:
@@ -26,12 +27,14 @@ class HybridMemoryRetriever:
     def _rrf(rank: int, weight: float, k: int = 60) -> float:
         return weight / float(k + rank)
 
-    def retrieve(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000) -> List[RetrievalHit]:
+    def retrieve(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000, access: Optional[MemoryAccessContext] = None) -> List[RetrievalHit]:
         scopes = tuple(dict.fromkeys(allowed_scopes))
         if not scopes or limit <= 0 or budget_chars <= 0:
             return []
         # FTS is both a candidate channel and the authority filter.
         fts = self.store.search_fts(query, scopes, max(20, limit * 4))
+        if access is not None:
+            fts = [record for record in fts if access.can_read(record.scope, record.metadata)]
         ranks: Dict[str, float] = {}
         channels: Dict[str, List[str]] = {}
         by_id = {record.record_id: record for record in fts}
@@ -43,7 +46,8 @@ class HybridMemoryRetriever:
             # every ID again through the journal before emitting any content.
             vector_ids = tuple(self.vector_search(query, scopes, max(20, limit * 4)))
             for record in self.store.active_by_ids(vector_ids, scopes):
-                by_id[record.record_id] = record
+                if access is None or access.can_read(record.scope, record.metadata):
+                    by_id[record.record_id] = record
             for rank, record_id in enumerate(vector_ids, 1):
                 if record_id in by_id:
                     ranks[record_id] = ranks.get(record_id, 0.0) + self._rrf(rank, 0.9)
@@ -67,9 +71,9 @@ class HybridMemoryRetriever:
                 break
         return chosen
 
-    def format_context(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000) -> str:
+    def format_context(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000, access: Optional[MemoryAccessContext] = None) -> str:
         blocks = []
-        for hit in self.retrieve(query, allowed_scopes, limit, budget_chars):
+        for hit in self.retrieve(query, allowed_scopes, limit, budget_chars, access):
             rec = hit.record
             provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
             blocks.append("[memory:%s scope=%s provenance=%s]\n%s" % (rec.record_id, rec.scope, provenance or "unknown", rec.content))
