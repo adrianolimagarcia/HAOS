@@ -96,7 +96,7 @@ class CanonicalMemoryStore:
             db.execute("INSERT INTO memory_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record.record_id, record.logical_id, record.revision, record.scope, record.kind, record.status, record.content, record.content_hash, record.confidence, json.dumps(record.provenance, sort_keys=True), json.dumps(record.metadata, sort_keys=True), record.valid_from, None, json.dumps(record.supersedes), now))
             if supersedes:
                 db.executemany("UPDATE memory_records SET status='superseded', valid_until=? WHERE record_id=? AND status='active'", [(now, item) for item in supersedes])
-            db.execute("INSERT INTO memory_outbox VALUES (?,?,?,?,?,?,?,?,?)", ("memory.changed:" + record.record_id, record.record_id, "memory.changed", json.dumps(asdict(record), sort_keys=True, default=list), now, now, 0, None, None, None))
+            db.execute("INSERT INTO memory_outbox VALUES (?,?,?,?,?,?,?,?,?,?)", ("memory.changed:" + record.record_id, record.record_id, "memory.changed", json.dumps(asdict(record), sort_keys=True, default=list), now, now, 0, None, None, None))
             return record
 
     def claim(self, projection: str, worker_id: str, limit: int = 32, lease_seconds: float = 60.0) -> List[Tuple[str, MemoryRecord]]:
