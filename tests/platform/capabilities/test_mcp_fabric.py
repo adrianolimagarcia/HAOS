@@ -112,26 +112,50 @@ class TestMCPDiscoveryHealth(_TempHome):
         self.assertEqual(fabric.discover_tools(), [])
         self.assertEqual(fabric.probe_once(), {})
 
-    def test_stdlib_only_module_import_and_degradation(self):
-        # O fabric importa stdlib-only no nível de módulo e degrada para []/{}
-        # quando o extra ``mcp`` do kernel NÃO está instalado: roda um
-        # interpretador -S (sem site-packages) com o checkout no sys.path e
-        # prova que módulo importa e as superfícies degradam ({} / [] / []).
+    def test_degrades_without_the_optional_mcp_extra(self):
+        # O contrato é: o fabric importa e degrada para []/{} quando o extra OPCIONAL
+        # ``mcp`` do kernel não está instalado. O que NÃO é contrato é pureza stdlib —
+        # PyYAML é dependência core e o cliente MCP pode usá-la.
+        #
+        # A versão anterior deste teste rodava ``python -S``, que remove TODO o
+        # site-packages: provava uma condição bem mais forte que a intenção (nada de
+        # terceiros, nem as dependências core) e por isso exigia contorcionismos no
+        # cliente MCP — ``from utils import normalize_proxy_url`` em
+        # ``tools/mcp_tool_transport.py`` foi movido para dentro de uma função só para
+        # satisfazê-lo. Aqui o extra é bloqueado cirurgicamente: ``mcp``/``httpx2``/
+        # ``starlette`` somem, as dependências core permanecem.
         root = pathlib.Path(__file__).resolve().parents[3]
-        script = (
-            "import json;"
-            "import hermes.platform.capabilities.mcp.fabric as f;"
-            "fab = f.MCPFabric();"
-            "out = {"
-            "'servers': fab.discover_servers(), 'health': fab.health(),"
-            "'tools': fab.discover_tools(), 'probe': fab.probe_once(),"
-            "'scope': fab.scope_servers({}, capabilities_prefer=['x']),"
-            "'provider': f.MCPCapabilityProvider(fabric=fab).provider_id"
-            "};"
-            "print(json.dumps(out))"
-        )
+        script = "\n".join((
+            "import json, sys",
+            "BLOCKED = {'mcp', 'httpx2', 'starlette'}",
+            "class Blocker:",
+            "    def find_spec(self, name, path=None, target=None):",
+            "        if name.split('.')[0] in BLOCKED:",
+            "            raise ModuleNotFoundError('No module named %r' % name, name=name)",
+            "        return None",
+            "sys.meta_path.insert(0, Blocker())",
+            # Prova que o bloqueio é real e que as dependências core continuam lá: sem
+            # estas duas checagens o teste poderia passar por não ter bloqueado nada.
+            "import yaml",
+            "assert yaml.__version__",
+            "try:",
+            "    import mcp",
+            "except ModuleNotFoundError:",
+            "    pass",
+            "else:",
+            "    raise SystemExit('o extra mcp deveria estar bloqueado')",
+            "import hermes.platform.capabilities.mcp.fabric as f",
+            "fab = f.MCPFabric()",
+            "out = {",
+            "    'servers': fab.discover_servers(), 'health': fab.health(),",
+            "    'tools': fab.discover_tools(), 'probe': fab.probe_once(),",
+            "    'scope': fab.scope_servers({}, capabilities_prefer=['x']),",
+            "    'provider': f.MCPCapabilityProvider(fabric=fab).provider_id,",
+            "}",
+            "print(json.dumps(out))",
+        ))
         proc = subprocess.run(
-            [sys.executable, "-S", "-c", script],
+            [sys.executable, "-c", script],
             cwd=str(root), capture_output=True, text=True, timeout=180,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
