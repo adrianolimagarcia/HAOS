@@ -21,7 +21,7 @@ from agent.memory_provider import MemoryProvider
 from hermes.platform.context.memory.decisions import DecisionStore
 from hermes.platform.context.memory.graphrag import GraphRAGAdapter
 from hermes.platform.context.memory.obsidian import ObsidianAdapter
-from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore
+from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, VALID_SCOPES
 from hermes.platform.context.memory.retrieval import HybridMemoryRetriever
 
 logger = logging.getLogger(__name__)
@@ -75,8 +75,8 @@ class HermesFabricMemoryProvider(MemoryProvider):
 
         self.vault_path.mkdir(parents=True, exist_ok=True)
         scopes = kwargs.get("memory_scopes", ("project", "global"))
-        if not isinstance(scopes, (list, tuple)) or not all(isinstance(scope, str) for scope in scopes):
-            raise ValueError("memory_scopes must be a list of scope strings")
+        if not isinstance(scopes, (list, tuple)) or not all(isinstance(scope, str) and scope in VALID_SCOPES for scope in scopes):
+            raise ValueError("memory_scopes must contain only valid Memory Fabric scopes")
         self._session_scopes[session_id] = list(scopes)
         self._initialized = True
         logger.info("HermesFabricMemoryProvider initialized for session %s at %s", session_id, self.vault_path)
