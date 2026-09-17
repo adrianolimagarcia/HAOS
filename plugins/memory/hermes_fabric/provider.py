@@ -7,12 +7,62 @@ memory:
 
 from __future__ import annotations
 
-from typing import Any
-
+from agent.memory_provider import MemoryProvider
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
 
 
+class FederatedHermesMemoryProvider(MemoryProvider):
+    """Provider externo único; o Coordinator é o dono do pipeline de escrita."""
+
+    def __init__(self) -> None:
+        from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
+        self._base = HermesFabricMemoryProvider()
+        self.coordinator = FederatedMemoryCoordinator(memory_provider=self._base)
+
+    @property
+    def name(self) -> str:
+        return self._base.name
+
+    def is_available(self) -> bool:
+        return self._base.is_available()
+
+    def initialize(self, session_id: str, **kwargs: Any) -> None:
+        self._base.initialize(session_id, **kwargs)
+
+    def system_prompt_block(self) -> str:
+        return self._base.system_prompt_block()
+
+    def prefetch(self, query: str, *, session_id: str = "") -> str:
+        return self._base.prefetch(query, session_id=session_id)
+
+    def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
+        self._base.queue_prefetch(query, session_id=session_id)
+
+    def sync_turn(self, user_content: str, assistant_content: str, *, session_id: str = "", messages: Any = None, turn_author: Any = None) -> None:
+        content = assistant_content.strip()
+        if content and ("ADR" in content or "DECISION" in content):
+            self.coordinator.ingest_candidate_fact(
+                fact=content, scope="project", provenance=f"session://{session_id}",
+                confidence=1.0, metadata={"source_turn": user_content}, sync=True,
+            )
+        else:
+            self._base.sync_turn(user_content, assistant_content, session_id=session_id, messages=messages, turn_author=turn_author)
+
+    def get_tool_schemas(self) -> list[dict[str, Any]]:
+        return self._base.get_tool_schemas()
+
+    def on_memory_write(self, action: str, target: str, content: str, metadata: Any = None) -> None:
+        if action in {"add", "replace"}:
+            self.coordinator.ingest_candidate_fact(
+                fact=content, scope=str((metadata or {}).get("scope") or "project"),
+                provenance=(metadata or {}).get("provenance"), confidence=float((metadata or {}).get("confidence", 1.0)),
+                metadata=metadata or {}, sync=True,
+            )
+
+    def shutdown(self) -> None:
+        self.coordinator.close()
+
+
 def register(ctx: Any) -> None:
-    """Registra o HermesFabricMemoryProvider no PluginContext de memory."""
-    provider = HermesFabricMemoryProvider()
-    ctx.register_memory_provider(provider)
+    """Registra o runtime federado único no PluginContext."""
+    ctx.register_memory_provider(FederatedHermesMemoryProvider())

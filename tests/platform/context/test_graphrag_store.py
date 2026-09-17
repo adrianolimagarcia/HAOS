@@ -56,7 +56,20 @@ def _note_event(uri, title, content, event_type=KnowledgeEventType.NOTE_CREATED,
 # --------------------------------------------------------------------------- #
 # 1. GraphRAGStore — schema / WAL / idempotência / default path
 # --------------------------------------------------------------------------- #
-class TestGraphRAGStore:
+    def test_apply_event_persists_claims_and_is_idempotent(self, tmp_path):
+        path = tmp_path / "graph.db"
+        store = GraphRAGStore(path)
+        assert store.apply_event("e1", "NOTE_CREATED", "obsidian://a", [("A", "service", "a")], [("A", "B", "calls", "ab")], scope="project")
+        assert not store.apply_event("e1", "NOTE_CREATED", "obsidian://a", [("A", "service", "a")], [], scope="project")
+        store.close()
+        reopened = GraphRAGStore(path)
+        assert len(reopened.list_entities()) == 1
+        assert len(reopened.list_relations()) == 1
+        assert reopened.apply_event("e2", "NOTE_DELETED", "obsidian://a", [], [], scope="project")
+        assert reopened.list_entities() == []
+        assert reopened.list_relations() == []
+        reopened.close()
+
     def test_default_path_is_hermes_home_memory_graphrag_db(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         # O default canônico precisa ser o MESMO para a stack A escrever e a

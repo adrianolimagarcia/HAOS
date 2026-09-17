@@ -65,6 +65,7 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self._dedupe_path = self._hermes_home / "memory" / "fabric_dedupe.json"
         self._ledger_path = self._hermes_home / "memory" / "fabric_ledger.db"
         self._ledger: Optional[sqlite3.Connection] = None
+        self._coordinator: Any = None
 
     def is_available(self) -> bool:
         """Check that the configured vault is usable without performing network I/O."""
@@ -209,7 +210,7 @@ class HermesFabricMemoryProvider(MemoryProvider):
         sources = (
             ("obsidian", lambda: self.obsidian.retrieve(query=query), 3),
             ("decisions", lambda: self.decisions.retrieve(query=query), 2),
-            ("graphrag", lambda: self.graphrag.retrieve(query=query), 2),
+            ("graphrag", lambda: self.graphrag.retrieve(query=query), 3),
         )
         for source_name, retrieve, limit in sources:
             try:
@@ -292,8 +293,12 @@ class HermesFabricMemoryProvider(MemoryProvider):
         dec_id = self._stable_memory_id(content, meta)
         digest = hashlib.sha256(content.strip().encode("utf-8")).hexdigest()
         scope = str(meta.get("scope") or "project")
-        if scope not in {"private", "team", "project", "global"}:
-            raise ValueError(f"Invalid memory scope: {scope}")
+        if self._coordinator is not None:
+            self._coordinator.ingest_candidate_fact(
+                fact=content, scope=scope, provenance=meta.get("provenance"),
+                confidence=float(meta.get("confidence", 1.0)), metadata=meta, sync=True,
+            )
+            return
         with self._write_lock:
             supersedes = meta.get("supersedes")
             if isinstance(supersedes, str):

@@ -158,6 +158,8 @@ class FederatedMemoryCoordinator:
             graphrag_adapter=self.graphrag,
             decision_store=self.decisions,
         )
+        self.memory_provider._coordinator = self
+
 
         self.router = MemoryRouter()
         self.consolidator = MemoryConsolidator()
@@ -524,12 +526,10 @@ class FederatedMemoryCoordinator:
         )
         self.event_bus.publish(k_event, enqueue=False)
 
-        # 3. Notificação do Upstream Hermes Memory Provider
-        self.memory_provider.remember(
-            content=record.fact,
-            target="architecture" if is_decision else "notes",
-            metadata=meta,
-        )
+        self.memory_provider._recent_recall[record.fact] = f"[memory://{record.id}] {record.fact}"
+        self.memory_provider._prefetch_cache.clear()
+        # O Coordinator é o dono do write path; o provider externo apenas delega
+        # para esta transação e não deve reemitir o mesmo fato.
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
         """Obtém um registro de fato por ID."""

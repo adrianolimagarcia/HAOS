@@ -66,6 +66,18 @@ CREATE TABLE IF NOT EXISTS communities (
     summary TEXT NOT NULL DEFAULT '',
     updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS entity_sources (
+    entity TEXT NOT NULL, source_uri TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'global',
+    PRIMARY KEY (entity, source_uri)
+);
+CREATE TABLE IF NOT EXISTS relation_sources (
+    source TEXT NOT NULL, target TEXT NOT NULL, relation_type TEXT NOT NULL,
+    source_uri TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'global',
+    PRIMARY KEY (source, target, relation_type, source_uri)
+);
+CREATE TABLE IF NOT EXISTS applied_events (
+    event_id TEXT PRIMARY KEY, applied_at REAL NOT NULL
+);
 """
 
 
@@ -285,8 +297,43 @@ class GraphRAGStore:
             conn.commit()
         return removed
 
-    # ------------------------------------------------------------------ #
-    # leitura
+    def apply_event(
+        self, event_id: str, event_type: str, uri: str,
+        entities: Sequence[Tuple[str, str, str]],
+        relations: Sequence[Tuple[str, str, str, str]],
+        scope: str = "global",
+    ) -> bool:
+        """Aplica uma projeção inteira uma vez, substituindo claims da URI atomicamente."""
+        if not event_id or not uri or scope not in {"private", "team", "project", "global"}:
+            raise ValueError("event_id, uri and valid scope are required")
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if conn.execute("SELECT 1 FROM applied_events WHERE event_id=?", (event_id,)).fetchone():
+                    conn.rollback()
+                    return False
+                if event_type == "NOTE_DELETED":
+                    conn.execute("DELETE FROM entity_sources WHERE source_uri=?", (uri,))
+                    conn.execute("DELETE FROM relation_sources WHERE source_uri=?", (uri,))
+                else:
+                    conn.execute("DELETE FROM entity_sources WHERE source_uri=?", (uri,))
+                    conn.execute("DELETE FROM relation_sources WHERE source_uri=?", (uri,))
+                    for name, kind, description in entities:
+                        conn.execute("INSERT OR REPLACE INTO entity_sources(entity,source_uri,scope) VALUES(?,?,?)", (name, uri, scope))
+                        conn.execute("INSERT INTO entities(entity,entity_type,description,updated_at) VALUES(?,?,?,?) ON CONFLICT(entity) DO UPDATE SET entity_type=excluded.entity_type, description=excluded.description, updated_at=excluded.updated_at", (name, kind, description, time.time()))
+                    for source, target, relation_type, description in relations:
+                        conn.execute("INSERT OR REPLACE INTO relation_sources(source,target,relation_type,source_uri,scope) VALUES(?,?,?,?,?)", (source, target, relation_type, uri, scope))
+                        conn.execute("INSERT OR REPLACE INTO relations(source,target,relation_type,description,created_at) VALUES(?,?,?,?,?)", (source, target, relation_type, description, time.time()))
+                conn.execute("DELETE FROM entities WHERE entity NOT IN (SELECT entity FROM entity_sources)")
+                conn.execute("DELETE FROM relations WHERE NOT EXISTS (SELECT 1 FROM relation_sources rs WHERE rs.source=relations.source AND rs.target=relations.target AND rs.relation_type=relations.relation_type)")
+                conn.execute("INSERT INTO applied_events(event_id,applied_at) VALUES(?,?)", (event_id, time.time()))
+                conn.commit()
+                return True
+            except Exception:
+                conn.rollback()
+                raise
+
     # ------------------------------------------------------------------ #
     def get_entity(self, name: str) -> Optional[Dict[str, object]]:
         with self._lock:
