@@ -47,3 +47,24 @@ Required invariants:
 - an acknowledged projection reflects the same record revision;
 - superseded records never enter default retrieval;
 - no cross-scope candidate reaches ranking or prompt packing.
+
+
+## Implementation status
+
+The coordinator now routes ordinary provider writes through the canonical journal.
+The durable outbox creates an independent job for Obsidian, DecisionStore and
+GraphRAG; ProjectionRunner leases, retries and acknowledges each one
+separately. A failed projection does not roll back or block the other
+projections.
+
+MemoryAccessContext is required at retrieval boundaries. Candidate generators
+may return record IDs, but content is emitted only after canonical status,
+scope and principal ACL checks. The current retrieval implementation provides
+FTS plus an optional vector candidate interface and weighted RRF. GraphRAG is
+not a direct prompt source until it can resolve every graph result to an
+authorized canonical record ID.
+
+Local harness coverage includes idempotency, duplicate replay after restart,
+per-projection retry, concurrent writes and private/team/project/global ACL
+boundaries. CI is supplemental; these tests are intentionally runnable with
+local pytest.
