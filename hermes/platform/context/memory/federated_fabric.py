@@ -114,8 +114,12 @@ class FederatedMemoryCoordinator:
         self.decisions = decision_store or DecisionStore()
         self.event_bus = event_bus or KnowledgeEventBus()
         # Canonical state is SQLite; all other stores below are projections.
-        ledger_root = Path(vault_path) if vault_path is not None else Path(".hermes")
-        self.canonical_store = CanonicalMemoryStore(ledger_root / ".haos" / "memory-fabric.db")
+        if vault_path is None:
+            from hermes_constants import get_hermes_home
+            ledger_root = Path(get_hermes_home())
+        else:
+            ledger_root = Path(vault_path).parent
+        self.canonical_store = CanonicalMemoryStore(ledger_root / "memory" / "fabric.db")
 
         # Store persistente do grafo (GOV-008): quando o fabric sincroniza
         # conhecimento, cada KnowledgeEvent publicado é espelhado no store
