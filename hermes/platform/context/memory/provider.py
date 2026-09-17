@@ -38,6 +38,7 @@ class HermesFabricMemoryProvider(MemoryProvider):
         decision_store: Optional[DecisionStore] = None,
         canonical_store: Optional[CanonicalMemoryStore] = None,
         write_handler: Optional[Any] = None,
+        recovery_handler: Optional[Any] = None,
     ):
         if isinstance(vault_path, str):
             self.vault_path = Path(vault_path)
@@ -54,6 +55,7 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self.graphrag = graphrag_adapter or GraphRAGAdapter()
         self.canonical_store = canonical_store
         self._write_handler = write_handler
+        self._recovery_handler = recovery_handler
         self._session_scopes: Dict[str, List[str]] = {}
         self._session_id: str = ""
         from hermes_constants import get_hermes_home
@@ -79,6 +81,8 @@ class HermesFabricMemoryProvider(MemoryProvider):
             raise ValueError("memory_scopes must contain only valid Memory Fabric scopes")
         self._session_scopes[session_id] = list(scopes)
         self._initialized = True
+        if self._recovery_handler is not None:
+            self._recovery_handler()
         logger.info("HermesFabricMemoryProvider initialized for session %s at %s", session_id, self.vault_path)
 
     def system_prompt_block(self) -> str:
