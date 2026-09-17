@@ -114,22 +114,76 @@ class HermesFabricMemoryProvider(MemoryProvider):
         self._ledger.execute(
             "CREATE TABLE IF NOT EXISTS memories (digest TEXT PRIMARY KEY, memory_id TEXT NOT NULL, scope TEXT NOT NULL, created_at REAL NOT NULL)"
         )
+        self._ledger.execute(
+            """CREATE TABLE IF NOT EXISTS outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, digest TEXT NOT NULL, sink TEXT NOT NULL,
+                payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+                next_attempt REAL NOT NULL DEFAULT 0, last_error TEXT, UNIQUE(digest, sink)
+            )"""
+        )
+        self._ledger.execute("CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox(status, next_attempt)")
         self._ledger.commit()
 
-    def _claim_memory(self, digest: str, memory_id: str, scope: str) -> bool:
+    def _claim_memory(self, digest: str, memory_id: str, scope: str, payload: Dict[str, Any]) -> bool:
         if self._ledger is None:
             self._open_ledger()
         assert self._ledger is not None
         try:
+            self._ledger.execute("BEGIN IMMEDIATE")
             self._ledger.execute(
                 "INSERT INTO memories(digest,memory_id,scope,created_at) VALUES(?,?,?,strftime('%s','now'))",
                 (digest, memory_id, scope),
             )
+            encoded = json.dumps(payload, sort_keys=True)
+            for sink in ("decision", "obsidian", "graphrag"):
+                self._ledger.execute(
+                    "INSERT INTO outbox(digest,sink,payload) VALUES(?,?,?)",
+                    (digest, sink, encoded),
+                )
             self._ledger.commit()
             return True
         except sqlite3.IntegrityError:
             self._ledger.rollback()
             return False
+
+    def _replay_outbox(self) -> None:
+        if self._ledger is None:
+            return
+        rows = self._ledger.execute(
+            "SELECT id, sink, payload, attempts FROM outbox WHERE status != 'done' AND next_attempt <= strftime('%s','now') ORDER BY id"
+        ).fetchall()
+        for row in rows:
+            self._process_outbox_row(row)
+
+    def _process_outbox_row(self, row: sqlite3.Row | tuple) -> None:
+        row_id, sink, raw_payload, attempts = row[:4]
+        try:
+            payload = json.loads(raw_payload)
+            if sink == "decision":
+                self.decisions.record_decision(payload["id"], payload["title"], payload["content"], payload.get("supersedes"))
+            elif sink == "obsidian":
+                path = self.vault_path / payload["path"]
+                if not path.exists():
+                    self.obsidian.write_note(payload["path"], payload["title"], payload["body"], doc_type="architecture_decision", metadata=payload.get("metadata"))
+            elif sink == "graphrag":
+                self.graphrag.register_entity(payload["id"], "architecture_decision", payload["content"])
+                for old_id in payload.get("supersedes", []):
+                    self.graphrag.register_relation(payload["id"], str(old_id), "supersedes", "Explicit decision supersession")
+            self._ledger.execute("UPDATE outbox SET status='done', last_error=NULL WHERE id=?", (row_id,))
+            self._ledger.commit()
+        except Exception as exc:
+            delay = min(3600, 2 ** min(int(attempts) + 1, 10))
+            self._ledger.execute(
+                "UPDATE outbox SET status='pending', attempts=attempts+1, next_attempt=strftime('%s','now')+?, last_error=? WHERE id=?",
+                (delay, str(exc)[:500], row_id),
+            )
+            self._ledger.commit()
+            logger.warning("Memory Fabric outbox sink %s failed; retry in %ss", sink, delay, exc_info=True)
+
+    def drain_outbox(self) -> None:
+        """Drain pending projections; safe to call after startup or a transient failure."""
+        with self._write_lock:
+            self._replay_outbox()
 
     def system_prompt_block(self) -> str:
         """Bloco estático, pequeno, que não muta o prompt durante a conversa."""
@@ -241,26 +295,20 @@ class HermesFabricMemoryProvider(MemoryProvider):
         if scope not in {"private", "team", "project", "global"}:
             raise ValueError(f"Invalid memory scope: {scope}")
         with self._write_lock:
-            if not self._claim_memory(digest, dec_id, scope):
-                return
-            # The durable claim is made before fan-out; retries are safe and sinks are idempotent.
-            title = str(meta.get("title") or "Architecture Decision")
             supersedes = meta.get("supersedes")
             if isinstance(supersedes, str):
                 supersedes = [supersedes]
-            self.decisions.record_decision(dec_id, title, content, supersedes=supersedes if isinstance(supersedes, list) else None)
-            obs_path = f"20-Architecture/{dec_id}.md"
-            note_path = self.vault_path / obs_path
-            note_body = (
-                f"**Scope:** `{meta.get('scope', 'project')}` | "
-                f"**Confidence:** `{meta.get('confidence', 1.0):.2f}`\n\n{content}"
-            )
-            if not note_path.exists():
-                self.obsidian.write_note(obs_path, title, note_body, doc_type="architecture_decision", metadata=meta)
-            self.graphrag.register_entity(dec_id, "architecture_decision", content)
-            for old_id in supersedes or []:
-                self.graphrag.register_relation(dec_id, str(old_id), "supersedes", "Explicit decision supersession")
-            self._persist_dedupe_index()
+            payload = {
+                "id": dec_id, "title": str(meta.get("title") or "Architecture Decision"),
+                "content": content, "scope": scope,
+                "supersedes": supersedes if isinstance(supersedes, list) else [],
+                "path": f"20-Architecture/{dec_id}.md",
+                "body": f"**Scope:** `{scope}` | **Confidence:** `{meta.get('confidence', 1.0):.2f}`\n\n{content}",
+                "metadata": meta,
+            }
+            if not self._claim_memory(digest, dec_id, scope, payload):
+                return
+            self.drain_outbox()
             self._recent_recall[content] = f"[decision://{dec_id}] {content}"
             self._prefetch_cache.clear()
 
