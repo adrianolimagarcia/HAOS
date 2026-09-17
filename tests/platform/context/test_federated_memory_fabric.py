@@ -59,7 +59,10 @@ class TestFederatedMemoryFabric(unittest.TestCase):
         self.coordinator.close()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_ingest_all_four_scopes(self) -> None:
+    def test_missing_scope_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            self.coordinator.ingest_candidate_fact(fact="scope is required", scope=None)  # type: ignore[arg-type]
+
         """Testa ingestão e filtragem com todos os 4 escopos estritos: private, team, project, global."""
         scopes = ["private", "team", "project", "global"]
         for sc in scopes:
@@ -97,7 +100,7 @@ class TestFederatedMemoryFabric(unittest.TestCase):
             fact=fact1,
             scope="project",
             provenance="repo://docs/setup.md",
-            confidence=0.8,
+            confidence=0.9,
         )
         self.assertEqual(c1.status, "consolidated")
 

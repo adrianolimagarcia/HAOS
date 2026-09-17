@@ -81,7 +81,12 @@ class TestObsidianAndDecisionStore(unittest.TestCase):
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0].id, "obsidian-ADR-018")
 
-    def test_decision_store_temporal_supersession(self):
+    def test_obsidian_rejects_path_escape(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            obs = ObsidianAdapter(Path(tmpdir))
+            with self.assertRaises(ValueError):
+                obs.write_note("../outside.md", "escape", "blocked")
+
         """Nova ADR supersede decisão antiga eliminando contradição no contexto."""
         store = DecisionStore()
         d1 = store.record_decision(

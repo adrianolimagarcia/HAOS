@@ -171,21 +171,25 @@ class FederatedMemoryCoordinator:
             self._worker_thread.start()
 
     def stop_background_worker(self, timeout: float = 2.0) -> None:
-        """Para graciosamente a thread de consolidação em segundo plano."""
+        """Para graciosamente: sinaliza draining, aguarda tarefas e só então encerra."""
         with self._lock:
             if self._worker_thread is None:
                 return
             self._stop_worker.set()
-            self._ingest_queue.put(None)
-            self._worker_thread.join(timeout=timeout)
+        self._ingest_queue.join()
+        self._ingest_queue.put(None)
+        self._worker_thread.join(timeout=timeout)
+        with self._lock:
             self._worker_thread = None
 
     def _background_worker_loop(self) -> None:
         """Loop contínuo de processamento da fila de ingestão."""
-        while not self._stop_worker.is_set():
+        while True:
             try:
                 candidate = self._ingest_queue.get(timeout=0.2)
             except queue.Empty:
+                if self._stop_worker.is_set():
+                    break
                 continue
 
             if candidate is None:
@@ -202,7 +206,7 @@ class FederatedMemoryCoordinator:
     def ingest_candidate_fact(
         self,
         fact: str,
-        scope: ScopeType = "project",
+        scope: Optional[ScopeType] = None,
         provenance: Optional[List[str] | str] = None,
         confidence: float = 1.0,
         metadata: Optional[Dict[str, Any]] = None,
@@ -213,7 +217,7 @@ class FederatedMemoryCoordinator:
         Se sync=True, executa imediatamente a consolidação e sync multi-store no chamador.
         Se sync=False, enfileira para a thread em background.
         """
-        if scope not in VALID_SCOPES:
+        if scope is None or scope not in VALID_SCOPES:
             raise ValueError(f"Escopo inválido: '{scope}'. Deve ser um dos: {sorted(VALID_SCOPES)}")
 
         prov_list: List[str] = []
@@ -253,6 +257,10 @@ class FederatedMemoryCoordinator:
         3. Criação ou atualização do FederatedFactRecord.
         4. Sincronização multi-store (Obsidian, GraphRAG, Upstream Hermes Memory).
         """
+        if not candidate.is_high_confidence():
+            self.router.stage_candidate(candidate, reason="below_confidence_threshold")
+            return False
+
         with self._lock:
             scope = candidate.scope
             existing_records = [
@@ -468,10 +476,7 @@ class FederatedMemoryCoordinator:
             content=record.fact,
             metadata=meta,
         )
-        self.event_bus.publish(k_event)
-
-        # Esvazia fila pendente do GraphRAG para assegurar consistência imediata
-        self.graphrag_updater.process_pending_queue()
+        self.event_bus.publish(k_event, enqueue=False)
 
         # 3. Notificação do Upstream Hermes Memory Provider
         self.memory_provider.remember(
