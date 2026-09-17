@@ -416,7 +416,7 @@ class FederatedMemoryCoordinator:
         return FederatedFactRecord(
             id=stored.record_id, fact=stored.content, scope=stored.scope,
             provenance=[str(p.get("uri", "")) for p in stored.provenance if p.get("uri")],
-            confidence=stored.confidence,
+            confidence=stored.confidence, status=stored.status,
             proposed_destination="obsidian" if stored.kind == "decision" else "memory",
             created_at=stored.valid_from, updated_at=stored.valid_from,
             supersedes=list(stored.supersedes), metadata=stored.metadata,
