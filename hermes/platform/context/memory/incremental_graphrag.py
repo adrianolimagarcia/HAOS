@@ -100,6 +100,14 @@ class IncrementalGraphRAGUpdater:
         if event.event_type == KnowledgeEventType.NOTE_MODIFIED:
             self._prune_uri_items(event.uri, keep_entities={e.name for e in entities})
 
+        if self.store is not None:
+            scope = str((event.metadata or {}).get("scope") or "global")
+            event_entities = [(e.name, e.entity_type, e.description) for e in entities]
+            event_relations = [(r.source, r.target, r.relation_type, r.description) for r in relations]
+            applied = self.store.apply_event(event.event_id, event.event_type.value, event.uri, event_entities, event_relations, scope=scope)
+            if not applied:
+                return 0
+
         applied_count = self._apply_to_adapter(
             uri=event.uri,
             entities=entities,
