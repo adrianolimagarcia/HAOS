@@ -1,7 +1,29 @@
 # Auditoria: Upstream MCP Client Surface (base para K3 / MCP Fabric)
 
+> **Atualização 2026-09-17 — a exigência "stdlib-only" foi SUPERADA e não deve ser
+> reimposta.** O contrato real é degradar sem o extra OPCIONAL `mcp`; pureza stdlib
+> total nunca foi o contrato. `mcp` é extra (`pyproject.toml`), PyYAML é dependência
+> **core** — então "importável stdlib-only" era uma condição mais forte do que a
+> intenção, e o cliente MCP não deve se contorcer para satisfazê-la.
+>
+> Isto não é hipótese: a exigência **já causou uma mudança errada**. O import
+> `from utils import normalize_proxy_url` de `tools/mcp_tool_transport.py` foi movido
+> para dentro de `_mcp_proxy_mounts` só para passar num teste que rodava `python -S`.
+> Medido: com o import de volta no nível de módulo e apenas `mcp`/`httpx2`/`starlette`
+> bloqueados, o fabric continua importando e degradando para `{}`/`[]`/`[]`/`{}`/`[]`
+> com `provider_id == "hermes-mcp-fabric"` — a restrição nunca foi load-bearing. O
+> import foi revertido e o teste passou a bloquear cirurgicamente só o extra
+> (`tests/platform/capabilities/test_mcp_fabric.py::test_degrades_without_the_optional_mcp_extra`).
+>
+> Os achados abaixo são o registro **histórico** da auditoria do graft: ficam como
+> estavam escritos, com notas onde a leitura literal hoje engana.
+
 ## 1. Escopo
-Mapear a superfície pública do cliente MCP do Hermes (facade `tools/mcp_tool.py` + irmãos `tools/mcp_tool_*.py`), o mecanismo de config/registro/health e a API HAOS de capabilities/postura, para que o K3 (`hermes/platform/capabilities/mcp/`, novo — INTEGRATIONS.md:42) envolva o cliente real **sem duplicá-lo**, permanecendo importável stdlib-only. Nenhum arquivo foi modificado; nenhum teste foi executado.
+Mapear a superfície pública do cliente MCP do Hermes (facade `tools/mcp_tool.py` + irmãos `tools/mcp_tool_*.py`), o mecanismo de config/registro/health e a API HAOS de capabilities/postura, para que o K3 (`hermes/platform/capabilities/mcp/`, novo — INTEGRATIONS.md:42) envolva o cliente real **sem duplicá-lo**, permanecendo importável stdlib-only.[^stdlib] Nenhum arquivo foi modificado; nenhum teste foi executado.
+
+[^stdlib]: **Superado** — ver a atualização no topo. A superfície HAOS de capabilities
+    (`hermes/platform/capabilities/mcp/fabric.py`) permanece importável sem o extra
+    `mcp`, que é o que importa; pureza stdlib total não é exigida nem desejada.
 
 ## 2. Achados-chave
 1. **O cliente MCP vive em `tools/`, fora de `hermes/platform/`**: `tools/mcp_tool.py` (facade, 678 linhas) mantém estado global (`_servers`, `_lock`, `_mcp_loop` em thread daemon) e o loader lazy do SDK; a lógica está nos irmãos `mcp_tool_*.py`.
@@ -16,7 +38,7 @@ Mapear a superfície pública do cliente MCP do Hermes (facade `tools/mcp_tool.p
 3. **Config**: `mcp_servers:` em config.yaml (`cli-config.yaml.example:1457`); chaves por server `command/args/env/cwd` (stdio), `url/headers` (HTTP), `enabled, lazy, timeout, connect_timeout, keepalive_interval, supports_parallel_tool_calls, trust(full|untrusted), tools.include/exclude, tools.resources/prompts, lifecycle.*`. Loader com interpolação `${VAR}`/Cursor + filtro de segurança: `_load_mcp_config()` — `tools/mcp_tool_config.py:312`; gate `hermes_cli.mcp_security.validate_mcp_server_entry` :281. Registro sob toolset dinâmico `mcp-{server}` — `tools/mcp_tool_registration.py:229`; nome `mcp__{server}__{tool}` — `tools/mcp_tool_schema.py:135`.
 4. **Health real já existe upstream**: keepalive ping (`_keepalive_probe`, fallback list_tools), circuit breaker (tools/mcp_tool.py:433), park/self-probe, `_session_proven`, `ensure_healthy(timeout)` / `mark_suspect(reason)` — `tools/mcp_tool_health.py:224`/`:213`. Probe ativo one-shot: `_probe_single_server(name, config, *, details=None)` (conecta→lista→desconecta; levanta em falha) — `hermes_cli/mcp_config.py:256` (usado por `haos mcp test`).
 5. **`mcp` é dependência opcional**: extra `[project.optional-dependencies].mcp = ["mcp==2.0.0", "httpx2==2.7.0", "starlette==1.3.1"]` — `pyproject.toml:271` (também no extra `dev` :199). SDK importado só no primeiro uso (`find_spec`, `tools/mcp_tool.py:84-89`).
-6. **Testes de import em python puro (sem venv, nada instalado) — verbatim, exit 0**: `import tools.mcp_tool` → OK com `_MCP_AVAILABLE False ClientSession None`; `import tools.mcp_tool_discovery/_config/_common/_handlers/_lifecycle/_loop` → OK; `import hermes_cli` e `import model_tools` → OK (warnings benignos `Failed to load plugin '…': No module named 'httpx'`); chamadas vivas: `_load_mcp_config()→{}`, `get_mcp_status()→[]`, `discover_mcp_tools()→[]`. Ou seja: toda a superfície de discovery/status/config importa stdlib-only; só conexão/call real exige o extra `mcp`.
+6. **Testes de import em python puro (sem venv, nada instalado) — verbatim, exit 0**: `import tools.mcp_tool` → OK com `_MCP_AVAILABLE False ClientSession None`; `import tools.mcp_tool_discovery/_config/_common/_handlers/_lifecycle/_loop` → OK; `import hermes_cli` e `import model_tools` → OK (warnings benignos `Failed to load plugin '…': No module named 'httpx'`); chamadas vivas: `_load_mcp_config()→{}`, `get_mcp_status()→[]`, `discover_mcp_tools()→[]`. Ou seja: toda a superfície de discovery/status/config importa stdlib-only; só conexão/call real exige o extra `mcp`. **⚠ Superado (2026-09-17):** o probe desta linha rodou com o `python3` do sistema, que TEM PyYAML instalado — não era `-S`. A afirmação era verdadeira na época e virou falsa quando o split do transport acrescentou `from utils import normalize_proxy_url`; ver a atualização no topo. O que se mantém é a degradação sem o extra `mcp`.
 7. **API HAOS de capabilities**: `Capability(id, execution_kind, providers, features)` — `hermes/platform/capabilities/registry.py:5`; `CapabilityProvider(ABC)` com `provider_id`, `async probe()`, `async acquire(request)`, `async release(handle)` — `registry.py:12`; `CapabilityResolver.resolve_requirements(required_ids)` — `registry.py:78`; `resolver.py` é só re-export.
 8. **Postura**: `PostureSpec` (specs.py:4) tem `capabilities_prefer: List[str]` mas **sem campo de allowed-tools/permissões**; `capabilities_prefer` e `TaskSpec.mcp_packs` (`tasks/spec.py:43`) **não têm consumidor hoje** — `SpawnResolver.resolve` (execution/spawn_resolver.py:20-28) só lê `task.required_capabilities` (+ `skills_preferred` p/ `skills_snapshot`, :64); `kanban_adapter.py:385` só serializa `mcp_packs`.
 
@@ -36,4 +58,4 @@ Mapear a superfície pública do cliente MCP do Hermes (facade `tools/mcp_tool.p
 1. **Wrapper fino `hermes/platform/capabilities/mcp/fabric.py`** importando apenas `tools.mcp_tool_discovery`/`_config`/`_lifecycle` + `hermes_cli.config.load_config` (tudo stdlib-safe, no-op sem o extra) — padrão do K2 (`extensions/hermes_bridge.py:43-104`, discovery-only).
 2. **Três funções + um provider**: `discover_servers() -> Dict[str,dict]` (=`_load_mcp_config()` + portáteis); `scope_servers(posture|task, allowed) -> List[str]` puro, resolvendo `capabilities_prefer`/`mcp_packs` → nomes de servers (declarar a tabela pack→servers no HAOS); `health() -> List[dict]` (=`get_mcp_status()`) com `probe_once(name, cfg)` opcional para liveness real; `MCPCapabilityProvider(CapabilityProvider)` com `probe()=health`, `acquire()={'server_names': scoped}`, `release()` no-op, registrado via `CapabilityRegistry.register_provider`.
 3. **Conectar/registrar é sempre delegação upstream**: `discover_mcp_tools(allowed_mcp_names=scoped)` ou `register_mcp_servers({n: cfg…})` — o wrapper nunca fala o protocolo MCP nem instancia `ClientSession`.
-4. **E2E**: com o extra `mcp`, `HERMES_HOME` temporário + server stdio scriptado local e asserir `discover_servers → scope_servers → register_mcp_servers → get_mcp_status()["connected"]`; CI stdlib-only assere degradação (`[]`/`{}`/`configured`). Não importar símbolos do SDK nem helpers de UI da CLI em tempo de import do HAOS.
+4. **E2E**: com o extra `mcp`, `HERMES_HOME` temporário + server stdio scriptado local e asserir `discover_servers → scope_servers → register_mcp_servers → get_mcp_status()["connected"]`; CI stdlib-only assere degradação (`[]`/`{}`/`configured`). **⚠ Superado (2026-09-17):** o CI assere degradação **sem o extra `mcp`**, bloqueando `mcp`/`httpx2`/`starlette` cirurgicamente — não pureza stdlib. Ver a atualização no topo. Não importar símbolos do SDK nem helpers de UI da CLI em tempo de import do HAOS.
