@@ -69,7 +69,7 @@ class FederatedFactRecord:
     provenance: List[str] = field(default_factory=list)
     confidence: float = 1.0
     proposed_destination: DestinationType = "obsidian"
-    status: StatusType = "consolidated"
+    status: str = "consolidated"
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     supersedes: List[str] = field(default_factory=list)
