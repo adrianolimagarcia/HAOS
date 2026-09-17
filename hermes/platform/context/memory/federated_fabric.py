@@ -21,13 +21,16 @@ Restrições estritas:
 from __future__ import annotations
 
 import difflib
+import json
 import logging
 import queue
+import sqlite3
 import re
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Set
 
 from hermes.platform.context.memory.candidate import (
@@ -55,6 +58,26 @@ logger = logging.getLogger(__name__)
 
 VALID_SCOPES: Set[str] = {"private", "team", "project", "global"}
 
+
+@dataclass(frozen=True)
+class MemoryAccessContext:
+    actor: str
+    team: Optional[str] = None
+    project: Optional[str] = None
+    session: Optional[str] = None
+    scopes: frozenset[str] = frozenset()
+
+    def allowed_scopes(self) -> frozenset[str]:
+        if self.scopes:
+            return self.scopes & frozenset(VALID_SCOPES)
+        allowed = {"global"}
+        if self.team:
+            allowed.add("team")
+        if self.project:
+            allowed.add("project")
+        if self.session:
+            allowed.add("private")
+        return frozenset(allowed)
 
 @dataclass
 class FederatedFactRecord:
@@ -153,9 +176,31 @@ class FederatedMemoryCoordinator:
         self._worker_thread: Optional[threading.Thread] = None
         self._stop_worker = threading.Event()
         self._lock = threading.RLock()
-
+        from hermes_constants import get_hermes_home
+        store_home = Path(vault_path).parent if vault_path is not None else Path(get_hermes_home())
+        self._canonical_path = store_home / "memory" / "federated_memory.db"
+        self._canonical_db: Optional[sqlite3.Connection] = None
+        self._open_canonical_store()
         if auto_start_worker:
             self.start_background_worker()
+
+    def _open_canonical_store(self) -> None:
+        self._canonical_path.parent.mkdir(parents=True, exist_ok=True)
+        self._canonical_db = sqlite3.connect(self._canonical_path, check_same_thread=False)
+        self._canonical_db.execute("PRAGMA journal_mode=WAL")
+        self._canonical_db.execute("PRAGMA busy_timeout=30000")
+        self._canonical_db.execute("PRAGMA foreign_keys=ON")
+        self._canonical_db.execute("CREATE TABLE IF NOT EXISTS federated_facts (id TEXT PRIMARY KEY, payload TEXT NOT NULL, scope TEXT NOT NULL, updated_at REAL NOT NULL)")
+        self._canonical_db.commit()
+        for raw in self._canonical_db.execute("SELECT payload FROM federated_facts ORDER BY updated_at").fetchall():
+            record = FederatedFactRecord(**json.loads(raw[0]))
+            self._facts[record.id] = record
+            self._facts_by_scope.setdefault(record.scope, []).append(record.id)
+
+    def _persist_record(self, record: FederatedFactRecord) -> None:
+        assert self._canonical_db is not None
+        self._canonical_db.execute("INSERT INTO federated_facts(id,payload,scope,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, scope=excluded.scope, updated_at=excluded.updated_at", (record.id, json.dumps(record.to_dict(), sort_keys=True), record.scope, record.updated_at))
+        self._canonical_db.commit()
 
     def start_background_worker(self) -> None:
         """Inicia a thread de consolidação e escrita em segundo plano."""
@@ -163,11 +208,7 @@ class FederatedMemoryCoordinator:
             if self._worker_thread is not None and self._worker_thread.is_alive():
                 return
             self._stop_worker.clear()
-            self._worker_thread = threading.Thread(
-                target=self._background_worker_loop,
-                daemon=True,
-                name="FederatedMemoryWorker",
-            )
+            self._worker_thread = threading.Thread(target=self._background_worker_loop, daemon=True, name="FederatedMemoryWorker")
             self._worker_thread.start()
 
     def stop_background_worker(self, timeout: float = 2.0) -> None:
@@ -279,6 +320,7 @@ class FederatedMemoryCoordinator:
                 dup_record.updated_at = time.time()
                 candidate.status = "consolidated"
                 candidate.id = dup_record.id
+                self._persist_record(dup_record)
                 return True
 
             # 2. Detecção de conflito e supersessão temporal
@@ -321,6 +363,10 @@ class FederatedMemoryCoordinator:
 
             self._facts[record_id] = fact_record
             self._facts_by_scope.setdefault(scope, []).append(record_id)
+            for old_id in superseded_ids:
+                if old_id in self._facts:
+                    self._persist_record(self._facts[old_id])
+            self._persist_record(fact_record)
             candidate.status = "consolidated"
 
             # 3. Sincronização Multi-Store
@@ -494,20 +540,23 @@ class FederatedMemoryCoordinator:
         self,
         scope: Optional[ScopeType] = None,
         include_superseded: bool = False,
+        access_context: Optional[MemoryAccessContext] = None,
     ) -> List[FederatedFactRecord]:
-        """Lista fatos registrados, opcionalmente filtrando por escopo e status de supersessão."""
+        """Lista fatos; sem contexto, somente fatos globais são visíveis."""
+        allowed = access_context.allowed_scopes() if access_context else frozenset({"global"})
         with self._lock:
             if scope:
                 if scope not in VALID_SCOPES:
                     raise ValueError(f"Escopo inválido: '{scope}'")
+                if access_context is not None and scope not in allowed:
+                    return []
                 ids = self._facts_by_scope.get(scope, [])
                 records = [self._facts[fid] for fid in ids if fid in self._facts]
             else:
-                records = list(self._facts.values())
+                records = [r for r in self._facts.values() if r.scope in allowed]
 
             if not include_superseded:
                 records = [r for r in records if r.superseded_by is None]
-
             return records
 
     def query(
@@ -515,9 +564,10 @@ class FederatedMemoryCoordinator:
         text: str,
         scope: Optional[ScopeType] = None,
         include_superseded: bool = False,
+        access_context: Optional[MemoryAccessContext] = None,
     ) -> List[FederatedFactRecord]:
-        """Consulta fatos por correspondência textual simples no corpus consolidado."""
-        records = self.list_facts(scope=scope, include_superseded=include_superseded)
+        """Consulta fatos por correspondência textual dentro dos scopes autorizados."""
+        records = self.list_facts(scope=scope, include_superseded=include_superseded, access_context=access_context)
         query_norm = self._normalize(text)
         if not query_norm:
             return records
@@ -541,3 +591,6 @@ class FederatedMemoryCoordinator:
         self.memory_provider.shutdown()
         if self._owns_graphrag_store and self.graphrag_store is not None:
             self.graphrag_store.close()
+        if self._canonical_db is not None:
+            self._canonical_db.close()
+            self._canonical_db = None

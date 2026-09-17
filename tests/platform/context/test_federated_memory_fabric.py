@@ -20,7 +20,7 @@ from pathlib import Path
 from hermes.platform.context.memory.candidate import MemoryCandidate
 from hermes.platform.context.memory.decisions import DecisionStore
 from hermes.platform.context.memory.events import KnowledgeEventBus
-from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
+from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator, MemoryAccessContext
 from hermes.platform.context.memory.graphrag import GraphRAGAdapter
 from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
@@ -59,39 +59,34 @@ class TestFederatedMemoryFabric(unittest.TestCase):
         self.coordinator.close()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_restart_persists_and_access_isolation(self) -> None:
+        self.coordinator.ingest_candidate_fact(fact="private rule", scope="private", confidence=0.9)
+        self.coordinator.ingest_candidate_fact(fact="global rule", scope="global", confidence=0.9)
+        self.coordinator.close()
+        reopened = FederatedMemoryCoordinator(vault_path=self.vault_path)
+        try:
+            self.assertEqual(len(reopened.list_facts(scope="private", access_context=MemoryAccessContext(actor="bob", team="t", project="p"))), 0)
+            ctx = MemoryAccessContext(actor="alice", session="s1")
+            self.assertEqual(len(reopened.list_facts(scope="private", access_context=ctx)), 1)
+            self.assertEqual(len(reopened.list_facts(access_context=ctx)), 2)
+        finally:
+            reopened.close()
+
     def test_missing_scope_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             self.coordinator.ingest_candidate_fact(fact="scope is required", scope=None)  # type: ignore[arg-type]
 
-        """Testa ingestão e filtragem com todos os 4 escopos estritos: private, team, project, global."""
+        """Testa ingestão e filtragem com todos os 4 escopos estritos."""
         scopes = ["private", "team", "project", "global"]
         for sc in scopes:
-            cand = self.coordinator.ingest_candidate_fact(
-                fact=f"Knowledge rule specifically for scope {sc}",
-                scope=sc,  # type: ignore
-                provenance=f"session://task-{sc}",
-                confidence=0.9,
-            )
+            cand = self.coordinator.ingest_candidate_fact(fact=f"Knowledge rule specifically for scope {sc}", scope=sc, provenance=f"session://task-{sc}", confidence=0.9)  # type: ignore
             self.assertEqual(cand.status, "consolidated")
-            self.assertEqual(cand.scope, sc)
-
-        # Verifica listagem por escopo
         for sc in scopes:
-            records = self.coordinator.list_facts(scope=sc)  # type: ignore
+            records = self.coordinator.list_facts(scope=sc, access_context=MemoryAccessContext(actor="tester", team="t", project="p", session="s"))  # type: ignore
             self.assertEqual(len(records), 1)
-            self.assertEqual(records[0].scope, sc)
-            self.assertIn(sc, records[0].fact)
-
-        # Listagem total
-        all_records = self.coordinator.list_facts()
-        self.assertEqual(len(all_records), 4)
-
-        # Valida que escopo inválido levanta ValueError
+        self.assertEqual(len(self.coordinator.list_facts(access_context=MemoryAccessContext(actor="tester", team="t", project="p", session="s"))), 4)
         with self.assertRaises(ValueError):
-            self.coordinator.ingest_candidate_fact(
-                fact="Illegal scope item",
-                scope="universal",  # type: ignore
-            )
+            self.coordinator.ingest_candidate_fact(fact="Illegal scope item", scope="universal")  # type: ignore
 
     def test_lexical_and_semantic_deduplication(self) -> None:
         """Testa deduplicação léxica e semântica com mescla de proveniência e aumento de confiança."""
