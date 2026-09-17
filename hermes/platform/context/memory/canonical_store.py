@@ -71,6 +71,8 @@ class CanonicalMemoryStore:
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_dedupe ON memory_records(scope, kind, content_hash, status)")
             db.execute("CREATE TABLE IF NOT EXISTS memory_outbox (event_id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES memory_records(record_id), event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at REAL NOT NULL, available_at REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_until REAL, last_error TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS memory_projection_ack (event_id TEXT NOT NULL REFERENCES memory_outbox(event_id), projection TEXT NOT NULL, applied_at REAL NOT NULL, PRIMARY KEY(event_id, projection))")
+            db.execute("CREATE TABLE IF NOT EXISTS memory_projection_jobs (event_id TEXT NOT NULL REFERENCES memory_outbox(event_id), projection TEXT NOT NULL, available_at REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_until REAL, last_error TEXT, PRIMARY KEY(event_id, projection))")
+            db.execute("INSERT OR IGNORE INTO memory_projection_jobs(event_id, projection, available_at) SELECT o.event_id, p.projection, o.available_at FROM memory_outbox o CROSS JOIN (SELECT 'obsidian' AS projection UNION ALL SELECT 'decisions' UNION ALL SELECT 'graphrag') p WHERE NOT EXISTS (SELECT 1 FROM memory_projection_ack a WHERE a.event_id=o.event_id AND a.projection=p.projection)")
             db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(record_id UNINDEXED, content, tokenize='unicode61 remove_diacritics 2')")
             db.execute("CREATE TRIGGER IF NOT EXISTS memory_records_ai AFTER INSERT ON memory_records BEGIN INSERT INTO memory_fts(record_id, content) VALUES (new.record_id, new.content); END")
 
@@ -100,7 +102,9 @@ class CanonicalMemoryStore:
             db.execute("INSERT INTO memory_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record.record_id, record.logical_id, record.revision, record.scope, record.kind, record.status, record.content, record.content_hash, record.confidence, json.dumps(record.provenance, sort_keys=True), json.dumps(record.metadata, sort_keys=True), record.valid_from, None, json.dumps(record.supersedes), now))
             if supersedes:
                 db.executemany("UPDATE memory_records SET status='superseded', valid_until=? WHERE record_id=? AND status='active'", [(now, item) for item in supersedes])
-            db.execute("INSERT INTO memory_outbox VALUES (?,?,?,?,?,?,?,?,?,?)", ("memory.changed:" + record.record_id, record.record_id, "memory.changed", json.dumps(asdict(record), sort_keys=True, default=list), now, now, 0, None, None, None))
+            event_id = "memory.changed:" + record.record_id
+            db.execute("INSERT INTO memory_outbox VALUES (?,?,?,?,?,?,?,?,?,?)", (event_id, record.record_id, "memory.changed", json.dumps(asdict(record), sort_keys=True, default=list), now, now, 0, None, None, None))
+            db.executemany("INSERT INTO memory_projection_jobs(event_id, projection, available_at) VALUES (?,?,?)", [(event_id, projection, now) for projection in self.PROJECTIONS])
             return record
 
     def claim(self, projection: str, worker_id: str, limit: int = 32, lease_seconds: float = 60.0) -> List[Tuple[str, MemoryRecord]]:
@@ -108,19 +112,24 @@ class CanonicalMemoryStore:
             raise ValueError("unknown projection: %r" % projection)
         now = time.time()
         with self._tx() as db:
-            rows = db.execute("SELECT o.event_id, r.* FROM memory_outbox o JOIN memory_records r ON r.record_id=o.record_id WHERE o.available_at<=? AND (o.lease_until IS NULL OR o.lease_until<?) AND NOT EXISTS (SELECT 1 FROM memory_projection_ack a WHERE a.event_id=o.event_id AND a.projection=?) ORDER BY o.created_at LIMIT ?", (now, now, projection, limit)).fetchall()
-            if rows:
-                db.executemany("UPDATE memory_outbox SET lease_owner=?, lease_until=?, attempts=attempts+1 WHERE event_id=?", [(worker_id, now + lease_seconds, r["event_id"]) for r in rows])
-            return [(r["event_id"], self._row(r)) for r in rows]
+            rows = db.execute(
+                "SELECT j.event_id, r.* FROM memory_projection_jobs j JOIN memory_outbox o ON o.event_id=j.event_id JOIN memory_records r ON r.record_id=o.record_id WHERE j.projection=? AND j.available_at<=? AND (j.lease_until IS NULL OR j.lease_until<?) ORDER BY o.created_at LIMIT ?",
+                (projection, now, now, limit),
+            ).fetchall()
+            db.executemany(
+                "UPDATE memory_projection_jobs SET lease_owner=?, lease_until=?, attempts=attempts+1 WHERE event_id=? AND projection=?",
+                [(worker_id, now + lease_seconds, row["event_id"], projection) for row in rows],
+            )
+            return [(row["event_id"], self._row(row)) for row in rows]
 
     def ack(self, event_id: str, projection: str) -> None:
         with self._tx() as db:
+            db.execute("DELETE FROM memory_projection_jobs WHERE event_id=? AND projection=?", (event_id, projection))
             db.execute("INSERT OR IGNORE INTO memory_projection_ack VALUES (?,?,?)", (event_id, projection, time.time()))
-            db.execute("UPDATE memory_outbox SET lease_owner=NULL, lease_until=NULL, last_error=NULL WHERE event_id=?", (event_id,))
 
-    def fail(self, event_id: str, error: str, retry_after: float = 1.0) -> None:
+    def fail(self, event_id: str, projection: str, error: str, retry_after: float = 1.0) -> None:
         with self._tx() as db:
-            db.execute("UPDATE memory_outbox SET lease_owner=NULL, lease_until=NULL, available_at=?, last_error=? WHERE event_id=?", (time.time() + max(0.0, retry_after), error[:1000], event_id))
+            db.execute("UPDATE memory_projection_jobs SET lease_owner=NULL, lease_until=NULL, available_at=?, last_error=? WHERE event_id=? AND projection=?", (time.time() + max(0.0, retry_after), error[:1000], event_id, projection))
 
     def search_fts(self, query: str, scopes: Sequence[str], limit: int = 20) -> List[MemoryRecord]:
         if not query.strip() or not scopes:
