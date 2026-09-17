@@ -312,7 +312,7 @@ class FederatedMemoryCoordinator:
 
             # Commit canonical state and durable outbox before any projection.
             # record_id is the idempotency key, so retries cannot create a second fact.
-            self.canonical_store.append(
+            stored_record = self.canonical_store.append(
                 content=fact_record.fact,
                 scope=fact_record.scope,
                 kind="decision" if fact_record.proposed_destination == "obsidian" else "fact",
@@ -324,6 +324,13 @@ class FederatedMemoryCoordinator:
                 idempotency_key=fact_record.id,
                 valid_from=fact_record.created_at,
             )
+            # A restart has no in-memory dedupe index. The journal therefore
+            # decides whether this command was a duplicate; never project a
+            # synthetic ID that did not become a canonical record.
+            if stored_record.record_id != fact_record.id:
+                candidate.id = stored_record.record_id
+                candidate.status = "consolidated"
+                return True
 
             self._facts[record_id] = fact_record
             self._facts_by_scope.setdefault(scope, []).append(record_id)
