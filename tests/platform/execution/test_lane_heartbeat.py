@@ -30,6 +30,22 @@ try:
 except OSError:
     pass
 
+# O invariante (c) é RELATIVO — "tempo decorrido << duração do fake" — e não um
+# número absoluto. O que dá poder ao teste é a FOLGA ABSOLUTA entre o bound e o
+# tempo real de kill, porque o runner roda 16 arquivos em paralelo e nenhum teste
+# vê máquina ociosa. Medido: o kill devolve em 0.40-0.62s ocioso e 2.01s sob a
+# suíte completa; o bound de 1.5s dava só 1.3x de folga e falhou nas DUAS
+# tentativas (2.013s contra 1.5s, 2026-09-17). Com 5.0s a folga sobe para 8x
+# ocioso / 2.5x sob carga.
+#
+# O fake continua dormindo 10s de propósito: se o kill falhar, o teste leva 10s
+# e estoura o bound de 5.0s de forma inequívoca, em vez de passar raspando. O
+# custo de runtime é ZERO no caminho feliz — o filho morre aos 0.2s de deadline,
+# e o sleep só se completa quando o kill falha, que é quando o teste DEVE falhar.
+_FAKE_SLEEP_SECONDS = "10.0"
+_DEADLINE_SECONDS = 0.2
+_FAST_KILL_BOUND_SECONDS = 5.0
+
 
 class TestLaneHeartbeatE2E(unittest.TestCase):
     def setUp(self):
@@ -115,10 +131,10 @@ class TestLaneHeartbeatE2E(unittest.TestCase):
         spec = TaskSpec(id="T-DL", title="Deadline task", goal="g",
                         workspace_type="scratch")
         tid = self.adapter.save_task(spec, status="READY")
-        env = self._env("slow_ok", sleep="3.0")
+        env = self._env("slow_ok", sleep=_FAKE_SLEEP_SECONDS)
         old_env = dict(os.environ)
         os.environ.update(env)
-        self.worker.timeout_seconds = 0.2  # deadline curto
+        self.worker.timeout_seconds = _DEADLINE_SECONDS  # deadline curto
         start = time.monotonic()
         try:
             dispatcher = HAOSDispatcher(self.adapter, lane_worker=self.worker)
@@ -133,8 +149,9 @@ class TestLaneHeartbeatE2E(unittest.TestCase):
             os.environ.update(old_env)
         elapsed = time.monotonic() - start
         self.assertEqual(executed, [])
-        # Matou de verdade: falhou em ~0.2s (e não esperou os 3.0s do fake).
-        self.assertLess(elapsed, 1.5)
+        # Matou de verdade: devolveu em menos de 5s contra os 10s do fake. O que
+        # prova o kill é a RAZÃO entre os dois, não o valor absoluto do bound.
+        self.assertLess(elapsed, _FAST_KILL_BOUND_SECONDS)
         task = self.adapter.get_task(tid)
         self.assertNotEqual(task["status"], "running")
 
