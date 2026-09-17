@@ -9,10 +9,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
+from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
 
 
 def register(ctx: Any) -> None:
-    """Registra o HermesFabricMemoryProvider no PluginContext de memory."""
-    provider = HermesFabricMemoryProvider()
-    ctx.register_memory_provider(provider)
+    """Register the coordinator-owned provider, not an independent writer."""
+    coordinator = FederatedMemoryCoordinator()
+    # Keep the coordinator alive: it owns the canonical SQLite connection and
+    # durable projection recovery for the lifetime of the plugin context.
+    setattr(ctx, "_haos_memory_coordinator", coordinator)
+    ctx.register_memory_provider(coordinator.memory_provider)
