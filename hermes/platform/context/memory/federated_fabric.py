@@ -494,54 +494,26 @@ class FederatedMemoryCoordinator:
         return self.projection_runner.drain()
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
-        """Obtém um registro de fato por ID."""
-        with self._lock:
-            return self._facts.get(fact_id)
+        """Read through the canonical journal; _facts is only a transient cache."""
+        stored = self.canonical_store.get(fact_id)
+        return self._from_stored(stored) if stored is not None else None
 
-    def list_facts(
-        self,
-        scope: Optional[ScopeType] = None,
-        include_superseded: bool = False,
-    ) -> List[FederatedFactRecord]:
-        """Lista fatos registrados, opcionalmente filtrando por escopo e status de supersessão."""
-        with self._lock:
-            if scope:
-                if scope not in VALID_SCOPES:
-                    raise ValueError(f"Escopo inválido: '{scope}'")
-                ids = self._facts_by_scope.get(scope, [])
-                records = [self._facts[fid] for fid in ids if fid in self._facts]
-            else:
-                records = list(self._facts.values())
+    def list_facts(self, scope: Optional[ScopeType] = None, include_superseded: bool = False) -> List[FederatedFactRecord]:
+        if scope and scope not in VALID_SCOPES:
+            raise ValueError("Escopo inválido: %r" % scope)
+        scopes = (scope,) if scope else tuple(sorted(VALID_SCOPES))
+        return [self._from_stored(record) for record in self.canonical_store.list_records(scopes, include_superseded)]
 
-            if not include_superseded:
-                records = [r for r in records if r.superseded_by is None]
-
-            return records
-
-    def query(
-        self,
-        text: str,
-        scope: Optional[ScopeType] = None,
-        include_superseded: bool = False,
-    ) -> List[FederatedFactRecord]:
-        """Consulta fatos por correspondência textual simples no corpus consolidado."""
-        records = self.list_facts(scope=scope, include_superseded=include_superseded)
-        query_norm = self._normalize(text)
-        if not query_norm:
-            return records
-
-        matched: List[Tuple[float, FederatedFactRecord]] = []
-        for rec in records:
-            rec_norm = self._normalize(rec.fact)
-            if query_norm in rec_norm:
-                matched.append((1.0, rec))
-            else:
-                score = difflib.SequenceMatcher(None, query_norm, rec_norm).ratio()
-                if score > 0.4:
-                    matched.append((score, rec))
-
-        matched.sort(key=lambda x: x[0], reverse=True)
-        return [r for _, r in matched]
+    def query(self, text: str, scope: Optional[ScopeType] = None, include_superseded: bool = False) -> List[FederatedFactRecord]:
+        if scope and scope not in VALID_SCOPES:
+            raise ValueError("Escopo inválido: %r" % scope)
+        scopes = (scope,) if scope else tuple(sorted(VALID_SCOPES))
+        if not text.strip():
+            return self.list_facts(scope=scope, include_superseded=include_superseded)
+        if not include_superseded:
+            return [self._from_stored(record) for record in self.canonical_store.search_fts(text, scopes)]
+        needle = self._normalize(text)
+        return [record for record in self.list_facts(scope=scope, include_superseded=True) if needle in self._normalize(record.fact)]
 
     def close(self) -> None:
         """Encerra threads em background e fecha recursos."""
