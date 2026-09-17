@@ -28,6 +28,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Set
 
 from hermes.platform.context.memory.candidate import (
@@ -50,6 +51,7 @@ from hermes.platform.context.memory.obsidian import ObsidianAdapter
 from hermes.platform.context.memory.provider import HermesFabricMemoryProvider
 from hermes.platform.context.memory.router import MemoryRouter
 from hermes.platform.context.memory.schemas import KnowledgeItem
+from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +113,9 @@ class FederatedMemoryCoordinator:
         self.graphrag = graphrag_adapter or GraphRAGAdapter()
         self.decisions = decision_store or DecisionStore()
         self.event_bus = event_bus or KnowledgeEventBus()
+        # Canonical state is SQLite; all other stores below are projections.
+        ledger_root = Path(vault_path) if vault_path is not None else Path(".hermes")
+        self.canonical_store = CanonicalMemoryStore(ledger_root / ".haos" / "memory-fabric.db")
 
         # Store persistente do grafo (GOV-008): quando o fabric sincroniza
         # conhecimento, cada KnowledgeEvent publicado é espelhado no store
@@ -299,6 +304,21 @@ class FederatedMemoryCoordinator:
                     old_rec.superseded_by = record_id
                     old_rec.updated_at = time.time()
 
+            # Commit canonical state and durable outbox before any projection.
+            # record_id is the idempotency key, so retries cannot create a second fact.
+            self.canonical_store.append(
+                content=fact_record.fact,
+                scope=fact_record.scope,
+                kind="decision" if fact_record.proposed_destination == "obsidian" else "fact",
+                logical_id=fact_record.metadata.get("logical_id") or fact_record.id,
+                provenance=tuple({"uri": uri} for uri in fact_record.provenance),
+                confidence=fact_record.confidence,
+                metadata=fact_record.metadata,
+                supersedes=fact_record.supersedes,
+                idempotency_key=fact_record.id,
+                valid_from=fact_record.created_at,
+            )
+
             self._facts[record_id] = fact_record
             self._facts_by_scope.setdefault(scope, []).append(record_id)
             candidate.status = "consolidated"
@@ -454,12 +474,11 @@ class FederatedMemoryCoordinator:
             uri=f"obsidian://{relative_path}",
             title=title,
             content=record.fact,
-            metadata=meta,
+            metadata={**meta, "fabric_committed": True},
         )
-        self.event_bus.publish(k_event)
-
-        # Esvazia fila pendente do GraphRAG para assegurar consistência imediata
-        self.graphrag_updater.process_pending_queue()
+        # The incremental updater is synchronous; do not enqueue the same event
+        # as well, otherwise it is processed twice when the queue is drained.
+        self.event_bus.publish(k_event, enqueue=False)
 
         # 3. Notificação do Upstream Hermes Memory Provider
         self.memory_provider.remember(
