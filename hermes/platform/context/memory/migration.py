@@ -24,7 +24,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from hermes.platform.context.memory.access import MemoryAccessContext
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore

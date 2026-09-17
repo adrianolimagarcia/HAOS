@@ -39,7 +39,11 @@ CHARS_PER_TOKEN = 4
 
 
 def estimate_tokens(text: str) -> int:
-    return (len(text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN
+    return estimate_tokens_from_chars(len(text))
+
+
+def estimate_tokens_from_chars(chars: int) -> int:
+    return (max(0, chars) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN
 
 
 @dataclass
@@ -72,7 +76,7 @@ class ShadowComparison:
 
     @property
     def token_delta(self) -> int:
-        return estimate_tokens(" " * self.candidate_chars) - estimate_tokens(" " * self.legacy_chars)
+        return estimate_tokens_from_chars(self.candidate_chars) - estimate_tokens_from_chars(self.legacy_chars)
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -278,8 +282,8 @@ class ShadowRetriever:
             if comparison.candidate_error:
                 report.candidate_errors += 1
             report.total_recall_delta += comparison.recall_delta
-            report.total_legacy_tokens += estimate_tokens(" " * comparison.legacy_chars)
-            report.total_candidate_tokens += estimate_tokens(" " * comparison.candidate_chars)
+            report.total_legacy_tokens += estimate_tokens_from_chars(comparison.legacy_chars)
+            report.total_candidate_tokens += estimate_tokens_from_chars(comparison.candidate_chars)
             report.total_duplicate_records += comparison.duplicate_records
             report.total_scope_violations += len(comparison.scope_violations)
             report.legacy_latency_ms.append(comparison.legacy_latency_ms)

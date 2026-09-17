@@ -28,7 +28,7 @@ The sequence, in order:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 # Cutover order. Position in this tuple IS the dependency: each flag may only be
 # enabled once every earlier flag is enabled.

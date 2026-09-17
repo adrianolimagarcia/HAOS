@@ -28,7 +28,6 @@ import os
 from typing import Any, Dict, Optional
 
 from hermes.platform.context.memory.embedding import (
-    EmbeddingModel,
     HashingEmbedder,
     RemoteEmbedder,
     REINDEX_LAZY,

@@ -6,7 +6,7 @@ from bypassing scope and supersession policy.
 """
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
 from hermes.platform.context.memory.access import MemoryAccessContext
 
