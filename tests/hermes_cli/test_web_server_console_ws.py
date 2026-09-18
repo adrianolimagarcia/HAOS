@@ -162,7 +162,17 @@ def test_console_cancel_stops_forked_agent_request_before_reporting(console_clie
 
     monkeypatch.setattr(chat_ws, "_execute_console_line", observed_execute)
     if stop == "timeout":
-        monkeypatch.setattr(chat_ws, "_CONSOLE_COMMAND_TIMEOUT_SECONDS", 2.0)
+        # The deadline must not preempt the startup it has to follow: `confirm` forks a worker
+        # that imports the agent stack and discovers plugins before it can open the provider
+        # request, and this test only means anything once that request is in flight.
+        #
+        # Measured `confirm` -> provider for this variant: 0.82-1.46s on a quiet box; the full
+        # suite runs this file at roughly 4x that dilation. The 2.0s this used to be therefore
+        # raced a 2.0s deadline, and when it lost, the worker was interrupted before reaching
+        # the provider and `started.wait(60)` below failed after a full minute — the [timeout]
+        # failure recorded in the 2026-09-18 full-suite run. 30s stays far beyond any startup
+        # while still exercising the timeout path.
+        monkeypatch.setattr(chat_ws, "_CONSOLE_COMMAND_TIMEOUT_SECONDS", 30.0)
     line = "curator run --consolidate --dry-run"
 
     with console_client.websocket_connect(_url()) as conn:
