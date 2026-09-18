@@ -322,7 +322,6 @@ tests/hermes_cli/test_plugin_event_bus.py 8
 tests/hermes_cli/test_plugin_ownership_ledger.py 14
 tests/hermes_cli/test_plugins.py 13
 tests/hermes_cli/test_plugins_hub_perf_guard.py 2
-tests/hermes_cli/test_profiles_sidebar_cache.py 6
 tests/hermes_cli/test_prompt_text_input_thread_safety.py 1
 tests/hermes_cli/test_pty_bridge.py 2
 tests/hermes_cli/test_pty_session.py 5

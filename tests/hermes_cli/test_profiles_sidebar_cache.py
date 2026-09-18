@@ -11,6 +11,13 @@ from unittest import mock
 
 from hermes_cli.web_routers import profiles
 
+# Every wait in this file is a LIVENESS probe ("did the scan start / finish at all?"), never a
+# deadline on how long the work may take. Sized as one, per the repo rule that a timing test must
+# not assume a quiet runner: the 1.0s these used to carry was measured at 1.628s under load and
+# 0.657s idle, i.e. a 1.5x margin on an idle box and negative under contention. The contract each
+# test actually asserts (one scan serves the burst, callers get distinct copies) is unaffected.
+_LIVENESS_SECONDS = 30.0
+
 
 class SidebarCacheTests(unittest.TestCase):
     def setUp(self):
@@ -83,15 +90,15 @@ class SidebarCacheTests(unittest.TestCase):
             with calls_lock:
                 calls += 1
             entered.set()
-            self.assertTrue(release.wait(timeout=2))
+            self.assertTrue(release.wait(timeout=_LIVENESS_SECONDS))
             return {"profile": profile, "rows": []}
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [pool.submit(scan, "default") for _ in range(workers)]
-            self.assertTrue(entered.wait(timeout=1))
+            self.assertTrue(entered.wait(timeout=_LIVENESS_SECONDS))
             time.sleep(0.05)
             release.set()
-            results = [future.result(timeout=2) for future in futures]
+            results = [future.result(timeout=_LIVENESS_SECONDS) for future in futures]
 
         self.assertEqual(calls, 1)
         self.assertEqual(results, [{"profile": "default", "rows": []}] * workers)
@@ -176,6 +183,13 @@ class SidebarCacheTests(unittest.TestCase):
         # /api/profiles/projects/tree fans out over every profile's state.db; desktop
         # background sync + sidebar refreshes overlap identical requests. One scan must
         # serve the whole burst, and no two callers may share the same payload object.
+        #
+        # The endpoint late-imports tui_gateway.server (circular-import avoidance), which costs
+        # ~0.66s — measured inside the very window the `entered` probe bounds, on a test whose
+        # subject is coalescing rather than import latency. Paying it up front keeps the probe
+        # measuring the property under test.
+        import tui_gateway.server  # noqa: F401
+
         workers = 8
         entered = threading.Event()
         release = threading.Event()
@@ -187,17 +201,17 @@ class SidebarCacheTests(unittest.TestCase):
             with scans_lock:
                 scans += 1
             entered.set()
-            self.assertTrue(release.wait(timeout=2))
+            self.assertTrue(release.wait(timeout=_LIVENESS_SECONDS))
             return None
 
         with mock.patch.object(profiles, "_profile_targets", return_value=[("default", Path("/nonexistent"))]), \
                 mock.patch.object(profiles, "_read_profile_db", side_effect=fake_read), \
                 ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [pool.submit(profiles.get_profiles_projects_tree) for _ in range(workers)]
-            self.assertTrue(entered.wait(timeout=1))
+            self.assertTrue(entered.wait(timeout=_LIVENESS_SECONDS))
             time.sleep(0.05)
             release.set()
-            results = [future.result(timeout=2) for future in futures]
+            results = [future.result(timeout=_LIVENESS_SECONDS) for future in futures]
 
         self.assertEqual(scans, 1)
         self.assertEqual(len({id(r) for r in results}), workers)
