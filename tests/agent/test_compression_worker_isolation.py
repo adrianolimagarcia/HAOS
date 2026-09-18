@@ -25,6 +25,15 @@ from unittest.mock import MagicMock, patch
 
 from hermes_state import SessionDB
 
+# Every numeric wait in this file is a LIVENESS probe — "did the worker get there, did it
+# let go of the lock?" — not a latency contract. The assertions these loops feed are about
+# isolation and lease ownership, never about promptness. Sized at 5s they measured the
+# runner instead: the 2026-09-18 full-suite run failed
+# `test_f3_mutating_engine_cannot_touch_live_transcript_after_timeout` on
+# `assert engine_started.wait(timeout=_LIVENESS_SECONDS)`. 30s answers the liveness question with real
+# headroom; a genuinely stuck worker still fails against the runner's 900s file ceiling.
+_LIVENESS_SECONDS = 30.0
+
 
 def _build_agent_with_db(db: SessionDB, session_id: str, **compressor_kwargs):
     with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
@@ -108,7 +117,7 @@ def test_f3_mutating_engine_cannot_touch_live_transcript_after_timeout(
             live, "sys", approx_tokens=120_000
         )
         # Host timed out and returned while the engine is STILL blocked.
-        assert engine_started.wait(timeout=5)
+        assert engine_started.wait(timeout=_LIVENESS_SECONDS)
         assert not release_engine.is_set()
         assert returned is live
         # ── The core assertion, made while the worker keeps running ──────
@@ -124,7 +133,7 @@ def test_f3_mutating_engine_cannot_touch_live_transcript_after_timeout(
         release_engine.set()
     # After the late worker finishes, the live transcript must STILL be
     # untouched (publication only on admitted commit — which was cancelled).
-    deadline = time.time() + 5
+    deadline = time.time() + _LIVENESS_SECONDS
     while time.time() < deadline and db.get_compression_lock_holder(session_id):
         time.sleep(0.02)
     assert live == baseline
@@ -143,7 +152,7 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
     from agent import auxiliary_client as aux
     from agent import conversation_compression as cc
 
-    deadline = time.time() + 5
+    deadline = time.time() + _LIVENESS_SECONDS
     while time.time() < deadline:
         with cc._compress_admission_lock:
             if cc._compress_admitted_count == 0:
@@ -183,10 +192,10 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
             live, "sys", approx_tokens=120_000
         )
         assert returned is live
-        assert provider_started.wait(timeout=5)
+        assert provider_started.wait(timeout=_LIVENESS_SECONDS)
         assert not release_provider.is_set()
 
-        deadline = time.time() + 5
+        deadline = time.time() + _LIVENESS_SECONDS
         while time.time() < deadline:
             with cc._compress_admission_lock:
                 if cc._compress_admitted_count == 0:
@@ -199,7 +208,7 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
             )
     finally:
         release_provider.set()
-        deadline = time.time() + 5
+        deadline = time.time() + _LIVENESS_SECONDS
         while time.time() < deadline:
             with cc._compress_admission_lock:
                 if cc._compress_admitted_count == 0:
@@ -265,7 +274,7 @@ def test_f4_five_step_stale_holder_regression(tmp_path: Path) -> None:
         idle_timeout_seconds=0.6,
         total_ceiling_seconds=1.2,
     )
-    assert summary_started.wait(timeout=5)
+    assert summary_started.wait(timeout=_LIVENESS_SECONDS)
     assert not release_summary.is_set()  # old worker STILL blocked
     assert result_msgs is messages
 
@@ -273,7 +282,7 @@ def test_f4_five_step_stale_holder_regression(tmp_path: Path) -> None:
     # summary remains blocked. The host's holder-qualified release freed
     # the old lease (refresher stopped + row deleted, holder-scoped).
     new_holder = "pid:new:contender"
-    deadline = time.time() + 5
+    deadline = time.time() + _LIVENESS_SECONDS
     acquired = False
     while time.time() < deadline:
         if db.try_acquire_compression_lock(session_id, new_holder, ttl_seconds=60):
@@ -292,7 +301,7 @@ def test_f4_five_step_stale_holder_regression(tmp_path: Path) -> None:
     # Step 4: release the old worker.
     release_summary.set()
     # Wait for the late worker to fully unwind (it must NOT touch the lock).
-    deadline = time.time() + 5
+    deadline = time.time() + _LIVENESS_SECONDS
     while time.time() < deadline:
         if db.get_compression_lock_holder(session_id) != new_holder:
             break  # would be a failure — checked below
