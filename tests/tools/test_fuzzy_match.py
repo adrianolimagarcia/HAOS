@@ -626,13 +626,39 @@ class TestContextAwareCorrectness:
         from tools.fuzzy_match import _strategy_context_aware
 
         big = "\n".join(f"line {i} content here" for i in range(10000))
-        patt = "\n".join(f"nomatch xyzzy {i}" for i in range(40))
-        start = time.perf_counter()
-        matches = _strategy_context_aware(big, patt)
-        elapsed = time.perf_counter() - start
-        assert matches == []
-        # Was ~5.5s before anchoring; generous ceiling to avoid CI flake.
-        assert elapsed < 2.0, f"context_aware no-match took {elapsed:.2f}s"
+
+        def no_match_scan(pattern_lines):
+            patt = "\n".join(f"nomatch xyzzy {i}" for i in range(pattern_lines))
+            start = time.perf_counter()
+            matches = _strategy_context_aware(big, patt)
+            elapsed = time.perf_counter() - start
+            assert matches == []
+            return elapsed
+
+        # Asserted as a RATIO, not a wall-clock bound. The claim is that the anchor
+        # pre-filter removes the pattern-size factor, so a 16x larger pattern must not
+        # cost 16x more. Both timings come from the same machine in the same moment,
+        # which makes the assertion independent of how loaded the runner is.
+        #
+        # The absolute form this replaced (`elapsed < 2.0`) measured the runner, not the
+        # code: measured 0.31s idle but 0.80-1.16s under 12 CPU burners on an 8-core box,
+        # and it failed in the 2026-09-18 full-suite run. It was also the weaker test —
+        # a fast machine satisfies any absolute bound with a quadratic implementation.
+        small = no_match_scan(40)
+        large = no_match_scan(640)
+        # Anchored: measured 0.84-0.96x across 40..640 lines (flat). Unanchored, the
+        # pattern factor is back: restoring the pre-anchor body (every line's similarity
+        # computed, no short-circuit) measured 15.9x here — 12.04s at 40 lines vs
+        # 191.4s at 640 — and this assertion failed, so the ratio is not vacuous.
+        # 4x separates flat from 16x with margin on both sides, on any machine.
+        assert large < small * 4, (
+            f"no-match scan scales with the pattern size: {small:.3f}s at 40 lines vs "
+            f"{large:.3f}s at 640 lines ({large / small:.1f}x; the anchor pre-filter "
+            "should keep this ~1x)"
+        )
+        # Catastrophic-hang guard only, orders of magnitude above the real cost, so it
+        # cannot flake on a loaded runner.
+        assert large < 30.0
 
 
 
