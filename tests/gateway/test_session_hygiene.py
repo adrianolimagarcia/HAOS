@@ -31,6 +31,24 @@ from gateway.session import SessionEntry, SessionSource
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Ceiling on every "stall until released" fake worker in this file.
+#
+# The release sits on the LAST line of each test, after the assertions, so a failing
+# assertion leaves the worker stalled forever. That is not a test failure — it wedges the
+# whole file: the event loop's default-executor shutdown joins this thread BEFORE pytest
+# can run any fixture teardown, so the process never exits and the runner SIGKILLs the
+# file at its 900s timeout, reporting FLAKY because the retry then passes.
+#
+# Measured: forcing ``test_session_hygiene_idle_timeout_still_takes_failure_path`` to fail
+# hung the file to the timeout; adding this ceiling made the same file finish with
+# "24 passed, 1 failed" instead. A fixture teardown that sets the release event was tried
+# first and does NOT help — the join happens before teardown runs, so it was removed.
+#
+# 30s is ~300x the 0.1s idle timeout these tests assert on, so the stall still outlives
+# every assertion; the ceiling only has to make the wait END.
+_WORKER_STALL_CEILING_SECONDS = 30.0
+
+
 def _make_history(n_messages: int, content_size: int = 100) -> list:
     """Build a fake transcript with n_messages user/assistant pairs."""
     history = []
@@ -695,7 +713,8 @@ async def test_session_hygiene_turn_hold_budget_abandons_streaming_wait(
             worker_started.set()
             # Stream progress continuously so the inactivity slice never
             # times out; only the turn-hold budget can abandon this wait.
-            while not release_worker.is_set():
+            deadline = time.monotonic() + _WORKER_STALL_CEILING_SECONDS
+            while not release_worker.is_set() and time.monotonic() < deadline:
                 if commit_fence is not None:
                     commit_fence.touch_progress()
                 time.sleep(0.01)
@@ -889,7 +908,8 @@ async def test_session_hygiene_idle_timeout_still_takes_failure_path(
             worker_started.set()
             # NEVER touch progress — the inactivity slice will fire.
             # But we must be stoppable so the test can clean up.
-            while not release_worker.is_set():
+            deadline = time.monotonic() + _WORKER_STALL_CEILING_SECONDS
+            while not release_worker.is_set() and time.monotonic() < deadline:
                 time.sleep(0.01)
 
     fake_run_agent = types.ModuleType("run_agent")
