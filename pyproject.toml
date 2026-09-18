@@ -660,6 +660,12 @@ markers = [
 ]
 # integration tests take way too long to run in the normal CI environments
 addopts = "-m 'not integration'"
+# A hung test is currently undiagnosable: scripts/run_tests_parallel.py SIGKILLs the file's
+# process tree at 900s, so the only evidence left is "(900s exceeded)" with no stack — which is
+# exactly the state tests/gateway/test_session_hygiene.py leaves behind when it hangs. Dumping
+# every thread's stack at 600s puts the evidence on disk before the kill. Stays a dump only:
+# faulthandler_exit_on_timeout is deliberately NOT set, so one hung file cannot abort the run.
+faulthandler_timeout = "600"
 
 [tool.ty.environment]
 python-version = "3.13"
