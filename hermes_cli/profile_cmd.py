@@ -102,7 +102,7 @@ def _profile_status(args):
         print(f"Gateway:        {'running' if p.gateway_running else 'stopped'}")
         print(f"Skills:         {p.skill_count} installed")
         if p.alias_path:
-            print(f"Alias:          {p.alias_name or p.name} → hermes -p {p.name}")
+            print(f"Alias:          {p.alias_name or p.name} → {product_command('-p')} {p.name}")
     print()
 
 
@@ -217,7 +217,7 @@ def _profile_create(args):
         else:
             print(f"Cloned config, .env, SOUL.md, and skills from {source_label}.")
         if sync_imports:
-            print(f"Import sources carried over — `hermes -p {name} import-agent --sync` "
+            print(f"Import sources carried over — `{product_command('-p')} {name} import-agent --sync` "
                   "keeps pulling the same Claude Code / Codex trees.")
         _print_channel_clone_notice(name, source_label, clone_channels, "--clone-all" if clone_all else "--clone")
         # Auto-clone Honcho config for the new profile (only with clone operations)
@@ -247,7 +247,7 @@ def _profile_create(args):
         if collision:
             print(f"\n⚠ Cannot create alias '{name}' — {collision}")
             print(f"  Choose a custom alias:  {product_command('profile')} alias {name} --name <custom>")
-            print(f"  Or access via flag:     hermes -p {name} chat")
+            print(f"  Or access via flag:     {product_command('-p')} {name} chat")
         else:
             wrapper_path = create_wrapper_script(name)
             if wrapper_path:
@@ -391,7 +391,7 @@ def _profile_show(args):
             print(f"Installed from: {dist_source}")
         print(f"  (run `{product_command('profile')} info {name}` for full manifest)")
     if alias_name:
-        print(f"Alias:   {alias_name} → hermes -p {name}  ({_wrapper_path(alias_name)})")
+        print(f"Alias:   {alias_name} → {product_command('-p')} {name}  ({_wrapper_path(alias_name)})")
     print()
 
 
@@ -504,9 +504,9 @@ def _profile_install(args):
         if plan.has_cron:
             print(
                 "  Cron jobs were included but are NOT scheduled automatically.\n"
-                f"  Review them with:  hermes -p {plan.manifest.name} cron list"
+                f"  Review them with:  {product_command('-p')} {plan.manifest.name} cron list"
             )
-        print(f"\n  Use with:      hermes -p {plan.manifest.name} chat")
+        print(f"\n  Use with:      {product_command('-p')} {plan.manifest.name} chat")
     except (DistributionError, ValueError) as e:
         _die(f"Error: {e}")
 
@@ -537,7 +537,7 @@ def _profile_update(args):
         plan = update_distribution(canon, force_config=force_config)
         print(f"\n✓ Updated '{plan.manifest.name}' → v{plan.manifest.version}")
         if plan.has_cron:
-            print(f"  Cron files were refreshed.  Review with:  hermes -p {plan.manifest.name} cron list")
+            print(f"  Cron files were refreshed.  Review with:  {product_command('-p')} {plan.manifest.name} cron list")
     except (DistributionError, ValueError) as e:
         _die(f"Error: {e}")
 

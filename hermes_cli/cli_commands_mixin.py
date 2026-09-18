@@ -624,7 +624,7 @@ class CLICommandsMixin:
         A restore also undoes the last chat turn; ``--all`` overwrites user hand-edits too."""
         from tools.checkpoint_manager import format_checkpoint_list
         mgr = self._checkpoint_manager((
-            "  Checkpoints are not enabled.", "  Enable with: hermes --checkpoints",
+            "  Checkpoints are not enabled.", "  Enable with: " + product_command("--checkpoints"),
             "  Or in config.yaml: checkpoints: { enabled: true }"))
         if mgr is None:
             return
@@ -754,7 +754,7 @@ class CLICommandsMixin:
         """Print the cumulative checkpoint-baseline diff (/diff session)."""
         mgr = self._checkpoint_manager((
             "  Checkpoints are not enabled, so there's no session baseline.",
-            "  Enable with: hermes --checkpoints",
+            "  Enable with: " + product_command("--checkpoints"),
             "  Or in config.yaml: checkpoints: { enabled: true }",
             "  (Plain /diff still works — it uses git directly.)"))
         if mgr is None:
@@ -891,7 +891,7 @@ class CLICommandsMixin:
                 wrapper_path = create_wrapper_script(imported)
                 if wrapper_path:
                     print(f"  Wrapper created: {wrapper_path}")
-        print(f"  Use it: hermes -p {imported}")
+        print(f"  Use it: {product_command('-p')} {imported}")
 
     # ---- /stop, /agents -------------------------------------------------------------------
     def _handle_stop_command(self):
@@ -1417,7 +1417,7 @@ class CLICommandsMixin:
     # ---- /worktree ------------------------------------------------------------------------
     def _handle_worktree_command(self, cmd_original: str) -> None:
         """Handle /worktree [new [name]|list|prune [--dry-run]] — isolated git worktrees.
-        ``new`` moves this session into the tree (as ``hermes -w``: kept on exit only with
+        ``new`` moves this session into the tree (as ``haos -w``: kept on exit only with
         unpushed commits); ``prune`` never deletes tracked changes, unique commits, or in-use trees."""
         import cli as _cli
         parts = cmd_original.split(None, 2)
@@ -1490,13 +1490,13 @@ class CLICommandsMixin:
         wt_info = _cli._setup_worktree(repo_root=repo_root, sync_base=sync_base, name=rest or None)
         if not wt_info:
             return  # _setup_worktree already printed the failure
-        # Retarget the session's terminal/file tools at the new tree (as `hermes -w` does).
+        # Retarget the session's terminal/file tools at the new tree (as `haos -w` does).
         try:
             os.chdir(wt_info["path"])
         except OSError as e:
             print(f"  ⚠ Created worktree but could not enter it: {e}")
         os.environ["TERMINAL_CWD"] = wt_info["path"]
-        # Same keep-if-unpushed cleanup as `hermes -w`. Only one tree is "active" per process;
+        # Same keep-if-unpushed cleanup as `haos -w`. Only one tree is "active" per process;
         # an earlier one keeps its own atexit registration (explicit info arg).
         _cli._active_worktree = wt_info
         atexit.register(_cli._cleanup_worktree, wt_info)

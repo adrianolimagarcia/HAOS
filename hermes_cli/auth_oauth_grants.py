@@ -330,7 +330,7 @@ def heal_forked_single_use_oauth_grants(provider_id: str) -> Optional[Dict[str, 
     LINEAGE with a root row (same pool id or shared token material), keeps the
     freshest rotation, writes it into ROOT when root's is older, and strips the profile's copy so
     the profile borrows root from then on. Idempotent; never touches API-key rows; never deletes a
-    row with no root counterpart (an independent ``hermes -p <p> auth add`` grant, or the only
+    row with no root counterpart (an independent ``haos -p <p> auth add`` grant, or the only
     surviving copy); reads only the two auth.json files the root fallback already reads. Returns
     ``{"adopted", "stripped_ids", "files", "providers_block"}`` when something healed, else None.
     Never raises.

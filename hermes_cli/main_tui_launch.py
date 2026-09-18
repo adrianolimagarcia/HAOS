@@ -60,9 +60,9 @@ def _print_tui_exit_summary(session_id: Optional[str], active_session_file: Opti
         if db is not None:
             db.close()
 
-    print(f"\nResume this session with:\n  hermes --tui --resume {target}")
+    print(f"\nResume this session with:\n  {product_command('--tui', '--resume')} {target}")
     if title:
-        print(f'  hermes --tui -c "{title}"')
+        print(f'  {product_command("--tui", "-c")} "{title}"')
     print(f"\nSession:        {target}")
     if title:
         print(f"Title:          {title}")
@@ -415,7 +415,7 @@ def _ensure_tui_workspace(tui_dir: Path) -> None:
         "Recovery:\n" +
         "  1. From the Hermes checkout, run `git restore -- ui-tui`\n" +
         "  2. Run `npm install --silent --no-fund --no-audit --progress=false`\n" +
-        "  3. Retry `hermes --tui`\n" +
+        "  3. Retry `" + product_command("--tui") + "`\n" +
         "If the checkout is still inconsistent, run `" + product_command("update") + " --force`.",
         file=sys.stderr)
     sys.exit(1)
@@ -458,7 +458,7 @@ def _tui_node_bin(bin: str) -> str:
         print(
             f"Node.js is required for the TUI but `{bin}` was not found. Install it from "
             "https://nodejs.org (run `" + product_command("doctor") + "` for the install hint for your OS), then "
-            "retry `hermes --tui`. To keep working now, run `hermes --cli`."
+            "retry `" + product_command("--tui") + "`. To keep working now, run `" + product_command("--cli") + "`."
         )
         sys.exit(1)
     return path
@@ -792,7 +792,7 @@ def _launch_tui(
     env["NODE_OPTIONS"] = " ".join(_tokens)
     # HERMES_TUI_RESUME is an internal hand-off to the Ink app. We start from a
     # full os.environ snapshot, so a stale exported value would make a plain
-    # `hermes --tui` try to resume a non-existent session; only forward the id
+    # `haos --tui` try to resume a non-existent session; only forward the id
     # argparse resolved for this invocation.
     env.pop("HERMES_TUI_RESUME", None)
     if resume_session_id:

@@ -128,7 +128,7 @@ def read_install_method() -> str | None:
 
 
 def print_fast_version_info(*, check_updates: bool = True) -> None:
-    """THE canonical ``hermes --version`` output (also used by /version).
+    """THE canonical ``haos --version`` output (also used by /version).
 
     Every lazy block degrades gracefully — a broken/heavy import can never take the basic version
     output down.
@@ -180,7 +180,7 @@ def print_fast_version_info(*, check_updates: bool = True) -> None:
 
 
 def try_fast_version(argv: list[str] | None = None) -> bool:
-    """Handle ``hermes --version`` before the heavy import wall.
+    """Handle ``haos --version`` before the heavy import wall.
 
     Only ``--version``/``-V`` (``--version`` carries the full output incl. update status), and never
     when container mode may need to route the command into the container. Termux keeps the

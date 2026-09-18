@@ -16,6 +16,7 @@ import threading
 import time
 
 from hermes_constants import is_termux as _is_termux_environment
+from hermes_constants import product_command
 from typing import Optional
 
 
@@ -700,7 +701,7 @@ class CLIVoiceMixin:
             from tools.wake_word import _active_profile_name
             if _match[1] != _active_profile_name():
                 _cprint(f"\n{_DIM}Wake phrase for profile '{_match[1]}' — "
-                        f"run: hermes -p {_match[1]}{_RST}")
+                        "run: " + product_command("-p", _match[1]) + f"{_RST}")
                 self._wake_suspended = True  # watchdog resumes the listener
                 return
 

@@ -182,9 +182,9 @@ def _wrapper_path(alias: str) -> Path:
 
 
 def _is_our_wrapper(path: Path) -> bool:
-    """True when *path* reads as a Hermes-generated wrapper (contains ``hermes -p``)."""
+    """True when *path* reads as a Hermes-generated wrapper (contains ``hermes -p``)."""  # haos-brand: documents the literal needle matched below, not user copy
     try:
-        return "hermes -p" in path.read_text(encoding="utf-8")
+        return "hermes -p" in path.read_text(encoding="utf-8")  # haos-brand: needle into wrapper text, which carries the `hermes` console-script alias
     except Exception:
         return False
 
@@ -401,7 +401,7 @@ def create_wrapper_script(name: str, target: Optional[str] = None) -> Optional[P
     wrapper_path = _wrapper_path(canon)
     try:
         if sys.platform == "win32":
-            wrapper_path.write_text(f"@echo off\r\nhermes -p {profile} %*\r\n", encoding="utf-8")
+            wrapper_path.write_text(f"@echo off\r\nhermes -p {profile} %*\r\n", encoding="utf-8")  # haos-brand: wrapper text read back by _is_our_wrapper/build_alias_map; must stay one literal
         else:
             hermes_exe = shutil.which("hermes") or "hermes"
             wrapper_path.write_text(f'#!/bin/sh\nexec {shlex.quote(hermes_exe)} -p {profile} "$@"\n', encoding="utf-8")
@@ -460,7 +460,7 @@ def find_alias_for_profile(profile_name: str) -> Optional[str]:
 
 
 # Cap on how much of a wrapper file is read when reverse-looking-up its profile. Real
-# wrappers are a few hundred bytes with the ``hermes -p X`` needle near the top; the wrapper
+# wrappers are a few hundred bytes with the ``hermes -p X`` needle near the top; the wrapper  # haos-brand: the needle is the literal ``hermes -p`` the readers match, not user copy
 # dir commonly also holds large binaries (ffmpeg, node, …) whose whole-file reads, N times,
 # dominated ``list_profiles`` (~4.5s).
 _WRAPPER_READ_LIMIT = 8192
@@ -477,7 +477,7 @@ def build_alias_map() -> dict[str, str]:
     if not wrapper_dir.is_dir():
         return result
     is_windows = sys.platform == "win32"
-    prefix = "hermes -p "
+    prefix = "hermes -p "  # haos-brand: matches the wrapper text written by create_wrapper_script (and the POSIX exe path), not user copy
     for entry in sorted(wrapper_dir.iterdir()):
         if not entry.is_file():
             continue
@@ -966,7 +966,7 @@ Either clone strips the source's messaging channels — bot tokens, allowlists, 
         raise
 
     # Inside a container under s6, register the gateway as a runtime s6 service so
-    # `hermes -p <profile> gateway start` supervises via `s6-svc -u` instead of a bare
+    # `haos -p <profile> gateway start` supervises via `s6-svc -u` instead of a bare
     # process. No-op on host (systemd/launchd/windows unit generation handles lifecycle).
     _maybe_register_gateway_service(canon)
     # A running multiplexer enumerates profiles/ at boot: ask it to serve this one now (it also
@@ -991,7 +991,7 @@ def _finish_profile_layout(profile_dir: Path, *, no_skills: bool, clone_all: boo
                            description: Optional[str]) -> None:
     """Seed files a fresh profile owns from day one; runs on the staging tree before publish."""
     # Seed an empty .env so the profile owns a credentials file from day one. Without it,
-    # profile-scoped env writes (dashboard Channels/Keys pages, `hermes -p <name> auth add`)
+    # profile-scoped env writes (dashboard Channels/Keys pages, `haos -p <name> auth add`)
     # had no file until first write and the profile silently inherited shell API keys —
     # read by users as "the new profile reads the root .env". Skipped when a clone copied one.
     _seed_file_if_missing(profile_dir / ".env", _PLACEHOLDER_ENV, 0o600)
@@ -1147,7 +1147,7 @@ def _profile_bound_backend_pids(canon: str, profile_dir: Path) -> list[int]:
     except OSError:
         resolved_dir = profile_dir
 
-    # Never terminate ourselves or a parent (`hermes -p <canon> profile delete` runs under
+    # Never terminate ourselves or a parent (`haos -p <canon> profile delete` runs under
     # the very profile it's deleting).
     skip: set[int] = {os.getpid()}
     with contextlib.suppress(Exception):

@@ -90,7 +90,7 @@ def _scan_dashboard_processes(*, exclude_pids: set[int] | None = None) -> list[t
                  if pid not in skip and any(p in cmd for p in _DASHBOARD_PATTERNS)]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return []
-    # Spawn-ledger augmentation: substring patterns miss profiled launches (`hermes --profile p
+    # Spawn-ledger augmentation: substring patterns miss profiled launches (`haos --profile p
     # serve`); the ledger holds live-verified pids. Unavailable ledger → scan-only.
     with contextlib.suppress(Exception):
         # Every serve/ dashboard registers itself in the machine spawn ledger at startup with live-verified

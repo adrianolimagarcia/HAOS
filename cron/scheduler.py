@@ -3650,7 +3650,7 @@ def _worktree_maintenance_repos() -> List[str]:
 
 def _maybe_run_worktree_maintenance() -> None:
     """Throttled worktree prune from the cron tick, on a daemon thread so the tick never waits on
-    git. Same conservative pruner as ``hermes -w`` startup (dirty/unpushed/locked trees untouched).
+    git. Same conservative pruner as ``haos -w`` startup (dirty/unpushed/locked trees untouched).
     Errors never propagate: GC is hygiene, not scheduling."""
     global _last_worktree_maintenance_at
     now = time.monotonic()

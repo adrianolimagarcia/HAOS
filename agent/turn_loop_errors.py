@@ -15,6 +15,7 @@ from typing import Any
 
 from agent.message_metadata import append_message
 from agent.turn_failure_copy import short_detail, site_copy
+from hermes_constants import product_command
 
 logger = logging.getLogger("agent.conversation_loop")
 
@@ -85,7 +86,8 @@ def handle_outer_loop_error(
         failed = True
         _sid = getattr(agent, "session_id", None)
         final_response = site_copy(
-            "interpreter_shutdown", resume=f" (CLI: `hermes --resume {_sid}`)" if _sid else "",
+            "interpreter_shutdown",
+            resume=f" (CLI: `{product_command('--resume', _sid)}`)" if _sid else "",
         )
         return _verdict("break")
 

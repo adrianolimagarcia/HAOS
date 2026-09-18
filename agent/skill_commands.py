@@ -587,7 +587,7 @@ def build_preloaded_skills_prompt(
 ) -> tuple[str, list[str], list[str]]:
     """Load skills for session-wide CLI/TUI preloading; returns (prompt_text,
     loaded_skill_names, missing_identifiers). Disabled skills count as missing:
-    this path bypasses the scan-time filter, and ``hermes -s <skill>`` must not
+    this path bypasses the scan-time filter, and ``haos -s <skill>`` must not
     force-load an operator-disabled skill. *excluded_loaded_names* are canonical
     names the session already carries (skills.auto_load): they resolve as loaded
     but are not rendered again.

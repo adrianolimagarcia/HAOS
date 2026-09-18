@@ -1023,7 +1023,7 @@ def run_import(args) -> None:
         if restored_profiles:
             print("\nTo re-enable gateway services for profiles:")
             for pname in restored_profiles:
-                print(f"  hermes -p {pname} gateway install")
+                print("  " + product_command("-p", pname, "gateway", "install"))
         _revive_gateway_after_import(hermes_root)
         print("Done. Your Hermes configuration has been restored.")
 

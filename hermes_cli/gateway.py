@@ -4481,7 +4481,7 @@ def named_profile_served_by_running_multiplexer(profile_name: str | None = None)
             return False
         from hermes_cli.profiles import normalize_profile_name
         # The live gateway's own record wins: the CLI process cannot see an env-only opt-in on the
-        # default profile (`hermes -p X` loads X's .env) and a config edit after start is not live yet.
+        # default profile (`haos -p X` loads X's .env) and a config edit after start is not live yet.
         # Only a record without the key (pre-multiplex writer) falls through to config derivation.
         recorded = recorded_served_profiles(default_root)
         if recorded is not None:
@@ -6122,7 +6122,7 @@ _NO_BACKEND_MESSAGES = {
     ("install", "s6"): (None,
         "Per-profile gateways are auto-registered when you create a profile.", "",
         "  " + product_command("profile") + " create <name>     # creates the s6 service slot",
-        "  hermes -p <name> gateway start   # bring it up via s6",
+        "  " + product_command("-p", "<name>", "gateway", "start") + "   # bring it up via s6",
         "  " + product_command("status") + "                    # see currently-supervised gateways"),
     ("install", "container"): (0,
         "Service installation is not needed inside a Docker container.",
@@ -6138,7 +6138,7 @@ _NO_BACKEND_MESSAGES = {
     ("uninstall", "s6"): (None,
         "Per-profile gateways are auto-unregistered when you delete the profile.", "",
         "  " + product_command("profile") + " delete <name>     # tears down the s6 service slot",
-        "  hermes -p <name> gateway stop    # stop without deleting the profile"),
+        "  " + product_command("-p", "<name>", "gateway", "stop") + "    # stop without deleting the profile"),
     ("uninstall", "container"): (0,
         "Service uninstall is not applicable inside a Docker container.",
         "To stop the gateway, stop or remove the container:", "",

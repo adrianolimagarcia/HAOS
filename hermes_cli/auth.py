@@ -2236,7 +2236,7 @@ def _reset_config_provider() -> Path:
 
 def login_command(args) -> None:
     """Deprecated: use 'haos model' or 'haos setup' instead."""
-    print("The 'hermes login' command has been removed.\nUse '" + product_command("auth") + "' to manage credentials,\n" +
+    print("The '" + product_command("login") + "' command has been removed.\nUse '" + product_command("auth") + "' to manage credentials,\n" +
           "'" + product_command("model") + "' to select a provider, or '" + product_command("setup") + "' for full setup.")
     raise SystemExit(0)
 

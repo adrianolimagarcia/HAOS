@@ -263,7 +263,7 @@ def ensure_mcp_discovery_before_agent_build(
     thread_name: str = "cli-mcp-discovery") -> None:
     """Give configured MCP tools a bounded chance to register before AIAgent.
 
-    Non-interactive first turns (``chat -q``, ``hermes -z``) can construct ``AIAgent`` before any
+    Non-interactive first turns (``chat -q``, ``haos -z``) can construct ``AIAgent`` before any
     path started discovery, and ``wait_for_mcp_discovery()`` only joins an existing thread — so
     start discovery if needed, then wait up to the configured bound.
     """

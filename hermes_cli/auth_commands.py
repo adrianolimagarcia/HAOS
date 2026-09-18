@@ -299,7 +299,7 @@ def _add_nous_oauth_credential(args, provider: str) -> PooledCredential:
         return entry
 
     # Codex-style auto-import: a shared Nous credential at <hermes-root>/shared/nous_auth.json
-    # (written by any previous login) makes `hermes --profile <name> auth add nous --type oauth`
+    # (written by any previous login) makes `haos --profile <name> auth add nous --type oauth`
     # a one-tap operation for multi-profile users.
     if auth_mod._read_shared_nous_state():
         try:

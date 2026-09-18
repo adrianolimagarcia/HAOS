@@ -1,4 +1,4 @@
-"""Per-terminal session breadcrumbs for ``hermes -c`` / ``--continue``. Strictly best-effort: no
+"""Per-terminal session breadcrumbs for ``haos -c`` / ``--continue``. Strictly best-effort: no
 function raises; without a stable terminal identity (no tty, no known multiplexer env var) ``-c``
 falls back to latest-session. Gated by ``session.terminal_continue`` (default true)."""
 

@@ -346,7 +346,7 @@ def served_profile_child_env(
     base: "Mapping[str, str] | None" = None, *, target_home: "str | Path | None" = None,
     inherit_credentials: bool = False,
 ) -> dict[str, str]:
-    """Child env for a process that acts FOR the active (possibly served) profile: ``hermes -p X``
+    """Child env for a process that acts FOR the active (possibly served) profile: ``haos -p X``
     workers, ``key_cmd`` helpers, browser drivers. The process env is the LAUNCH profile's. When the
     target is a ROUTED home (not the launch profile's — under multiplex or a Desktop/dashboard backend
     serving ``?profile=`` with the flag off) the launch ``.env`` residue and bridged ``TERMINAL_*`` are
@@ -355,7 +355,7 @@ def served_profile_child_env(
     never recorded in ``.env`` or a source snapshot, so a name-based strip cannot see it and the target
     overlay cannot remove it. ``inherit_credentials=True`` is for children that legitimately run with
     the profile's credentials (they run the agent or mint its token): the target profile's own secrets
-    (its ``.env`` + hydrated sources, what a standalone ``hermes -p X`` loads itself) are overlaid — never
+    (its ``.env`` + hydrated sources, what a standalone ``haos -p X`` loads itself) are overlaid — never
     a sibling profile's. Under multiplex with neither a target nor a bound scope the call raises
     (``get_secret``'s fail-closed contract): minting with the launch environ would sign in as the wrong
     profile. ``False`` keeps the provider scrub; the caller re-adds the few keys the child needs via
@@ -398,7 +398,7 @@ def strip_launch_profile_env(env: dict, target_home: "str | Path | None" = None)
     """Drop the LAUNCH profile's residue from a child env built for another served profile.
     ``os.environ`` holds the default profile's ``.env`` and its bridged ``TERMINAL_*`` settings;
     the secret scrub removes credentials but not settings (``HERMES_MODEL``, ``TERMINAL_ENV``,
-    ``HERMES_LANGUAGE``...), so a standalone ``hermes -p X`` worker and a served one saw different
+    ``HERMES_LANGUAGE``...), so a standalone ``haos -p X`` worker and a served one saw different
     envs. The child re-loads X's own ``.env`` and bridges X's config itself. ``target_home``
     defaults to the active home override; no-op when there is no target or the target IS the
     launch profile. The authority test is "does this task serve a routed home", not "is the

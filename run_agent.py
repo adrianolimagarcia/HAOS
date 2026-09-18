@@ -30,7 +30,7 @@ from hermes_constants import get_hermes_home
 
 
 def _launch_cwd_for_session(source: str) -> Optional[str]:
-    """cwd to stamp on a new session row (``hermes -c`` / ``--resume``), or None.
+    """cwd to stamp on a new session row (``haos -c`` / ``--resume``), or None.
 
     Only local CLI sessions record one: gateway/cron/remote backends (non-"local" ``TERMINAL_ENV``) have no
     stable host cwd for the agent's tools.
@@ -302,7 +302,7 @@ class AIAgent(
         """``model_config`` for the session row: the init config plus the live YOLO bypass.
 
         The row is created lazily on the first turn, so this is the only chance to record a pre-first-turn
-        /yolo toggle for ``hermes --resume``.
+        /yolo toggle for ``haos --resume``.
         """
         model_config = self._session_init_model_config
         try:

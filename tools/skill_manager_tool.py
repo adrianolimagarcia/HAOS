@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from hermes_constants import get_hermes_home, display_hermes_home
+from hermes_constants import get_hermes_home, display_hermes_home, product_command
 from utils import atomic_write_text, is_truthy_value
 from hermes_cli.config import cfg_get
 from agent.skill_utils import (
@@ -301,13 +301,13 @@ def _skill_not_found_error(name: str, suffix: str = "") -> str:
         other_profile, other_path = others[0]
         base += (
             f" A skill by that name exists in profile '{other_profile}' ({other_path}). To edit "
-            f"it, switch profiles (`hermes -p {other_profile}`) or edit the file directly "
+            f"it, switch profiles (`{product_command('-p', other_profile)}`) or edit the file directly "
             f"(file tools / terminal).")
     elif others:
         names = ", ".join(f"'{p}'" for p, _ in others)
         base += (
-            f" Skills by that name exist in other profiles: {names}. Switch profiles (`hermes -p "
-            f"<name>`) to edit there, or edit the files directly (file tools / terminal).")
+            f" Skills by that name exist in other profiles: {names}. Switch profiles (`"
+            f"{product_command('-p', '<name>')}`) to edit there, or edit the files directly (file tools / terminal).")
     else:
         base += " Use skills_list() to see available skills."
     return base + suffix

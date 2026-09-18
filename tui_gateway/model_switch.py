@@ -385,7 +385,7 @@ def _sync_agent_model_with_config(sid: str, session: dict) -> None:
     raw = f"{model} --provider {provider}" if provider else model
     try:
         # This sync ADOPTS a config.yaml change; it must never write config back (that is
-        # how `hermes --tui -m` once leaked into config.yaml).
+        # how `haos --tui -m` once leaked into config.yaml).
         _apply_model_switch(
             sid, session, raw, confirm_expensive_model=True, pin_session_override=False,
             persist_override=False)

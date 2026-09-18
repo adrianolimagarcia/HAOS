@@ -1,4 +1,4 @@
-"""Git worktree isolation for ``hermes -w`` sessions: create, classify, prune.
+"""Git worktree isolation for ``haos -w`` sessions: create, classify, prune.
 
 Every git call goes through ``_git``/``_git_out``/``_git_quiet`` (UTF-8 text, captured,
 bounded timeout). Classification helpers fail SAFE toward "preserve". ``cli`` re-exports
@@ -325,7 +325,7 @@ def _setup_worktree(repo_root: str = None, sync_base: bool = True,
     repo_root = repo_root or _git_repo_root()
     if not repo_root:
         _cprint("\033[31m✗ --worktree requires being inside a git repository.\033[0m")
-        print("  cd into your project repo first, then run hermes -w")
+        print("  cd into your project repo first, then run " + product_command("-w"))
         return None
 
     wt_name = ((name and re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._")[:40])
@@ -638,7 +638,7 @@ def _worktree_branch_pushed_exact(
 def _worktree_lock_is_live(repo_root: str, worktree_path: str, timeout: int = 10):
     """Lock state: ``"live"`` (owning pid runs), ``"dead"`` (pid gone / non-hermes reason), None (unlocked).
 
-    ``hermes -w`` locks with reason ``hermes pid=<pid>``; ``worktree remove --force`` refuses
+    ``haos -w`` locks with reason ``hermes pid=<pid>``; ``worktree remove --force`` refuses
     locked trees, so a crashed session's lock would keep its tree forever. Fails SAFE toward "live".
     """
     try:

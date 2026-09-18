@@ -3,7 +3,7 @@
 ``gateway/run_adapters.py::_record_served_profiles`` writes ``served_profiles`` into the default
 home's ``gateway_state.json`` at startup. That record is the truth about the running process; the
 default ``config.yaml`` plus ``GATEWAY_MULTIPLEX_PROFILES`` as seen by the *CLI* process is only a
-guess (``hermes -p coder ...`` loads coder's ``.env``, so an env-only opt-in on the default profile
+guess (``haos -p coder ...`` loads coder's ``.env``, so an env-only opt-in on the default profile
 is invisible to it, and an allowlist edited after start flips the guess before the restart).
 """
 

@@ -438,7 +438,7 @@ def clone_channels_refusal(source_dir: Path, source_label: str) -> Optional[str]
         f"--clone-channels would copy {', '.join(platforms)} from '{source_label}', which the running "
         "multiplexed gateway already serves: the bot can only belong to one profile, so the copy would be "
         "parked as a duplicate credential. Clone without --clone-channels and give the new profile its own bot "
-        "(hermes -p <name> setup), or route its chats with gateway.profile_routes instead."
+        "(" + product_command("-p", "<name>", "setup") + "), or route its chats with gateway.profile_routes instead."
     )
 
 

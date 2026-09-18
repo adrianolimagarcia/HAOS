@@ -30,7 +30,7 @@ def explicit_multiplex_flag(default_home: Path) -> Optional[bool]:
     """The operator's explicit choice for the DEFAULT profile's gateway: a recognized
     ``GATEWAY_MULTIPLEX_PROFILES``, else ``gateway.multiplex_profiles`` (or the top-level alias) as
     written in its config.yaml; ``None`` when neither is set. Raw read on purpose: the callers are
-    other processes (``hermes -p X ...`` has X's config loaded) asking about the default's file."""
+    other processes (``haos -p X ...`` has X's config loaded) asking about the default's file."""
     from gateway.config import _bool_token, _env_multiplex_profiles_override
     env = _env_multiplex_profiles_override()
     if env is not None:

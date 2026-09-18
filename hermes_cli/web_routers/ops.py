@@ -251,7 +251,7 @@ async def set_webhook_enabled(name: str, body: WebhookEnabledToggle):
 @router.post("/api/gateway/start")
 async def start_gateway(profile: Optional[str] = None):
     from hermes_cli.web_server_gateway import multiplexed_profile_refusal
-    # The spawned `hermes -p X gateway start` would refuse with exit 78 into an action log nobody reads;
+    # The spawned `haos -p X gateway start` would refuse with exit 78 into an action log nobody reads;
     # surface the same refusal here so the UI can point at the multiplexer instead of showing "started".
     refusal = await asyncio.to_thread(multiplexed_profile_refusal, profile, "start")
     if refusal:

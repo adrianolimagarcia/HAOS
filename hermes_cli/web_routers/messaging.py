@@ -284,7 +284,7 @@ def _platform_payloads(scoped_dir: Optional[Path], entries) -> list[dict[str, An
     # profile's standalone days outranks nothing: only a record proving a live own gateway does —
     # the same rung order ``resolve_gateway_liveness`` uses (own runtime PID before the multiplexer),
     # so the two surfaces cannot disagree. Unscoped, the profile is the process's own home (a pooled
-    # ``hermes --profile X serve``); the default home resolves to a name the multiplexer never serves.
+    # ``haos --profile X serve``); the default home resolves to a name the multiplexer never serves.
     own_home = scoped_dir if scoped_dir is not None else get_process_hermes_home()
     if (
         runtime is None
@@ -902,7 +902,7 @@ async def update_messaging_platform(platform_id: str, body: MessagingPlatformUpd
 def _notify_multiplexer_hot_serve(profile: Optional[str]) -> bool:
     """True when a live multiplexer serves the written profile and was told to rebuild its adapters.
     Unscoped (no ``?profile=``) means THIS process's profile: Desktop routes a pooled
-    ``hermes --profile X serve`` without the query (#109088), so X must resolve here too."""
+    ``haos --profile X serve`` without the query (#109088), so X must resolve here too."""
     from hermes_cli.gateway import _current_profile_name, named_profile_served_by_running_multiplexer
     from hermes_cli.gateway_multiplex_served import notify_multiplexer_profiles_changed
     name = (profile or "").strip() or _current_profile_name()

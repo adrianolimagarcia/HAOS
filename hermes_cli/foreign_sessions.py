@@ -328,7 +328,7 @@ def run_sessions_import(args, db=None) -> Optional[str]:
         print(f"Error: {e}")
         return None
     print(f"✓ Imported {_SOURCE_LABELS.get(source, source)} session as {session_id}")
-    print(f"  Continue it with:  hermes --resume {session_id}")
+    print("  Continue it with:  " + product_command("--resume", session_id))
     return session_id
 
 

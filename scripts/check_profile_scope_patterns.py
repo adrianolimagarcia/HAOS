@@ -9,7 +9,7 @@ platform credential, an RPC decorator that binds the home but not the secret sco
 liveness check. The invariant itself is in the root ``AGENTS.md`` (§ Code Shape Rules).
 
 Advisory by construction: it prints ``file:line  <id>/<class>  why`` for every hit and ALWAYS
-exits 0, because most patterns have legitimate sites (a standalone ``hermes -p x`` process where
+exits 0, because most patterns have legitimate sites (a standalone ``haos -p x`` process where
 environ IS the profile). The reviewer reads each finding against its ``scope_hint``.
 
 Usage:

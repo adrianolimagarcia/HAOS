@@ -1380,7 +1380,7 @@ class SessionSessionsMixin:
         self, source: str = None, limit: int = 20, offset: int = 0, workspace_key: str = None,
     ) -> List[Dict[str, Any]]:
         """Sessions MRU-first with a computed ``last_active``; ``workspace_key`` scopes to one workspace
-        so ``hermes -c``/``--resume`` picks its last session."""
+        so ``haos -c``/``--resume`` picks its last session."""
         where_clauses = []
         params: list = []
         if source:

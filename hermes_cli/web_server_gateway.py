@@ -339,10 +339,10 @@ def _named_profile_from_action(subcommand: List[str]) -> Optional[str]:
 def _profile_action_environment(
     subcommand: List[str], env_overrides: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
-    """Environment for a detached ``hermes <subcommand>`` action.
+    """Environment for a detached ``haos <subcommand>`` action.
 
     The dashboard loads its own profile's ``.env`` into process-global ``os.environ``. Copying
-    that mapping verbatim into ``hermes -p <other> ...`` lets the named child see the dashboard
+    that mapping verbatim into ``haos -p <other> ...`` lets the named child see the dashboard
     profile's platform credentials and ports *before* its own dotenv loads (``load_hermes_dotenv``
     does not override keys already present): a supposedly A2A-only profile then claims the default
     Discord token and binds the default API/BlueBubbles ports.
@@ -493,7 +493,7 @@ def _spawn_hermes_action(
 
 def _own_profile_selector(profile: Optional[str]) -> Optional[str]:
     """The profile a lifecycle verb addresses: the explicit selector, else the process's own named
-    profile (a pooled Desktop ``hermes --profile X serve`` answers ``/api/gateway/*`` without
+    profile (a pooled Desktop ``haos --profile X serve`` answers ``/api/gateway/*`` without
     ``?profile=``; an unscoped verb there is about X, not about the default home)."""
     requested = (profile or "").strip()
     if requested:
@@ -527,7 +527,7 @@ def _profile_is_multiplexed(profile: str) -> bool:
 def multiplexed_profile_refusal(profile: Optional[str], verb: str) -> Optional[str]:
     """Refusal text for ``gateway start``/``stop`` on a profile the live default multiplexer serves and
     that has no gateway of its own (a ``--force``-started separate one is managed normally), else None.
-    The spawned ``hermes -p X gateway <verb>`` would only print exit-78 / "no gateway running for this
+    The spawned ``haos -p X gateway <verb>`` would only print exit-78 / "no gateway running for this
     profile" into an action log nobody reads while the UI shows the verb as done."""
     requested = _own_profile_selector(profile) or ""
     if not requested or requested.lower() in {"current", "default"} or not _profile_is_multiplexed(requested):

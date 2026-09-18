@@ -1,7 +1,7 @@
 """User-facing copy for dashboard chat (``/api/pty``) start failures.
 
 ``pty_ws`` writes one red line into the terminal and closes with 1011 when the
-``hermes --tui`` child cannot be spawned. The exception text alone is either
+``haos --tui`` child cannot be spawned. The exception text alone is either
 raw errno noise (``[Errno 2] No such file or directory: 'node'``), a bare exit
 code (``SystemExit(1)`` after ``_make_tui_argv`` already printed to the server
 log), or empty (``RegistryFull``). Turn each into what happened + what to do.

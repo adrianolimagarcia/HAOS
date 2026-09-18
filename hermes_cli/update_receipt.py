@@ -401,6 +401,7 @@ def print_fleet_version_matrix(fleet: list[dict[str, Any]]) -> bool:
         print()
         print(
             f"✗ Update not complete: {stale_or_down} gateway(s) still running the old code (or stopped).")
-        print("  Run `" + product_command("gateway") + " restart` (or `hermes -p <profile> gateway restart` for a named")
+        print("  Run `" + product_command("gateway") + " restart` (or `"
+              + product_command("-p", "<profile>", "gateway", "restart") + "` for a named")
         print("  profile), then `" + product_command("gateway") + " status` to confirm.")
     return stale_or_down > 0

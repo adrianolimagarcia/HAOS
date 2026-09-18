@@ -105,7 +105,7 @@ def _launchers_missing(target: Path) -> bool:
 
 
 def _default_hermes_root() -> Path | None:
-    """The DEFAULT Hermes root (not ``get_hermes_home()``, which under ``hermes -p <name>`` is
+    """The DEFAULT Hermes root (not ``get_hermes_home()``, which under ``haos -p <name>`` is
     ``profiles\\<name>`` and would fail the managed-clone gate for profile users); ``None`` when
     unresolvable."""
     from hermes_constants import get_default_hermes_root
@@ -169,7 +169,7 @@ def ensure_windows_bin_launchers(
     The canonical launcher home is the managed binary dir — the default Hermes root's ``bin``
     (``%LOCALAPPDATA%\\hermes\\bin``, next to the managed uv) — which lives OUTSIDE the git checkout so no
     git operation can ever touch it. It is a per-machine dir shared by every profile: ``get_hermes_home()``
-    would point inside ``profiles\\<name>`` under ``hermes -p``, so the anchor here is
+    would point inside ``profiles\\<name>`` under ``haos -p``, so the anchor here is
     :func:`hermes_constants.get_default_hermes_root`. See #83797.
     """
     if windows is None:

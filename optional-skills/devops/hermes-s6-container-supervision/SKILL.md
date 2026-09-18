@@ -49,7 +49,7 @@ If you're just running the Hermes Agent and want to use Docker, see `website/doc
 ├── /run/service (s6-svscan watches; tmpfs)
 │   ├── gateway-coder/                 ← runtime-registered per-profile
 │   │   ├── type        ("longrun")
-│   │   ├── run         ("#!/command/with-contenv sh ... exec s6-setuidgid hermes hermes -p coder gateway run")
+│   │   ├── run         ("#!/command/with-contenv sh ... exec s6-setuidgid hermes haos -p coder gateway run")
 │   │   ├── down        (marker — present means "registered but don't auto-start")
 │   │   └── log/run     (s6-log → $HERMES_HOME/logs/gateways/coder/current)
 │   └── ...
@@ -163,7 +163,7 @@ The service directory is on tmpfs and was wiped on container restart. Either the
 
 ### Gateway starts then immediately exits (`down (exitcode 1)` in svstat)
 
-Most likely the profile has no model or auth configured. The service slot is correct — the gateway itself is unconfigured. Run `hermes -p <profile> setup` first. The s6 supervisor will keep restarting it; that's the desired behavior (when you fix the config, the next attempt succeeds and stays up).
+Most likely the profile has no model or auth configured. The service slot is correct — the gateway itself is unconfigured. Run `haos -p <profile> setup` first. The s6 supervisor will keep restarting it; that's the desired behavior (when you fix the config, the next attempt succeeds and stays up).
 
 ### Reconciler skipped a profile
 

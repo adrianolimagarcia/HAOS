@@ -1453,7 +1453,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         self, task_id: Optional[str] = None, *, timeout: float | None = None, poll_interval: float = 1.0,
     ) -> dict:
         """Bounded linger for ``notify_on_complete`` background processes at one-shot exit.
-        A one-shot CLI run (``hermes -q/-Q/-z``) exits when its turn ends; a background
+        A one-shot CLI run (``haos -q/-Q/-z``) exits when its turn ends; a background
         process it spawned still holds a stdout pipe owned by the dying parent and dies of
         SIGPIPE seconds later (Bot Mode handoff replies were the visible casualty). Only
         ``notify_on_complete`` processes carry a completion contract — servers/daemons/
@@ -1462,7 +1462,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         disables). Each pass re-reconciles child state so an orphaned-pipe exit can't wedge
         the linger. Returns ``{"waited", "completed", "timed_out"}`` id lists.
 
-        Bot Mode handoff REPLIES are the visible casualty (#90879): a recipient invoked as ``hermes -p <bot>
+        Bot Mode handoff REPLIES are the visible casualty (#90879): a recipient invoked as ``haos -p <bot>
         chat -Q --query-file ...`` dispatches its reply via ``message_agent`` / ``bot_relay`` exactly this
         way, then exits, and the reply process is destroyed ~3s later. The sender waits forever for a reply
         that was already killed.

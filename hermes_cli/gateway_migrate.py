@@ -410,7 +410,8 @@ def _check_secondary_port_binders(plan: MigrationPlan, configs: dict[str, object
                     f"Profile '{profile.name}' enables {platform.value}, which binds its own port and has no "
                     f"/p/{profile.name}/ ingress on the default listener yet; the multiplexer would skip "
                     f"the whole profile. Disable it there (platforms.{platform.value}.enabled: false) or "
-                    f"keep '{profile.name}' on a standalone gateway (hermes -p {profile.name} gateway start --force)."
+                    f"keep '{profile.name}' on a standalone gateway ("
+                    + product_command("-p", profile.name, "gateway", "start", "--force") + ")."
                 )
 
 

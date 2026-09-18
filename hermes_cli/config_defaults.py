@@ -57,7 +57,7 @@ DEFAULT_CONFIG = {
     # 0/null disables.
     "max_live_sessions": 16,
     "session": {
-        # Per-terminal `hermes -c`: each CLI session writes a breadcrumb under
+        # Per-terminal `haos -c`: each CLI session writes a breadcrumb under
         # $HERMES_HOME/terminal-sessions/<terminal-id>, so bare -c/--continue resumes THIS
         # terminal's session (tmux/kitty/wezterm pane, tty). false = resume globally most-recent.
         "terminal_continue": True,
@@ -502,7 +502,7 @@ DEFAULT_CONFIG = {
     # up by the between-turns refresh (agent/turn_context.py), so keep it small — a dead server adds
     # this much to first-response latency.
     "mcp_discovery_timeout": 1.5,
-    # Same bound for single-query mode (``hermes -q/-z``). With only ONE turn there is no
+    # Same bound for single-query mode (``haos -q/-z``). With only ONE turn there is no
     # between-turns refresh, so a server that misses the window is invisible for the whole session;
     # the larger bound lets slow cold-start servers (npx, uvx, remote HTTP) land. Reachable servers
     # still only wait their real handshake time.
@@ -793,7 +793,7 @@ DEFAULT_CONFIG = {
         # Interface bare `hermes`/`haos chat` launches: "cli" (prompt_toolkit REPL) | "tui" (Ink).
         # Flags win: `--cli` forces the REPL, `--tui` / HERMES_TUI=1 forces the TUI.
         "interface": "cli",
-        # `hermes --tui` auto-resumes the most recent human-facing session (like `hermes -c`).
+        # `haos --tui` auto-resumes the most recent human-facing session (like `haos -c`).
         # HERMES_TUI_RESUME=<id> always wins.
         "tui_auto_resume_recent": False,
         # Desktop reopens the last chat/page on cold start (also in Settings → Appearance).
@@ -1773,7 +1773,7 @@ DEFAULT_CONFIG = {
         "require_restart_safe_scope": False,
     },
     # Kanban multi-agent coordination. The dispatcher ticks every N seconds, reclaims stale claims,
-    # promotes dependency-satisfied todos to ready, and fires `hermes -p <assignee> chat -q ...` per
+    # promotes dependency-satisfied todos to ready, and fires `haos -p <assignee> chat -q ...` per
     # claimable task. Run ONE dispatcher per profile; two on the same kanban.db race for claims.
     "kanban": {
         # Auto-subscribe the originating gateway/TUI session to completion + block events when

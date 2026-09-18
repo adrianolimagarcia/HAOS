@@ -76,17 +76,39 @@ SCAN_DIRS = (
 COMMANDS = (
     "acp|approvals|auth|backup|browser|bundles|chat|checkpoints|claw|codebase-wiki|completion|"
     "computer-use|config|console|cron|curator|dashboard|debug|doctor|dump|egress|fallback|"
-    "gateway|hooks|import|import-agent|insights|kanban|logout|logs|lsp|mcp|memory|migrate|moa|"
+    "gateway|hooks|import|import-agent|insights|kanban|login|logout|logs|lsp|mcp|memory|migrate|moa|"
     "model|monitoring|pairing|pause|peer|pets|plugins|portal|profile|project|prompt-size|proxy|"
     "resume|secrets|security|send|serve|sessions|setup|skills|skin|slack|status|sync|tools|"
     "uninstall|update|vault|verify|webhook|whatsapp|whatsapp-cloud|worktree|models|plugin|skins"
 )
+# `login` entrou porque `hermes login` era um falso NEGATIVO silencioso: o comando existe
+# no parser (75 subcomandos) e a mensagem de deprecacao em hermes_cli/auth.py dizia
+# "The 'hermes login' command has been removed" sem o guard ver.
+# Medido e ainda FALTANDO aqui (75 reais vs esta lista): desktop, gui, haos, journey,
+# learning, memory-graph. Adiciona-los hoje acusa 49 sites em 17 arquivos, 27 deles em
+# hermes_cli/haos_cmd.py — onda propria, nao silenciosa. Falso negativo e o modo de falha
+# perigoso aqui, entao quem adicionar um subcomando novo deve lista-lo aqui.
 
 # Conteudo markdown que o agente executa (skill) + docs do fork.
 CONTENT_DIRS = ("skills", "optional-skills", "docs")
 CONTENT_SUFFIXES = (".md", ".mdx")
 
-PATTERN = re.compile(r"\bhermes (?:%s)\b(?!\.)" % COMMANDS)
+# `hermes <subcomando>` casa sozinho o caso classico. Isto cobre o ponto cego que deixou o
+# proprio `--help` meio convertido: `hermes --tui`, `hermes -w`, `hermes -p <nome>` nomeiam
+# o binario upstream SEM nomear subcomando, entao a primeira alternativa nunca os via —
+# `haos --help` mandava o operador rodar `hermes --tui`, binario que nao existe no appliance.
+# Espaco literal, nao `\s`: `scan()` filtra barato por `"hermes "` no texto antes de parsear
+# a AST, e um `\s` casaria tab/quebra de linha que esse pre-filtro nao enxerga. Medido: os
+# dois dao o mesmo numero de ocorrencias, entao usar espaco nao perde nada.
+FLAG_HINT = r"(?<![\w./~-])hermes --?[A-Za-z]"
+PATTERN = re.compile(r"\bhermes (?:%s)\b(?!\.)|%s" % (COMMANDS, FLAG_HINT))
+# Markdown fica no padrao de subcomando, sem a segunda alternativa. Em .py a marca e
+# renderizavel em runtime (`product_command()`), entao nome upstream fixo e defeito; em
+# prosa nao e, e o texto frequentemente registra argv real, medicao real e o usuario
+# `hermes` da imagem Docker (um doc de auditoria mede `hermes --help` ~ 0,4 s). Aplicar a
+# regra de flag ali daria falso positivo em documento correto. Nada foi relaxado: a regra
+# de subcomando continua valendo em markdown.
+CONTENT_PATTERN = re.compile(r"\bhermes (?:%s)\b(?!\.)" % COMMANDS)
 MARKER = "haos-brand:"
 MARKER_RE = re.compile(re.escape(MARKER) + r"\s*\S")
 
@@ -130,7 +152,7 @@ def _scan_content(offenders: list[str], allowed: list[str]) -> None:
             continue
         rel = path.relative_to(REPO_ROOT)
         for i, line in enumerate(lines):
-            match = PATTERN.search(line)
+            match = CONTENT_PATTERN.search(line)
             if not match:
                 continue
             context = line + "\n" + (lines[i - 1] if i else "")

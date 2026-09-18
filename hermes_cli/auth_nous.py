@@ -326,7 +326,7 @@ _nous_shared_lock_holder = threading.local()
 def _nous_shared_auth_dir() -> Path:
     """Directory of the shared Nous token store: ``HERMES_SHARED_AUTH_DIR`` or ``<root>/shared/``.
 
-    Outside any named profile so all profiles share it (``hermes --profile X auth add nous --type
+    Outside any named profile so all profiles share it (``haos --profile X auth add nous --type
     oauth`` one-tap imports it). Written on login AND every runtime refresh so the refresh_token
     stays current across profiles; a stale token just falls back to device-code.
     """

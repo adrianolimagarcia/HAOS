@@ -234,6 +234,7 @@ def _spawn_powershell_es(root: str, ctx: ServerContext) -> Optional[SpawnSpec]:
     # PSES writes connection info to the session details file on startup.
     session_dir = hermes_lsp_session_dir()
     inner = (
+        # haos-brand: PSES protocol args below (the -HostProfileId value and the -HostVersion flag), not a CLI hint
         f"& '{start_script}' -BundledModulesPath '{bundle}' "
         f"-LogPath '{os.path.join(session_dir, 'pses.log')}' "
         f"-SessionDetailsPath '{os.path.join(session_dir, f'pses-session-{os.getpid()}.json')}' "

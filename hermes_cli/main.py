@@ -4,7 +4,7 @@
 Usage:
     hermes                     # Interactive chat (default)
     haos chat / gateway / setup / status / cron / doctor / update / ...
-    hermes --version           # Show version and update status
+    haos --version             # Show version and update status
     hermes <cmd> --help        # Per-command help
 """
 # hermes_bootstrap must be the very first import — it sets up UTF-8 stdio on
@@ -332,7 +332,7 @@ _suppress_mouse_residue_early()
 
 _startup_fast.ensure_project_root_on_path()
 
-# ``hermes --version`` is answered before config/logging imports.
+# ``haos --version`` is answered before config/logging imports.
 if _startup_fast.try_fast_version():
     raise SystemExit(0)
 
@@ -449,7 +449,7 @@ def _looks_like_hermes_invocation() -> bool:
     """False when ``sys.argv`` belongs to a test runner rather than a ``hermes`` run.
 
     pytest's own ``-p no:xdist`` reaches ``_scan_profile_flag`` through ``sys.argv`` at import
-    time; it must stay a silent skip, while a real ``hermes -p 'Work Bot'`` must fail loudly.
+    time; it must stay a silent skip, while a real ``haos -p 'Work Bot'`` must fail loudly.
     """
     return "pytest" not in (sys.argv[0] or "")
 
@@ -512,7 +512,7 @@ def _scan_profile_flag(argv: list) -> tuple:
 
 
 def _resolve_sudo_user_profile_env(name: str) -> str | None:
-    """Resolve `sudo hermes -p <name>` against the invoking user's home.
+    """Resolve `sudo haos -p <name>` against the invoking user's home.
 
     This runs before argparse, so `--run-as-user` is not available yet. For
     sudo invocations the best signal is SUDO_USER: root is only doing the
@@ -1263,7 +1263,7 @@ def _resolve_last_session(source: str = "cli") -> Optional[str]:
     """Look up the most recently-used session ID for a source.
 
     Scoped to the current workspace first (git repo root, else cwd) so
-    ``hermes -c`` from repo A continues repo A's last session rather than the
+    ``haos -c`` from repo A continues repo A's last session rather than the
     global MRU. Falls back to the unscoped MRU when no session matches the
     current workspace, preserving the old behaviour for fresh directories.
     """
@@ -1552,7 +1552,7 @@ def _import_foreign_resume(args) -> None:
         print(f"Error: {e}")
         sys.exit(1)
     print(f"✓ Imported as {_imported_id} — resuming it now.")
-    print(f"  (later: hermes --resume {_imported_id})")
+    print(f"  (later: {product_command('--resume', _imported_id)})")
     args.resume = _imported_id
 
 
@@ -2259,7 +2259,7 @@ def cmd_backup(args):
 
 
 def _print_version_info(*, check_updates: bool = True) -> None:
-    # Shared with the `hermes --version` pre-import fast path.
+    # Shared with the `haos --version` pre-import fast path.
     _startup_fast.print_fast_version_info(check_updates=check_updates)
 
 
@@ -2458,7 +2458,7 @@ def cmd_update(args):
 def _coalesce_session_name_args(argv: list) -> list:
     """Join unquoted multi-word session names after -c/--continue and -r/--resume.
 
-    ``hermes -c Pokemon Agent Dev`` → ``['-c', 'Pokemon Agent Dev']``; tokens
+    ``haos -c Pokemon Agent Dev`` → ``['-c', 'Pokemon Agent Dev']``; tokens
     are collected until the next flag (``-*``) or known top-level subcommand.
     """
     _SUBCOMMANDS = {
@@ -3210,7 +3210,7 @@ def _try_termux_fast_cli_launch() -> bool:
 def _try_termux_fast_tui_launch() -> bool:
     """Launch obvious Termux TUI invocations before building every subparser.
 
-    `hermes --tui` is the hot path on phones and the TUI immediately execs
+    `haos --tui` is the hot path on phones and the TUI immediately execs
     Node, so the full parser's command-module imports are pure waste there.
     """
     if not _is_termux_startup_environment():
@@ -3310,7 +3310,7 @@ def _cmd_sessions_lazy(args, **kwargs):
 def _build_cli_parser():
     """Build the full ``hermes`` argparse tree -> ``(parser, subparsers)``.
 
-    Registration ORDER is the ``hermes --help`` order; keep it stable. Groups
+    Registration ORDER is the ``haos --help`` order; keep it stable. Groups
     live in ``hermes_cli/subcommands/<group>.py`` with handlers injected so
     those modules never import main.
     """
@@ -3431,7 +3431,7 @@ def _parse_cli_args(parser, subparsers, argv):
     On Python <3.11 argparse fails to route subcommand tokens when the parent
     has nargs='?' optionals (--continue): "unrecognized arguments: model". When
     argv holds a known subcommand token, set subparsers.required=True to force
-    routing; if that fails (``hermes -c model`` — 'model' is the session name)
+    routing; if that fails (``haos -c model`` — 'model' is the session name)
     fall back to the default behaviour.
     """
     import io as _io
@@ -3500,7 +3500,7 @@ def main():
     # owns its marker and a recovery install must not race the real one. The
     # substring match is deliberately loose: over-matching (``haos skills
     # install update``) only defers recovery one launch; under-matching
-    # (``hermes -p work update``) would race. Never raises.
+    # (``haos -p work update``) would race. Never raises.
     # See #95294.
     if "update" not in sys.argv[1:]:
         try:
