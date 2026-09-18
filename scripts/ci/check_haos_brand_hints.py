@@ -75,19 +75,25 @@ SCAN_DIRS = (
 # mandavam o operador rodar ``hermes vault add`` (binario ausente no appliance).
 COMMANDS = (
     "acp|approvals|auth|backup|browser|bundles|chat|checkpoints|claw|codebase-wiki|completion|"
-    "computer-use|config|console|cron|curator|dashboard|debug|doctor|dump|egress|fallback|"
-    "gateway|hooks|import|import-agent|insights|kanban|login|logout|logs|lsp|mcp|memory|migrate|moa|"
-    "model|monitoring|pairing|pause|peer|pets|plugins|portal|profile|project|prompt-size|proxy|"
-    "resume|secrets|security|send|serve|sessions|setup|skills|skin|slack|status|sync|tools|"
-    "uninstall|update|vault|verify|webhook|whatsapp|whatsapp-cloud|worktree|models|plugin|skins"
+    "computer-use|config|console|cron|curator|dashboard|debug|desktop|doctor|dump|egress|fallback|"
+    "gateway|gui|haos|hooks|import|import-agent|insights|journey|kanban|learning|login|logout|logs|lsp|"
+    "mcp|memory-graph|memory|migrate|moa|model|monitoring|pairing|pause|peer|pets|plugins|portal|"
+    "profile|project|prompt-size|proxy|resume|secrets|security|send|serve|sessions|setup|skills|"
+    "skin|slack|status|sync|tools|uninstall|update|vault|verify|webhook|whatsapp|whatsapp-cloud|"
+    "worktree|models|plugin|skins"
 )
-# `login` entrou porque `hermes login` era um falso NEGATIVO silencioso: o comando existe
-# no parser (75 subcomandos) e a mensagem de deprecacao em hermes_cli/auth.py dizia
-# "The 'hermes login' command has been removed" sem o guard ver.
-# Medido e ainda FALTANDO aqui (75 reais vs esta lista): desktop, gui, haos, journey,
-# learning, memory-graph. Adiciona-los hoje acusa 49 sites em 17 arquivos, 27 deles em
-# hermes_cli/haos_cmd.py — onda propria, nao silenciosa. Falso negativo e o modo de falha
-# perigoso aqui, entao quem adicionar um subcomando novo deve lista-lo aqui.
+# Esta lista deve cobrir TODO subcomando que o parser constroi; um nome faltando e um falso
+# NEGATIVO silencioso, que e o modo de falha perigoso aqui (o guard nao ve o site e ninguem
+# descobre). Dois ja custaram caro: `logout` estava e `login` nao, entao a mensagem de
+# deprecacao em hermes_cli/auth.py escapou; e `desktop`/`gui` faltavam, entao os prints de
+# update_cmd_*.py e main_desktop.py escaparam. Confira com:
+#   python -c "import argparse,sys; sys.path.insert(0,'scripts/ci'); import check_haos_brand_hints as g; \
+#     from hermes_cli.main import _build_cli_parser; p,_=_build_cli_parser(); \
+#     s=[a for a in p._actions if isinstance(a,argparse._SubParsersAction)][0]; \
+#     print(sorted(set(s.choices)-set(g.COMMANDS.split('|'))))"
+# `models`/`plugin`/`skins` nao sao subcomandos: sao as frases de marca que a varredura
+# converteu, mantidas de proposito.
+# `memory-graph` vem antes de `memory` para o alternador casar o nome longo primeiro.
 
 # Conteudo markdown que o agente executa (skill) + docs do fork.
 CONTENT_DIRS = ("skills", "optional-skills", "docs")
@@ -108,7 +114,22 @@ PATTERN = re.compile(r"\bhermes (?:%s)\b(?!\.)|%s" % (COMMANDS, FLAG_HINT))
 # `hermes` da imagem Docker (um doc de auditoria mede `hermes --help` ~ 0,4 s). Aplicar a
 # regra de flag ali daria falso positivo em documento correto. Nada foi relaxado: a regra
 # de subcomando continua valendo em markdown.
-CONTENT_PATTERN = re.compile(r"\bhermes (?:%s)\b(?!\.)" % COMMANDS)
+#
+# `haos` sai do padrao de markdown, e SO dele. O subcomando existe — o parser renderiza
+# `usage: haos haos [-h] {status,doctor,...}` — mas em prosa `hermes haos` e ambiguo de um
+# jeito que em .py nao e, e as tres razoes foram medidas:
+#   * o README do proprio fork manda digitar `haos status`, nunca `haos haos status`;
+#   * `HAOS_HOME=~/.hermes haos doctor` e o PATH do home seguido do binario, e
+#     `exec s6-setuidgid hermes haos -p coder` e o USUARIO de servico seguido do binario:
+#     os dois casam `hermes haos` sem serem o subcomando (2 falsos positivos medidos);
+#   * docs/pr/ registram o que foi submetido ao upstream, onde `hermes haos` esta correto —
+#     reescrever falsificaria o registro.
+# Reescrever os 16 sites dos ADRs para `haos haos` contradiria a doc do fork. Nada foi
+# relaxado: markdown mantem 100% da cobertura que ja tinha (as 71 entradas anteriores),
+# apenas nao ganha esta, cuja semantica em prosa e ambigua. Em .py os 48 sites foram
+# convertidos, entao a cobertura nova vale integralmente onde ela e inequivoca.
+CONTENT_COMMANDS = COMMANDS.replace("|haos|", "|")
+CONTENT_PATTERN = re.compile(r"\bhermes (?:%s)\b(?!\.)" % CONTENT_COMMANDS)
 MARKER = "haos-brand:"
 MARKER_RE = re.compile(re.escape(MARKER) + r"\s*\S")
 

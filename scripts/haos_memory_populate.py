@@ -18,7 +18,7 @@ Três passos, cada um independente (uma falha não impede os outros):
 O home é resolvido por ``HERMES_HOME``/``HAOS_HOME`` e, na ausência dos dois,
 cai em ``~/.haos`` com aviso. Isso é deliberado: ``get_hermes_home()`` sem env
 resolve para ``~/.hermes`` e o appliance passa a escrever num store órfão — o
-split-brain que fez ``hermes haos doc index`` gravar chunks fora do store que os
+split-brain que fez ``haos haos doc index`` gravar chunks fora do store que os
 daemons leem. O script fixa o env resolvido antes de importar o runtime, para
 que TODOS os caminhos concordem.
 

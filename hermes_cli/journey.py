@@ -1,4 +1,4 @@
-"""``hermes journey`` — what Hermes has learned, on a timeline."""
+"""``haos journey`` — what Hermes has learned, on a timeline."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ import sys
 import time
 from functools import lru_cache
 from typing import Any, Optional
+
+from hermes_constants import product_command
 
 _TITLE_COLOR = "#E8C463"
 _CHARTED_SIGNAL_MIN_CONTRAST = 4.5
@@ -374,7 +376,7 @@ def register_cli(parent: argparse.ArgumentParser) -> None:
 
 
 if __name__ == "__main__":
-    _p = argparse.ArgumentParser(prog="hermes journey")
+    _p = argparse.ArgumentParser(prog=product_command("journey"))
     register_cli(_p)
     _a = _p.parse_args()
     sys.exit(_a.func(_a))

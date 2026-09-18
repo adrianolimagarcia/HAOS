@@ -959,7 +959,7 @@ class CLICommandsMixin:
 
     # ---- /journey, /paste, /copy, /image --------------------------------------------------
     def _handle_journey_command(self, cmd_original: str) -> None:
-        """Handle /journey — the learning timeline (see `hermes journey`). Read-only views render
+        """Handle /journey — the learning timeline (see `haos journey`). Read-only views render
         Rich color that patch_stdout would swallow, so capture with forced ANSI and re-emit via
         ``_cprint``; ``delete``/``edit`` are interactive and keep real stdio."""
         from hermes_cli.journey import register_cli

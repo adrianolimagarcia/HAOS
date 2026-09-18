@@ -23,7 +23,7 @@ with a single runner that:
 2. measures per-operation p50/p95 (ms) and ops/s of the hot paths named in
    the audit;
 3. prints a human table and returns a structured ``Dict[str, Any]`` for
-   callers (CLI ``hermes haos benchmark``, ``python -m``, tests).
+   callers (CLI ``haos haos benchmark``, ``python -m``, tests).
 
 Measured operations
 -------------------

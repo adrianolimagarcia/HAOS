@@ -102,7 +102,7 @@ def _running_interpreter_fallback() -> str:
 
 
 def resolve_exec_command(project_root: Optional[Path] = None) -> str:
-    """Build the absolute ``Exec=`` command line for ``hermes desktop``.
+    """Build the absolute ``Exec=`` command line for ``haos desktop``.
 
     Prefer the real ``hermes`` launcher; fall back to ``<python> -m hermes_cli.main desktop``.
     """

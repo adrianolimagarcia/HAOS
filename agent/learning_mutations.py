@@ -3,7 +3,7 @@
 Node ids (from ``agent.learning_graph``): skills → the skill name; memories →
 ``memory:<source>:<index>`` (``source`` = ``memory`` for MEMORY.md / ``profile``
 for USER.md; ``index`` = position in the combined card list, MEMORY.md first).
-Shared by CLI ``hermes journey``, the TUI ``/journey`` overlay and the desktop.
+Shared by CLI ``haos journey``, the TUI ``/journey`` overlay and the desktop.
 Deleting a skill *archives* it (``haos curator restore`` recovers it);
 deleting a memory rewrites its file.
 """

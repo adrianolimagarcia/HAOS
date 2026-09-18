@@ -526,7 +526,7 @@ def _print_update_summary(*, node_failures: list, desktop_build_ok: bool, pre_up
             print("  Code and Python deps are updated, but the dashboard/TUI may")
             print("  be in a mixed state until the Node deps are rebuilt.")
         if not desktop_build_ok:
-            print("  Run `hermes desktop` to retry the desktop rebuild.")
+            print("  Run `" + product_command("desktop") + "` to retry the desktop rebuild.")
         if not sqlite_runtime_ok:
             for line in _sqlite_partial_completion_lines(sqlite_info.sqlite_version_string):
                 print(line)

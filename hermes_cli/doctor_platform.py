@@ -276,7 +276,7 @@ _TCC_CDHASH_DETAIL = (
     "then re-grant permissions once.")
 _TCC_STABLE_DETAIL = {
     True: "(certificate-anchored DR; grants survive rebuilds)",
-    False: "(identifier-pinned DR; grants survive rebuilds — for the strongest anchor, see `hermes desktop --setup-tcc-identity`)",
+    False: "(identifier-pinned DR; grants survive rebuilds — for the strongest anchor, see `" + product_command("desktop") + " --setup-tcc-identity`)",
 }
 
 

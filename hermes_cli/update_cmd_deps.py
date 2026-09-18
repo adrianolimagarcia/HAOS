@@ -857,7 +857,7 @@ def _rebuild_desktop_after_update(
         if build_result.returncode == 0:
             break
     if build_result.returncode != 0:
-        print("  ⚠ Desktop build failed (run `hermes desktop` to retry)")
+        print("  ⚠ Desktop build failed (run `" + product_command("desktop") + "` to retry)")
         tail = "\n".join((build_result.stdout or "").strip().splitlines()[-15:])
         if tail:
             print(tail)

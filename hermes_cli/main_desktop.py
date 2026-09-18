@@ -1,4 +1,4 @@
-"""Desktop (Electron) app: build/stamp, stage-and-swap pack, exe integrity gate, macOS signing/TCC, Linux sandbox, launch (hermes gui/desktop).
+"""Desktop (Electron) app: build/stamp, stage-and-swap pack, exe integrity gate, macOS signing/TCC, Linux sandbox, launch (haos gui/desktop).
 
 Split out of ``hermes_cli/main.py``. Names that still live in main (``PROJECT_ROOT``, ...)
 are imported lazily inside the functions that use them (avoids an import cycle).
@@ -233,7 +233,7 @@ def _discard_desktop_staging(staging_dir: Path) -> None:
 
 
 # ─── Desktop exe integrity gate (#69179) ──────────────────────────────────── The desktop self-update chain
-# (Desktop → hermes-setup --update → `haos update` → `hermes desktop --build-only` → relaunch) rebuilds
+# (Desktop → hermes-setup --update → `haos update` → `haos desktop --build-only` → relaunch) rebuilds
 # Hermes.exe on the end user's machine and used to verify only that the file EXISTS before declaring
 # success. A corrupt cached Electron zip whose extraction produced a truncated electron.exe, an interrupted
 # rcedit resource rewrite, a disk-full pack, or a wrong-arch unpacked tree therefore shipped a broken binary
@@ -457,6 +457,7 @@ def _ensure_desktop_exe_launchable(desktop_dir: Path, packaged_executable: Optio
 
     See #69179.
     """
+    from hermes_constants import product_command
     if packaged_executable is None or sys.platform != "win32":
         return packaged_executable, False
 
@@ -478,12 +479,12 @@ def _ensure_desktop_exe_launchable(desktop_dir: Path, packaged_executable: Optio
     restored = _rollback_desktop_from_backup(packaged_executable)
     if restored is not None:
         print("  ↩ Update aborted — restored the previous working Hermes.exe from backup.")
-        print("    Your existing version was kept and still works. Run `hermes desktop`")
+        print("    Your existing version was kept and still works. Run `" + product_command("desktop") + "`")
         print("    (or the in-app update) again to retry with a fresh Electron download.")
         return restored, True
 
     print("  ✗ No usable backup was found to restore.")
-    print("    Run `hermes desktop --force-build` to rebuild, or re-run the Hermes")
+    print("    Run `" + product_command("desktop") + " --force-build` to rebuild, or re-run the Hermes")
     print("    installer to repair the install.")
     return None, False
 
@@ -1363,6 +1364,7 @@ def _build_desktop_app(desktop_dir: Path, *, source_mode: bool, npm: str, env: d
     """npm-install + build the desktop app, stage-and-swapping the packaged tree. Returns the new
     packaged exe (None in source mode). Exits on unrecoverable failure with the previous app kept."""
     from hermes_cli.main import PROJECT_ROOT
+    from hermes_constants import product_command
     _install_desktop_workspace_deps(npm, env)
 
     build_label = "source build" if source_mode else "packaged app"
@@ -1400,7 +1402,7 @@ def _build_desktop_app(desktop_dir: Path, *, source_mode: bool, npm: str, env: d
             print("  If this says \"Access is denied\" on Hermes.exe, close any")
             print("  running Hermes desktop window and retry.")
         print("  If the log shows Electron download retries, rebuild via a mirror:")
-        print("    ELECTRON_MIRROR=<mirror-base-url> hermes desktop --force-build")
+        print("    ELECTRON_MIRROR=<mirror-base-url> " + product_command("desktop") + " --force-build")
         sys.exit(build_result.returncode or 1)
 
     packaged_executable = None
@@ -1510,6 +1512,7 @@ def _packaged_desktop_launch_command(packaged_executable: Path) -> list[str]:
 def cmd_gui(args: argparse.Namespace):
     """Build and launch the native Electron desktop GUI."""
     from hermes_cli.main import PROJECT_ROOT
+    from hermes_constants import product_command
     from hermes_cli.main_install_repair import _resolve_node_runtime_npm
     desktop_dir = PROJECT_ROOT / "apps" / "desktop"
     if not (desktop_dir / "package.json").exists():
@@ -1539,7 +1542,7 @@ def cmd_gui(args: argparse.Namespace):
         npm = _resolve_node_runtime_npm()
         if not npm:
             print("Desktop GUI requires Node.js/npm, but npm was not found on PATH.")
-            print("Install Node.js, then run:  hermes gui")
+            print("Install Node.js, then run:  " + product_command("gui"))
             sys.exit(1)
 
     if skip_build:

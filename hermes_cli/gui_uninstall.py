@@ -35,7 +35,7 @@ def desktop_userdata_dir() -> Path:
 
 
 def source_built_gui_artifacts(hermes_home: Path) -> "list[Path]":
-    """GUI build artifacts produced by ``hermes desktop`` inside the checkout (same ``hermes-agent/`` layout
+    """GUI build artifacts produced by ``haos desktop`` inside the checkout (same ``hermes-agent/`` layout
     install.sh uses). The Python agent runs from source + venv and never needs the Electron build output or
     node_modules (the workspace-root node_modules only carries Electron, ~200MB)."""
     agent_root = hermes_home / "hermes-agent"

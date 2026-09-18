@@ -1,10 +1,10 @@
-"""HAOS CLI Commands: 'hermes haos'.
+"""HAOS CLI Commands: 'haos haos'.
 
-Frente 1: CLI & Operação ('hermes haos'):
-- hermes haos status [--json]
-- hermes haos federation ping <peer_id>
-- hermes haos skills list
-- hermes haos skills promote <skill_id>
+Frente 1: CLI & Operação ('haos haos'):
+- haos haos status [--json]
+- haos haos federation ping <peer_id>
+- haos haos skills list
+- haos haos skills promote <skill_id>
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def _get_haos_status() -> Dict[str, Any]:
 
 
 def cmd_haos_status(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos status'."""
+    """Executes 'haos haos status'."""
     status = _get_haos_status()
     if getattr(args, "json", False):
         print(json.dumps(status, indent=2))
@@ -140,7 +140,7 @@ def cmd_haos_status(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_federation_ping(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos federation ping <peer_id>'."""
+    """Executes 'haos haos federation ping <peer_id>'."""
     peer_id = args.peer_id
     shared_secret = getattr(args, "secret", None) or "haos-test-secret"
     endpoint = getattr(args, "endpoint", None)
@@ -188,7 +188,7 @@ def cmd_haos_federation_ping(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_skills_list(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos skills list'."""
+    """Executes 'haos haos skills list'."""
     try:
         from hermes.platform.skills.procedural_engine import default_procedural_registry
         registry = default_procedural_registry()
@@ -211,7 +211,7 @@ def cmd_haos_skills_list(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_skills_promote(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos skills promote <skill_id>'."""
+    """Executes 'haos haos skills promote <skill_id>'."""
     skill_id = args.skill_id
     version = getattr(args, "version", None)
 
@@ -320,13 +320,13 @@ def cmd_haos_skills_install(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_doctor(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos doctor'."""
+    """Executes 'haos haos doctor'."""
     from hermes.platform.diagnostics.doctor import HAOSDoctor
     return HAOSDoctor.print_terminal_report(json_output=getattr(args, "json", False))
 
 
 def cmd_haos_evolution_status(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos evolution status'."""
+    """Executes 'haos haos evolution status'."""
     from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.evolution.ledger import EvolutionLedger
     import json
@@ -365,7 +365,7 @@ def cmd_haos_evolution_status(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_evolution_analyze(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos evolution analyze'."""
+    """Executes 'haos haos evolution analyze'."""
     from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.evolution.analyzer import OuroborosAnalyzer
     from hermes.platform.evolution.ledger import EvolutionLedger
@@ -426,7 +426,7 @@ def cmd_haos_evolution_analyze(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_evolution_blast_radius(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos evolution blast-radius <files...>'."""
+    """Executes 'haos haos evolution blast-radius <files...>'."""
     from hermes.platform.capabilities.lsp.unified_intelligence import CodeSymbolGraph, ImpactAnalyzer
     import json
 
@@ -615,7 +615,7 @@ def cmd_haos_doc_search(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_team_graph(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos team'."""
+    """Executes 'haos haos team'."""
     from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.tasks.kanban_adapter import KanbanAdapter
     from hermes.platform.webui.controlplane import ControlPlaneService
@@ -665,7 +665,7 @@ def cmd_haos_team_graph(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_scheduler_status(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos scheduler'."""
+    """Executes 'haos haos scheduler'."""
     from hermes.platform.ui.stats import DashboardStats
     from hermes.platform.tasks.kanban_adapter import KanbanAdapter
     from hermes.platform.observability.event_store import get_event_store
@@ -715,7 +715,7 @@ def cmd_haos_scheduler_status(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_team_intervene(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos team intervene <target_id> <action> [--reason <reason>]'."""
+    """Executes 'haos haos team intervene <target_id> <action> [--reason <reason>]'."""
     from hermes.platform.observability.event_store import get_event_store
     from hermes.platform.tasks.kanban_adapter import KanbanAdapter
     from hermes.platform.webui.controlplane import ControlPlaneService
@@ -728,7 +728,7 @@ def cmd_haos_team_intervene(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_eval(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos eval [--tasks G001,G002] [--label <label>] [--json]'."""
+    """Executes 'haos haos eval [--tasks G001,G002] [--label <label>] [--json]'."""
     from hermes.platform.evals.golden_tasks import run_benchmark_and_record, GOLDEN_TASKS
     from hermes.platform.evals.baselines import BaselineStore
     from hermes_constants import get_hermes_home
@@ -768,7 +768,7 @@ def cmd_haos_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_haos_benchmark(args: argparse.Namespace) -> int:
-    """Executes 'hermes haos benchmark [--rows N] [--out PATH] [--json]'.
+    """Executes 'haos haos benchmark [--rows N] [--out PATH] [--json]'.
 
     Runs the scale benchmark harness for the HAOS hot stores/search paths
     (p50/p95 ms + ops/s) on seeded synthetic data in temp dirs; prints the
@@ -797,7 +797,7 @@ def cmd_haos_benchmark(args: argparse.Namespace) -> int:
 
 
 def build_haos_parser(subparsers) -> argparse.ArgumentParser:
-    """Builds and registers the parser for 'hermes haos'."""
+    """Builds and registers the parser for 'haos haos'."""
     haos_parser = subparsers.add_parser(
         "haos",
         help="HAOS Control Plane, Tríade status, Federation, and Procedural Skills",
@@ -805,17 +805,17 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     )
     haos_sub = haos_parser.add_subparsers(dest="haos_command")
 
-    # hermes haos status [--json]
+    # haos haos status [--json]
     status_parser = haos_sub.add_parser("status", help="Show full HAOS platform summary")
     status_parser.add_argument("--json", action="store_true", help="Output status summary as JSON")
     status_parser.set_defaults(func=cmd_haos_status)
 
-    # hermes haos doctor [--json]
+    # haos haos doctor [--json]
     doctor_parser = haos_sub.add_parser("doctor", help="Valida a integridade, permissões e isolamento do HAOS")
     doctor_parser.add_argument("--json", action="store_true", help="Output doctor diagnostics as JSON")
     doctor_parser.set_defaults(func=cmd_haos_doctor)
 
-    # hermes haos team [status|intervene]
+    # haos haos team [status|intervene]
     team_parser = haos_sub.add_parser("team", aliases=["teamgraph"], help="Cognitive Team Graph & multi-agent hierarchy")
     team_sub = team_parser.add_subparsers(dest="team_command")
 
@@ -830,12 +830,12 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     team_intervene_parser.set_defaults(func=cmd_haos_team_intervene)
     team_parser.set_defaults(func=cmd_haos_team_graph)
 
-    # hermes haos scheduler
+    # haos haos scheduler
     sched_parser = haos_sub.add_parser("scheduler", aliases=["sched"], help="Scheduler determinístico (CPM, PIP, ConcurrencyGuard)")
     sched_parser.add_argument("--json", action="store_true", help="Output as JSON")
     sched_parser.set_defaults(func=cmd_haos_scheduler_status)
 
-    # hermes haos evolution [status|analyze|blast-radius]
+    # haos haos evolution [status|analyze|blast-radius]
     evo_parser = haos_sub.add_parser("evolution", aliases=["ouroboros"], help="Ouroboros Self-Evolution Engine & Blast Radius")
     evo_sub = evo_parser.add_subparsers(dest="evolution_command")
 
@@ -852,7 +852,7 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     evo_blast_parser.add_argument("--json", action="store_true", help="Output as JSON")
     evo_blast_parser.set_defaults(func=cmd_haos_evolution_blast_radius)
 
-    # hermes haos federation ping <peer_id>
+    # haos haos federation ping <peer_id>
     fed_parser = haos_sub.add_parser("federation", help="HAOS Federation management")
     fed_sub = fed_parser.add_subparsers(dest="federation_command")
     
@@ -863,7 +863,7 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     ping_parser.add_argument("--endpoint", help="Peer network endpoint host:port (optional, for live mesh ping)")
     ping_parser.set_defaults(func=cmd_haos_federation_ping)
 
-    # hermes haos skills list / promote <skill_id>
+    # haos haos skills list / promote <skill_id>
     skills_parser = haos_sub.add_parser("skills", help="HAOS Procedural Skills lifecycle")
     skills_sub = skills_parser.add_subparsers(dest="skills_command")
 
@@ -885,7 +885,7 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     promote_parser.add_argument("--version", help="Specific skill version (optional)")
     promote_parser.set_defaults(func=cmd_haos_skills_promote)
 
-    # hermes haos eval [--tasks <ids>] [--label <label>] [--json]
+    # haos haos eval [--tasks <ids>] [--label <label>] [--json]
     # (sem alias 'benchmark': esse nome agora é o scale benchmark abaixo)
     eval_parser = haos_sub.add_parser("eval", help="Executa o benchmark Golden Tasks e gera nota objetiva")
     eval_parser.add_argument("--tasks", help="Tarefas a executar (ex: G001,G002 ou vazio para todas)")
@@ -893,7 +893,7 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     eval_parser.add_argument("--json", action="store_true", help="Output metrics as JSON")
     eval_parser.set_defaults(func=cmd_haos_eval)
 
-    # hermes haos benchmark [--rows N] [--out PATH] [--json]
+    # haos haos benchmark [--rows N] [--out PATH] [--json]
     bench_parser = haos_sub.add_parser(
         "benchmark",
         help="Escala dos stores HAOS: p50/p95/ops de appends e buscas quentes (dados sintéticos em tmp)",
@@ -905,7 +905,7 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     bench_parser.add_argument("--json", action="store_true", help="Imprime o relatório JSON completo")
     bench_parser.set_defaults(func=cmd_haos_benchmark)
 
-    # hermes haos graph [build|path]
+    # haos haos graph [build|path]
     graph_parser = haos_sub.add_parser("graph", help="Code Knowledge Graph determinístico (Graphify Engine)")
     graph_sub = graph_parser.add_subparsers(dest="graph_command")
 
@@ -922,7 +922,7 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
 
     graph_parser.set_defaults(func=cmd_haos_graph_build)
 
-    # hermes haos doc [index|search] (RAGFlow Deep Document Understanding)
+    # haos haos doc [index|search] (RAGFlow Deep Document Understanding)
     doc_parser = haos_sub.add_parser("doc", aliases=["rag"], help="Deep Document Understanding & RRF Search (RAGFlow Engine)")
     doc_sub = doc_parser.add_subparsers(dest="doc_command")
 
@@ -938,6 +938,6 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
 
     doc_parser.set_defaults(func=lambda args: doc_parser.print_help() or 0)
 
-    # Default fallback when 'hermes haos' is run without subcommands
+    # Default fallback when 'haos haos' is run without subcommands
     haos_parser.set_defaults(func=lambda args: haos_parser.print_help() or 0)
     return haos_parser
