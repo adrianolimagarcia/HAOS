@@ -58,7 +58,12 @@ def test_handed_off_process_completion_reaches_parent_and_leftover_is_reported(c
     child = _Child(parent)
     _register(sid, child)
     try:
-        handed = process_registry.spawn_local("sleep 0.4; echo ci-green", task_id=sid, owner_task_id=sid)
+        # The handoff below is REFUSED for a process that already exited (the sibling test pins that),
+        # so this process has to still be running when the handoff call lands. `sleep 0.4` lost that
+        # race on a loaded runner: the 2026-09-18 full-suite run failed with `KeyError: 'status'`
+        # because the process had already exited and the handoff returned an error dict instead.
+        # 3s keeps a 7.5x margin over the handoff and still leaves 7s of the 10s drain deadline below.
+        handed = process_registry.spawn_local("sleep 3; echo ci-green", task_id=sid, owner_task_id=sid)
         handed.notify_on_complete = True
         leftover = process_registry.spawn_local("sleep 30", task_id=sid, owner_task_id=sid)
 
