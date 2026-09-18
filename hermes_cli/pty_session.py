@@ -85,6 +85,13 @@ class PtySession:
                 # The viewer is gone or stalled; nothing else observes this failure (the handler's finally
                 # only runs once ws.receive() sees the disconnect). detach() is a no-op when a
                 # replacement socket attached during the send, so the new viewer keeps its session.
+                # Close with the backpressure code before detaching: a backgrounded tab that resumes
+                # has to be able to tell "the server stopped waiting on me" (1013) from a network
+                # drop, and 7d28719c71 shipped exactly that until a later sync replaced this block
+                # with a bare detach(), which left the socket open from the browser's side and made
+                # WS_CLOSE_BACKPRESSURE dead code.
+                if self._ws is ws:
+                    await _close_ws(ws, WS_CLOSE_BACKPRESSURE)
                 self.detach(ws)
 
     async def write(self, ws, data: bytes) -> bool:
