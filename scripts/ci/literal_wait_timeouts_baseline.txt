@@ -39,7 +39,7 @@ tests/agent/test_compression_rotation_state.py 1
 tests/agent/test_compression_split_failure_cooldown.py 1
 tests/agent/test_compression_stall_fallback.py 1
 tests/agent/test_compression_stall_interrupt.py 2
-tests/agent/test_compression_worker_isolation.py 12
+tests/agent/test_compression_worker_isolation.py 3
 tests/agent/test_context_compressor.py 2
 tests/agent/test_context_compressor_structural_backoff.py 2
 tests/agent/test_credential_pool.py 10
@@ -465,7 +465,7 @@ tests/tools/test_cronjob_run_immediate.py 2
 tests/tools/test_daemon_pool.py 6
 tests/tools/test_daytona_environment.py 1
 tests/tools/test_delegate.py 3
-tests/tools/test_delegate_capacity_interrupt.py 17
+tests/tools/test_delegate_capacity_interrupt.py 3
 tests/tools/test_delegate_cron_sync_fallback.py 3
 tests/tools/test_delegate_subagent_timeout_diagnostic.py 1
 tests/tools/test_delegate_timeout_cleanup.py 5
@@ -558,7 +558,6 @@ tests/tui_gateway/test_deferred_model_history.py 7
 tests/tui_gateway/test_free_tier_rpc.py 1
 tests/tui_gateway/test_goal_command.py 5
 tests/tui_gateway/test_heartbeat_tui_tick.py 2
-tests/tui_gateway/test_hosted_room_driver_runtime.py 12
 tests/tui_gateway/test_hosted_room_peer_http.py 2
 tests/tui_gateway/test_inline_rpc_gil_starvation.py 1
 tests/tui_gateway/test_isolated_orphan_activity.py 1
