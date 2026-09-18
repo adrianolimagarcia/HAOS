@@ -58,6 +58,25 @@ jobs:
       - name: Forbid user-facing hints naming the upstream CLI
         run: python scripts/ci/check_haos_brand_hints.py
 
+  test-source-reads-guard:
+    name: Ratchet de leitura de codigo-fonte em testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+
+      # The root AGENTS.md bans reading source text in tests outright. The 110
+      # existing reads are grandfathered per file; this fails on any NEW one, and
+      # also when a count drops, so the ratchet can only tighten.
+      - name: Forbid new tests that read source text
+        run: python scripts/ci/check_test_source_reads.py
+
   lock-check:
     name: uv.lock em sincronia com pyproject.toml
     runs-on: ubuntu-latest

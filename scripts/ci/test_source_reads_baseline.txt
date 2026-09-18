@@ -1,0 +1,79 @@
+# Tests grandfathered by scripts/ci/check_test_source_reads.py — tests that
+# read source text (inspect.getsource / getsourcelines / getsourcefile),
+# frozen per file so the ratchet only tightens. The root AGENTS.md bans the
+# shape outright; the fix is to extract the logic into a pure/DI-testable
+# function and assert its behaviour. Counts, not path::test keys: a key set
+# would still miss a second read added to an already-listed test.
+# Lowering a count is how you tighten it; a count that no longer matches the
+# file fails as stale either way.
+# Regenerate with: python scripts/ci/check_test_source_reads.py --update-baseline
+tests/agent/test_413_image_payload_recovery.py 1
+tests/agent/test_anthropic_oauth_ua_prefix.py 1
+tests/agent/test_aux_stream_host_deadline.py 1
+tests/agent/test_compaction_prompt_rebuild.py 1
+tests/agent/test_context_engine.py 1
+tests/agent/test_credential_pool_quarantine_locking.py 1
+tests/agent/test_image_corrupt_recovery.py 1
+tests/agent/test_infinite_compaction_loop.py 1
+tests/agent/test_micro_compaction.py 2
+tests/agent/test_nous_oauth_401_guidance.py 2
+tests/agent/test_pre_compress_checkpoint_contract.py 1
+tests/agent/test_prompt_cache_ttl_propagation.py 3
+tests/agent/test_prompt_caching.py 1
+tests/agent/test_send_path_history_isolation.py 1
+tests/agent/test_surrogate_chokepoints.py 2
+tests/agent/test_turn_base_display_anchor.py 1
+tests/cron/test_cron_reasoning_effort.py 1
+tests/gateway/test_aiohttp_body_caps.py 1
+tests/gateway/test_approval_prompt_redaction.py 1
+tests/gateway/test_async_delegation_session_binding.py 1
+tests/gateway/test_auto_reset_clean_context.py 1
+tests/gateway/test_auto_reset_evicts_cached_agent.py 1
+tests/gateway/test_compression_deferred_soft_result.py 1
+tests/gateway/test_compression_session_id_persistence.py 1
+tests/gateway/test_cron_interrupt_notification.py 2
+tests/gateway/test_discord_opus.py 2
+tests/gateway/test_env_override_explicit_disable.py 1
+tests/gateway/test_loop_liveness_watchdog.py 3
+tests/gateway/test_model_switch_after_auto_reset.py 2
+tests/gateway/test_platform_http_client_limits.py 1
+tests/gateway/test_restart_drain_recovery_dedup.py 1
+tests/gateway/test_slack_mention.py 1
+tests/gateway/test_startup_watchdog.py 4
+tests/gateway/test_stream_final_adoption_gate.py 1
+tests/gateway/test_telegram_prune_stale_topic_binding.py 2
+tests/gateway/test_transcript_read_failure.py 1
+tests/gateway/test_voice_command.py 7
+tests/hermes_cli/test_budget_source.py 2
+tests/hermes_cli/test_cli_active_agent_ref_wiring.py 1
+tests/hermes_cli/test_cli_goal_interrupt.py 1
+tests/hermes_cli/test_cli_quiet_stdout_leak.py 2
+tests/hermes_cli/test_in_dir_msys_paths.py 1
+tests/hermes_cli/test_mcp_discovery_timing.py 2
+tests/hermes_cli/test_single_query_clarify.py 2
+tests/hermes_cli/test_sqlite3_cli_salvage_gate.py 2
+tests/hermes_cli/test_terminal_interrupt_recovery.py 1
+tests/hermes_cli/test_update_apply_shallow_count.py 2
+tests/hermes_cli/test_update_fetch_failure_classifier.py 2
+tests/hermes_cli/test_update_fleet_check_fail_closed.py 2
+tests/hermes_cli/test_update_self_lock.py 4
+tests/hermes_cli/test_update_zip_fallback_guards.py 1
+tests/hermes_cli/test_update_zip_two_phase.py 1
+tests/hermes_cli/test_web_server_pty_import.py 1
+tests/hermes_state/test_replace_messages_archive_siblings.py 2
+tests/hermes_state/test_writer_conn_thread_safety.py 1
+tests/plugins/model_providers/test_commandcode_profile.py 1
+tests/plugins/platforms/photon/test_fatal_notify_self_cancel.py 1
+tests/tools/test_browser_hardening.py 6
+tests/tools/test_compaction_tool_refresh.py 1
+tests/tools/test_computer_use.py 1
+tests/tools/test_execute_code_approval_cluster.py 2
+tests/tools/test_file_tools.py 1
+tests/tools/test_image_generate_schema.py 1
+tests/tools/test_mcp_stability.py 1
+tests/tools/test_mcp_stdio_children_dead.py 1
+tests/tools/test_modal_sandbox_fixes.py 2
+tests/tools/test_read_file_schema_gating.py 1
+tests/tools/test_terminal_config_env_sync.py 2
+tests/tools/test_tts_output_timestamp.py 1
+tests/tui_gateway/test_cold_start_gil_stall.py 1
