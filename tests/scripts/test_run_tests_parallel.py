@@ -554,3 +554,105 @@ def test_stable_run_writes_no_flake_ledger(tmp_path: Path) -> None:
     )
     assert proc.returncode != 0, proc.stdout
     assert not broken_ledger.exists(), "deterministic failure logged as a flake"
+
+
+# ---------------------------------------------------------------------------
+# Cross-process run lock
+# ---------------------------------------------------------------------------
+# Two runs on one checkout are untrustworthy, not merely wasteful: they rewrite
+# test_durations.json whole and append to test_flakes.jsonl, and each one's load
+# skews the other's timing-sensitive tests — the mechanism that turns a
+# load-sensitive test into a "deterministic failure".
+
+_RUNNER_PATH = Path(__file__).resolve().parent.parent.parent / "scripts" / "run_tests_parallel.py"
+
+# A child that takes the lock by the same code path the CLI uses and reports the
+# outcome, so the test exercises exclusion between PROCESSES, not just between
+# two calls in one.
+_CHILD_ACQUIRE = textwrap.dedent(
+    """
+    import importlib.util, pathlib, sys
+
+    spec = importlib.util.spec_from_file_location("rtp_lock_child", sys.argv[1])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    owner = module._acquire_run_lock(pathlib.Path(sys.argv[2]))
+    print("OWNER=" + (owner or ""))
+    """
+)
+
+
+def _load_runner_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("rtp_lock_probe", _RUNNER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _child_acquire(lock_dir: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-c", _CHILD_ACQUIRE, str(_RUNNER_PATH), str(lock_dir)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8",
+        errors="replace", timeout=60,
+    )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="flock(2) is POSIX-only")
+def test_a_second_process_cannot_take_the_run_lock(tmp_path: Path) -> None:
+    """The lock must exclude another PROCESS, and the refusal must name it."""
+    module = _load_runner_module()
+    assert module._acquire_run_lock(tmp_path) is None, "the lock starts free"
+
+    child = _child_acquire(tmp_path)
+    assert child.returncode == 0, child.stdout
+    owner = child.stdout.split("OWNER=", 1)[1].strip()
+    assert owner, "a second process took the lock while this one held it"
+    assert str(os.getpid()) in owner, f"the refusal must name the holder: {owner!r}"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="flock(2) is POSIX-only")
+def test_the_lock_is_released_when_the_holder_exits(tmp_path: Path) -> None:
+    """A crashed or finished run must not leave a lock needing manual cleanup.
+
+    The lock file itself is deliberately left behind — that is what the holder
+    metadata is for — so this asserts the flock is gone, not the file.
+    """
+    assert _child_acquire(tmp_path).returncode == 0
+    assert (tmp_path / ".hermes-test-runner.lock").exists(), "holder metadata should persist"
+
+    module = _load_runner_module()
+    assert module._acquire_run_lock(tmp_path) is None, "a stale lock file must not block a run"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="flock(2) is POSIX-only")
+def test_contention_refuses_by_default_and_the_override_allows_it(tmp_path, monkeypatch) -> None:
+    """Refuse by default; HERMES_TEST_ALLOW_CONCURRENT=1 downgrades it to a warning."""
+    module = _load_runner_module()
+    monkeypatch.delenv("HERMES_TEST_ALLOW_CONCURRENT", raising=False)
+    assert module._may_run_despite_contention("pid 4242 (started whenever)") is False
+
+    monkeypatch.setenv("HERMES_TEST_ALLOW_CONCURRENT", "1")
+    assert module._may_run_despite_contention("pid 4242 (started whenever)") is True
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="flock(2) is POSIX-only")
+def test_a_runner_started_by_a_holder_is_not_refused(tmp_path: Path) -> None:
+    """The tests that exercise this runner spawn it; those children are part of
+    the holder's run, not rivals, and must not refuse themselves.
+
+    The marker is what carries that fact across the process boundary, and it is
+    cleared by run_tests.sh's ``env -i``, so a run started from a plain shell
+    never carries it.
+    """
+    probe_dir = _make_probe_dir(tmp_path)
+    env = os.environ.copy()
+    env["HERMES_TEST_RUNNER_LOCK_HELD"] = "1"
+    proc = subprocess.run(
+        [sys.executable, str(_RUNNER_PATH), "--paths", str(probe_dir), "-j", "1"],
+        cwd=_RUNNER_PATH.parent.parent, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        encoding="utf-8", errors="replace", timeout=120, env=env,
+    )
+    assert proc.returncode == 0, proc.stdout
+    assert "refusing to start a second concurrent run" not in proc.stdout

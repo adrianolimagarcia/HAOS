@@ -44,6 +44,8 @@ data/
 .pytest_cache/
 test_durations.json
 test_flakes.jsonl
+# Advisory cross-process run lock (scripts/run_tests_parallel.py) — per checkout.
+.hermes-test-runner.lock
 .pytest-cache/
 tmp/
 temp_vision_images/

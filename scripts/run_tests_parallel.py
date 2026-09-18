@@ -56,6 +56,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows has no flock(2); runs proceed unlocked.
+    fcntl = None  # type: ignore[assignment]
+
 
 # Default test discovery roots.
 _DEFAULT_ROOTS = ["tests"]
@@ -123,6 +128,117 @@ _FLAKE_LOG_FILE = "test_flakes.jsonl"
 # Bounded excerpt of the first-attempt output. The failing assertion is what
 # makes a flake actionable; without it the ledger is a list of filenames.
 _FLAKE_LOG_MAX_EXCERPT = 2000
+
+# Cross-process run lock (advisory, flock(2) on a per-checkout file).
+#
+# Two runs on one checkout are not merely wasteful — they are untrustworthy.
+# They fight over the shared read-modify-write artifacts (_DURATIONS_FILE is
+# loaded then rewritten whole, _FLAKE_LOG_FILE is appended to), oversubscribe
+# the box, and, worst, skew each other's timing-sensitive tests: a wait sized
+# for an idle runner times out under a second run's load, which is exactly how a
+# load-sensitive test gets recorded as a deterministic failure and then "fixed"
+# by loosening a bound that was never wrong. Nothing warned before this.
+#
+# Advisory, so it cannot stop a run started outside this script; and the OS
+# releases it when the holder dies, so a crashed run never leaves a stale lock
+# to clean up by hand.
+_LOCK_FILE = ".hermes-test-runner.lock"
+
+# Exported into every worker subprocess. A runner started BY a worker (the
+# tests that exercise this runner spawn it) is part of the holder's run, not a
+# competing one, so it must not refuse itself. Cleared by run_tests.sh's
+# `env -i`, so a run started from a plain shell never carries it.
+_LOCK_MARKER_ENV = "HERMES_TEST_RUNNER_LOCK_HELD"
+
+# Escape hatch for the operator who really does want two runs (e.g. splitting a
+# suite by hand): downgrades the refusal to a warning. Allowlisted in
+# run_tests.sh, since that script rebuilds the environment with `env -i`.
+_ALLOW_CONCURRENT_ENV = "HERMES_TEST_ALLOW_CONCURRENT"
+
+# Held for the process lifetime. A module global on purpose: dropping the last
+# reference to the file object closes the fd, and closing the fd releases the
+# flock.
+_lock_handle = None
+
+
+def _lock_owner_description(lock_path: Path) -> str:
+    """Best-effort "who holds it" for the refusal message."""
+    try:
+        info = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "another process"
+    pid = info.get("pid")
+    started = info.get("started") or "unknown start"
+    command = info.get("command") or ""
+    suffix = f" — {command}" if command else ""
+    return f"pid {pid} (started {started}){suffix}"
+
+
+def _acquire_run_lock(repo_root: Path) -> Optional[str]:
+    """Take the per-checkout run lock.
+
+    Returns ``None`` when the lock is held by this process (or when no advisory
+    primitive exists), otherwise a human-readable description of the holder.
+    """
+    global _lock_handle
+    if fcntl is None:
+        return None
+    lock_path = repo_root / _LOCK_FILE
+    try:
+        handle = lock_path.open("a+", encoding="utf-8")
+    except OSError as exc:
+        # An unusable lock file must never be the reason a suite cannot run.
+        print(f"[warn] could not open the run lock {lock_path}: {exc}", file=sys.stderr)
+        return None
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        owner = _lock_owner_description(lock_path)
+        handle.close()
+        return owner
+    try:
+        handle.seek(0)
+        handle.truncate()
+        json.dump(
+            {
+                "pid": os.getpid(),
+                "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "command": " ".join(sys.argv[1:])[:400],
+            },
+            handle,
+        )
+        handle.flush()
+    except OSError:
+        pass  # Diagnostic payload only; the flock is what matters.
+    _lock_handle = handle
+    return None
+
+
+def _may_run_despite_contention(contender: str) -> bool:
+    """Report a rival run holding the lock and decide whether this one may start.
+
+    Returns False when the caller must stop. Refusing is the default because a
+    rival run's damage is silent: the artifacts it corrupts are the ones we trust
+    to measure flakes, and the failures it causes look like real regressions.
+    """
+    print(
+        f"[warn] another test run holds {_LOCK_FILE} in this checkout: {contender}",
+        file=sys.stderr,
+    )
+    if os.environ.get(_ALLOW_CONCURRENT_ENV, "").strip().lower() in ("1", "true", "yes"):
+        print(
+            f"[warn] {_ALLOW_CONCURRENT_ENV} is set — running anyway; timings and the flake "
+            "ledger from this run are not trustworthy.",
+            file=sys.stderr,
+        )
+        return True
+    print(
+        "[error] refusing to start a second concurrent run: the two would fight over "
+        f"{_DURATIONS_FILE} and {_FLAKE_LOG_FILE} and skew each other's timing tests. "
+        f"Wait for it to finish, or set {_ALLOW_CONCURRENT_ENV}=1 to run anyway.",
+        file=sys.stderr,
+    )
+    return False
 
 
 def _split_pathspec(value: str) -> List[str]:
@@ -506,6 +622,10 @@ def _run_one_file_once(
     env = os.environ.copy()
     temproot = tempfile.mkdtemp(prefix="hermes-pytest-tmproot-")
     env["PYTEST_DEBUG_TEMPROOT"] = temproot
+    # Tell a runner spawned by a test that it is a child of the lock holder, not
+    # a competing run (see _LOCK_MARKER_ENV).
+    if _lock_handle is not None:
+        env[_LOCK_MARKER_ENV] = str(os.getpid())
 
     subproc_start = time.monotonic()
     # launch the pytest process
@@ -1147,6 +1267,16 @@ def main() -> int:
         # Print to stdout so the CI step can capture it with $().
         print(json.dumps(matrix))
         return 0
+
+    # One run per checkout. Placed after --generate-slices (a read-only matrix
+    # generator CI runs before its slice jobs) and before any worker starts or
+    # any artifact is written.
+    if os.environ.get(_LOCK_MARKER_ENV):
+        pass  # Started by a run that already holds the lock: part of that run, not a rival.
+    else:
+        contender = _acquire_run_lock(repo_root)
+        if contender is not None and not _may_run_despite_contention(contender):
+            return 2
 
     # Count individual tests per file
     test_counts = _approximately_count_tests(files, repo_root)
