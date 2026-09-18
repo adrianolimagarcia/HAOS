@@ -32,6 +32,11 @@ _NON_MIRROR_DIRS = {
     # observability, webui, memory, workers). O pacote vive sob `hermes/`, então o
     # diretório não espelha um pacote de topo.
     "platform",
+    # Contratos dos ADRs/change-requests/esquemas em `architecture/`, que é um
+    # diretório de documentos (sem `__init__.py`) e portanto não é "source
+    # package" para efeito deste teste. A suíte é transversal por natureza:
+    # valida o registro canônico, não um módulo.
+    "architecture",
 }
 
 # Root-level modules whose tests sit directly in tests/ (no package to mirror).
