@@ -504,7 +504,7 @@ def _own_profile_selector(profile: Optional[str]) -> Optional[str]:
 
 
 def _gateway_subcommand(profile: Optional[str], verb: str) -> List[str]:
-    """``hermes [-p X] gateway <verb>`` argv for a dashboard lifecycle action. A profile served by the
+    """``haos [-p X] gateway <verb>`` argv for a dashboard lifecycle action. A profile served by the
     live default multiplexer has no gateway of its own: ``restart`` targets the multiplexer (the process
     that actually serves X — a ``-p X gateway restart`` child only exits 78 into the action log while the
     UI reports "restarted"); ``start``/``stop`` are refused by the caller (``multiplexed_profile_refusal``).

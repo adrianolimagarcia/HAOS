@@ -24,7 +24,7 @@ from typing import Any, Callable, NamedTuple, Optional  # noqa: F401  (Callable:
 from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope  # noqa: F401
 from hermes_constants import (
     get_hermes_home, get_hermes_home_override, profile_name_for_home,
-    reset_hermes_home_override, set_hermes_home_override, product_command)
+    reset_hermes_home_override, set_hermes_home_override, product_cli_name, product_command)
 from hermes_cli.env_loader import load_hermes_dotenv
 from utils import file_signature, is_truthy_value
 from hermes_state_ids import new_session_id
@@ -3239,7 +3239,17 @@ _CLI_EXEC_BLOCKED = {
 def _cli_exec_blocked(argv: list[str]) -> str | None:
     """Return user hint if this argv must not run headless in the gateway process."""
     if not argv:
-        return "bare `hermes` is interactive — use `/" + product_command("chat") + " -q …` or run `hermes` in another terminal"
+        # haos-brand: upstream text quoted verbatim, so this change stays auditable
+        # Upstream's hint read `use `/hermes chat -q …``; `/hermes` is not a registered slash
+        # command (COMMAND_REGISTRY has 103 entries, none named `hermes`), so the slash was a
+        # typo for the CLI form. Branding it cannot work either: in this fork `/haos` IS a
+        # slash command, but it is the control plane (engineering constructor, status, team
+        # dispatch), not a chat query. The sibling hints in _CLI_EXEC_BLOCKED_HINTS slash only
+        # real TUI slash commands (`/resume`) and never a CLI invocation, so the slash is
+        # dropped and the hint names the runnable CLI form. The earlier branding pass had
+        # converted only the middle of the string, yielding the invalid `/haos chat -q …`.
+        return ("bare `" + product_cli_name() + "` is interactive — use `" + product_command("chat")
+                + " -q …` or run `" + product_cli_name() + "` in another terminal")
     head = tuple(a.lower() for a in argv[:2])
     return _CLI_EXEC_BLOCKED.get(head[:1]) or _CLI_EXEC_BLOCKED.get(head)
 
