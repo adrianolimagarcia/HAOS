@@ -200,26 +200,52 @@ class TestParseSqlite3CliVersion:
 
 
 class TestGuidanceNeverNamesLiveDb:
-    def test_gateway_corruption_banner(self):
+    def test_gateway_corruption_banner(self, monkeypatch, tmp_path):
         """The gateway broadcast must route to the two-stage `sessions
         recover` contract and must warn against pointing a raw sqlite3
-        shell at the live file."""
-        import gateway.run as gateway_run
+        shell at the live file.
 
-        body = inspect.getsource(
-            gateway_run.GatewayRunner._send_session_db_warning_notifications
+        Asserted on the message the gateway actually broadcasts. The previous
+        form read the method's source text with ``inspect.getsource`` and
+        grepped it for the strings — a shape-of-the-source check that passes
+        while the message is mis-wired and fails on a correct refactor
+        (AGENTS.md § Never read source code in tests).
+        """
+        import asyncio
+
+        import gateway.run as gateway_run
+        import hermes_constants
+
+        # Force HAOS branding. In a stock environment ``product_cli_name()`` is already
+        # "hermes", so asserting it appears in the message would be satisfied by the very
+        # literal a regression would hardcode — the assertion has to move the product name
+        # away from the default to mean anything.
+        monkeypatch.setenv("HAOS_HOME", str(tmp_path / "haos-home"))
+
+        runner = object.__new__(gateway_run.GatewayRunner)
+        runner._session_db_init_error = "database disk image is malformed"
+        sent = []
+        monkeypatch.setattr(
+            runner, "_home_channel_transports", lambda: [("telegram", {}, "home-chat", object())]
         )
+
+        async def _capture_send(_platform, _home, _transport, message, _log_fmt):
+            sent.append(message)
+
+        monkeypatch.setattr(runner, "_send_home_channel_message", _capture_send)
+        asyncio.run(runner._send_session_db_warning_notifications())
+
+        assert sent, "corruption must be broadcast to the home channels"
+        assert hermes_constants.product_cli_name() == "haos", "HAOS_HOME must select HAOS branding"
+        body = sent[0]
         assert LIVE_DB_SALVAGE_COMMAND not in body
-        # O fork monta o comando com o nome do produto ativo, então o literal
-        # "sessions recover --source" não existe na fonte (e não pode existir: hint fixo
-        # em "hermes" é proibido por scripts/ci/check_haos_brand_hints.py). O contrato é
-        # o comando de recuperação existir e ser construído com esse nome.
-        assert "recover --source" in body
-        assert "product_command" in body, (
-            "o comando de recuperação deve usar product_command (nome do produto ativo)"
-        )
+        # The fork builds the command with the active product name (a hardcoded "hermes" hint is
+        # refused by scripts/ci/check_haos_brand_hints.py), so under HAOS branding the two-stage
+        # recovery command must be present AND branded.
+        assert "haos sessions recover --source" in body
+        assert "hermes sessions recover" not in body
         assert "--inspect-only" in body
-        assert "--output" in body
+        assert "--output recovered-state.db" in body
         assert "do NOT" in body
 
     def test_run_agent_corrupt_explanation(self):
