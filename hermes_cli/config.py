@@ -3269,7 +3269,18 @@ _SCHEMA_DEFINED_DICT_KEYS = frozenset({
     # MCP server template / dynamic auth dicts
     "sessions", "checkpoints",
     # Plugin enable/disable lists + per-plugin entries; absent from DEFAULT_CONFIG.
-    "plugins"})
+    "plugins",
+    # The model section is user-set far beyond the two leaves DEFAULT_CONFIG enumerates:
+    # provider / base_url / api_key / context_length / default / model / supports_vision /
+    # ollama_num_ctx are all read out of it at runtime, and `hermes config set model.provider
+    # <name>` is the command our own provider guides document. Upstream ships ``"model": ""``
+    # — a non-dict node, which the walk below short-circuits to "accept anything under
+    # model.*". HAOS ships it as a SECTION because it carries ``persist_switch_by_default``,
+    # and a populated dict reads as a CLOSED schema, so the section silently became
+    # typo-checked and the documented command exited 1 with "not a recognized config key".
+    # Keeping the section open at the sub-key level restores upstream's behavior for `model`
+    # without giving up the HAOS default.
+    "model"})
 
 # Top-level keys that can be ANY user-supplied name.
 _DYNAMIC_TOP_LEVEL_KEYS = frozenset({

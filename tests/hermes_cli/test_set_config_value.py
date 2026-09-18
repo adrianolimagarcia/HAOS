@@ -542,6 +542,34 @@ class TestValidateConfigKey:
         is_known, suggestion = _validate_config_key("agent._max_turns")
         assert not is_known, "Sub-key typo under a known top-level key must still be flagged"
 
+    def test_model_section_is_open_at_the_sub_key_level_and_closed_sections_still_refuse(self):
+        """The `model` section is user-set beyond what the schema enumerates.
+
+        HAOS ships DEFAULT_CONFIG["model"] as a SECTION (it carries
+        `persist_switch_by_default`) where upstream ships the empty string. A populated dict
+        reads as a CLOSED schema to the validator, so the section silently became
+        typo-checked and the documented `hermes config set model.provider <name>` exited 1
+        with "not a recognized config key — nothing was written". The runtime reads these
+        keys out of `model`; the validator must not refuse what the runtime consumes.
+
+        The other direction is pinned in the same test so the exemption cannot decay into
+        "accept every path": a genuinely closed section still refuses a sub-key typo.
+        """
+        from hermes_cli.config import _validate_config_key
+
+        for key in (
+            "model.provider",
+            "model.base_url",
+            "model.api_key",
+            "model.context_length",
+        ):
+            is_known, _ = _validate_config_key(key)
+            assert is_known, f"{key!r} is read at runtime and must stay writable"
+
+        is_known, suggestion = _validate_config_key("gateway.discord.gateway_restart_notification")
+        assert not is_known, "A typo under a closed section must still be refused"
+        assert suggestion == "discord.gateway_restart_notification"
+
 
 # ---------------------------------------------------------------------------
 # display.skin → touch the skin file (live re-affirm broadcast)
