@@ -247,3 +247,15 @@ jobs:
       #   python scripts/check_timing_bounds.py --all      # list the grandfathered ones
       - name: Wall-clock bounds in tests are not tighter than 2s
         run: python scripts/check_timing_bounds.py
+
+      # The bound check above reads ASSERTION bounds; the 2026-09 flake census found 7 of 9
+      # distinct flakes were waits instead — Event.wait(timeout=5), asyncio.wait_for(..., 2),
+      # a sleep(0.05) poll loop, a lease read against the real clock. The bounds ratchet sat at
+      # "0 new" through every one of them, because it never looked at a wait call.
+      # scripts/ci/literal_wait_timeouts_baseline.txt freezes each file's current COUNT, so
+      # existing debt is grandfathered while any new literal fails — including a second one
+      # added to a test that already had one. A count that drops also fails, so the ratchet
+      # only tightens.
+      #   python scripts/check_literal_wait_timeouts.py --all   # list the grandfathered ones
+      - name: Test waits name their budget instead of inlining a literal
+        run: python scripts/check_literal_wait_timeouts.py
