@@ -387,6 +387,7 @@ from gateway.platforms.helpers import fence_state_after
 from gateway.platforms.base_exec_approval import (
     EA_HEADER_TEXT, EA_REASON_LABEL_TEXT, approval_timeout_seconds, format_approval_deadline_line)
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
+from gateway.service_names import GATEWAY_UNIT_BASES
 from gateway.session import SessionSource, build_session_key
 from gateway.session_transcript import TranscriptReadError
 from hermes_constants import get_default_hermes_root, get_hermes_dir, get_hermes_home, product_command
@@ -1552,10 +1553,23 @@ class _ExtractedResponse:
     pre_extract: str
 
 
+# The CLI answers to `hermes` upstream and `haos` on the appliance, and this guard is what keeps a
+# DM's plaintext "restart <cli> gateway" out of the LLM/tool path (a self-restart from inside the
+# running agent leaves the gateway stuck in `draining`, waiting on that agent). Both spellings,
+# never just the active brand: matching only `hermes` left the appliance's own wording unguarded,
+# and the phrase is an exact-match DM admin command, so recognizing the pair costs nothing.
+#
+# Derived from the unit-name source instead of hardcoded — `GATEWAY_UNIT_BASE`'s prefix IS the
+# product name (`hermes_cli.gateway.get_service_name` builds `<product>-gateway`). Resolving
+# `product_cli_name()` here instead would bake whichever home this process launched with, which is
+# the import-time-brand trap this repo already hit elsewhere.
+_CLI_SPELLINGS = "|".join(re.escape(base.rsplit("-", 1)[0]) for base in GATEWAY_UNIT_BASES)
+
 _PLAINTEXT_GATEWAY_RESTART_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^(?:please\s+)?restart\s+(?:the\s+)?gateway[.!?\s]*$", re.IGNORECASE),
-    re.compile(r"^(?:please\s+)?restart\s+(?:the\s+)?hermes\s+gateway[.!?\s]*$", re.IGNORECASE),
-    re.compile(r"^(?:please\s+)?restart\s+hermes[.!?\s]*$", re.IGNORECASE))
+    re.compile(rf"^(?:please\s+)?restart\s+(?:the\s+)?(?:{_CLI_SPELLINGS})\s+gateway[.!?\s]*$",
+               re.IGNORECASE),
+    re.compile(rf"^(?:please\s+)?restart\s+(?:{_CLI_SPELLINGS})[.!?\s]*$", re.IGNORECASE))
 
 
 def coerce_plaintext_gateway_command(event: "MessageEvent") -> None:
