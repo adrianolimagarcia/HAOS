@@ -3,7 +3,7 @@
 A *peer* is another Hermes gateway running the ``api_server`` platform; its stock
 API is the transport (no new server surface). ``dm`` resolves the remote canonical
 "Bot Chat" session (creating it when missing) and runs ONE synchronous turn — the
-cross-machine twin of ``hermes -p <bot> chat --in ~ -c "Bot Chat"``. ``run``/``status``
+cross-machine twin of ``haos -p <bot> chat --in ~ -c "Bot Chat"``. ``run``/``status``
 /``stop`` do the same turn through the async Runs API. Peer labels/URLs live in
 config.yaml (``bot_peers``); the key lives in ``~/.hermes/.env`` as
 ``HERMES_PEER_<NAME>_KEY``. ``<peer>/<profile>`` targets the ``/p/<profile>/`` mirror.
@@ -399,7 +399,7 @@ def build_peer_parser(subparsers) -> None:
         description="Register other Hermes gateways as peers and message their agents. " +
             "'" + product_command("peer") + " dm <peer>[/<agent>] \"...\"' delivers into the remote " +
             "agent's canonical Bot Chat over the peer's API server and prints " +
-            "the reply — the cross-machine twin of 'hermes -p <bot> chat'. " +
+            "the reply — the cross-machine twin of '" + product_command("-p", "<bot>", "chat") + "'. " +
             "The peer must run the api_server platform; its API_SERVER_KEY is " +
             "stored locally as a credential in ~/.hermes/.env.",
         epilog=(

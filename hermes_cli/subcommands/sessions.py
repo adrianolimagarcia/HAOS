@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from hermes_constants import product_command
 from hermes_cli.subcommands._shared import add_json_flag, add_yes_flag
 
 
@@ -251,7 +252,7 @@ def build_sessions_parser(subparsers, *, cmd_sessions: Callable) -> None:
         "import", help="Import a Claude Code or Codex CLI session into Hermes",
         description="Pull a conversation started in Claude Code (~/.claude/projects) "
             "or Codex CLI (~/.codex/sessions) into the Hermes session store "
-            "so it can be resumed with 'hermes --resume <id>'. The foreign "
+            "so it can be resumed with '" + product_command("--resume", "<id>") + "'. The foreign "
             "files are only read, never modified.")
     sessions_import.add_argument("--from", dest="from_source", choices=["claude", "codex"],
         help="Which tool to import from (default: pick across both)")
