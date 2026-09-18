@@ -281,8 +281,23 @@ def _frames(buf):
     return [json.loads(line) for line in buf.getvalue().splitlines()]
 
 
-def _wait_open(server_requests, buf=None, timeout=2.0):
-    """The open request once its frame has been written (registration precedes the write)."""
+# Liveness bound, not a performance budget. ``_wait_open`` polls a request that a separate
+# thread registers and then writes, so nothing guarantees it completes; the bound exists to
+# fail a wedged transport loudly instead of stalling until the runner's per-file timeout
+# (scripts/run_tests_parallel.py: _DEFAULT_FILE_TIMEOUT_SECONDS = 900). The previous 2s
+# deadline was demonstrably reachable under full-suite load: the flake census recorded this
+# file failing with ``AssertionError: server request never registered`` raised from the loop
+# below, and the deadline is not a property of the protocol being tested.
+_REQUEST_FRAME_LIVENESS_SECONDS = 30.0
+
+
+def _wait_open(server_requests, buf=None, timeout=_REQUEST_FRAME_LIVENESS_SECONDS):
+    """The open request once its frame has been written (registration precedes the write).
+
+    The deadline is a hang detector, not a speed assertion: the registering thread pays the
+    backend's first-write warm-up, which is load-dependent. A fixed 2s budget flaked on the
+    full-suite census, so the bound now sits far outside that range.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         with server_requests._lock:
@@ -311,6 +326,40 @@ def test_server_request_round_trip_uses_response_frame(capture):
     assert box["r"] == "hunter2"
     with server_requests._lock:
         assert not server_requests._open
+
+
+# Reproduces the load-dependent registration delay the census hit: the stall is sized just
+# past the old 2s deadline, which the ledger shows was reachable on a busy runner.
+_REQUEST_REGISTRATION_STALL_SECONDS = 2.2
+
+
+def test_server_request_survives_a_slow_registration(capture, monkeypatch):
+    """A request thread stalled past the old 2s deadline must still be observed, not reported as
+    a protocol failure.
+
+    Regression for the full-suite flake ``AssertionError: server request never registered``:
+    the registering thread pays a load-dependent first-write cost, so a fixed 2s deadline was
+    reachable on a busy runner. The deadline is now a liveness bound; the round trip itself is
+    unchanged.
+    """
+    from tui_gateway import server_requests
+    server, buf = capture
+    real_send = server_requests.send
+
+    def slow_send(*args, **kwargs):
+        time.sleep(_REQUEST_REGISTRATION_STALL_SECONDS)
+        return real_send(*args, **kwargs)
+
+    monkeypatch.setattr(server_requests, "send", slow_send)
+    box = {}
+    thread = threading.Thread(target=lambda: box.__setitem__("r", server._ask("sudo", "s1", {}, timeout=30)), daemon=True)
+    thread.start()
+    req = _wait_open(server_requests, buf)
+
+    assert req.id.startswith("srq-")
+    assert server.dispatch({"jsonrpc": "2.0", "id": req.id, "result": {"value": "hunter2"}}) is None
+    thread.join(timeout=30)
+    assert box["r"] == "hunter2"
 
 
 @pytest.mark.parametrize("method", ["secret", "sudo", "terminal.read", "tour"])

@@ -10,6 +10,20 @@ import pytest
 from tui_gateway import server
 from tui_gateway.host_supervisor import HostSupervisor
 
+# Every wait below is on a REAL child subprocess: it boots a Python interpreter, imports the
+# agent, and settles a turn or an interrupt over real pipes. On the loaded full-suite runner
+# that is load-dependent, so these deadlines exist to fail a wedged child loudly — not to
+# assert how fast a child settles. The previous per-site budgets (12/5/5/5/3/20s) sat inside
+# the load-dependent range: the census caught ``stale child must receive and settle the real
+# interrupt`` when a 5s budget elapsed before the child settled.
+_CHILD_LIVENESS_SECONDS = 30.0
+
+# Deliberately NOT the liveness bound. This window is an ABSENCE probe: it runs on all four
+# parametrizations and its job is to give a late activity sample a chance to be caught before
+# ``... is (mode == "fresh")`` asserts it never landed. Widening it would only add ~90s of
+# waiting to prove absence, so it keeps its original short window.
+_ACTIVITY_ABSENCE_PROBE_SECONDS = 3.0
+
 
 class _Timer:
     def __init__(self, delay, callback):
@@ -58,12 +72,12 @@ def test_real_child_detached_turn_activity(tmp_path, monkeypatch, mode):
     try:
         response = server._submit_prompt_to_compute_host("request", sid, session, "work")
         assert response["result"]["turn_isolation"] is True
-        deadline = time.monotonic() + 12
+        deadline = time.monotonic() + _CHILD_LIVENESS_SECONDS
         while not (tmp_path / "provider-started").exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         assert (tmp_path / "provider-started").exists(), supervisor._stderr_tail
         # Give the actual child-to-parent sampler a bounded opportunity to arrive.
-        deadline = time.monotonic() + 3
+        deadline = time.monotonic() + _ACTIVITY_ABSENCE_PROBE_SECONDS
         while not server._ws_orphan_turn_activity_is_fresh(session) and time.monotonic() < deadline:
             time.sleep(0.02)
         assert supervisor.is_running()
@@ -77,7 +91,7 @@ def test_real_child_detached_turn_activity(tmp_path, monkeypatch, mode):
             20.0 if mode == "fresh" else server._WS_ORPHAN_INTERRUPT_REAP_POLL_S)
         assert not any(m.get("method") == "compute_host.activity" for m in forwarded)
         if mode != "fresh":
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + _CHILD_LIVENESS_SECONDS
             while session["running"] and time.monotonic() < deadline:
                 time.sleep(0.02)
             assert not session["running"], "stale child must receive and settle the real interrupt"
@@ -85,7 +99,7 @@ def test_real_child_detached_turn_activity(tmp_path, monkeypatch, mode):
             old_token = session["_compute_host_turn_id"]
             old_request = next(iter(supervisor._pending_turns))
             (tmp_path / "release").touch()
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + _CHILD_LIVENESS_SECONDS
             while session["running"] and time.monotonic() < deadline:
                 time.sleep(0.02)
             assert not session["running"]
@@ -101,14 +115,14 @@ def test_real_child_detached_turn_activity(tmp_path, monkeypatch, mode):
             supervisor._handle_host_frame({"type": "turn.end", "sid": sid, "request_id": old_request})
             assert session["running"]
             assert session["_compute_host_turn_id"] == new_token
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + _CHILD_LIVENESS_SECONDS
             while not (tmp_path / "provider-started").exists() and time.monotonic() < deadline:
                 time.sleep(0.02)
             assert (tmp_path / "provider-started").exists()
             # Also replay a delayed sample from the previous dispatch.
             server._relay_compute_host_rpc({"method": "compute_host.activity", "params": {
                 "session_id": sid, "turn_id": old_token, "activity_ns": time.perf_counter_ns()}})
-            deadline = time.monotonic() + 3
+            deadline = time.monotonic() + _CHILD_LIVENESS_SECONDS
             while "_compute_host_activity_ns" not in session and time.monotonic() < deadline:
                 time.sleep(0.02)
             assert "_compute_host_activity_ns" in session
@@ -175,7 +189,7 @@ def _run_child(mode, directory):
 
         def run_conversation(self, *args, **kwargs):
             Path(directory, "provider-started").touch()
-            deadline = time.monotonic() + 20
+            deadline = time.monotonic() + _CHILD_LIVENESS_SECONDS
             while not self._interrupt.wait(0.05) and time.monotonic() < deadline:
                 if Path(directory, "release").exists():
                     break

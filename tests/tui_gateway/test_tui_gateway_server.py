@@ -868,9 +868,10 @@ def test_profile_scoped_agent_build_starts_mcp_discovery_in_profile_home(
     monkeypatch.setattr(server, "_SlashWorker", lambda *args: None)
     monkeypatch.setattr(server, "_attach_worker", lambda *args: None)
     monkeypatch.setattr(server, "_config_model_target", lambda: ("", ""))
-    # CI runs this huge file serially under load; a prior session's _build can
-    # still be finishing (session.info emit) when the next test starts, so a
-    # 2s Event wait flakes. Unique sid + longer bound; still fail closed.
+    # Unique sid keeps this build's record out of a prior test's session; the
+    # agent_ready wait below is unbounded because the build tail's cost is
+    # load-dependent one-time warm-up (lazy imports in server._session_info),
+    # which no fixed budget can be sized against. See the wait for why.
     monkeypatch.setattr(server, "_start_notification_poller", lambda *a, **k: None)
     monkeypatch.setattr(server, "_schedule_mcp_late_refresh", lambda *a, **k: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **k: None)
@@ -887,7 +888,13 @@ def test_profile_scoped_agent_build_starts_mcp_discovery_in_profile_home(
     try:
         server._start_agent_build(sid, session)
         assert built.wait(timeout=15), "agent build thread never called _make_agent"
-        assert ready.wait(timeout=5), "agent_ready never set after build"
+        # No wall-clock deadline: the build tail pays one-time lazy imports
+        # (tools.approval / model_tools inside server._session_info) that cost
+        # 1.5-3.9s idle and >5s on a loaded runner -- this 5s bound flaked on the
+        # full-suite census. _build sets agent_ready from its finally on every
+        # exit path, so the wait returns once the build is really finished; a
+        # hang is caught by the runner's per-file timeout.
+        assert ready.wait(), "agent_ready never set after build"
     finally:
         server._sessions.pop(sid, None)
 
@@ -931,8 +938,9 @@ def test_profile_scoped_agent_build_installs_secret_scope(monkeypatch, tmp_path)
     monkeypatch.setattr(server, "_SlashWorker", lambda *args: None)
     monkeypatch.setattr(server, "_attach_worker", lambda *args: None)
     monkeypatch.setattr(server, "_config_model_target", lambda: ("", ""))
-    # Same CI flake class as the MCP profile-home test: bound wait + less work
-    # on the build thread (no poller / late MCP refresh / session.info emit).
+    # Same flake class as the MCP profile-home test: less work on the build
+    # thread (no poller / late MCP refresh / session.info emit), and an
+    # unbounded agent_ready wait for the same reason.
     monkeypatch.setattr(server, "_start_notification_poller", lambda *a, **k: None)
     monkeypatch.setattr(server, "_schedule_mcp_late_refresh", lambda *a, **k: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **k: None)
@@ -949,7 +957,13 @@ def test_profile_scoped_agent_build_installs_secret_scope(monkeypatch, tmp_path)
     try:
         server._start_agent_build(sid, session)
         assert built.wait(timeout=15), "agent build thread never called _make_agent"
-        assert ready.wait(timeout=5), "agent_ready never set after build"
+        # No wall-clock deadline: the build tail pays one-time lazy imports
+        # (tools.approval / model_tools inside server._session_info) that cost
+        # 1.5-3.9s idle and >5s on a loaded runner -- this 5s bound flaked on the
+        # full-suite census. _build sets agent_ready from its finally on every
+        # exit path, so the wait returns once the build is really finished; a
+        # hang is caught by the runner's per-file timeout.
+        assert ready.wait(), "agent_ready never set after build"
     finally:
         server._sessions.pop(sid, None)
 

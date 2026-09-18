@@ -422,6 +422,21 @@ def _runtime(
     )
 
 
+def _fixed_clock():
+    """A deterministic clock for tests that hold a short-TTL driver lease.
+
+    Driver leases expire against whatever clock the caller supplies, so acquiring one
+    with ``ttl_seconds=1, clock=time.time`` and then using it races real elapsed time:
+    the census ledger caught a 1.64s gap between two adjacent statements on a loaded
+    runner, which expired the lease before ``start_task`` read it
+    (``StaleLeaseError: driver lease is stale or expired``). Freezing the clock at the
+    current instant keeps stored timestamps realistic while removing the race — these
+    tests assert stop/cancel routing, not lease expiry.
+    """
+    now = [time.time()]
+    return lambda: now[0]
+
+
 def _wait_for(predicate, *, timeout: float = 5.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -1637,7 +1652,8 @@ def test_provisional_stopping_response_does_not_acknowledge_cancellation(db: Pat
     identity = _identity()
     _admit(db, identity)
     rpc = FakeSessionRPC(auto_complete=False)
-    runtime = _runtime(db, rpc)
+    clock = _fixed_clock()
+    runtime = _runtime(db, rpc, clock=clock)
     lease = state.acquire_lease(
         db,
         room_id=ROOM_ID,
@@ -1645,7 +1661,7 @@ def test_provisional_stopping_response_does_not_acknowledge_cancellation(db: Pat
         authority_epoch=BINDING.authority_epoch,
         process_generation=runtime.process_generation,
         ttl_seconds=1,
-        clock=time.time,
+        clock=clock,
     )
     runtime._leases[ROOM_ID] = lease
     attempt = state.start_task(
@@ -1653,7 +1669,7 @@ def test_provisional_stopping_response_does_not_acknowledge_cancellation(db: Pat
         identity,
         lease,
         expected_cancel_generation=0,
-        clock=time.time,
+        clock=clock,
     )
     session_id = rpc.add_session(active=True, task_id=identity.task_id)
     rpc.states[session_id]["execution_generation"] = attempt.execution_generation
@@ -1674,11 +1690,26 @@ def test_provisional_stopping_response_does_not_acknowledge_cancellation(db: Pat
     assert cancelled["status"] == "cancelled"
 
 
-def test_peer_terminal_status_acknowledges_durable_stop_on_retry(db: Path):
+# The census ledger recorded a 1.637s gap between two adjacent statements on the loaded
+# full-suite runner — past the 1s TTL the tests around here used to build against
+# ``time.time``. The stall reproduces that gap deterministically.
+_LEASE_ACQUIRE_TO_USE_STALL_SECONDS = 1.2
+
+
+def test_short_ttl_lease_survives_a_slow_start_task(db: Path):
+    """A stall between acquiring a short-TTL lease and using it must not expire the lease.
+
+    Regression for the full-suite flake ``StaleLeaseError: driver lease is stale or
+    expired``: with the real clock, a lease built as ``ttl_seconds=1, clock=time.time``
+    expires whenever the runner stalls for a second between the acquire and the first
+    read, which is exactly what the census caught. The clock is injected, so elapsed
+    wall time cannot invalidate the lease the test is holding.
+    """
     identity = _identity()
     _admit(db, identity)
     rpc = FakeSessionRPC(auto_complete=False)
-    runtime = _runtime(db, rpc)
+    clock = _fixed_clock()
+    runtime = _runtime(db, rpc, clock=clock)
     lease = state.acquire_lease(
         db,
         room_id=ROOM_ID,
@@ -1686,7 +1717,36 @@ def test_peer_terminal_status_acknowledges_durable_stop_on_retry(db: Path):
         authority_epoch=BINDING.authority_epoch,
         process_generation=runtime.process_generation,
         ttl_seconds=1,
-        clock=time.time,
+        clock=clock,
+    )
+    time.sleep(_LEASE_ACQUIRE_TO_USE_STALL_SECONDS)
+    runtime._leases[ROOM_ID] = lease
+    attempt = state.start_task(
+        db,
+        identity,
+        lease,
+        expected_cancel_generation=0,
+        clock=clock,
+    )
+
+    assert attempt.execution_generation >= 1
+    assert state.get_task(db, identity)["status"] == "running"
+
+
+def test_peer_terminal_status_acknowledges_durable_stop_on_retry(db: Path):
+    identity = _identity()
+    _admit(db, identity)
+    rpc = FakeSessionRPC(auto_complete=False)
+    clock = _fixed_clock()
+    runtime = _runtime(db, rpc, clock=clock)
+    lease = state.acquire_lease(
+        db,
+        room_id=ROOM_ID,
+        gateway_id=BINDING.gateway_id,
+        authority_epoch=BINDING.authority_epoch,
+        process_generation=runtime.process_generation,
+        ttl_seconds=1,
+        clock=clock,
     )
     runtime._leases[ROOM_ID] = lease
     attempt = state.start_task(
@@ -1694,7 +1754,7 @@ def test_peer_terminal_status_acknowledges_durable_stop_on_retry(db: Path):
         identity,
         lease,
         expected_cancel_generation=0,
-        clock=time.time,
+        clock=clock,
     )
     client = TerminalPeerClient(
         task_id=identity.task_id,
@@ -1706,7 +1766,7 @@ def test_peer_terminal_status_acknowledges_durable_stop_on_retry(db: Path):
         identity,
         cancel_id="cancel-peer-terminal",
         expected_cancel_generation=0,
-        clock=time.time,
+        clock=clock,
     )
     assert stopping["status"] == "stopping"
 
@@ -1720,7 +1780,8 @@ def test_peer_terminal_status_must_match_exact_task_attempt(db: Path):
     identity = _identity()
     _admit(db, identity)
     rpc = FakeSessionRPC(auto_complete=False)
-    runtime = _runtime(db, rpc)
+    clock = _fixed_clock()
+    runtime = _runtime(db, rpc, clock=clock)
     lease = state.acquire_lease(
         db,
         room_id=ROOM_ID,
@@ -1728,7 +1789,7 @@ def test_peer_terminal_status_must_match_exact_task_attempt(db: Path):
         authority_epoch=BINDING.authority_epoch,
         process_generation=runtime.process_generation,
         ttl_seconds=1,
-        clock=time.time,
+        clock=clock,
     )
     runtime._leases[ROOM_ID] = lease
     attempt = state.start_task(
@@ -1736,7 +1797,7 @@ def test_peer_terminal_status_must_match_exact_task_attempt(db: Path):
         identity,
         lease,
         expected_cancel_generation=0,
-        clock=time.time,
+        clock=clock,
     )
     client = TerminalPeerClient(
         task_id=identity.task_id,
@@ -1750,7 +1811,7 @@ def test_peer_terminal_status_must_match_exact_task_attempt(db: Path):
         identity,
         cancel_id="cancel-mismatch",
         expected_cancel_generation=0,
-        clock=time.time,
+        clock=clock,
     )
 
     assert runtime._peer_stop_acknowledged(BINDING, stopping) is False
@@ -1895,7 +1956,8 @@ def test_stop_resumes_persisted_session_before_reading_runtime_history(db: Path)
     identity = _identity()
     _admit(db, identity)
     rpc = FakeSessionRPC(auto_complete=False)
-    runtime = _runtime(db, rpc)
+    clock = _fixed_clock()
+    runtime = _runtime(db, rpc, clock=clock)
     lease = state.acquire_lease(
         db,
         room_id=ROOM_ID,
@@ -1903,7 +1965,7 @@ def test_stop_resumes_persisted_session_before_reading_runtime_history(db: Path)
         authority_epoch=BINDING.authority_epoch,
         process_generation=runtime.process_generation,
         ttl_seconds=1,
-        clock=time.time,
+        clock=clock,
     )
     runtime._leases[ROOM_ID] = lease
     attempt = state.start_task(
@@ -1911,7 +1973,7 @@ def test_stop_resumes_persisted_session_before_reading_runtime_history(db: Path)
         identity,
         lease,
         expected_cancel_generation=0,
-        clock=time.time,
+        clock=clock,
     )
     stored_id = rpc.add_session(active=False, task_id=identity.task_id)
     runtime_id = "runtime-session"
@@ -1935,7 +1997,7 @@ def test_stop_resumes_persisted_session_before_reading_runtime_history(db: Path)
         identity,
         cancel_id="cancel-remapped",
         expected_cancel_generation=attempt.cancel_generation,
-        clock=time.time,
+        clock=clock,
     )
 
     cancelled = runtime.cancel(identity, cancel_id="cancel-remapped")

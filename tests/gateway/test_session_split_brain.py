@@ -197,13 +197,14 @@ class TestStaleSessionLockSelfHeal:
         # An ordinary message should heal the stale lock, then fall through
         # to normal dispatch.  User gets a reply instead of a busy ack.
         await adapter.handle_message(_make_event("hello"))
-        # Drain any spawned background tasks. Real sleeps, not bare yields:
-        # the delivery ledger hops to worker threads around the send, so a
-        # zero-delay yield loop can finish before the reply lands.
-        for _ in range(40):
-            if any("handled:text" in r for r in adapter.sent_responses):
-                break
-            await asyncio.sleep(0.05)
+        # Synchronise on the adapter's own background task rather than polling: the reply is
+        # sent from inside _process_message_background, so awaiting it is what proves the
+        # reply landed. The previous 40 x 0.05s poll gave the send only 2s of wall clock,
+        # which the delivery ledger's thread hop can exceed on a loaded runner.
+        # 30s is a hang detector, not a budget (the task is expected to finish in ms).
+        task = adapter._session_tasks.get(sk)
+        assert task is not None, "healed message did not start session processing"
+        await asyncio.wait_for(task, timeout=30)
 
         assert any("handled:text" in r for r in adapter.sent_responses), (
             "stale lock trapped a normal message — split-brain not healed"

@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import threading
+import time
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -141,7 +142,25 @@ def _install_compression_failure_agent(monkeypatch, agent_cls=_CompressionThenFa
     monkeypatch.setattr(tools_config, "_get_platform_tools", lambda *_args, **_kwargs: {"core"})
 
 
+# Liveness bound, not a performance budget. The turn runs on an executor thread that
+# nothing obliges to finish, so a wedged turn must fail loudly and locally (a TimeoutError
+# with the turn's stack) instead of stalling the whole file until the runner's per-file
+# subprocess timeout (scripts/run_tests_parallel.py: _DEFAULT_FILE_TIMEOUT_SECONDS = 900).
+# 60s is ~24x the slowest turn observed on the full-suite census runner (2.529s).
+_TURN_LIVENESS_TIMEOUT_SECONDS = 60
+
+
 def _run_compression_failure_turn(runner, source, *, run_generation=None):
+    """Drive one turn to completion and hand back its result.
+
+    The ``wait_for`` here is a hang detector, NOT a performance budget. The first turn in
+    a process pays a one-time lazy import of ``tools.process_registry`` (inside
+    ``GatewayTurnMixin._run_agent_start_turn_worker``) that costs ~0.45s idle, ~1.2s on a
+    moderately loaded box and >2s on the full-suite runner — measured, and it is
+    interpreter warm-up rather than turn behaviour. The 2s budget this used to carry
+    turned that warm-up into a ``TimeoutError`` on 2 of 3 full-suite census runs, so the
+    bound now sits far outside the load-dependent range and only fires on a real wedge.
+    """
     return asyncio.run(
         asyncio.wait_for(
             runner._run_agent(
@@ -153,7 +172,7 @@ def _run_compression_failure_turn(runner, source, *, run_generation=None):
                 session_key=SESSION_KEY,
                 run_generation=run_generation,
             ),
-            timeout=2,
+            timeout=_TURN_LIVENESS_TIMEOUT_SECONDS,
         )
     )
 
@@ -234,6 +253,44 @@ def test_empty_rate_limit_response_preserves_failure_metadata(monkeypatch):
     assert result["failed"] is True
     assert result["failure_reason"] == "rate_limit"
     assert result["completed"] is False
+
+
+# Comfortably past the old 2s budget and past the slowest real turn measured under
+# full-suite load (2.529s), while staying far inside the liveness bound.
+_SLOW_TURN_SECONDS = 3.0
+
+
+class _SlowTurnThenFailureAgent(_CompressionThenFailureAgent):
+    """The compression-then-failure shape, but the turn itself outlives a small budget."""
+
+    def run_conversation(self, user_message, conversation_history=None, task_id=None, **kwargs):
+        time.sleep(_SLOW_TURN_SECONDS)
+        return super().run_conversation(user_message, conversation_history, task_id, **kwargs)
+
+
+def test_slow_turn_still_delivers_its_result(monkeypatch):
+    """A turn slower than the old 2s budget must still return its result.
+
+    Regression for the full-suite flake: the helper used to wrap the turn in
+    ``asyncio.wait_for(timeout=2)``, which turned the turn's load-dependent one-time
+    warm-up (a ~0.45s idle / >2s loaded lazy import of ``tools.process_registry``) into a
+    ``TimeoutError``. The bound is now a hang detector sized far outside that range, so a
+    turn taking longer than the measured worst case (2.529s) must still deliver its
+    result rather than a timeout.
+    """
+    _install_compression_failure_agent(monkeypatch, _SlowTurnThenFailureAgent)
+
+    session_store = _SessionStore()
+    runner = _runner(session_store)
+    source = SessionSource(
+        platform=Platform.TELEGRAM, chat_id="12345", chat_type="dm", user_id="user-1"
+    )
+
+    result = _run_compression_failure_turn(runner, source)
+
+    assert result["failed"] is True
+    assert session_store.entry.session_id == "session-after-compression"
+    assert session_store.save_calls == 1
 
 class _ProviderSwitchAgent(_CompressionThenFailureAgent):
     created_providers = []

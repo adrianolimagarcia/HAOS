@@ -20,6 +20,8 @@ cancel path).
 
 import asyncio
 import importlib
+import logging
+import re
 import sys
 import threading
 import time
@@ -64,6 +66,19 @@ class _CaptureAdapter(BasePlatformAdapter):
 
     async def get_chat_info(self, chat_id: str):
         return {"id": chat_id}
+
+
+_TURN_HOLD_LOG_RE = re.compile(r"turn-hold budget \(([0-9.]+)s >= ([0-9.]+)s\)")
+
+
+def _logged_turn_hold_seconds(text):
+    """The wait production measured when it abandoned the inline turn-hold wait.
+
+    ``None`` when the budget was never exceeded, so a caller can tell "released at the
+    budget" from "the log never happened".
+    """
+    match = _TURN_HOLD_LOG_RE.search(text)
+    return float(match.group(1)) if match else None
 
 
 def _write_turnhold_config(tmp_path):
@@ -161,12 +176,15 @@ async def _drain_deferred(runner, timeout=10.0):
 
 @pytest.mark.asyncio
 async def test_turn_hold_keeps_admission_and_adopts_watermark_fenced_summary(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, caplog
 ):
     """A watermark-fenced worker keeps its commit admission at turn-hold
     expiry; its late summary is ADOPTED (committed), not discarded — while
     the turn itself is still released at the budget (#90845 invariant).
     """
+    # The budget-abandonment line is logged at INFO. gateway/run_turn.py logs under the
+    # "gateway.run" logger (logging.getLogger("gateway.run")), not its own module name.
+    caplog.set_level(logging.INFO, logger="gateway.run")
     worker_started = threading.Event()
     release_worker = threading.Event()
     committed = threading.Event()
@@ -232,13 +250,23 @@ async def test_turn_hold_keeps_admission_and_adopts_watermark_fenced_summary(
     adapter = _CaptureAdapter()
     runner = _build_runner(gateway_run, adapter, fake_db)
 
-    started = time.monotonic()
     result = await asyncio.wait_for(runner._handle_message(_make_event()), timeout=15)
-    elapsed = time.monotonic() - started
 
     # #90845/#92318 invariant intact: the turn is released at the budget.
     assert result == "ok"
-    assert elapsed < 5.0, f"turn held for {elapsed:.1f}s despite the turn-hold budget"
+    # Assert the CONTRACT, not the harness's wall clock. Wall-clock time here charges the
+    # entire gateway turn (fakes, thread hops, event loop) on top of the budget, so it
+    # scales with runner load: measured 1.15s idle against 6.34s on a loaded census runner —
+    # the harness alone crossed the old 5s bound while the hold never left the 0.3s budget.
+    # Production logs the wait IT measured (gateway/run_turn.py), which is load-independent
+    # and still discriminates the 0.3s configured budget from the 10s production default —
+    # the regression this assertion exists to catch.
+    held = _logged_turn_hold_seconds(caplog.text)
+    assert held is not None, (
+        "turn-hold budget log missing — the turn was never released at the budget: "
+        f"{caplog.text!r}"
+    )
+    assert held < 1.0, f"turn held for {held:.1f}s despite the 0.3s turn-hold budget"
     assert worker_started.is_set()
     assert runner._run_agent.await_count == 1
 

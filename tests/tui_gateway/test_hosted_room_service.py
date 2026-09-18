@@ -292,12 +292,20 @@ class _BlockingFirstRPC(_PromptRecordingRPC):
         super().__init__()
         self.first_started = threading.Event()
         self.release_first = threading.Event()
+        # Set once the follow-up prompt is recorded, so a test can synchronise on the
+        # worker instead of polling ``prompts`` against a fixed deadline.
+        self.second_started = threading.Event()
 
     def submit(self, **kwargs):
         self.prompts.append((kwargs["profile"], kwargs["prompt"]))
         if len(self.prompts) == 1:
             self.first_started.set()
-            assert self.release_first.wait(timeout=2)
+            # Liveness bound only: a test thread that stalls (as it can on a loaded
+            # runner) must not kill the worker mid-submit, which would strand the
+            # follow-up this class exists to serialize.
+            assert self.release_first.wait(timeout=_WORKER_LIVENESS_SECONDS)
+        elif len(self.prompts) == 2:
+            self.second_started.set()
         kwargs["on_terminal"](
             {"status": "settled", "text": f"reply from {kwargs['profile']}"}
         )
@@ -308,7 +316,15 @@ def _server():
     return SimpleNamespace(_methods={}, _sessions={}, _sessions_lock=threading.Lock())
 
 
-def _wait_for(predicate, timeout=2.0):
+# Liveness bound for waits on the service's worker threads and for the fake RPC's
+# handshakes. These waits exist to fail a wedged worker loudly, not to assert speed: a 2s
+# budget is inside the load-dependent range (the full-suite census caught
+# ``AssertionError: condition was not reached`` from ``_wait_for``), so it produces false
+# failures on a busy runner.
+_WORKER_LIVENESS_SECONDS = 30.0
+
+
+def _wait_for(predicate, timeout=_WORKER_LIVENESS_SECONDS):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -635,7 +651,7 @@ def test_active_same_thread_followup_waits_for_current_task(tmp_path: Path):
         event_id="user-1",
         payload={"text": "@ops start", "thread_id": "thread-1"},
     )
-    assert service.rpc.first_started.wait(timeout=2)
+    assert service.rpc.first_started.wait(timeout=_WORKER_LIVENESS_SECONDS)
     service.send(
         room_id="room-1",
         event_id="user-2",
@@ -643,7 +659,9 @@ def test_active_same_thread_followup_waits_for_current_task(tmp_path: Path):
     )
     assert len(service.rpc.prompts) == 1
     service.rpc.release_first.set()
-    _wait_for(lambda: len(service.rpc.prompts) == 2)
+    # Synchronise on the worker recording the follow-up prompt rather than polling
+    # ``prompts`` against a deadline.
+    assert service.rpc.second_started.wait(timeout=_WORKER_LIVENESS_SECONDS)
     _wait_for(
         lambda: any(
             event["kind"] == "room.activity"
@@ -653,6 +671,57 @@ def test_active_same_thread_followup_waits_for_current_task(tmp_path: Path):
     )
     assert service.stop(timeout=5.0)
     assert "User (user): @hermes follow up" in service.rpc.prompts[1][1]
+
+
+# The census ledger shows waits on this worker's handshake exceeding a 2s budget on the
+# loaded full-suite runner; the stall reproduces that deterministically.
+_STALLED_TEST_THREAD_SECONDS = 2.2
+
+
+def test_follow_up_survives_a_stalled_test_thread(tmp_path):
+    """A test thread stalled past the old 2s handshake must still serialize the follow-up.
+
+    Regression for the full-suite flake ``AssertionError: condition was not reached``:
+    ``_BlockingFirstRPC.submit`` waits on ``release_first`` from the service's worker
+    thread, so when the test thread stalls, the old 2s assert fired *inside the worker*,
+    the submit died, and the follow-up prompt the test was waiting for was never
+    recorded. Reproduced deterministically with the stall below against the old 2s
+    bounds; the waits are now liveness bounds, so a stalled test thread cannot strand
+    the follow-up.
+    """
+    db = tmp_path / "state.db"
+    service = HostedRoomService(_server(), db_path=db)
+    service.rpc = _BlockingFirstRPC()
+    service.runtime.rpc = service.rpc
+    service.local_profiles = lambda: ("default", "ops")
+    service.create_room(
+        room_id="room-1",
+        name="Serialized room",
+        members=[
+            {"member_id": "default", "profile": "default", "handle": "hermes"},
+            {"member_id": "ops", "profile": "ops", "handle": "ops"},
+        ],
+    )
+
+    service.start()
+    service.send(
+        room_id="room-1",
+        event_id="user-1",
+        payload={"text": "@ops start", "thread_id": "thread-1"},
+    )
+    assert service.rpc.first_started.wait(timeout=_WORKER_LIVENESS_SECONDS)
+    service.send(
+        room_id="room-1",
+        event_id="user-2",
+        payload={"text": "@hermes follow up", "thread_id": "thread-1"},
+    )
+    assert len(service.rpc.prompts) == 1
+    time.sleep(_STALLED_TEST_THREAD_SECONDS)
+    service.rpc.release_first.set()
+
+    assert service.rpc.second_started.wait(timeout=_WORKER_LIVENESS_SECONDS)
+    assert "User (user): @hermes follow up" in service.rpc.prompts[1][1]
+    assert service.stop(timeout=5.0)
 
 
 def test_thread_transcript_prunes_committed_message_and_settlement_together(
