@@ -9,6 +9,7 @@ anchored on concrete command identifiers — so they cannot fire on prose. Defen
 
 from __future__ import annotations
 from hermes_constants import product_command
+from gateway.service_names import GATEWAY_UNIT_BASES
 
 import logging
 import os
@@ -110,7 +111,17 @@ _PROFILE_FLAG_LIFECYCLE_PATTERN = re.compile(
 _LAUNCHCTL_LIFECYCLE_VERBS_RE = re.compile(
     r"(?i)\blaunchctl\s+(?:kickstart|unload|load|stop|restart|bootout|kill|disable|remove)\b"
 )
-_HERMES_GATEWAY_LABEL_RE = re.compile(r"(?i)\bhermes[.\-]?gateway\b")
+# BOTH spellings, derived from the canonical source instead of a literal. The fork ships
+# `haos-gateway` and its LaunchAgent is `ai.haos.gateway` (hermes_cli/update_inventory.py already
+# lists both labels); a literal `hermes` here fails OPEN on a renamed install, so
+# `launchctl kickstart ai.haos.gateway` would not register as a gateway lifecycle command at all.
+# gateway/service_names.py exists precisely for this and names the lifecycle guard as a required
+# call site: "Both must be recognized everywhere a unit name is matched — ... the lifecycle guard,
+# ... — or a renamed install silently stops being restarted".
+_GATEWAY_LABEL_RE = re.compile(
+    r"(?i)\b(?:%s)[.\-]?gateway\b"
+    % "|".join(re.escape(base.rsplit("-", 1)[0]) for base in GATEWAY_UNIT_BASES)
+)
 
 _SHELL_EXECUTABLES = frozenset({"sh", "bash", "dash", "ksh", "zsh"})
 _SHELL_OPTIONS_WITH_VALUES = frozenset({"-O", "+O", "-o", "+o"})
@@ -238,7 +249,7 @@ def _named_profile_is_current(named: str) -> bool:
 def _contains_launchctl_gateway_lifecycle(normalized_text: str) -> bool:
     """Order-independent companion to Branch B — see the verbs regex comment."""
     return bool(_LAUNCHCTL_LIFECYCLE_VERBS_RE.search(normalized_text)) and bool(
-        _HERMES_GATEWAY_LABEL_RE.search(normalized_text)
+        _GATEWAY_LABEL_RE.search(normalized_text)
     )
 
 
