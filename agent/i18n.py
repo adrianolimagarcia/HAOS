@@ -168,6 +168,12 @@ def t(key: str, lang: str | None = None, **format_kwargs: Any) -> str:
     users to run commands that do not exist on the appliance. Only a value that mentions
     ``{cli}`` is formatted, so every other key keeps returning the catalog bytes untouched
     and the lazy import stays off the common path.
+
+    ``{home}`` works the same way, from ``display_hermes_home()``. The catalogs named
+    ``~/.hermes/logs/...``, which is the wrong directory on an appliance whose home is
+    ``~/.haos`` — and the root AGENTS.md bans hardcoding ``~/.hermes``. The helper shortens a
+    home under ``$HOME`` back to ``~``, so the upstream rendering stays byte-identical and
+    only a renamed install changes.
     """
     target = _normalize_lang(lang) if lang else get_language()
     value = _load_catalog(target).get(key)
@@ -179,6 +185,9 @@ def t(key: str, lang: str | None = None, **format_kwargs: Any) -> str:
     if "{cli}" in value:
         from hermes_constants import product_cli_name
         format_kwargs.setdefault("cli", product_cli_name())
+    if "{home}" in value:
+        from hermes_constants import display_hermes_home
+        format_kwargs.setdefault("home", display_hermes_home())
     if not format_kwargs:
         return value
     try:

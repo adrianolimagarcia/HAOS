@@ -203,22 +203,45 @@ def test_caller_supplied_cli_wins(monkeypatch):
     assert i18n.t("probe", lang="en", cli="FORCED") == "run FORCED"
 
 
-def test_every_catalog_cli_key_renders_without_a_leftover_placeholder():
-    """Contrato no catalogo real: toda chave que usa ``{cli}`` resolve de fato.
+def test_home_placeholder_renders_the_products_home(monkeypatch, tmp_path):
+    """``{home}`` resolve sozinho a partir de ``display_hermes_home()``.
+
+    Os catalogos nomeavam ``~/.hermes/logs/...``. No appliance o home e ``~/.haos``, entao a
+    copy mandava o usuario para um diretorio que nao existe la — e o AGENTS.md raiz proibe
+    exatamente esse literal. O helper encurta um home sob ``$HOME`` de volta para ``~``, o que
+    mantem o texto do upstream byte-identico.
+    """
+    _catalog(monkeypatch, "logs in {home}/logs")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes"))
+    assert i18n.t("probe", lang="en") == "logs in ~/.hermes/logs"
+
+
+def test_caller_supplied_home_wins(monkeypatch):
+    """``gateway.profile.home`` passa ``home=`` explicito — o default nao pode sobrepor."""
+    _catalog(monkeypatch, "home {home}")
+    assert i18n.t("probe", lang="en", home="/explicit") == "home /explicit"
+
+
+def test_every_catalog_injected_key_renders_without_a_leftover_placeholder():
+    """Contrato no catalogo real: toda chave que usa ``{cli}`` ou ``{home}`` resolve de fato.
 
     Sem a assercao de que existe pelo menos uma chave, este teste passaria vazio.
     """
     import re
 
     en = _flatten(_load_raw("en"))
-    cli_keys = sorted(k for k, v in en.items() if "{cli}" in v)
-    assert cli_keys, "nenhuma chave usa {cli} — o guard de marca ficaria vacuoso"
-    for key in cli_keys:
+    injected = sorted(k for k, v in en.items() if "{cli}" in v or "{home}" in v)
+    assert injected, "nenhuma chave usa {cli}/{home} — o teste seria vacuoso"
+    for key in injected:
         # Preenche os OUTROS placeholders da chave (ex.: {waited}) para que o format
-        # chegue ao fim e o unico token restante em teste seja o {cli}.
-        others = {p: "X" for p in re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", en[key]) if p != "cli"}
+        # chegue ao fim e o unico token em teste seja o injetado pelo loader.
+        others = {
+            p: "X"
+            for p in re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", en[key])
+            if p not in ("cli", "home")
+        }
         out = i18n.t(key, lang="en", **others)
-        assert "{cli}" not in out, f"{key}: {out!r}"
         assert "{" not in out, f"{key}: placeholder nao resolvido em {out!r}"
 
 
