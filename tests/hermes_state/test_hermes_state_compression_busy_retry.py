@@ -25,6 +25,15 @@ import pytest
 from hermes_state import SessionCompressionInProgressError, SessionDB
 from hermes_state_errors import CompressionSessionBusyError
 
+# "Immediately" has to be measured, and the runner is not quiet: 16 workers share the disk, and a
+# real append under full-suite load measured 0.725s — past the 0.5s these bounds used to carry,
+# which made the file flaky (failed on attempt 1, passed on retry). The bound still discriminates,
+# because the behavior it forbids is a wait on the compression-busy budget
+# (``SessionDB._COMPRESSION_BUSY_WAIT_S = 5.0``): 2s sits far below that and far above a
+# loaded-but-unblocked append. (Root AGENTS.md: timing tests must not assume a quiet runner —
+# wall-clock bounds >= 2s.)
+_IMMEDIATE_S = 2.0
+
 
 @pytest.fixture
 def db(tmp_path: Path) -> SessionDB:
@@ -45,7 +54,7 @@ def test_append_is_never_blocked_by_a_foreign_compression_lock(db: SessionDB) ->
     db.append_message("sess1", role="user", content="steered mid-compression")
     elapsed = time.monotonic() - started
 
-    assert elapsed < 0.5, "append must not wait on a compression lease"
+    assert elapsed < _IMMEDIATE_S, "append must not wait on a compression lease"
     rows = db.get_messages("sess1")
     assert any(r["content"] == "steered mid-compression" for r in rows)
 
@@ -57,7 +66,7 @@ def test_append_is_never_blocked_by_a_stale_dead_pid_lock(db: SessionDB) -> None
     ) is True
     started = time.monotonic()
     db.append_message("sess1", role="user", content="lands despite stale lock")
-    assert time.monotonic() - started < 0.5
+    assert time.monotonic() - started < _IMMEDIATE_S
     rows = db.get_messages("sess1")
     assert any(r["content"] == "lands despite stale lock" for r in rows)
 
@@ -82,7 +91,7 @@ def test_transient_error_is_a_subclass_of_the_original(db: SessionDB) -> None:
 def test_no_lock_means_no_delay(db: SessionDB) -> None:
     started = time.monotonic()
     db.append_message("sess1", role="user", content="uncontended")
-    assert time.monotonic() - started < 0.5
+    assert time.monotonic() - started < _IMMEDIATE_S
 
 
 def test_a_lost_compression_lease_still_fails_fast(db: SessionDB) -> None:
@@ -97,6 +106,6 @@ def test_a_lost_compression_lease_still_fails_fast(db: SessionDB) -> None:
             compression_lock_holder="not-the-holder",
             require_compression_lease=True,
         )
-    assert time.monotonic() - started < 0.5, (
+    assert time.monotonic() - started < _IMMEDIATE_S, (
         "a lost lease is permanent and must not spend the retry budget"
     )
