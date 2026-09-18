@@ -212,7 +212,7 @@ tests/gateway/test_scale_to_zero_dashboard_client.py 1
 tests/gateway/test_scale_to_zero_watcher.py 3
 tests/gateway/test_session_api.py 2
 tests/gateway/test_session_db_recovery.py 9
-tests/gateway/test_session_hygiene.py 16
+tests/gateway/test_session_hygiene.py 15
 tests/gateway/test_session_hygiene_turnhold_adoption.py 5
 tests/gateway/test_session_split_brain.py 1
 tests/gateway/test_session_stall_watchdog.py 3

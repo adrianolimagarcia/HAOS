@@ -1655,6 +1655,18 @@ async def test_hygiene_does_not_wait_ceiling_after_fence_cancel(
     """
     from hermes_state import SessionDB
 
+    # The two numbers are a pair: the worker deliberately outlives the host so that a host which
+    # WAITS for it stalls visibly, and the bound only proves anything while it stays far below the
+    # hold. Both had been 2.0s, which left the bound with ~2x headroom over an idle baseline of
+    # ~1s — i.e. it measured the runner's load, not the contract.
+    #
+    # Measured `elapsed` (host returns after the fence cancel): 1.02 / 1.03 / 1.09s idle, and
+    # 1.96 / 2.07 / 2.16 / 3.58s under 12 CPU burners on an 8-core box. The 2026-09-18 full-suite
+    # run failed at 2.59s. 15s keeps the same discrimination against the 30s hold with ~14x
+    # headroom idle, and still fails instantly against the 600s ceiling the test is about (#96953).
+    worker_hold_seconds = 30.0
+    return_within_seconds = 15.0
+
     worker_started = threading.Event()
     release_worker = threading.Event()
     cleanup_done = threading.Event()
@@ -1684,7 +1696,7 @@ async def test_hygiene_does_not_wait_ceiling_after_fence_cancel(
             worker_started.set()
             # Keep the worker alive (and keep reporting "progress") so a
             # host that still extends to the 600s ceiling would stall here.
-            deadline = time.monotonic() + 2.0
+            deadline = time.monotonic() + worker_hold_seconds
             while time.monotonic() < deadline:
                 if commit_fence is not None:
                     commit_fence.touch_progress()
@@ -1705,7 +1717,7 @@ async def test_hygiene_does_not_wait_ceiling_after_fence_cancel(
 
         assert result == "ok"
         assert worker_started.wait(timeout=2)
-        assert elapsed < 2.0, (
+        assert elapsed < return_within_seconds, (
             f"hygiene host waited {elapsed:.1f}s after fence cancel — "
             "must not extend toward the 600s ceiling (#96953)"
         )
