@@ -20,8 +20,17 @@ def _aux(timeout, *, reasoning_effort=True, **extra):
 
 
 DEFAULT_CONFIG = {
+    # ``persist_switch_by_default`` is the section's only declared leaf — the model id itself
+    # is user-set and has no meaningful default. Declaring ``"default": ""`` here put the key
+    # into every MERGED view (``load_config`` / ``load_config_readonly``) even when the user has
+    # none, so a presence check could no longer tell "no default configured" from "default is
+    # the empty string" — `anon_auth.settle_after_upgrade` clearing the default after an
+    # ineligible free-tier recommendation looked like it had left one behind. Presence-sensitive
+    # readers belong on ``load_user_config_effective``; this keeps the merged view honest too.
+    # ``provider`` / ``base_url`` / ``api_key`` / ``context_length`` are read out of this section
+    # at runtime without being declared here, which is why `model` is in
+    # ``_SCHEMA_DEFINED_DICT_KEYS`` (hermes_cli/config.py).
     "model": {
-        "default": "",
         "persist_switch_by_default": True,
     },
     "display": {
