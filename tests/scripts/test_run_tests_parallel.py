@@ -342,6 +342,12 @@ def test_file_retry_self_heals_and_prints_both_attempts(tmp_path: Path) -> None:
             str(probe),
             "--file-retries",
             "1",
+            # This probe flakes ON PURPOSE, so the runner would otherwise append a
+            # simulated flake to the default <repo>/test_flakes.jsonl and pollute the
+            # real ledger with a tmp probe path (the `file` column became unusable).
+            # Its sibling below already redirects; this one was the oversight.
+            "--flake-log",
+            str(tmp_path / "flakes.jsonl"),
             "-j",
             "1",
             "-q",
