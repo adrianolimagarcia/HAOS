@@ -100,7 +100,13 @@ def test_stale_monitor_force_finalize_updates_origin_profile_ledger(tmp_path, mo
     ad._monitor_stop.clear()
     monitor = threading.Thread(target=ad._stale_monitor_loop, daemon=True)
     monitor.start()
-    monitor.join(timeout=2)
+    # The loop exits on the first tick that finds nothing monitorable, and that tick force-finalizes
+    # the record — a write into state.db. Under the parallel runner (16 workers on one disk) that
+    # first sweep measured past the 2s this used to allow, so the file failed on attempt 1 and
+    # passed on retry. 30s is the liveness bound the sibling compression-isolation test already uses
+    # for exactly this "a real thread must do real work" question; the assertion still catches a
+    # loop that never exits. (Root AGENTS.md: timing tests must not assume a quiet runner.)
+    monitor.join(timeout=30)
     assert not monitor.is_alive()
 
     try:

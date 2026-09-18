@@ -168,8 +168,15 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
     agent._cached_system_prompt = "sys"
     monkeypatch.setattr(
         "agent.conversation_compression.resolve_context_compression_timeouts",
-        # Allow provider-thread startup under the parallel runner before timing out.
-        lambda cfg=None: (2.0, 4.0),
+        # Allow provider-thread startup under the parallel runner before timing out. 2s was not
+        # enough: under 16 workers the fence could expire before the worker ever reached the
+        # provider call, so `provider_started` was never set and the file failed on attempt 1
+        # (passing on retry). 15s clears a loaded runner's scheduling jitter.
+        #
+        # It must stay BELOW the 30s the blocked provider itself waits (`release_provider.wait`
+        # below), or the provider would give up on its own and the fence would prove nothing —
+        # the test would pass vacuously.
+        lambda cfg=None: (15.0, 30.0),
     )
 
     provider_started = threading.Event()
