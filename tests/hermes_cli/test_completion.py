@@ -10,6 +10,7 @@ import tempfile
 import pytest
 
 from hermes_cli.completion import _walk, generate_bash, generate_zsh, generate_fish
+from hermes_constants import product_cli_name
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +82,20 @@ class TestGenerateBash:
     def test_contains_completion_function_and_register(self):
         out = generate_bash(_make_parser())
         assert "_hermes_completion()" in out
-        assert "complete -F _hermes_completion hermes" in out
+        # Contrato com o primitivo de marca, nao o literal: sob HAOS_HOME o alvo e `haos`
+        # e um `hermes` fixo registraria completacao para um binario inexistente no appliance.
+        assert f"complete -F _hermes_completion {product_cli_name()}" in out
+
+    def test_registration_targets_the_active_brand(self, monkeypatch):
+        """O alvo da completacao segue a marca ativa, nos dois shells que a emitem."""
+        monkeypatch.setenv("HAOS_HOME", "/tmp/haos-completion-brand")
+        bash = generate_bash(_make_parser())
+        assert "complete -F _hermes_completion haos" in bash
+        assert "complete -F _hermes_completion hermes" not in bash
+
+        zsh = generate_zsh(_make_parser())
+        assert zsh.startswith("#compdef haos\n")
+        assert "\ncompdef _hermes haos\n" in zsh
 
 
     def test_valid_bash_syntax(self):

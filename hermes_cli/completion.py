@@ -2,7 +2,7 @@
 completion scripts never go stale; no extra dependencies."""
 
 from __future__ import annotations
-from hermes_constants import product_command
+from hermes_constants import product_cli_name, product_command
 
 import argparse
 from typing import Any
@@ -106,7 +106,7 @@ _hermes_completion() {{
     fi
 }}
 
-complete -F _hermes_completion hermes
+complete -F _hermes_completion {product_cli_name()}
 """
 
 
@@ -153,7 +153,7 @@ def generate_zsh(parser: argparse.ArgumentParser) -> str:
                 f"                    _describe '{cmd} command' {safe}_cmds\n"
                 f"                    ;;")
     sub_cases_str = "\n".join(sub_cases)
-    return f"""#compdef hermes
+    return f"""#compdef {product_cli_name()}
 # Hermes Agent zsh completion
 # Add to ~/.zshrc:
 #   eval "$({product_command('completion')} zsh)"
@@ -194,7 +194,7 @@ _hermes() {{
     esac
 }}
 
-compdef _hermes hermes
+compdef _hermes {product_cli_name()}
 """
 
 
@@ -217,16 +217,16 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
         "end",
         "",
         "# Disable file completion by default",
-        "complete -c hermes -f",
+        f"complete -c {product_cli_name()} -f",
         "",
         "# Complete profile names after -p / --profile",
-        "complete -c hermes -f -s p -l profile"
+        f"complete -c {product_cli_name()} -f -s p -l profile"
         " -d 'Profile name' -xa '(__hermes_profiles)'",
         "",
         "# Top-level subcommands"]
     for cmd, info in subcommands:
         lines.append(
-            f"complete -c hermes -f "
+            f"complete -c {product_cli_name()} -f "
             f"-n 'not __fish_seen_subcommand_from {top_cmds_str}' "
             f"-a {cmd} -d '{_clean(info.get('help', ''))}'")
     lines += ["", "# Subcommand completions"]
@@ -236,13 +236,13 @@ def generate_fish(parser: argparse.ArgumentParser) -> str:
         lines.append(f"# {cmd}")
         for sc, sinfo in sorted(info["subcommands"].items()):
             lines.append(
-                f"complete -c hermes -f "
+                f"complete -c {product_cli_name()} -f "
                 f"-n '__fish_seen_subcommand_from {cmd}' "
                 f"-a {sc} -d '{_clean(sinfo.get('help', ''))}'")
         if cmd == "profile":  # profile names for the actions that take one
             for action in sorted(_PROFILE_NAME_ACTIONS):
                 lines.append(
-                    f"complete -c hermes -f "
+                    f"complete -c {product_cli_name()} -f "
                     f"-n '__fish_seen_subcommand_from {action}; "
                     f"and __fish_seen_subcommand_from profile' "
                     f"-a '(__hermes_profiles)' -d 'Profile name'")
