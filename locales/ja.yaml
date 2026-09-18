@@ -11,7 +11,7 @@ approval:
   prompt_smart_deny: "      選択 [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ {waited} 以内に応答がなかったため、コマンドは実行されませんでした。もう一度依頼して再試行するか、制限を引き上げてください: hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ {waited} 以内に応答がなかったため、コマンドは実行されませんでした。もう一度依頼して再試行するか、制限を引き上げてください: {cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ 今回のみ許可"
   allowed_session: "      ✓ このセッション中は許可"
   allowed_always:  "      ✓ 永続的な許可リストに追加"
@@ -113,7 +113,7 @@ gateway:
     upload_failed:         "✗ デバッグレポートのアップロードに失敗しました: {error}"
     header:                "**デバッグレポートをアップロードしました:**"
     auto_delete:           "⏱ ペーストは 6 時間後に自動削除されます。"
-    full_logs_hint:        "完全なログのアップロードには、CLI から `hermes debug share` を使用してください。"
+    full_logs_hint:        "完全なログのアップロードには、CLI から `{cli} debug share` を使用してください。"
     share_hint:            "サポートを受けるには、このリンクを Hermes チームに共有してください。"
 
   deny:
@@ -169,7 +169,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ kanban エラー: {error}"
     subscribed_suffix:     "(購読しました — {task_id} が完了またはブロックされたときに通知されます)"
-    truncated_suffix:      "… (切り詰めました; 完全な出力にはターミナルで `hermes kanban …` を使用してください)"
+    truncated_suffix:      "… (切り詰めました; 完全な出力にはターミナルで `{cli} kanban …` を使用してください)"
     no_output:             "(出力なし)"
     wake:
       completed:           "completed"
@@ -257,7 +257,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ ゲートウェイの再起動はすでに進行中です..."
-    restarting:            "♻ ゲートウェイを再起動しています。60 秒以内に通知が届かない場合は、コンソールで `hermes gateway restart` を実行してください。"
+    restarting:            "♻ ゲートウェイを再起動しています。60 秒以内に通知が届かない場合は、コンソールで `{cli} gateway restart` を実行してください。"
 
   resume:
     db_unavailable:        "セッションデータベースは利用できません。"
@@ -383,9 +383,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "無効な数値「{arg}」— /undo または /undo N を使用してください。"
 
   update:
-    platform_not_messaging:  "✗ /update はメッセージングプラットフォームでのみ利用可能です。ターミナルで `hermes update` を実行してください。"
+    platform_not_messaging:  "✗ /update はメッセージングプラットフォームでのみ利用可能です。ターミナルで `{cli} update` を実行してください。"
     not_git_repo:            "✗ Git リポジトリではありません — 更新できません。"
-    hermes_cmd_not_found:    "✗ `hermes` コマンドが見つかりません。Hermes は実行中ですが、更新コマンドは PATH 上にも現在の Python インタープリタ経由でも実行可能ファイルを見つけられませんでした。ターミナルで `hermes update` を手動で実行してみてください。"
+    hermes_cmd_not_found:    "✗ `{cli}` コマンドが見つかりません。Hermes は実行中ですが、更新コマンドは PATH 上にも現在の Python インタープリタ経由でも実行可能ファイルを見つけられませんでした。ターミナルで `{cli} update` を手動で実行してみてください。"
     start_failed:            "✗ 更新の開始に失敗しました: {error}"
     starting:                "☤ Hermes の更新を開始しています… 進捗をここにストリーミングします。"
 

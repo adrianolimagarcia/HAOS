@@ -97,6 +97,8 @@ COMMANDS = (
 
 # Conteudo markdown que o agente executa (skill) + docs do fork.
 CONTENT_DIRS = ("skills", "optional-skills", "docs")
+# Catalogos de i18n: copy de usuario renderizada em chat/CLI, com marca por `{cli}`.
+LOCALES_DIR = "locales"
 CONTENT_SUFFIXES = (".md", ".mdx")
 
 # `hermes <subcomando>` casa sozinho o caso classico. Isto cobre o ponto cego que deixou o
@@ -181,6 +183,38 @@ def _scan_content(offenders: list[str], allowed: list[str]) -> None:
             (allowed if MARKER_RE.search(context) else offenders).append(entry)
 
 
+def _scan_locales(offenders: list[str], allowed: list[str]) -> None:
+    """``locales/*.yaml``: o VALOR de cada linha, nunca a chave.
+
+    Os catalogos guardavam o binario upstream fixo, entao no appliance a copy mandava o
+    usuario rodar comandos que nao existem la (`hermes update`, `hermes gateway restart`,
+    `hermes debug share`). Agora o valor nomeia a marca por `{cli}`, que ``agent/i18n.py``
+    preenche de ``product_cli_name()``; um `hermes` fixo aqui e o mesmo defeito que um
+    literal fixo em .py, entao vale o PATTERN inteiro (subcomando E flag).
+
+    So o valor: a chave `hermes_cmd_not_found` e o path `~/.hermes/logs/` sao nomes reais
+    que nao se renderizam, e o corte no primeiro ': ' mantem os dois fora. O path tambem
+    escapa sozinho do PATTERN — o lookbehind de FLAG_HINT exclui `hermes` precedido de `.`,
+    e `hermes/logs` nao tem o espaco que a alternativa de subcomando exige.
+    """
+    for path in sorted((REPO_ROOT / LOCALES_DIR).glob("*.yaml")):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        for i, line in enumerate(lines):
+            _key, sep, value = line.partition(": ")
+            if not sep:
+                continue
+            match = PATTERN.search(value)
+            if not match:
+                continue
+            context = line + "\n" + (lines[i - 1] if i else "")
+            entry = f"{rel}:{i + 1}: {line.strip()[:140]} (hint: {match.group(0)!r})"
+            (allowed if MARKER_RE.search(context) else offenders).append(entry)
+
+
 def scan() -> tuple[list[str], list[str]]:
     """Return (offenders, allowed) as ``path:line: source`` strings."""
     offenders: list[str] = []
@@ -236,6 +270,7 @@ def scan() -> tuple[list[str], list[str]]:
             (allowed if MARKER_RE.search(context) else offenders).append(entry)
 
     _scan_content(offenders, allowed)
+    _scan_locales(offenders, allowed)
     return offenders, allowed
 
 

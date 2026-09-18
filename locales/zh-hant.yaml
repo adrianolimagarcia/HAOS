@@ -11,7 +11,7 @@ approval:
   prompt_smart_deny: "      選擇 [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ {waited} 內沒有回應——未執行該指令。再次要求即可重試，或提高上限：hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ {waited} 內沒有回應——未執行該指令。再次要求即可重試，或提高上限：{cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ 本次允許"
   allowed_session: "      ✓ 本次工作階段內允許"
   allowed_always:  "      ✓ 已加入永久允許清單"
@@ -113,7 +113,7 @@ gateway:
     upload_failed:         "✗ 無法上傳除錯報告：{error}"
     header:                "**除錯報告已上傳：**"
     auto_delete:           "⏱ 貼上的內容將於 6 小時後自動刪除。"
-    full_logs_hint:        "如需上傳完整紀錄，請在 CLI 中使用 `hermes debug share`。"
+    full_logs_hint:        "如需上傳完整紀錄，請在 CLI 中使用 `{cli} debug share`。"
     share_hint:            "請將這些連結分享給 Hermes 團隊以取得支援。"
 
   deny:
@@ -169,7 +169,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ kanban 錯誤：{error}"
     subscribed_suffix:     "（已訂閱 — 當 {task_id} 完成或被封鎖時將通知您）"
-    truncated_suffix:      "…（已截斷；如需完整輸出請在終端機執行 `hermes kanban …`）"
+    truncated_suffix:      "…（已截斷；如需完整輸出請在終端機執行 `{cli} kanban …`）"
     no_output:             "（無輸出）"
     wake:
       completed:           "completed"
@@ -257,7 +257,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ 閘道重新啟動已在進行中……"
-    restarting:            "♻ 正在重新啟動閘道。如果 60 秒內未收到通知，請在主控台執行 `hermes gateway restart` 重新啟動。"
+    restarting:            "♻ 正在重新啟動閘道。如果 60 秒內未收到通知，請在主控台執行 `{cli} gateway restart` 重新啟動。"
 
   resume:
     db_unavailable:        "工作階段資料庫無法使用。"
@@ -383,9 +383,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "無效的數量「{arg}」—— 請使用 /undo 或 /undo N。"
 
   update:
-    platform_not_messaging:  "✗ /update 僅在訊息平台上可用。請在終端機執行 `hermes update`。"
+    platform_not_messaging:  "✗ /update 僅在訊息平台上可用。請在終端機執行 `{cli} update`。"
     not_git_repo:            "✗ 不是 git 儲存庫 — 無法更新。"
-    hermes_cmd_not_found:    "✗ 找不到 `hermes` 指令。Hermes 正在執行，但更新指令無法在 PATH 上或透過目前的 Python 解譯器找到執行檔。請嘗試在終端機中手動執行 `hermes update`。"
+    hermes_cmd_not_found:    "✗ 找不到 `{cli}` 指令。Hermes 正在執行，但更新指令無法在 PATH 上或透過目前的 Python 解譯器找到執行檔。請嘗試在終端機中手動執行 `{cli} update`。"
     start_failed:            "✗ 啟動更新失敗：{error}"
     starting:                "☤ 正在啟動 Hermes 更新…… 進度將在此處顯示。"
 

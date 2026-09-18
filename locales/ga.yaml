@@ -15,7 +15,7 @@ approval:
   prompt_smart_deny: "      Rogha [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ Gan freagra laistigh de {waited} — níor ritheadh an t-ordú. Iarr arís le triail eile a bhaint as, nó ardaigh an teorainn: hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ Gan freagra laistigh de {waited} — níor ritheadh an t-ordú. Iarr arís le triail eile a bhaint as, nó ardaigh an teorainn: {cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ Ceadaithe uair amháin"
   allowed_session: "      ✓ Ceadaithe don seisiún seo"
   allowed_always:  "      ✓ Curtha leis an liosta ceadaithe buan"
@@ -117,7 +117,7 @@ gateway:
     upload_failed:         "✗ Theip ar uaslódáil tuairisce dífhabhtaithe: {error}"
     header:                "**Tuairisc dhífhabhtaithe uaslódáilte:**"
     auto_delete:           "⏱ Scriosfar na pastes go huathoibríoch i 6 huaire."
-    full_logs_hint:        "Le haghaidh uaslódálacha logála iomlána, úsáid `hermes debug share` ón CLI."
+    full_logs_hint:        "Le haghaidh uaslódálacha logála iomlána, úsáid `{cli} debug share` ón CLI."
     share_hint:            "Roinn na naisc seo le foireann Hermes le haghaidh tacaíochta."
 
   deny:
@@ -173,7 +173,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ earráid kanban: {error}"
     subscribed_suffix:     "(síntiúsaithe — cuirfear in iúl duit nuair a chríochnóidh nó a stopfaidh {task_id})"
-    truncated_suffix:      "… (giorraithe; úsáid `hermes kanban …` i do theirminéal le haghaidh aschur iomláin)"
+    truncated_suffix:      "… (giorraithe; úsáid `{cli} kanban …` i do theirminéal le haghaidh aschur iomláin)"
     no_output:             "(gan aschur)"
     wake:
       completed:           "completed"
@@ -261,7 +261,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ Tá atosú gateway ar siúl cheana féin..."
-    restarting:            "♻ Ag atosú gateway. Mura gcuirfear in iúl duit laistigh de 60 soicind, atosaigh ón gconsól le `hermes gateway restart`."
+    restarting:            "♻ Ag atosú gateway. Mura gcuirfear in iúl duit laistigh de 60 soicind, atosaigh ón gconsól le `{cli} gateway restart`."
 
   resume:
     db_unavailable:        "Níl bunachar sonraí na seisiún ar fáil."
@@ -387,9 +387,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "Líon neamhbhailí \"{arg}\" — úsáid /undo nó /undo N."
 
   update:
-    platform_not_messaging:  "✗ Tá /update ar fáil amháin ó ardáin teachtaireachtaí. Rith `hermes update` ón teirminéal."
+    platform_not_messaging:  "✗ Tá /update ar fáil amháin ó ardáin teachtaireachtaí. Rith `{cli} update` ón teirminéal."
     not_git_repo:            "✗ Ní stór git é seo — ní féidir nuashonrú."
-    hermes_cmd_not_found:    "✗ Níorbh fhéidir an t-ordú `hermes` a aimsiú. Tá Hermes ag rith, ach níorbh fhéidir leis an ordú nuashonraithe an inrite a aimsiú ar PATH ná tríd an léirmhínitheoir Python reatha. Bain triail as `hermes update` a rith de láimh i do theirminéal."
+    hermes_cmd_not_found:    "✗ Níorbh fhéidir an t-ordú `{cli}` a aimsiú. Tá Hermes ag rith, ach níorbh fhéidir leis an ordú nuashonraithe an inrite a aimsiú ar PATH ná tríd an léirmhínitheoir Python reatha. Bain triail as `{cli} update` a rith de láimh i do theirminéal."
     start_failed:            "✗ Theip ar nuashonrú a thosú: {error}"
     starting:                "☤ Ag tosú nuashonrú Hermes… Cuirfidh mé an dul chun cinn ar shruth anseo."
 

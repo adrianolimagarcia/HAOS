@@ -164,3 +164,61 @@ def test_locales_dir_env_override_ignored_when_missing(tmp_path, monkeypatch):
     assert result.name == "locales"
 
 
+# ---------------------------------------------------------------------------
+# {cli} — a marca do binario vem do produto, nunca do catalogo
+# ---------------------------------------------------------------------------
+
+
+def _catalog(monkeypatch, value: str) -> None:
+    monkeypatch.setattr(i18n, "_load_catalog", lambda lang: {"probe": value})
+
+
+def test_cli_placeholder_renders_the_active_brand(monkeypatch, tmp_path):
+    """``{cli}`` resolve sozinho a partir de ``product_cli_name()``.
+
+    O fork expoe ``haos`` e o catalogo guardava ``hermes`` fixo, entao a copy mandava o
+    usuario rodar comandos que nao existem no appliance. O chamador nao passa ``cli``.
+    """
+    _catalog(monkeypatch, "run {cli} update")
+    monkeypatch.setenv("HAOS_HOME", str(tmp_path / "haos"))
+    assert i18n.t("probe", lang="en") == "run haos update"
+    monkeypatch.delenv("HAOS_HOME")
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    assert i18n.t("probe", lang="en") == "run hermes update"
+
+
+def test_value_without_the_placeholder_is_not_formatted(monkeypatch):
+    """Sem ``{cli}`` o valor volta byte a byte — chaves literais inclusive.
+
+    E o que mantem as 100+ chaves sem placeholder fora de ``str.format``; formata-las
+    todas faria um ``{`` literal virar falha de format (e um WARNING por render).
+    """
+    _catalog(monkeypatch, "keep {this} literal")
+    assert i18n.t("probe", lang="en") == "keep {this} literal"
+
+
+def test_caller_supplied_cli_wins(monkeypatch):
+    """``setdefault``: um ``cli=`` explicito do chamador nao e sobrescrito."""
+    _catalog(monkeypatch, "run {cli}")
+    assert i18n.t("probe", lang="en", cli="FORCED") == "run FORCED"
+
+
+def test_every_catalog_cli_key_renders_without_a_leftover_placeholder():
+    """Contrato no catalogo real: toda chave que usa ``{cli}`` resolve de fato.
+
+    Sem a assercao de que existe pelo menos uma chave, este teste passaria vazio.
+    """
+    import re
+
+    en = _flatten(_load_raw("en"))
+    cli_keys = sorted(k for k, v in en.items() if "{cli}" in v)
+    assert cli_keys, "nenhuma chave usa {cli} — o guard de marca ficaria vacuoso"
+    for key in cli_keys:
+        # Preenche os OUTROS placeholders da chave (ex.: {waited}) para que o format
+        # chegue ao fim e o unico token restante em teste seja o {cli}.
+        others = {p: "X" for p in re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", en[key]) if p != "cli"}
+        out = i18n.t(key, lang="en", **others)
+        assert "{cli}" not in out, f"{key}: {out!r}"
+        assert "{" not in out, f"{key}: placeholder nao resolvido em {out!r}"
+
+

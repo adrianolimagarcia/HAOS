@@ -11,7 +11,7 @@ approval:
   prompt_smart_deny: "      선택 [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ {waited} 동안 응답이 없어 명령을 실행하지 않았습니다. 다시 요청해 재시도하거나 제한을 늘리세요: hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ {waited} 동안 응답이 없어 명령을 실행하지 않았습니다. 다시 요청해 재시도하거나 제한을 늘리세요: {cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ 한 번 허용됨"
   allowed_session: "      ✓ 이 세션에서 허용됨"
   allowed_always:  "      ✓ 영구 허용 목록에 추가됨"
@@ -113,7 +113,7 @@ gateway:
     upload_failed:         "✗ 디버그 보고서 업로드 실패: {error}"
     header:                "**디버그 보고서가 업로드되었습니다:**"
     auto_delete:           "⏱ 페이스트는 6시간 후 자동 삭제됩니다."
-    full_logs_hint:        "전체 로그 업로드는 CLI에서 `hermes debug share`를 사용하세요."
+    full_logs_hint:        "전체 로그 업로드는 CLI에서 `{cli} debug share`를 사용하세요."
     share_hint:            "지원을 받으려면 이 링크를 Hermes 팀과 공유하세요."
 
   deny:
@@ -169,7 +169,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ kanban 오류: {error}"
     subscribed_suffix:     "(구독 중 — {task_id}이(가) 완료되거나 차단되면 알림을 받습니다)"
-    truncated_suffix:      "… (잘림; 전체 출력을 보려면 터미널에서 `hermes kanban …`을 사용하세요)"
+    truncated_suffix:      "… (잘림; 전체 출력을 보려면 터미널에서 `{cli} kanban …`을 사용하세요)"
     no_output:             "(출력 없음)"
     wake:
       completed:           "completed"
@@ -257,7 +257,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ 게이트웨이 재시작이 이미 진행 중입니다..."
-    restarting:            "♻ 게이트웨이를 재시작 중입니다. 60초 이내에 알림이 오지 않으면 콘솔에서 `hermes gateway restart`로 재시작하세요."
+    restarting:            "♻ 게이트웨이를 재시작 중입니다. 60초 이내에 알림이 오지 않으면 콘솔에서 `{cli} gateway restart`로 재시작하세요."
 
   resume:
     db_unavailable:        "세션 데이터베이스를 사용할 수 없습니다."
@@ -383,9 +383,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "잘못된 개수 \"{arg}\" — /undo 또는 /undo N을 사용하세요."
 
   update:
-    platform_not_messaging:  "✗ /update는 메시징 플랫폼에서만 사용할 수 있습니다. 터미널에서 `hermes update`를 실행하세요."
+    platform_not_messaging:  "✗ /update는 메시징 플랫폼에서만 사용할 수 있습니다. 터미널에서 `{cli} update`를 실행하세요."
     not_git_repo:            "✗ git 저장소가 아닙니다 — 업데이트할 수 없습니다."
-    hermes_cmd_not_found:    "✗ `hermes` 명령을 찾을 수 없습니다. Hermes는 실행 중이지만 PATH나 현재 Python 인터프리터를 통해 실행 파일을 찾을 수 없습니다. 터미널에서 `hermes update`를 직접 실행해 보세요."
+    hermes_cmd_not_found:    "✗ `{cli}` 명령을 찾을 수 없습니다. Hermes는 실행 중이지만 PATH나 현재 Python 인터프리터를 통해 실행 파일을 찾을 수 없습니다. 터미널에서 `{cli} update`를 직접 실행해 보세요."
     start_failed:            "✗ 업데이트 시작 실패: {error}"
     starting:                "☤ Hermes 업데이트를 시작합니다… 진행 상황을 여기에 스트리밍하겠습니다."
 

@@ -161,6 +161,13 @@ def t(key: str, lang: str | None = None, **format_kwargs: Any) -> str:
 
     ``format_kwargs`` are applied with ``str.format``. Falls back to English,
     then to the bare key; a format failure returns the unformatted string.
+
+    ``{cli}`` is filled from ``product_cli_name()`` without the caller passing it, so a
+    catalog string can name the binary the product actually exposes (``haos`` here,
+    ``hermes`` upstream) instead of hardcoding the upstream one — the fork's catalogs told
+    users to run commands that do not exist on the appliance. Only a value that mentions
+    ``{cli}`` is formatted, so every other key keeps returning the catalog bytes untouched
+    and the lazy import stays off the common path.
     """
     target = _normalize_lang(lang) if lang else get_language()
     value = _load_catalog(target).get(key)
@@ -169,6 +176,9 @@ def t(key: str, lang: str | None = None, **format_kwargs: Any) -> str:
     if value is None:
         logger.debug("i18n miss: key=%r lang=%r", key, target)
         value = key
+    if "{cli}" in value:
+        from hermes_constants import product_cli_name
+        format_kwargs.setdefault("cli", product_cli_name())
     if not format_kwargs:
         return value
     try:

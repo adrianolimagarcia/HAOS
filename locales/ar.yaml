@@ -16,7 +16,7 @@ approval:
   prompt_smart_deny: "      الاختيار [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ لا توجد إجابة خلال {waited} — لم يتم تنفيذ الأمر. اطلب مرة أخرى لإعادة المحاولة، أو ارفع الحد: hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ لا توجد إجابة خلال {waited} — لم يتم تنفيذ الأمر. اطلب مرة أخرى لإعادة المحاولة، أو ارفع الحد: {cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ مسموح مرة واحدة"
   allowed_session: "      ✓ مسموح لهذه الجلسة"
   allowed_always:  "      ✓ أُضيف إلى قائمة السماح الدائمة"
@@ -136,7 +136,7 @@ gateway:
     upload_failed:         "✗ فشل رفع تقرير التصحيح: {error}"
     header:                "**تم رفع تقرير التصحيح:**"
     auto_delete:           "⏱ ستُحذف اللصقات تلقائيًا خلال 6 ساعات."
-    full_logs_hint:        "لرفع السجلات الكاملة، استخدم `hermes debug share` من واجهة الأوامر."
+    full_logs_hint:        "لرفع السجلات الكاملة، استخدم `{cli} debug share` من واجهة الأوامر."
     share_hint:            "شارك هذه الروابط مع فريق Hermes للحصول على الدعم."
 
   deny:
@@ -192,7 +192,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ خطأ kanban: {error}"
     subscribed_suffix:     "(مُشترك — ستُخطَر عند اكتمال {task_id} أو حجبها)"
-    truncated_suffix:      "… (مقتطع؛ استخدم `hermes kanban …` في الطرفية للخرج الكامل)"
+    truncated_suffix:      "… (مقتطع؛ استخدم `{cli} kanban …` في الطرفية للخرج الكامل)"
     no_output:             "(لا يوجد خرج)"
     wake:
       completed:           "اكتملت"
@@ -280,7 +280,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ إعادة تشغيل البوابة قيد التنفيذ بالفعل..."
-    restarting:            "♻ جارٍ إعادة تشغيل البوابة. إن لم تُخطَر خلال 60 ثانية، أعِد التشغيل من وحدة التحكّم باستخدام `hermes gateway restart`."
+    restarting:            "♻ جارٍ إعادة تشغيل البوابة. إن لم تُخطَر خلال 60 ثانية، أعِد التشغيل من وحدة التحكّم باستخدام `{cli} gateway restart`."
 
   resume:
     db_unavailable:        "قاعدة بيانات الجلسات غير متاحة."
@@ -385,9 +385,9 @@ gateway:
     invalid_count:         "عدد غير صالح \"{arg}\" — استخدم /undo أو /undo N."
 
   update:
-    platform_not_messaging:  "✗ /update متاح فقط من منصّات المراسلة. شغّل `hermes update` من الطرفية."
+    platform_not_messaging:  "✗ /update متاح فقط من منصّات المراسلة. شغّل `{cli} update` من الطرفية."
     not_git_repo:            "✗ ليس مستودع git — لا يمكن التحديث."
-    hermes_cmd_not_found:    "✗ تعذّر تحديد موقع أمر `hermes`. Hermes يعمل، لكن أمر التحديث لم يجد الملف التنفيذي على PATH أو عبر مُفسّر Python الحالي. جرّب تشغيل `hermes update` يدويًا في طرفيتك."
+    hermes_cmd_not_found:    "✗ تعذّر تحديد موقع أمر `{cli}`. Hermes يعمل، لكن أمر التحديث لم يجد الملف التنفيذي على PATH أو عبر مُفسّر Python الحالي. جرّب تشغيل `{cli} update` يدويًا في طرفيتك."
     start_failed:            "✗ فشل بدء التحديث: {error}"
     starting:                "☤ جارٍ بدء تحديث Hermes… سأبثّ التقدّم هنا."
 

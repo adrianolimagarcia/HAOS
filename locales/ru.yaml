@@ -11,7 +11,7 @@ approval:
   prompt_smart_deny: "      Выбор [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ Нет ответа в течение {waited} — команда не была выполнена. Попросите снова, чтобы повторить, или увеличьте лимит: hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ Нет ответа в течение {waited} — команда не была выполнена. Попросите снова, чтобы повторить, или увеличьте лимит: {cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ Разрешено один раз"
   allowed_session: "      ✓ Разрешено для этого сеанса"
   allowed_always:  "      ✓ Добавлено в постоянный список разрешённых"
@@ -113,7 +113,7 @@ gateway:
     upload_failed:         "✗ Не удалось загрузить отчёт отладки: {error}"
     header:                "**Отчёт отладки загружен:**"
     auto_delete:           "⏱ Вставки автоматически удалятся через 6 часов."
-    full_logs_hint:        "Для загрузки полных журналов используйте `hermes debug share` из CLI."
+    full_logs_hint:        "Для загрузки полных журналов используйте `{cli} debug share` из CLI."
     share_hint:            "Поделитесь этими ссылками с командой Hermes для получения поддержки."
 
   deny:
@@ -169,7 +169,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ ошибка kanban: {error}"
     subscribed_suffix:     "(подписка оформлена — вы получите уведомление, когда {task_id} завершится или будет заблокирован)"
-    truncated_suffix:      "… (сокращено; используйте `hermes kanban …` в терминале для полного вывода)"
+    truncated_suffix:      "… (сокращено; используйте `{cli} kanban …` в терминале для полного вывода)"
     no_output:             "(нет вывода)"
     wake:
       completed:           "completed"
@@ -257,7 +257,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ Перезапуск шлюза уже выполняется..."
-    restarting:            "♻ Перезапуск шлюза. Если уведомление не придёт в течение 60 секунд, перезапустите из консоли командой `hermes gateway restart`."
+    restarting:            "♻ Перезапуск шлюза. Если уведомление не придёт в течение 60 секунд, перезапустите из консоли командой `{cli} gateway restart`."
 
   resume:
     db_unavailable:        "База данных сеансов недоступна."
@@ -383,9 +383,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "Недопустимое число «{arg}» — используйте /undo или /undo N."
 
   update:
-    platform_not_messaging:  "✗ /update доступен только на платформах обмена сообщениями. Выполните `hermes update` в терминале."
+    platform_not_messaging:  "✗ /update доступен только на платформах обмена сообщениями. Выполните `{cli} update` в терминале."
     not_git_repo:            "✗ Не git-репозиторий — обновление невозможно."
-    hermes_cmd_not_found:    "✗ Не удалось найти команду `hermes`. Hermes запущен, но команда обновления не нашла исполняемый файл в PATH или через текущий интерпретатор Python. Попробуйте выполнить `hermes update` вручную в терминале."
+    hermes_cmd_not_found:    "✗ Не удалось найти команду `{cli}`. Hermes запущен, но команда обновления не нашла исполняемый файл в PATH или через текущий интерпретатор Python. Попробуйте выполнить `{cli} update` вручную в терминале."
     start_failed:            "✗ Не удалось запустить обновление: {error}"
     starting:                "☤ Запуск обновления Hermes… Я буду транслировать прогресс сюда."
 

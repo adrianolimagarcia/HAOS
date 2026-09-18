@@ -11,7 +11,7 @@ approval:
   prompt_smart_deny: "      Choix [o/R] : "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "r,refuser"
-  timeout:         "      ⏱ Aucune réponse en {waited} — la commande n'a pas été exécutée. Redemandez pour réessayer, ou augmentez la limite : hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ Aucune réponse en {waited} — la commande n'a pas été exécutée. Redemandez pour réessayer, ou augmentez la limite : {cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ Autorisé une fois"
   allowed_session: "      ✓ Autorisé pour cette session"
   allowed_always:  "      ✓ Ajouté à la liste d'autorisation permanente"
@@ -113,7 +113,7 @@ gateway:
     upload_failed:         "✗ Échec de l'envoi du rapport de débogage : {error}"
     header:                "**Rapport de débogage envoyé :**"
     auto_delete:           "⏱ Les pastes s'effaceront automatiquement dans 6 heures."
-    full_logs_hint:        "Pour envoyer les journaux complets, utilisez `hermes debug share` depuis la CLI."
+    full_logs_hint:        "Pour envoyer les journaux complets, utilisez `{cli} debug share` depuis la CLI."
     share_hint:            "Partagez ces liens avec l'équipe Hermes pour obtenir de l'aide."
 
   deny:
@@ -169,7 +169,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ erreur kanban : {error}"
     subscribed_suffix:     "(abonné — vous serez notifié lorsque {task_id} se terminera ou sera bloqué)"
-    truncated_suffix:      "… (tronqué ; utilisez `hermes kanban …` dans votre terminal pour la sortie complète)"
+    truncated_suffix:      "… (tronqué ; utilisez `{cli} kanban …` dans votre terminal pour la sortie complète)"
     no_output:             "(aucune sortie)"
     wake:
       completed:           "completed"
@@ -257,7 +257,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ Redémarrage du gateway déjà en cours..."
-    restarting:            "♻ Redémarrage du gateway. Si vous n'êtes pas notifié dans les 60 secondes, redémarrez depuis la console avec `hermes gateway restart`."
+    restarting:            "♻ Redémarrage du gateway. Si vous n'êtes pas notifié dans les 60 secondes, redémarrez depuis la console avec `{cli} gateway restart`."
 
   resume:
     db_unavailable:        "Base de données des sessions indisponible."
@@ -383,9 +383,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "Nombre invalide « {arg} » — utilisez /undo ou /undo N."
 
   update:
-    platform_not_messaging:  "✗ /update n'est disponible que depuis les plateformes de messagerie. Exécutez `hermes update` depuis le terminal."
+    platform_not_messaging:  "✗ /update n'est disponible que depuis les plateformes de messagerie. Exécutez `{cli} update` depuis le terminal."
     not_git_repo:            "✗ Pas un dépôt git — impossible de mettre à jour."
-    hermes_cmd_not_found:    "✗ Impossible de localiser la commande `hermes`. Hermes est en cours d'exécution, mais la commande de mise à jour n'a pas pu trouver l'exécutable dans le PATH ni via l'interpréteur Python actuel. Essayez d'exécuter `hermes update` manuellement dans votre terminal."
+    hermes_cmd_not_found:    "✗ Impossible de localiser la commande `{cli}`. Hermes est en cours d'exécution, mais la commande de mise à jour n'a pas pu trouver l'exécutable dans le PATH ni via l'interpréteur Python actuel. Essayez d'exécuter `{cli} update` manuellement dans votre terminal."
     start_failed:            "✗ Échec du démarrage de la mise à jour : {error}"
     starting:                "☤ Démarrage de la mise à jour Hermes… Je diffuserai la progression ici."
 

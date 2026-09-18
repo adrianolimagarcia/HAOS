@@ -11,7 +11,7 @@ approval:
   prompt_smart_deny: "      Вибір [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ Немає відповіді протягом {waited} — команду не виконано. Попросіть знову, щоб повторити, або збільште ліміт: hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ Немає відповіді протягом {waited} — команду не виконано. Попросіть знову, щоб повторити, або збільште ліміт: {cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ Дозволено один раз"
   allowed_session: "      ✓ Дозволено для цього сеансу"
   allowed_always:  "      ✓ Додано до постійного списку дозволених команд"
@@ -113,7 +113,7 @@ gateway:
     upload_failed:         "✗ Не вдалося завантажити звіт налагодження: {error}"
     header:                "**Звіт налагодження завантажено:**"
     auto_delete:           "⏱ Вставки автоматично видаляться через 6 годин."
-    full_logs_hint:        "Щоб завантажити повні журнали, використайте `hermes debug share` з CLI."
+    full_logs_hint:        "Щоб завантажити повні журнали, використайте `{cli} debug share` з CLI."
     share_hint:            "Поділіться цими посиланнями з командою Hermes для отримання підтримки."
 
   deny:
@@ -169,7 +169,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ помилка kanban: {error}"
     subscribed_suffix:     "(підписано — ви отримаєте сповіщення, коли {task_id} завершиться або буде заблоковано)"
-    truncated_suffix:      "… (скорочено; використовуйте `hermes kanban …` у терміналі для повного виводу)"
+    truncated_suffix:      "… (скорочено; використовуйте `{cli} kanban …` у терміналі для повного виводу)"
     no_output:             "(немає виводу)"
     wake:
       completed:           "completed"
@@ -257,7 +257,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ Перезапуск гейтвея вже виконується..."
-    restarting:            "♻ Перезапуск гейтвея. Якщо ви не отримаєте сповіщення протягом 60 секунд, перезапустіть із консолі командою `hermes gateway restart`."
+    restarting:            "♻ Перезапуск гейтвея. Якщо ви не отримаєте сповіщення протягом 60 секунд, перезапустіть із консолі командою `{cli} gateway restart`."
 
   resume:
     db_unavailable:        "База даних сеансів недоступна."
@@ -383,9 +383,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "Недійсне число «{arg}» — використовуйте /undo або /undo N."
 
   update:
-    platform_not_messaging:  "✗ /update доступний лише на платформах обміну повідомленнями. Виконайте `hermes update` у терміналі."
+    platform_not_messaging:  "✗ /update доступний лише на платформах обміну повідомленнями. Виконайте `{cli} update` у терміналі."
     not_git_repo:            "✗ Не git-репозиторій — оновлення неможливе."
-    hermes_cmd_not_found:    "✗ Не вдалося знайти команду `hermes`. Hermes запущено, але команда оновлення не знайшла виконуваний файл у PATH або через поточний інтерпретатор Python. Спробуйте виконати `hermes update` вручну у вашому терміналі."
+    hermes_cmd_not_found:    "✗ Не вдалося знайти команду `{cli}`. Hermes запущено, але команда оновлення не знайшла виконуваний файл у PATH або через поточний інтерпретатор Python. Спробуйте виконати `{cli} update` вручну у вашому терміналі."
     start_failed:            "✗ Не вдалося запустити оновлення: {error}"
     starting:                "☤ Запуск оновлення Hermes… Я транслюватиму прогрес сюди."
 

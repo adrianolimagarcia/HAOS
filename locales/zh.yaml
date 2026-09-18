@@ -11,7 +11,7 @@ approval:
   prompt_smart_deny: "      选择 [o/D]: "
   smart_deny_once_inputs: "o,once"
   smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ {waited} 内没有回应——未执行该命令。再次请求即可重试，或提高上限：hermes config set approvals.timeout {suggested}"
+  timeout:         "      ⏱ {waited} 内没有回应——未执行该命令。再次请求即可重试，或提高上限：{cli} config set approvals.timeout {suggested}"
   allowed_once:    "      ✓ 本次允许"
   allowed_session: "      ✓ 本次会话内允许"
   allowed_always:  "      ✓ 已加入永久允许列表"
@@ -113,7 +113,7 @@ gateway:
     upload_failed:         "✗ 无法上传调试报告：{error}"
     header:                "**调试报告已上传：**"
     auto_delete:           "⏱ 粘贴内容将在 6 小时后自动删除。"
-    full_logs_hint:        "如需上传完整日志，请在 CLI 中使用 `hermes debug share`。"
+    full_logs_hint:        "如需上传完整日志，请在 CLI 中使用 `{cli} debug share`。"
     share_hint:            "请将这些链接分享给 Hermes 团队以获得支持。"
 
   deny:
@@ -169,7 +169,7 @@ gateway:
   kanban:
     error_prefix:          "⚠ kanban 错误：{error}"
     subscribed_suffix:     "（已订阅 — 当 {task_id} 完成或被阻塞时将通知您）"
-    truncated_suffix:      "…（已截断；如需完整输出请在终端运行 `hermes kanban …`）"
+    truncated_suffix:      "…（已截断；如需完整输出请在终端运行 `{cli} kanban …`）"
     no_output:             "（无输出）"
     wake:
       completed:           "已完成"
@@ -257,7 +257,7 @@ gateway:
 
   restart:
     in_progress:           "⏳ 网关重启已在进行中……"
-    restarting:            "♻ 正在重启网关。如果 60 秒内没有收到通知，请在控制台运行 `hermes gateway restart` 重启。"
+    restarting:            "♻ 正在重启网关。如果 60 秒内没有收到通知，请在控制台运行 `{cli} gateway restart` 重启。"
 
   resume:
     db_unavailable:        "会话数据库不可用。"
@@ -383,9 +383,9 @@ Future messages in this room will use that transcript until `/reset` or another 
     invalid_count:         "无效的数量「{arg}」—— 请使用 /undo 或 /undo N。"
 
   update:
-    platform_not_messaging:  "✗ /update 仅在消息平台可用。请在终端运行 `hermes update`。"
+    platform_not_messaging:  "✗ /update 仅在消息平台可用。请在终端运行 `{cli} update`。"
     not_git_repo:            "✗ 不是 git 仓库 — 无法更新。"
-    hermes_cmd_not_found:    "✗ 无法找到 `hermes` 命令。Hermes 正在运行，但更新命令无法在 PATH 上或通过当前 Python 解释器找到可执行文件。请尝试在终端中手动运行 `hermes update`。"
+    hermes_cmd_not_found:    "✗ 无法找到 `{cli}` 命令。Hermes 正在运行，但更新命令无法在 PATH 上或通过当前 Python 解释器找到可执行文件。请尝试在终端中手动运行 `{cli} update`。"
     start_failed:            "✗ 启动更新失败：{error}"
     starting:                "☤ 正在启动 Hermes 更新…… 进度将在此处显示。"
 
