@@ -595,6 +595,14 @@ sounddevice = false
 starlette = false
 supermemory = false
 tenacity = false
+# The `graph-treesitter` extra pins both exactly (0.26.0 / 1.15.8). The cutoff
+# still governs WHICH version we pin — 1.16.1+ are quarantined, so 1.15.8 is the
+# newest usable release — but an exact pin gains nothing from the cutoff and can
+# only brick: a venv predating the cutoff cannot resolve the pin at all
+# ("no version of X==Y"), which is the incident tests/test_packaging_metadata.py
+# documents (snowballstemmer==3.1.1, three production installs, 2026-08-29).
+tree-sitter = false
+tree-sitter-language-pack = false
 ty = false
 tzdata = false
 unpaddedbase64 = false
