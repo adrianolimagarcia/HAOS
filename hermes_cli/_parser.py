@@ -69,15 +69,15 @@ def _inherited_flag(parser, *args, **kwargs):
 
 _EPILOGUE = """
 Examples:
-    hermes                        Start interactive chat
+    """ + product_cli_name() + """                        Start interactive chat
     """ + product_command("chat") + """ -q "Hello"        Single query mode
-    hermes --tui                  Launch the modern TUI (or set display.interface: tui)
-    hermes --cli                  Force the classic REPL (overrides display.interface: tui)
-    hermes -c                     Resume the most recent session
-    hermes -c "my project"        Resume a session by name (latest in lineage)
-    hermes --resume <session_id>  Resume a specific session by ID
-    hermes --resume latest        Resume the most recent session (same as -c)
-    hermes --tui --resume latest --in ./dir   Resume ./dir's latest session in the TUI
+    """ + product_cli_name() + """ --tui                  Launch the modern TUI (or set display.interface: tui)
+    """ + product_cli_name() + """ --cli                  Force the classic REPL (overrides display.interface: tui)
+    """ + product_cli_name() + """ -c                     Resume the most recent session
+    """ + product_cli_name() + """ -c "my project"        Resume a session by name (latest in lineage)
+    """ + product_cli_name() + """ --resume <session_id>  Resume a specific session by ID
+    """ + product_cli_name() + """ --resume latest        Resume the most recent session (same as -c)
+    """ + product_cli_name() + """ --tui --resume latest --in ./dir   Resume ./dir's latest session in the TUI
 """ + product_command("setup") + """                  Run setup wizard
     """ + product_command("logout") + """                 Clear stored authentication
     """ + product_command("auth") + """ add <provider>    Add a pooled credential
@@ -94,8 +94,8 @@ Examples:
     """ + product_command("config") + """ edit            Edit config in $EDITOR
     """ + product_command("config") + """ set model gpt-4 Set a config value
     """ + product_command("gateway") + """                Run messaging gateway
-    hermes -s hermes-agent-dev,github-auth
-    hermes -w                     Start in isolated git worktree
+    """ + product_cli_name() + """ -s hermes-agent-dev,github-auth
+    """ + product_cli_name() + """ -w                     Start in isolated git worktree
     """ + product_command("gateway") + """ install        Install gateway background service
     """ + product_command("sessions") + """ list          List past sessions
     """ + product_command("sessions") + """ browse        Interactive session picker
@@ -112,7 +112,7 @@ Examples:
     """ + product_command("dashboard") + """ --status     List running dashboard processes
 
 For more help on a command:
-    hermes <command> --help
+    """ + product_cli_name() + """ <command> --help
 """
 
 
