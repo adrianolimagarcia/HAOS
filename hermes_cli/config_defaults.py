@@ -2025,18 +2025,18 @@ DEFAULT_CONFIG = {
         # verdict: at boot the default gateway runs the migration preflight and stays standalone
         # (logging why) when a secondary still runs its own gateway or a blocker exists — an
         # explicit `true` (config or GATEWAY_MULTIPLEX_PROFILES) is honoured as before, an explicit
-        # `false` keeps per-profile gateways for good. `hermes gateway migrate --multiplex` folds a
+        # `false` keeps per-profile gateways for good. `hermes gateway migrate --multiplex` folds a  # haos-brand: internal-comment
         # per-profile fleet (records a rollback manifest; `--standalone` undoes it and pins false).
         # Two profiles configuring the same bot token cannot be served together — the duplicate
-        # adapter is parked; `hermes profile create --clone` therefore leaves messaging channels
+        # adapter is parked; `hermes profile create --clone` therefore leaves messaging channels  # haos-brand: internal-comment
         # behind unless --clone-channels is passed.
         "multiplex_profiles": True,
-        # May `hermes update` fold this install onto a multiplexed default gateway by itself?
+        # May `hermes update` fold this install onto a multiplexed default gateway by itself?  # haos-brand: internal-comment
         # True (the default) keeps today's behaviour: a multi-profile install whose secondaries run
         # their own gateways is migrated automatically after an update when nothing blocks it.
         # Set to False to stay on per-profile gateways — a durable opt-out that survives updates, so
         # the decision is not re-litigated on every release. Only the AUTOMATIC path reads this:
-        # `hermes gateway migrate --multiplex` is an explicit request and always proceeds.
+        # `hermes gateway migrate --multiplex` is an explicit request and always proceeds.  # haos-brand: internal-comment
         "auto_multiplex_migration": True,
         # Route inbound chats of the default profile's bots to another profile
         # (gateway/profile_routing.py): [{profile, platform, chat_id|user_id|guild_id|...}].

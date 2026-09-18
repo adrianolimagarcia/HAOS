@@ -55,7 +55,7 @@ def _guarded_store_write(action, description, *args, **kwargs):
 
     The gateway runs the provider on an unsupervised daemon thread: one escaping exception
     there stops cron silently while the gateway keeps serving (#111010). Heartbeat/error
-    markers are diagnostics for ``hermes cron status`` — losing one write to a broken store
+    markers are diagnostics for ``haos cron status`` — losing one write to a broken store
     must degrade to a logged warning, not thread death.
     """
     try:
@@ -275,7 +275,7 @@ def fire_overdue_jobs(
     concurrent late external retry is de-duplicated by the store CAS; waits out
     ``cron.misfire_grace_minutes`` so the external retry gets first right. Returns jobs dispatched.
     """
-    # `hermes pause` ESTOP: skip the sweep entirely. No state to unwind — the
+    # `hermes pause` ESTOP: skip the sweep entirely. No state to unwind — the  # haos-brand: internal-comment
     # next housekeeping pass after `hermes resume` catches overdue work up
     # through the existing claim_fire path. Distinct component name from the
     # ticker's "cron" so the log-once mechanism fires independently.
@@ -443,7 +443,7 @@ class InProcessCronScheduler(CronScheduler):
                 logger.warning(
                     "Marked %d interrupted cron execution(s) unknown after restart", recovered
                 )
-            # Heartbeat before the first sleep so `hermes cron status` sees a live ticker
+            # Heartbeat before the first sleep so `hermes cron status` sees a live ticker  # haos-brand: internal-comment
             # immediately.
             record_ticker_heartbeat()
         except BaseException as e:

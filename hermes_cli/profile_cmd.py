@@ -448,7 +448,7 @@ def _profile_migrate_identity(args):
         _die(f"Error: {e}")
     if not migrated:
         _die(f"Error: session identity was not migrated. Restart or stop the gateway, then run:\n"
-             f"    hermes profile migrate-identity {args.old_name} {args.new_name}", err=True)
+             f"    {product_command('profile')} migrate-identity {args.old_name} {args.new_name}", err=True)
     print(f"✓ Session/routing identity migrated: {args.old_name} → {args.new_name}")
 
 

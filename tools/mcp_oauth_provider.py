@@ -311,7 +311,7 @@ class HermesProviderMixin:
     async def _hermes_handle_refresh_response(self, response) -> bool:
         if not (200 <= response.status_code < 300):
             self._hermes_logger.warning("Token refresh failed: %s", response.status_code)
-            # A writer outside the fence (interactive `hermes mcp login`, or a
+            # A writer outside the fence (interactive `hermes mcp login`, or a  # haos-brand: internal-comment (names the concurrent writer this race handles)
             # pre-fence Hermes sharing this HERMES_HOME) may have rotated the
             # grant and persisted the replacement. Providers issuing single-use
             # refresh tokens reject our stale copy with a 400. Re-read disk
@@ -346,7 +346,7 @@ class HermesProviderMixin:
         return True
 
     async def _hermes_reload_tokens_after_refresh_failure(self) -> bool:
-        """Re-read tokens from disk after a rejected refresh.
+        """Re-read tokens from disk after a rejected refresh.  haos-brand: internal-mechanism (refresh-race analysis, not user copy)
 
         Returns True only when disk holds a pair that is BOTH different from
         the one we just failed with AND still live. That is the signature of

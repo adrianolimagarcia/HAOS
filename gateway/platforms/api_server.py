@@ -3528,7 +3528,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             job_id = (body or {}).get("job_id")
             if not job_id:
                 return web.json_response({"error": "missing job_id"}, status=400)
-            # `hermes pause` ESTOP: refuse the fire and ask NAS to retry later.
+            # `hermes pause` ESTOP: refuse the fire and ask NAS to retry later.  # haos-brand: internal-comment (names the ESTOP this branch honors)
             # Placed after JWT verify (don't leak pause state to unauth callers)
             # and after the drain check (drain is transient shutdown, ESTOP is
             # operator override). 503 + Retry-After reschedules the job via NAS

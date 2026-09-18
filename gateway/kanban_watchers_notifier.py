@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional
 from agent.i18n import t
 
 from gateway.kanban_watchers_common import _list_boards, _to_thread_process_service, logger
+from hermes_constants import product_command
 
 
 def _kbc():
@@ -111,7 +112,7 @@ def _warn_anchorless_thread_sub_once(sub: dict, platform: str) -> None:
     _ANCHORLESS_WARNED.add(key)
     logger.warning(
         "kanban notifier: subscription for %s on %s thread %s has no parent_chat_id anchor and matched no "
-        "profile route; it will not be delivered. Re-subscribe with `hermes kanban notify-subscribe ... "
+        "profile route; it will not be delivered. Re-subscribe with `" + product_command("kanban") + " notify-subscribe ... "
         "--parent-chat-id <channel id> [--guild-id <guild id>]`.",
         sub.get("task_id"), platform, sub.get("chat_id"),
     )
@@ -394,8 +395,8 @@ def _fmt_gave_up(ev, n) -> tuple:
     count = f"it failed {int(failures)} times in a row" if failures else "it kept failing"
     last = _clip(ev, "error", " (last: {})", 160)
     return (
-        f"⛔ {n.head} is now blocked: {count}{last}. Fix the cause, then `hermes kanban unblock "
-        f"{n.task_id}` (or `hermes kanban reassign {n.task_id}`). Logs: `hermes kanban log {n.task_id}`.",
+        f"⛔ {n.head} is now blocked: {count}{last}. Fix the cause, then `{product_command('kanban')} unblock "
+        f"{n.task_id}` (or `{product_command('kanban')} reassign {n.task_id}`). Logs: `{product_command('kanban')} log {n.task_id}`.",
         None, None,
     )
 

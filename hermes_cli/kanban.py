@@ -711,7 +711,7 @@ def _cmd_link(args: argparse.Namespace) -> int:
             f"Note: {args.child_id} was ready and is now todo — parent "
             f"{args.parent_id} is not done yet. The ready -> running claim "
             f"re-checks parents, so the child only runs after the parent "
-            f"completes; use `hermes kanban unlink {args.parent_id} {args.child_id}` "
+            f"completes; use `{product_command('kanban')} unlink {args.parent_id} {args.child_id}` "
             f"to run it now."
         )
     return 0
@@ -900,7 +900,7 @@ def _cmd_complete(args: argparse.Namespace) -> int:
                                         force=bool(getattr(args, "force", False)))
             except kb.LiveClaimError:
                 fail_msg[tid] = (f"cannot complete {tid}: a live worker is running it. Wait for the "
-                                 f"worker, `hermes kanban reclaim {tid}` to release it, or re-run with "
+                                 f"worker, `{product_command('kanban')} reclaim {tid}` to release it, or re-run with "
                                  f"--force to close its run and complete anyway.")
                 return False
 

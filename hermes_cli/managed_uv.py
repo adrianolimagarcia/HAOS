@@ -206,7 +206,7 @@ def _uv_version(uv_bin: str) -> str:
     ).stdout.strip()
 
 
-def _record_runtime_repair(repair: RuntimeRepairResult) -> None:
+def _record_runtime_repair(repair: RuntimeRepairResult) -> None:  # haos-brand: internal-mechanism
     """Put the repair outcome into the update receipt (no-op outside ``hermes update``).
 
     Receipts are built only from explicit ``record_step``/``record_skip`` calls, so without this
@@ -614,7 +614,7 @@ def _sync_reason(tail: deque[str]) -> str:
     return " | ".join(parts).strip()[:_SYNC_REASON_CHARS]
 
 
-def _stream_sync(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tuple[int, str]:
+def _stream_sync(argv: list[str], *, cwd: Path, env: dict[str, str]) -> tuple[int, str]:  # haos-brand: internal-mechanism
     """Run the candidate's locked sync, forwarding output live; return ``(rc, reason)``.
 
     Streaming is load-bearing, not cosmetic: older desktop update hand-offs drain only the

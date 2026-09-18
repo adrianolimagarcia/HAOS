@@ -852,7 +852,7 @@ class GatewayShutdownMixin:
             msg = (
                 f"⚠️ Scheduled job '{job_name}' was cut short because Hermes is {action}; "
                 "no result this run. It will run again on schedule, or run it now with "
-                f"`hermes cron run {job_name}` once Hermes is back."
+                f"`{product_command('cron')} run {job_name}` once Hermes is back."
             )
             for target in targets or ():
                 try:

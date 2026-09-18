@@ -9,7 +9,7 @@ import sys
 
 from hermes_cli.config import get_env_path, get_hermes_home, get_project_root
 from hermes_cli.env_loader import load_hermes_dotenv
-from hermes_constants import display_hermes_home
+from hermes_constants import display_hermes_home, product_command
 
 PROJECT_ROOT = get_project_root()
 HERMES_HOME = get_hermes_home()
@@ -138,8 +138,8 @@ def _ack_advisory(ack_target: str) -> None:
         print(color(f"  ✓ Acknowledged advisory {ack_target}. It will no longer trigger startup banners.", Colors.GREEN))
     else:
         print(color(f"  ✗ Could not save the acknowledgement for {ack_target}. Make sure {_DHH}/config.yaml is "
-                    f"writable (`hermes config path` prints the exact file), then re-run "
-                    f"`hermes doctor --ack {ack_target}`.", Colors.RED))
+                    f"writable (`{product_command('config')} path` prints the exact file), then re-run "
+                    f"`{product_command('doctor')} --ack {ack_target}`.", Colors.RED))
         sys.exit(1)
 
 

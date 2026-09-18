@@ -26,6 +26,7 @@ from gateway.media_repair import repair_explicit_computer_use_media_paths
 from gateway.platforms.base import BasePlatformAdapter
 from gateway.turn_context import TurnContext
 from hermes_cli.config import cfg_get
+from hermes_constants import product_command
 from utils import is_truthy_value
 
 if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
@@ -1819,7 +1820,7 @@ class TurnRunner:
                 "final_response": (
                     "⚠️ I couldn't connect to the AI model service, so this message wasn't processed. "
                     "Use /login to sign in again, or /model to pick a different model. If it keeps "
-                    "failing, run `hermes doctor` on the host."),
+                    "failing, run `" + product_command("doctor") + "` on the host."),
                 "messages": [], "api_calls": 0, "tools": [],
             }
         pr = runner._provider_routing

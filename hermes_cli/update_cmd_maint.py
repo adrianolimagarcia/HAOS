@@ -64,7 +64,7 @@ def _sqlite_partial_completion_lines(sqlite_version: str) -> list[str]:
         f"⚠ Update partially complete — your Python's SQLite ({sqlite_version}) has a known "
         "corruption bug. Hermes works, but sessions could be damaged.",
         f"  Fix: run the installer again ({_REINSTALL_ONE_LINER[bool(_m()._is_windows())]}) "
-        "which installs a safe Python, then run `hermes doctor` to confirm.",
+        "which installs a safe Python, then run `" + product_command("doctor") + "` to confirm.",
     ]
 
 
@@ -406,7 +406,7 @@ def _finish_dashboard_update_cleanup(
         print()
         print(f"⚠ Could not refresh running dashboard/serve process(es): {exc}")
         print("  If one is still running, restart it so it serves the updated code:")
-        print("    hermes dashboard --port <port>   (or: systemctl --user restart hermes-dashboard)")
+        print("    " + product_command("dashboard") + " --port <port>   (or: systemctl --user restart hermes-dashboard)")
         return
     if not stop_result.get("unrecovered"):
         return

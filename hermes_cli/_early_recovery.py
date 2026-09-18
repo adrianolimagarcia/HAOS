@@ -95,7 +95,7 @@ def restore_quarantined_shims(
 _UPDATE_RETRY_RECOVERED = False
 
 
-def _should_skip_external_secret_sources() -> bool:
+def _should_skip_external_secret_sources() -> bool:  # haos-brand: internal-mechanism
     """True inside any ``hermes update`` process (and its import probes).
 
     Every dotenv load in the process — ``hermes_cli.main``, ``run_agent``, ``cli`` — consults

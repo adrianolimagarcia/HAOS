@@ -211,7 +211,7 @@ def _try_restart_systemd_service(svc_name: str, cgroup_path: str | None = None) 
     return False
 
 
-# launchd plist directories that can supervise a ``hermes dashboard`` / ``hermes serve`` backend on
+# launchd plist directories that can supervise a ``hermes dashboard`` / ``hermes serve`` backend on  haos-brand: internal-mechanism
 # macOS, with the launchctl domain their jobs load into (LaunchAgents: ``gui/<uid>`` or ``user/<uid>``,
 # probed per label like the gateway helpers; LaunchDaemons: ``system``). Both LaunchAgents dirs are
 # per-user domains, so they share the ``agent`` kind.
@@ -225,7 +225,7 @@ def _launchd_plist_dirs() -> list[tuple[str, Path]]:
 
 def _loaded_launchd_backend_jobs(
     plist_dirs: list[tuple[str, Path]] | None = None,
-) -> list[tuple[str, str, list[str], int | None]]:
+) -> list[tuple[str, str, list[str], int | None]]:  # haos-brand: internal-mechanism
     """``(domain, label, program_arguments, live_pid)`` for every LOADED launchd job whose
     ``ProgramArguments`` is a ``hermes dashboard`` / ``hermes serve`` backend. macOS only (empty
     elsewhere). Reads the plists (unreadable/malformed ones are skipped) and asks ``launchctl print``

@@ -35,7 +35,7 @@ def build_profile_parser(subparsers, *, cmd_profile: Callable) -> None:
              "multiplexed gateway.")
     profile_create.add_argument(
         "--sync-imports", action="store_true",
-        help="With --clone/--clone-from: also carry over the `hermes import-agent` sync manifest so "
+        help="With --clone/--clone-from: also carry over the `" + product_command("import") + "-agent` sync manifest so "
              "the new profile stays registered against the same Claude Code / Codex trees "
              "(`hermes -p <name> import-agent --sync`). Never syncs config from the source profile.")
     profile_create.add_argument(
@@ -94,7 +94,7 @@ def build_profile_parser(subparsers, *, cmd_profile: Callable) -> None:
     profile_migrate = profile_subparsers.add_parser(
         "migrate-identity",
         help="Retry a renamed profile's session/routing identity migration",
-        description="Re-run the session/routing identity migration that `hermes profile rename` "
+        description="Re-run the session/routing identity migration that `" + product_command("profile") + " rename` "
             "performs automatically. The rename has already happened when this is needed, so pass "
             "the OLD and NEW names: state still keyed by the old profile name (session keys, "
             "profile_name, heartbeats, routing/delivery rows) is rekeyed to the new one. Run it "

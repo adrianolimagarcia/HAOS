@@ -425,7 +425,7 @@ def _restart_killed_backends(
     """Update path: restart systemd units, kickstart launchd jobs (macOS), respawn manual argv
     (detached, headless, logged to logs/dashboard-restart.log; one per profile, no ``--port 0``).
     Returns PIDs not brought back."""
-    # Two categories: Without this, a remote backend (hermes serve) under Restart=on-failure never comes
+    # Two categories: Without this, a remote backend (hermes serve) under Restart=on-failure never comes  haos-brand: internal-mechanism
     # back after our clean SIGTERM, and the Desktop can't reconnect (#68934). Filtered so Desktop
     # ``serve|dashboard --port 0`` backends are not resurrected and duplicates collapse to one per profile
     # (#78821).

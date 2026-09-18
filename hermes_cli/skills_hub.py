@@ -504,7 +504,7 @@ def _scan_block_message(result, identifier: str) -> str:
     """User-facing sentence for a scan-blocked install (the audit row keeps the scanner's raw reason).
 
     Says what happened (not installed), why in plain words (high-risk patterns), whether ``--force``
-    can help, and the read-only next step (``hermes skills inspect``). The hard-block rule mirrors
+    can help, and the read-only next step (``haos skills inspect``). The hard-block rule mirrors
     ``tools.skills_guard.should_allow_install``: a dangerous verdict on a non-official source."""
     n = len(result.findings)
     findings = f"{n} high-risk pattern(s)" if n else "high-risk patterns"
@@ -513,7 +513,7 @@ def _scan_block_message(result, identifier: str) -> str:
               if hard_block else "Re-run with --force to install anyway.")
     return (f"the security scan found {findings} in '{identifier}' (listed above). "
             f"{policy} Review the findings or ask the author to fix them; to read the skill without "
-            f"installing, run `hermes skills inspect {identifier}`.")
+            f"installing, run `{product_command('skills')} inspect {identifier}`.")
 
 
 def _invalid_path(c: Console, bundle, exc: ValueError, q_path: Optional[Path] = None) -> None:
@@ -621,8 +621,8 @@ def _print_fetch_failure(c: Console, sources, identifier: str, meta=None, source
                 "Set [bold]GITHUB_TOKEN[/] in your .env or install the [bold]gh[/] CLI and run "
                 "[bold]gh auth login[/] to raise the limit to 5,000/hr.\n")
     else:
-        c.print(f"Check the name with [bold]hermes skills search {identifier.rsplit('/', 1)[-1]}[/] "
-                "and check your internet connection. If it keeps failing, run [bold]hermes doctor[/].\n")
+        c.print(f"Check the name with [bold]{product_command('skills')} search {identifier.rsplit('/', 1)[-1]}[/] "
+                f"and check your internet connection. If it keeps failing, run [bold]{product_command('doctor')}[/].\n")
 
 
 def _scan_quarantined(c: Console, q_path: Path, bundle, meta, identifier: str):

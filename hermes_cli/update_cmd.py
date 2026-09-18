@@ -1164,9 +1164,9 @@ def _handle_update_called_process_error(
             _print_called_process_error_tail(e)
             print()
             print("  Hermes may not start until the dependencies are installed. Fix the error above")
-            print("  (usually network or disk space), then run `hermes update` again.")
+            print("  (usually network or disk space), then run `" + product_command("update") + "` again.")
             if _m()._is_windows():
-                print("  If `hermes update` itself will not start, retry through the venv interpreter:")
+                print("  If `" + product_command("update") + "` itself will not start, retry through the venv interpreter:")
                 print(
                     '    venv\\Scripts\\python.exe -c '
                     '"from hermes_cli.main import main; main()" update --yes')

@@ -20,7 +20,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, product_command
 from hermes_cli.relay_plugin_cutover import (RELAY_PLUGINS_CONFIG_ENV, configured_legacy_relay_env_vars)
 
 logger = logging.getLogger(__name__)
@@ -1220,7 +1220,7 @@ def _configured_plugin_inputs(relay: Any) -> tuple[dict[str, Any], list[Any]] | 
         if legacy_vars := configured_legacy_relay_env_vars(os.environ):
             logger.warning(
                 "Legacy NeMo Relay exporter variables are set but no %s was provided — NO traces are being "
-                "exported. %s no longer activate Relay exporters. Run `hermes migrate relay` (or `hermes update`, "
+                "exported. %s no longer activate Relay exporters. Run `" + product_command("migrate") + " relay` (or `" + product_command("update") + "`, "
                 "which runs it for every profile) to generate %s from them and select it in .env.",
                 RELAY_PLUGINS_CONFIG_ENV, ", ".join(legacy_vars),
                 get_hermes_home() / "relay-plugins.toml",

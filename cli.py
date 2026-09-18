@@ -4696,7 +4696,7 @@ def main(
 
     _join_worktree = _start_worktree_setup(list_tools, list_toolsets, worktree, w)
     query = query or q
-    # ``hermes chat`` already validated this; the direct Fire entry point gets the same contract.
+    # ``hermes chat`` already validated this; the direct Fire entry point gets the same contract.  # haos-brand: internal-comment (names the CLI path this code mirrors)
     if output_format == "stream-json":
         if not query:
             raise ValueError("--format stream-json requires -q/--query")

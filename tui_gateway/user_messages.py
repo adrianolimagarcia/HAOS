@@ -11,6 +11,7 @@ on (``Session busy``) are part of the wire contract — keep them.
 from __future__ import annotations
 
 from typing import Any
+from hermes_constants import product_command
 
 # Provider-layer failure codes → (title, hint). Codes are ``agent.error_classifier.FailoverReason``
 # values carried in ``error_surface.code``; anything unlisted falls back on the layer table.
@@ -92,7 +93,7 @@ def busy_message(command: str) -> str:
 
 def agent_init_failed_message(exc: Any) -> str:
     return (f"Hermes could not start the assistant for this session. Details: {exc}. "
-            "Check the model and provider with /model, or run `hermes setup` in a terminal to reconfigure.")
+            f"Check the model and provider with /model, or run `{product_command('setup')}` in a terminal to reconfigure.")
 
 
 AGENT_STILL_STARTING = (

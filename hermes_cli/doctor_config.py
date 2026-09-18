@@ -73,7 +73,7 @@ def collect_relay_plugin_cutover_findings(raw_config: dict | None, env_map: dict
             if name not in effective_env and os.environ.get(name) is not None:
                 effective_env[name] = os.environ[name]
     if not str(effective_env.get(RELAY_PLUGINS_CONFIG_ENV, "")).strip():
-        findings += [(name, f"run `hermes migrate relay` to generate relay-plugins.toml and set {RELAY_PLUGINS_CONFIG_ENV}; "
+        findings += [(name, f"run `{product_command('migrate')} relay` to generate relay-plugins.toml and set {RELAY_PLUGINS_CONFIG_ENV}; "
                             "this variable is now ignored and no traces are exported")
                      for name in configured_legacy_relay_env_vars(effective_env)]
     return findings

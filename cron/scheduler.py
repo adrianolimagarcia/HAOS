@@ -280,7 +280,7 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     message = generic_failure_notice(job_name, job_id, cleaned)
 
     # Import-class failures (#95294 part 3): a long-lived gateway whose checkout was updated
-    # underneath it (interrupted `hermes update`, manual git pull) serves MIXED modules and every
+    # underneath it (interrupted `hermes update`, manual git pull) serves MIXED modules and every  # haos-brand: internal-comment
     # agent cron job dies with `cannot import name X`. The error reads like a code bug, so APPEND
     # cause + fix — never replace the raw error, which carries the failing symbol. Fail-safe: skew
     # is None on non-git/no-fingerprint; no_agent jobs excluded (a fresh subprocess resolves
@@ -424,7 +424,7 @@ def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str]:
     except Exception as exc:
         raise RuntimeError(
             "Cron toolset resolution failed, so this run was refused rather than given every "
-            f"tool. Check `platform_toolsets.cron` in config.yaml (`hermes cron doctor`): {exc}"
+            f"tool. Check `platform_toolsets.cron` in config.yaml (`" + product_command("cron") + f" doctor`): {exc}"
         ) from exc
 
 
@@ -1486,7 +1486,7 @@ def _blocked_config_result(job_id: str, job_name: str, _pf_reason: str) -> tuple
         "(nothing was charged).\n\n"
         f"**Reason:** {_pf_reason}\n\n"
         "Hermes tries again at the next scheduled time and clears this state on the first healthy "
-        "run; this alert is not repeated. Check with `hermes cron doctor`. Set `cron.preflight: "
+        "run; this alert is not repeated. Check with `" + product_command("cron") + " doctor`. Set `cron.preflight: "
         "false` in config.yaml to disable this check."
     )
     return False, blocked_doc, "", f"{marker} {_pf_reason}"

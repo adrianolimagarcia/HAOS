@@ -271,7 +271,7 @@ def _write_gateway_desired_state(name: str, desired_state: str) -> None:
         return
 
 
-def register_unregistered_profile_gateway(mgr: ServiceManager, profile: str) -> bool:
+def register_unregistered_profile_gateway(mgr: ServiceManager, profile: str) -> bool:  # haos-brand: internal-mechanism
     """Register a ``down`` s6 slot for a profile whose directory exists but was never registered.
 
     `hermes profile create` can only register a slot when it runs inside the container; created

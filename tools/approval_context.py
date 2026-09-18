@@ -273,7 +273,7 @@ def format_approval_window(seconds: int) -> str:
 
 def approval_timeout_notice_kwargs() -> dict:
     """``{waited, suggested}`` for the ``approval.timeout`` copy: how long we waited (``5 minutes`` /
-    ``90 seconds``) and a tripled ``approvals.timeout`` value the user can paste into ``hermes config set``."""
+    ``90 seconds``) and a tripled ``approvals.timeout`` value the user can paste into ``haos config set``."""
     seconds = _get_approval_timeout()
     return {"waited": format_approval_window(seconds), "suggested": seconds * 3}
 

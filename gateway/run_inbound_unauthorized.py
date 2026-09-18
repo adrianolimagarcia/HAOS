@@ -17,6 +17,7 @@ import logging
 from collections import OrderedDict
 
 from gateway.pairing import CODE_TTL_SECONDS, _allowlist_env_for_platform
+from hermes_constants import product_command
 
 # Display names come from the stranger. Bound them and keep the mention/markdown surface small in
 # the owner's channel: a name is never a reason to render a link, mention or new section.
@@ -78,7 +79,7 @@ def unauthorized_owner_hint(
         f"Dropped a message from unrecognized {platform_name} user {who}. If that is you or someone "
         f"you trust, {allowlist}; or set `unauthorized_dm_behavior: pair` for {platform_name} in "
         f"{hermes_home}/config.yaml so unknown senders receive a pairing code you can approve with "
-        f"`hermes pairing approve {platform_name} <code>`."
+        f"`{product_command('pairing')} approve {platform_name} <code>`."
     )
 
 

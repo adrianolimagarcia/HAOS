@@ -434,7 +434,7 @@ def _run_pending_fleet_restart() -> bool:
         return False
 
 
-def _defer_fleet_restart_after_update(*, update_complete: bool, resume_incomplete: bool = False) -> None:
+def _defer_fleet_restart_after_update(*, update_complete: bool, resume_incomplete: bool = False) -> None:  # haos-brand: internal-mechanism
     """Record a deliberately deferred fleet restart and return/exit on outcome.
 
     ``hermes update --no-gateway-restart`` (cron running inside the gateway's
@@ -470,7 +470,7 @@ def _defer_fleet_restart_after_update(*, update_complete: bool, resume_incomplet
         sys.exit(1)
 
 
-def _apply_pending_fleet_restart_catchup(*, defer: bool = False) -> None:
+def _apply_pending_fleet_restart_catchup(*, defer: bool = False) -> None:  # haos-brand: internal-mechanism
     """On an already-up-to-date ``hermes update``, finish a skipped restart.
 
     No-op when nothing is pending; exits 1 on incomplete catch-up so automation
@@ -485,7 +485,7 @@ def _apply_pending_fleet_restart_catchup(*, defer: bool = False) -> None:
         print()
         _warn_pending_fleet_restart()
         print("  (fleet restart deferred — --no-gateway-restart; marker kept)")
-        print("  Restart separately: `hermes gateway restart` or next non-cron update.")
+        print("  Restart separately: `" + product_command("gateway") + " restart` or next non-cron update.")
         return
     print()
     _warn_pending_fleet_restart()

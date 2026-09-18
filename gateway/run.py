@@ -41,6 +41,7 @@ from agent.turn_context import compression_made_progress
 from agent.session_activity import ActivityProvenance
 from hermes_cli.config import _is_ssh_remote_tilde_cwd, cfg_get
 from hermes_cli.fallback_config import get_fallback_chain
+from hermes_constants import product_command
 
 # Per-session AIAgent cache bounds (agents are heavy); see _enforce_agent_cache_cap/_session_housekeeping_watcher.
 _AGENT_CACHE_MAX_SIZE = 128
@@ -190,14 +191,14 @@ def hygiene_compaction_recovered(
 def _hygiene_compression_timeout_message(
     *, total_exhausted: bool, elapsed: float, idle_timeout: float, progress_observed: bool) -> str:
     """Describe the host timeout that actually ended hygiene compression. Chat users cannot edit
-    model config, so the copy names /compress, /new and `hermes doctor`, never a config key or the
+    model config, so the copy names /compress, /new and `haos doctor`, never a config key or the
     raw second counts (those stay in the gateway log)."""
     lead = (
         "⚠️ Shortening the conversation history took too long, so I skipped it and kept "
         "everything as-is. Run /compress to try again or /new to start fresh.")
     if total_exhausted:
         return lead
-    return lead + " If this keeps happening, run `hermes doctor` on the host."
+    return lead + " If this keeps happening, run `" + product_command("doctor") + "` on the host."
 
 
 def _cached_agent_for_hygiene(gateway, session_key: str):
@@ -580,16 +581,16 @@ def _format_exec_approval_fallback(
         + format_approval_deadline_line(approval_timeout_seconds()))
 
 # Ordered: auth beats policy beats rate-limit beats connection; first match wins. Copy names the
-# slash command the chat user can run; raw provider text stays in the gateway log (`hermes logs`).
+# slash command the chat user can run; raw provider text stays in the gateway log (`hermes logs`).  # haos-brand: internal-comment (where the raw provider text is kept)
 _PROVIDER_ERROR_REPLIES = (
     (_GATEWAY_AUTH_ERROR_RE, "⚠️ Sign-in to the AI model service failed. Use /login to sign in again, "
-                             "or ask whoever runs this bot to run `hermes doctor` on the host."),
+                             "or ask whoever runs this bot to run `" + product_command("doctor") + "` on the host."),
     (_GATEWAY_PROVIDER_POLICY_RE, "⚠️ The AI model service rejected this request. Try rephrasing your "
                                   "message, or use /model to switch models."),
     (_GATEWAY_RATE_LIMIT_RE, "⏱️ The AI model service is rate-limiting requests. Wait a moment, then use /retry."),
     (_GATEWAY_CONNECTION_ERROR_RE, "⚠️ The AI model service isn't reachable right now — the configured model "
                                    "endpoint is not running or is unreachable. Wait a moment and use /retry; "
-                                   "if it persists, run `hermes doctor` on the host."))
+                                   "if it persists, run `" + product_command("doctor") + "` on the host."))
 
 
 # Shared by the failed-turn normalizer and ``run_turn._hmwa_agent_error_reply``; canonical
@@ -606,7 +607,7 @@ def _gateway_provider_error_reply(text: str) -> str:
             return reply
     return (
         "⚠️ The AI model service kept failing. Use /retry to try again, or /model to switch "
-        "models. Details are in the gateway log (`hermes logs`).")
+        "models. Details are in the gateway log (`" + product_command("logs") + "`).")
 
 
 # Provider/API failure envelope preambles (not ordinary assistant prose), anchored at line start.
@@ -1557,7 +1558,7 @@ _ensure_ssl_certs()
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hermes_constants import get_hermes_home, get_hermes_home_override, product_command
+from hermes_constants import get_hermes_home, get_hermes_home_override
 _hermes_home = get_hermes_home()
 
 # Load ~/.hermes/.env first: user-managed env files must override stale shell exports on restart.
@@ -3072,7 +3073,7 @@ def _normalize_empty_agent_response(
         return (
             "⚠️ Something went wrong and I couldn't finish this reply. Use /retry to try again, "
             "or /new to start a fresh conversation. Technical details are in the gateway log "
-            "(`hermes logs`).")
+            "(`" + product_command("logs") + "`).")
 
     api_calls = int(agent_result.get("api_calls", 0) or 0)
     if agent_result.get("interrupted"):
@@ -3646,7 +3647,7 @@ class GatewayRunner(
         # Checkpoint store pruning is a housekeeping chore (``_housekeeping_checkpoint_prune``), not a
         # constructor step: its ``git gc`` repacks the whole store (tens of seconds on a GB store) and
         # here it ran before the control socket, adapters and the code_sha stamp — so the first
-        # restart of the day (the ``hermes update`` one) looked hung and failed fleet verification.
+        # restart of the day (the ``hermes update`` one) looked hung and failed fleet verification.  # haos-brand: internal-comment (incident history for the restart watcher)
 
     def _init_registries_and_clocks(self) -> None:
         """Pairing stores, hook registry, voice modes, background-task set, liveness and idle clocks."""

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, TYPE_CHECKING
 
 from hermes_cli._subprocess_compat import windows_hide_flags
+from hermes_constants import product_command
 
 if TYPE_CHECKING:
     from cron.scheduler import _CancelEventLike
@@ -293,7 +294,7 @@ def _resolve_script_path(script_path: str) -> tuple[Optional[Path], Optional[str
         return None, (
             f"Script not found: {path}. Cron scripts are looked up only in this profile's folder "
             f"({scripts_dir_resolved}); if the job was copied from another profile, copy the script "
-            f"there too, or edit the job with `hermes cron edit`."
+            f"there too, or edit the job with `{product_command('cron')} edit`."
         )
     if not path.is_file():
         return None, f"Script path is not a file: {path}"

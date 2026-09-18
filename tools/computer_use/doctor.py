@@ -347,7 +347,7 @@ def run_doctor(driver_cmd: Optional[str] = None, *, include: Sequence[str] = (),
               "  The Hermes runtime interpreter cannot execute this binary; the tool may still work because the\n"
               "  shell resolves a different copy on PATH. Fix: install cua-driver outside the protected directory\n"
               "  (e.g. the upstream installer's default under your user profile) or point HERMES_CUA_DRIVER_CMD at\n"
-              "  a copy the runtime can execute, then re-run `hermes computer-use doctor`.", file=sys.stderr)
+              f"  a copy the runtime can execute, then re-run `{product_command('computer-use')} doctor`.", file=sys.stderr)
         return 2
     except RuntimeError as e:
         print(f"cua-driver health_report failed: {e}", file=sys.stderr)

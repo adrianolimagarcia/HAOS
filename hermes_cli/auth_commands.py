@@ -139,8 +139,8 @@ def _unknown_provider_exit(provider: str) -> SystemExit:
     close = difflib.get_close_matches(provider, known, n=3, cutoff=0.5)
     hint = f" Did you mean {', '.join(close)}?" if close else ""
     return SystemExit(
-        f"Unknown provider '{provider}'.{hint} Run `hermes auth` to see the provider list, or "
-        "`hermes model` to pick one interactively.")
+        f"Unknown provider '{provider}'.{hint} Run `{product_command('auth')}` to see the provider list, or "
+        f"`{product_command('model')}` to pick one interactively.")
 
 
 def _display_source(source: str) -> str:
@@ -590,7 +590,7 @@ def auth_refresh_command(args) -> None:
                  else "the saved session is no longer valid")
         raise SystemExit(
             f"Could not renew the {label} sign-in for credential #{index} ({matched.label}); {state}. "
-            f"Sign in again with `hermes auth add {provider} --type oauth`.")
+            f"Sign in again with `{product_command('auth')} add {provider} --type oauth`.")
     status = refreshed.last_status or "ok"
     if status == "ok":
         print(f"Refreshed {provider} credential #{index} ({refreshed.label}); status: ok")

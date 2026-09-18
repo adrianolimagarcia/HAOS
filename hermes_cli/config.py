@@ -55,7 +55,8 @@ _PARSE_FAILURE_FALLBACK_MSG = {
     "refuse-write": "Nothing was written, so the existing file is preserved."}
 _PARSE_FAILURE_DEFAULTS_MSG = (
     "Hermes is running on default settings until it is fixed, so none of your saved settings are applied.")
-_PARSE_FAILURE_REPAIR_MSG = "Open it with `hermes config edit`, fix {where}, then run `hermes config check`."
+_PARSE_FAILURE_REPAIR_MSG = ("Open it with `" + product_command("config") + " edit`, fix {where}, then run `"
+                             + product_command("config") + " check`.")
 
 
 def _yaml_error_location(exc: Exception) -> str:
@@ -515,8 +516,8 @@ def require_parseable_user_config(*, ignore_user_config: bool = False) -> None:
     where = _yaml_error_location(parse_error)
     message = (
         f"Hermes stopped because your settings file ({config_path}) has a formatting error"
-        f"{f' at {where}' if where else ''}. Fix it with `hermes config edit` and check with "
-        "`hermes config check`, or add --ignore-user-config to run once with default settings.")
+        f"{f' at {where}' if where else ''}. Fix it with `{product_command('config')} edit` and check with "
+        f"`{product_command('config')} check`, or add --ignore-user-config to run once with default settings.")
     if backup_path is not None:
         message += f" A copy of the broken file is at {backup_path}."
     message += f" Details: {_yaml_error_details(parse_error)}"
@@ -2019,8 +2020,8 @@ def _backups_dir_display() -> str:
 
 _FIX_PERMS = "Fix the file permissions or move it aside first."
 _FIX_YAML = (
-    "Fix it with `hermes config edit` and check with `hermes config check`, or copy the newest good "
-    "file from {backups} over config.yaml.")
+    "Fix it with `" + product_command("config") + " edit` and check with `" + product_command("config")
+    + " check`, or copy the newest good file from {backups} over config.yaml.")
 
 
 def require_readable_config_before_write(config_path: Optional[Path] = None) -> Dict[str, Any]:

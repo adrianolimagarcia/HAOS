@@ -761,7 +761,7 @@ def apply_migration(plan: MigrationPlan, *, served_wait: float = _SERVED_WAIT_SE
         # Flag off + manifest present = a rollback (or an apply killed before its flag write) that did
         # not finish. Overwriting the manifest would discard the only record of the units to restore.
         _print([f"✗ A previous migration's manifest is still at {_manifest_path(plan.default_home)} (its rollback did not finish).",
-                "  Finish it with: hermes gateway migrate --standalone   (or delete the manifest to start over)"])
+                "  Finish it with: " + product_command("gateway") + " migrate --standalone   (or delete the manifest to start over)"])
         return False
     else:
         blocker = _preflight_apply(plan, target, run_as_user)
@@ -787,7 +787,7 @@ def apply_migration(plan: MigrationPlan, *, served_wait: float = _SERVED_WAIT_SE
                 "  ↩ Rolling back to per-profile gateways so no profile is left without one..."])
         rolled_back = rollback_migration(plan.default_home)
         if not rolled_back:
-            print(f"  Re-run {MIGRATE_COMMAND} to resume, or hermes gateway migrate --standalone to roll back.")
+            print(f"  Re-run {MIGRATE_COMMAND} to resume, or " + product_command("gateway") + " migrate --standalone to roll back.")
         return False
 
     expected = {p.name for p in plan.profiles}

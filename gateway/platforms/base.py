@@ -389,7 +389,7 @@ from gateway.platforms.base_exec_approval import (
 from gateway.platforms.event import MessageEvent, MessageType, ProcessingOutcome
 from gateway.session import SessionSource, build_session_key
 from gateway.session_transcript import TranscriptReadError
-from hermes_constants import get_default_hermes_root, get_hermes_dir, get_hermes_home
+from hermes_constants import get_default_hermes_root, get_hermes_dir, get_hermes_home, product_command
 
 if TYPE_CHECKING:
     from agent.display import ToolPreview
@@ -441,11 +441,11 @@ GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE = (
 
 # One sentence for every "you may not press/run this" refusal on every platform (slash commands,
 # approval buttons, pickers, prompts). ``{platform}`` is the ``Platform.value`` for the
-# ``hermes pairing approve`` command (hermes_cli/subcommands/pairing.py) that lets the owner fix it.
+# ``hermes pairing approve`` command (hermes_cli/subcommands/pairing.py) that lets the owner fix it.  # haos-brand: internal-comment (points at the CLI source file that implements it)
 # Kept under 200 chars: Telegram's answerCallbackQuery truncates longer text.
 UNAUTHORIZED_ACTION_NOTICE = (
     "This bot is private and you're not on its allowed list. If you own it, run "
-    "`hermes pairing approve {platform} <request-id>` on the host (`hermes pairing list` shows the id).")
+    "`" + product_command("pairing") + " approve {platform} <request-id>` on the host (`" + product_command("pairing") + " list` shows the id).")
 
 
 def unauthorized_action_notice(platform: Any) -> str:

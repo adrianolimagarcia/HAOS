@@ -1287,6 +1287,7 @@ def _creds_for_switched_provider(st: _Switch) -> Optional[ModelSwitchResult]:
     ``providers.<name>`` blocks carry their own base_url + transport + key reference;
     resolve_runtime_provider() resolves by provider NAME and would re-resolve a block named
     "openai" from scratch (or hop to an aggregator), so use the pdef's endpoint directly."""
+    from hermes_constants import product_command
     user_pdef = None
     explicit_norm = st.explicit_provider.strip().lower()
     if st.explicit_provider and st.user_providers:
@@ -1313,7 +1314,7 @@ def _creds_for_switched_provider(st: _Switch) -> Optional[ModelSwitchResult]:
         except Exception as e:
             return st.fail_on_target(
                 f"{st.provider_label} is not connected: no API key or login was found for it. Add one with "
-                f"`hermes auth add {st.target_provider}`, or pick a connected provider in /model.\n"
+                f"`{product_command('auth')} add {st.target_provider}`, or pick a connected provider in /model.\n"
                 f"  Details: {e}")
     return None
 

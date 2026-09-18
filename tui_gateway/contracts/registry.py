@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
+from hermes_constants import product_command
 from .base import Params, Payload, Result
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,7 @@ def validate_params(contract: MethodContract | ServerRequestContract, params: di
             if err.get("type") == "extra_forbidden":
                 loc = ".".join(str(p) for p in err.get("loc", ())) or "params"
                 return None, (f"invalid params for {contract.name}: {loc}: {err.get('msg')} — the client and "
-                              "the Hermes backend are out of sync (different versions); run `hermes update` "
+                              "the Hermes backend are out of sync (different versions); run `" + product_command("update") + "` "
                               "and restart both")
     return params, None
 

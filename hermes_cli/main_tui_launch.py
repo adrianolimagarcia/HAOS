@@ -457,7 +457,7 @@ def _tui_node_bin(bin: str) -> str:
     if not path:
         print(
             f"Node.js is required for the TUI but `{bin}` was not found. Install it from "
-            "https://nodejs.org (run `hermes doctor` for the install hint for your OS), then "
+            "https://nodejs.org (run `" + product_command("doctor") + "` for the install hint for your OS), then "
             "retry `hermes --tui`. To keep working now, run `hermes --cli`."
         )
         sys.exit(1)

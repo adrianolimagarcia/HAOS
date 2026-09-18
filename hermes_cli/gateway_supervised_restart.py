@@ -1,4 +1,4 @@
-"""``hermes gateway restart`` for a gateway whose supervisor Hermes did not install.
+"""``hermes gateway restart`` for a gateway whose supervisor Hermes did not install.  haos-brand: internal-module-purpose
 
 A custom launchd agent / systemd unit / any KeepAlive-style manager running ``gateway run
 --external-supervisor`` owns the respawn. The manual fallback in ``_cmd_restart`` (SIGTERM, then a
@@ -13,6 +13,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
+from hermes_constants import product_command
 
 # A custom KeepAlive supervisor keeps its own respawn interval (launchd's is ~once per 10s,
 # per LAUNCHD_SUPERVISION_VERIFY_TIMEOUT); 15s matches _wait_for_launchd_service_pid's budget.
@@ -98,6 +99,6 @@ def restart_externally_supervised_gateway(supervised_pid: int) -> None:
         "",
         "✗ Not stopping or foreground-running a supervisor-owned gateway.",
         "  Check the supervisor (it may be unloaded, wedged, or stopped retrying),",
-        "  then rerun once it is healthy: hermes gateway restart",
+        "  then rerun once it is healthy: " + product_command("gateway") + " restart",
     )
     sys.exit(1)

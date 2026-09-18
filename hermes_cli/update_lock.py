@@ -14,6 +14,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from hermes_constants import product_command
 
 logger = logging.getLogger(__name__)
 
@@ -138,8 +139,8 @@ def describe_holder(holder: UpdateHolder) -> str:
         f"process {holder.pid}).\n"
         "\n"
         "  Running two at once would corrupt the install. Wait for it to finish\n"
-        "  (watch `hermes logs`), or close the Desktop/dashboard window that\n"
-        "  started it, then run `hermes update` again."
+        "  (watch `" + product_command("logs") + "`), or close the Desktop/dashboard window that\n"
+        "  started it, then run `" + product_command("update") + "` again."
     )
 
 

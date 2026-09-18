@@ -28,9 +28,9 @@ from gateway.run_shutdown import _log_suppressed, _notice_target_key, _send_erro
 logger = logging.getLogger("gateway.run")
 
 # A failed /update leaves the previous version running; the full pip/git log stays on the host
-# (`hermes update` re-runs it in the terminal) and only a short tail is quoted in chat.
+# (`hermes update` re-runs it in the terminal) and only a short tail is quoted in chat.  # haos-brand: internal-comment (where the full update log stays)
 _UPDATE_FAILED_NOTICE = (
-    "❌ Hermes update failed; the previous version is still running. Run `hermes update` on the "
+    "❌ Hermes update failed; the previous version is still running. Run `" + product_command("update") + "` on the "
     "host to see the full error, or try /update again later.")
 
 

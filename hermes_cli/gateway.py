@@ -1493,8 +1493,8 @@ def _print_multiplex_standalone_reason() -> None:
         return
     if reason:
         print(f"⚠ Serving the default profile only (gateway.multiplex_profiles unset): {reason}")
-        print("  Fold every profile onto this gateway: hermes gateway migrate --multiplex")
-        print("  Keep per-profile gateways: hermes config set gateway.multiplex_profiles false")
+        print(f"  Fold every profile onto this gateway: {product_command('gateway')} migrate --multiplex")
+        print(f"  Keep per-profile gateways: {product_command('config')} set gateway.multiplex_profiles false")
 
 
 def _print_served_ingress_urls(profile: str | None = None) -> None:
@@ -4500,8 +4500,8 @@ def _served_profile_needs_no_service() -> bool:
     """Print the "already served" note and return True when a setup flow must not install a standalone
     service: a live multiplexing default gateway already serves this named profile, so the unit/plist it
     would register can only sit dead (the start guard refuses it) or double-bind its platforms.
-    Shared by ``hermes setup gateway`` / ``hermes setup`` / ``hermes import`` (``ensure_gateway_service``)
-    and the ``hermes gateway setup`` wizard. See #111958."""
+    Shared by ``haos setup gateway`` / ``haos setup`` / ``haos import`` (``ensure_gateway_service``)
+    and the ``haos gateway setup`` wizard. See #111958."""
     if not named_profile_served_by_running_multiplexer():
         return False
     print_success(
@@ -6146,7 +6146,7 @@ _NO_BACKEND_MESSAGES = {
     ("uninstall", "unsupported"): (1,
         "Running the gateway as a background service is not available on this platform "
         "(no systemd, launchd or Scheduled Tasks), so there is nothing to uninstall.",
-        "Stop a manually started gateway with: hermes gateway stop"),
+        "Stop a manually started gateway with: " + product_command("gateway") + " stop"),
     ("start", "termux"): (1,
         "Gateway service start is not supported on Termux because there is no system service manager.",
         "Run manually: " + product_command("gateway")),

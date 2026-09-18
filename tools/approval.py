@@ -909,7 +909,7 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
 
 
 def _presence(approval_callback=None) -> tuple:
-    """``(approval_callback, is_cli, is_gateway, is_ask)`` for the current context.
+    """``(approval_callback, is_cli, is_gateway, is_ask)`` for the current context.  haos-brand: internal-mechanism (documents the approval gate, not user copy)
 
     Single-query ``-q`` and cron clear the presence trio: ``hermes chat -q`` exports
     HERMES_INTERACTIVE=1 for sudo prompts, and a gateway sets HERMES_EXEC_ASK=1 at startup and

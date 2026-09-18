@@ -17,9 +17,10 @@ from __future__ import annotations
 import contextlib
 import sys
 from pathlib import Path
+from hermes_constants import product_command
 
 
-def migrate_profile_identity(old_name: str, new_name: str) -> bool:
+def migrate_profile_identity(old_name: str, new_name: str) -> bool:  # haos-brand: internal-mechanism
     """Retry the session/routing identity migration of a rename that already completed.
 
     ``rename_profile`` runs the migration itself; this is the standalone retry behind
@@ -90,7 +91,7 @@ def _migrate_profile_identity(old_canon: str, new_canon: str, live_mux: bool) ->
         print(
             "⚠ Profile was renamed, but the live gateway could not migrate session identity"
             f" ({reason}). Restart the gateway, then run:\n"
-            f"    hermes profile migrate-identity {old_canon} {new_canon}",
+            f"    {product_command('profile')} migrate-identity {old_canon} {new_canon}",
             file=sys.stderr)
         return False
 

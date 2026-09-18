@@ -310,7 +310,7 @@ class HermesArgumentParser(argparse.ArgumentParser):
 
     def _check_value(self, action, value):
         if isinstance(action, argparse._SubParsersAction) and value not in action.choices:
-            # ``self.prog`` is "hermes" at the top level and "hermes gateway" for a nested group
+            # ``self.prog`` is "hermes" at the top level and "hermes gateway" for a nested group  haos-brand: internal-mechanism
             # (argparse hands add_parser() the parent's class), so the copy stays correct for both.
             lines = [f"{self.prog}: '{value}' is not a `{self.prog}` command."]
             close = difflib.get_close_matches(str(value), list(action.choices), n=3, cutoff=0.6)

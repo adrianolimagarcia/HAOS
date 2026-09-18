@@ -964,7 +964,7 @@ class GatewayAdapterLifecycleMixin:
         return True
 
     def _note_unserved_secondary_platform(self, profile_name: str, platform: Platform) -> None:
-        """A secondary enabled a shared-ingress platform (Relay, WhatsApp) the multiplexer only runs on
+        """A secondary enabled a shared-ingress platform (Relay, WhatsApp) the multiplexer only runs on  haos-brand: internal-mechanism (documents the status stamp, not user copy)
         the default profile. Log the reason + remedy once per (profile, platform) and stamp a
         ``<profile>:<platform>`` status entry so ``hermes gateway status --profile X`` and the
         dashboard show *why* the channel is dead instead of nothing at all."""

@@ -20,7 +20,7 @@ try:
 except ModuleNotFoundError:
     pass
 
-from hermes_constants import product_command
+from hermes_constants import product_cli_name, product_command
 
 # Windows: neutralize CPython's ``platform._syscmd_ver`` before anything else
 # imports — it shells out ``cmd /c ver`` and flashes a console when this
@@ -458,7 +458,7 @@ def _exit_invalid_profile_name(value: str) -> None:
     from hermes_cli.profiles import _invalid_profile_name_error
 
     print(f"Error: {_invalid_profile_name_error(value)}", file=sys.stderr)
-    print("Run `hermes profile list` to see your profiles.", file=sys.stderr)
+    print(f"Run `{product_command('profile')} list` to see your profiles.", file=sys.stderr)
     sys.exit(2)
 
 
@@ -478,8 +478,8 @@ def _scan_profile_flag(argv: list) -> tuple:
     ``work``. A value that cannot be a profile name is rejected so
     resolve_profile_env never sys.exits on it; the rejection is explained (exit 2)
     only when the flag comes BEFORE the first subcommand token under a real
-    ``hermes`` run — after a subcommand, ``-p`` may belong to that subcommand or a
-    plugin (`hermes kanban ... -p 8080`), and option-looking values (``no:xdist``,
+    ``haos`` run — after a subcommand, ``-p`` may belong to that subcommand or a
+    plugin (`haos kanban ... -p 8080`), and option-looking values (``no:xdist``,
     ``--flag``) are always a silent skip.
     """
     from hermes_cli._parser import top_level_value_flag_sets
@@ -1500,7 +1500,7 @@ def _resolve_continue_arg(args, *, use_tui: bool) -> None:
                     kind = "TUI" if use_tui else "CLI"
                     print(
                         f"No previous {kind} session to continue. Start a new one with "
-                        "`hermes`, or list sessions with `hermes sessions list`.",
+                        f"`{product_cli_name()}`, or list sessions with `{product_command('sessions')} list`.",
                         file=sys.stderr,
                     )
                     sys.exit(1)
@@ -2031,7 +2031,7 @@ def _resolve_active_provider(config, model_cfg, effective_provider, custom_provi
         except AuthError as exc:
             if exc.code == "no_provider_configured":
                 # The picker that is about to open IS the fix; a warning that says
-                # "run `hermes model`" from inside `hermes model` is circular.
+                # "run `hermes model`" from inside `hermes model` is circular.  # haos-brand: internal-comment
                 print("No provider is set up yet — pick one below. (Nous Portal works without an API key.)")
             elif effective_provider == "auto":
                 print(f"Warning: {format_auth_error(exc)} Falling back to auto provider detection.")
@@ -2508,7 +2508,7 @@ def _dashboard_lifecycle_flags(args, token_file) -> None:
         if not _find_stale_dashboard_pids():
             print("No " + product_command("dashboard") + " processes running.")
             sys.exit(0)
-        # Reuse the same SIGTERM-grace-SIGKILL path used after `hermes update`;
+        # Reuse the same SIGTERM-grace-SIGKILL path used after `hermes update`;  # haos-brand: internal-comment
         # it prints outcomes itself. Exit 1 only if a pid was unkillable — judged
         # from the kill result, not a re-scan: a launchd KeepAlive job respawns
         # its backend on a fresh PID, which is not a failed stop.

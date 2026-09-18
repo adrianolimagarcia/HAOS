@@ -225,7 +225,7 @@ def get_process_hermes_home() -> Path:
 
 # Hermes-managed runtime downloads at the root of a home (GGUF models, llama.cpp runtimes,
 # managed Node): re-downloadable on demand and routinely tens to hundreds of GB. Shared by
-# ``hermes backup`` (excludes them) and ``profile create --clone-all`` (skips them from the
+# ``hermes backup`` (excludes them) and ``profile create --clone-all`` (skips them from the  # haos-brand: internal-comment (which CLI commands exclude these dirs)
 # default profile) so the two lists cannot drift apart.
 LOCAL_RUNTIME_ROOT_DIRS: frozenset[str] = frozenset({"models", "runtimes", "node"})
 

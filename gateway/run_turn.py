@@ -31,7 +31,7 @@ from gateway.session import (
 from gateway.session_transcript import TranscriptReadError
 from gateway.turn_context import TurnContext
 from gateway.turn_lease import DEFAULT_LEASE_WAIT, TurnLeaseTimeoutError
-from hermes_constants import get_hermes_home_override
+from hermes_constants import get_hermes_home_override, product_command
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from utils import base_url_hostname
@@ -1132,7 +1132,7 @@ class GatewayTurnMixin:
                     source, attempt.meta,
                     "⚠️ Shortening the conversation history failed, so I kept everything as-is. "
                     "Run /compress to try again or /new to start fresh. If this keeps happening, "
-                    "run `hermes doctor` on the host.",
+                    "run `" + product_command("doctor") + "` on the host.",
                     "compression-failure warning",
                 )
         # Configured aux model failed, recovered on the main model: only the user can fix that config.
@@ -1881,10 +1881,10 @@ class GatewayTurnMixin:
         return response
 
     # Chat-side next steps keyed by HTTP status; Hermes commands only (/login is the gateway's own
-    # sign-in, `hermes auth add <provider>` the host equivalent).
+    # sign-in, `hermes auth add <provider>` the host equivalent).  # haos-brand: internal-comment (the host-side equivalent of /login)
     _STATUS_HINTS = {
         401: (" Your sign-in to the AI model service has expired or the API key is wrong. "
-              "Use /login here, or run `hermes auth add <provider>` on the host."),
+              "Use /login here, or run `" + product_command("auth") + " add <provider>` on the host."),
         402: " Your AI model service balance or quota is used up. Top it up on the service's website, or use /model to switch models.",
         529: " The AI model service is temporarily overloaded. Wait a moment, then use /retry.",
     }
@@ -1937,7 +1937,7 @@ class GatewayTurnMixin:
         return self._hmwa_add_failed_turn_notice(
             f"⚠️ Something went wrong and I couldn't finish this reply.{status_hint}\n"
             "Use /retry to try again, or /new to start a fresh conversation. "
-            "Technical details are in the gateway log (`hermes logs`).",
+            "Technical details are in the gateway log (`" + product_command("logs") + "`).",
             self._PARTIAL_FAILED_TURN_NOTICE,
         )
 
@@ -2283,7 +2283,7 @@ class GatewayTurnMixin:
                 await adapter.send(
                     source.chat_id,
                     "❌ The background task couldn't start because no AI model sign-in is "
-                    "configured. Use /login, or run `hermes setup` on the host.",
+                    "configured. Use /login, or run `" + product_command("setup") + "` on the host.",
                     metadata=_thread_metadata,
                 )
                 return

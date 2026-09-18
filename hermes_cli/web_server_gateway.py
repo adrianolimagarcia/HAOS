@@ -404,7 +404,7 @@ def _profile_action_environment(
 _ROOT_REQUIRING_GATEWAY_VERBS = frozenset({"restart", "start", "stop"})
 
 
-def _action_targets_system_gateway(subcommand: List[str]) -> bool:
+def _action_targets_system_gateway(subcommand: List[str]) -> bool:  # haos-brand: internal-mechanism
     """True when *subcommand* is a gateway lifecycle verb that resolves to the SYSTEM unit.
 
     Scope is decided by the CLI's own picker (``_select_systemd_scope``) evaluated for the profile
@@ -457,7 +457,7 @@ def _spawn_hermes_action(
         # HERMES_HOME past sudo's env_reset and reads SUDO_USER for the service identity.
         # ``-n`` never prompts (stdin is DEVNULL anyway); without a passwordless path the
         # REQUEST fails instead of reporting a started action whose child refuses. Same
-        # two-step gate as the ``hermes update`` fleet restart: a refused blanket probe falls
+        # two-step gate as the ``hermes update`` fleet restart: a refused blanket probe falls  haos-brand: internal-mechanism
         # back to ``sudo -l`` on the exact argv, so a command-scoped NOPASSWD entry qualifies.
         from hermes_cli.update_cmd_fleet import _sudo_noninteractive_ok
 

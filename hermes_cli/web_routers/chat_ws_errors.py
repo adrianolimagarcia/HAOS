@@ -12,6 +12,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from hermes_cli.pty_session import RegistryFull
+from hermes_constants import product_command
 
 CHAT_NEEDS_NODE = (
     "Chat could not start: Hermes needs Node.js to run the terminal chat. "
@@ -22,7 +23,7 @@ CHAT_TOO_MANY_TERMINALS = (
     "Close one and click Start new session."
 )
 CHAT_PROFILE_UNKNOWN = "Chat could not start: {detail} Pick another profile from the switcher and reopen this tab."
-CHAT_START_FAILED = "Chat could not start: {detail} Check the server log (`hermes dashboard` terminal) and click Start new session."
+CHAT_START_FAILED = ("Chat could not start: {detail} Check the server log (`" + product_command("dashboard") + "` terminal) and click Start new session.")
 
 
 def _node_missing(exc: BaseException) -> bool:

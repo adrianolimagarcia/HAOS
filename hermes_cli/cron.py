@@ -225,8 +225,8 @@ def _short_reason(text: Any, limit: int = 120) -> str:
 
 
 def _delivery_fix_hint(job: Dict[str, Any]) -> str:
-    return (f"Check the target with `hermes cron status` or change it with "
-            f"`hermes cron edit {job.get('id', '<id>')} --deliver <target>`.")
+    return (f"Check the target with `{product_command('cron')} status` or change it with "
+            f"`{product_command('cron')} edit {job.get('id', '<id>')} --deliver <target>`.")
 
 
 def _missed_fire_line(job: Dict[str, Any], fire_err: Dict[str, Any]) -> str:
@@ -235,7 +235,7 @@ def _missed_fire_line(job: Dict[str, Any], fire_err: Dict[str, Any]) -> str:
     The stored ``detail`` is operator text (loopback / api_server adapter); keep it as a dim
     second sentence and lead with the human cause (the gateway was unreachable)."""
     return (f"{color('⚠ A scheduled run was skipped', Colors.RED)} at {fire_err.get('at', '?')}: the messaging "
-            f"gateway was unreachable. Run `hermes gateway restart`, then `hermes cron run {job.get('id', '<id>')}` "
+            f"gateway was unreachable. Run `{product_command('gateway')} restart`, then `{product_command('cron')} run {job.get('id', '<id>')}` "
             f"to run it now. {color('Details: ' + _short_reason(fire_err.get('detail')), Colors.DIM)}")
 
 

@@ -219,7 +219,7 @@ def setup_logging(
     home = hermes_home or get_hermes_home()
     log_dir = mkdir_under_hermes_home(home / "logs")
     # A second Hermes home in a process that already logs for another one — a dashboard or
-    # ``hermes serve`` backend building agents for several profiles, a multiplexed gateway —
+    # ``hermes serve`` backend building agents for several profiles, a multiplexed gateway —  # haos-brand: internal-comment (names the backend mode this branch serves)
     # gets routed by record home. Stacking another file handler here would hand it EVERY
     # profile's records (the handlers carry no home filter), and a duplicate writer on top of
     # an existing router.

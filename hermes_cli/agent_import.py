@@ -617,7 +617,7 @@ def import_agent_command(args) -> None:
     from hermes_cli.agent_import_sync import update_sync_manifest
     try:
         update_sync_manifest(agent, source_dir.resolve(), hermes_home.resolve(), overwrite, report)
-        print_info("Source registered for sync — re-run 'hermes import-agent --sync' "
+        print_info("Source registered for sync — re-run '" + product_command("import") + "-agent --sync' "
                    "any time to pull in changes.")
     except OSError as exc:
         logger.warning("Could not update import sync manifest: %s", exc)

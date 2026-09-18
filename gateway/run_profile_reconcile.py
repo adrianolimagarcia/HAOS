@@ -265,7 +265,7 @@ def _mcp_config_reconciler(runner=None):
 
 
 def migrate_profile_identity_verb(runner):
-    """Build the ``migrate-profile-identity`` control-verb handler for ``hermes profile rename``
+    """Build the ``migrate-profile-identity`` control-verb handler for ``hermes profile rename``  haos-brand: internal-mechanism (control-verb plumbing, not user copy)
     (#111926). The live multiplexer owns the routing index in memory and writes it back
     periodically, so a CLI-side rewrite of ``agent:<old>:*`` would be clobbered on the next save;
     the CLI therefore asks this process to rekey both durable stores AND ``SessionStore._entries``.

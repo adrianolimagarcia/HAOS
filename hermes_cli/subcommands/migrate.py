@@ -6,6 +6,7 @@ from __future__ import annotations
 def build_migrate_parser(subparsers) -> None:
     """Attach the ``migrate`` subcommand to ``subparsers``."""
     from hermes_cli.migrate import cmd_migrate, cmd_migrate_xai
+    from hermes_constants import product_command
 
     migrate_parser = subparsers.add_parser(
         "migrate", help="Migrate configuration for retired models or deprecated settings",
@@ -32,10 +33,10 @@ def build_migrate_parser(subparsers) -> None:
         description="The NeMo Relay cutover stopped reading the legacy exporter variables; a .env that still "
             "carries them (and no HERMES_NEMO_RELAY_PLUGINS_TOML) exports nothing. Generate "
             "<hermes home>/relay-plugins.toml from them, point HERMES_NEMO_RELAY_PLUGINS_TOML at it, "
-            "and comment the legacy lines out. `hermes update` runs this for every profile automatically.")
+            "and comment the legacy lines out. `" + product_command("update") + "` runs this for every profile automatically.")
     migrate_relay.add_argument(
         "--all-profiles", action="store_true",
-        help="Migrate the default home and every named profile (what `hermes update` does)")
+        help="Migrate the default home and every named profile (what `" + product_command("update") + "` does)")
     migrate_relay.add_argument(
         "--no-validate", action="store_true",
         help="Skip activating the generated file through Relay's validator before writing it")

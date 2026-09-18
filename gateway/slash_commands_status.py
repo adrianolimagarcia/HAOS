@@ -17,6 +17,7 @@ from gateway.config import Platform
 from gateway.platforms.event import MessageEvent
 from gateway.session_transcript import TranscriptReadError
 from hermes_cli.status_report import build_status_fields
+from hermes_constants import product_command
 
 # Log-record parity with gateway/run.py and the origin module.
 logger = logging.getLogger("gateway.run")
@@ -69,7 +70,7 @@ async def _quiet(call, default=None):
 
 
 HISTORY_UNREADABLE = ("⚠️ I can't read this conversation's history right now (your earlier messages "
-                      "exist but cannot be loaded). Run `hermes doctor --fix` on the host, or use /new "
+                      "exist but cannot be loaded). Run `" + product_command("doctor") + " --fix` on the host, or use /new "
                       "to start fresh.")
 
 

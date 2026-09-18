@@ -47,7 +47,7 @@ def _confirm_prompt(prompt: str) -> bool:
 
 
 def _not_found(session_id) -> int:
-    print(f"No session '{session_id}'. Run: hermes sessions list to find the id.")
+    print(f"No session '{session_id}'. Run: {product_command('sessions')} list to find the id.")
     return 1
 
 
@@ -981,7 +981,7 @@ def _print_empty_store(action: str, args) -> None:
     if action == "stats":
         print("Total sessions: 0\nTotal messages: 0")
     elif action == "pinned":
-        print("[]" if getattr(args, "json", False) else "No pinned sessions. Pin one with: hermes sessions pin <session_id>")
+        print("[]" if getattr(args, "json", False) else "No pinned sessions. Pin one with: " + product_command("sessions") + " pin <session_id>")
     else:
         print("No sessions found.")
 
@@ -1000,7 +1000,7 @@ def cmd_sessions(args, sessions_parser=None):
         if observational and not _default_db_path().exists():
             return _print_empty_store(action, args)
         print("Could not open your session history database. "
-              "Run: hermes sessions repair to fix it (a backup is made first).")
+              "Run: " + product_command("sessions") + " repair to fix it (a backup is made first).")
         print(f"Details: {e}")
         return 1
     try:

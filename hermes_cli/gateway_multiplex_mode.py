@@ -4,12 +4,12 @@
 ``GATEWAY_MULTIPLEX_PROFILES`` set it. Turning the default on must not make a default gateway
 double-bind a fleet that still runs per-profile gateways (two pollers on one bot token, port
 fights), so the implicit default is a *request*: the gateway runs the same preflight
-``hermes gateway migrate --multiplex`` runs and multiplexes only when the fold would have been
+``haos gateway migrate --multiplex`` runs and multiplexes only when the fold would have been
 safe. An explicit value is never second-guessed — ``true`` multiplexes (the operator or the
 migration chose it), ``false`` keeps per-profile gateways for good (``--standalone`` pins it).
 
 The refusal is logged, never fatal: the gateway comes up standalone exactly as before the
-default flipped, and the log names the blocker plus ``hermes gateway migrate --multiplex``.
+default flipped, and the log names the blocker plus ``haos gateway migrate --multiplex``.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from hermes_constants import product_command
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ class MultiplexDecision:
 def implicit_multiplex_blocker() -> Optional[str]:
     """Why THIS process must not multiplex on the implicit default, or None when it may.
 
-    Mirrors what makes ``hermes gateway migrate --multiplex`` refuse or leave a per-profile gateway
+    Mirrors what makes ``haos gateway migrate --multiplex`` refuse or leave a per-profile gateway
     in place: a named-profile gateway serves only itself; hosts whose per-profile gateways the
     preflight cannot see (s6 slots, Windows scheduled tasks) stay standalone; a secondary that still
     runs its own gateway (live process or installed service) or a preflight blocker (duplicate bot
@@ -85,7 +87,7 @@ def implicit_multiplex_blocker() -> Optional[str]:
     active = get_active_profile_name() or "default"
     if active != "default":
         return (f"this is profile '{active}'s own gateway; only the default profile's gateway "
-                f"multiplexes (hermes gateway migrate --multiplex folds the fleet onto it)")
+                f"multiplexes ({product_command('gateway')} migrate --multiplex folds the fleet onto it)")
     # Cheap and first: a single-profile install has nothing to multiplex, and the fail-closed secret
     # scope the multiplexer arms buys it nothing. (Also keeps every embedded/test runner off the
     # service-manager probes below.) Create a second profile and restart to start serving it.
@@ -124,7 +126,7 @@ def resolve_multiplex_mode(config) -> MultiplexDecision:
 
 
 def record_multiplex_decision(decision: MultiplexDecision) -> None:
-    """Persist a guard refusal into ``gateway_state.json`` so `hermes gateway status` can show why this
+    """Persist a guard refusal into ``gateway_state.json`` so `haos gateway status` can show why this
     gateway serves one profile while the default says multiplex; any other verdict clears the field."""
     try:
         from gateway.status import write_runtime_status
@@ -137,7 +139,7 @@ def log_multiplex_decision(decision: MultiplexDecision) -> None:
     record_multiplex_decision(decision)
     if decision.source == "config" and not decision.enabled:
         logger.info("gateway.multiplex_profiles is false: serving this profile only "
-                    "(hermes gateway migrate --multiplex folds every profile onto the default gateway).")
+                    f"({product_command('gateway')} migrate --multiplex folds every profile onto the default gateway).")
     elif decision.source == "guard" and decision.reason == SINGLE_PROFILE_REASON:
         logger.info("Single-profile install: gateway.multiplex_profiles unset, serving the default profile only.")
     elif decision.source == "guard":

@@ -751,11 +751,11 @@ def _probe_failure_next_step(name: str, exc: BaseException) -> str:
     from tools.mcp_tool_errors import _format_connect_error, _is_auth_error, _unwrap_exception_group
     root = _unwrap_exception_group(exc)
     if _is_auth_error(root) or getattr(getattr(root, "response", None), "status_code", None) in (401, 403):
-        return f"The server rejected the sign-in. Run: hermes mcp login {name}"
+        return f"The server rejected the sign-in. Run: {product_command('mcp')} login {name}"
     if "missing executable" in _format_connect_error(exc):
         return (f"Install that command, or set mcp_servers.{name}.command in {display_hermes_home()}/config.yaml "
                 "to its full path.")
-    return f"Check the server is running and the URL/command in its config, then run: hermes mcp test {name}"
+    return f"Check the server is running and the URL/command in its config, then run: {product_command('mcp')} test {name}"
 
 
 def cmd_mcp_test(args):

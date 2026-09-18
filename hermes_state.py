@@ -111,8 +111,8 @@ class SessionResumeTooLargeError(ValueError):
         self.scope = scope
         super().__init__(
             f"This session is too long to reload safely ({message_count} messages; limit {limit}). "
-            "Start a fresh chat and use `hermes sessions export` to keep a copy, or raise the limit "
-            "with `hermes config set sessions.max_resume_messages 0`."
+            "Start a fresh chat and use `" + product_command("sessions") + " export` to keep a copy, or raise the limit "
+            "with `" + product_command("config") + " set sessions.max_resume_messages 0`."
         )
 
 
@@ -367,7 +367,7 @@ def format_session_db_unavailable(
     surfaces (gateway, TUI) get the one-liner; ``details=True`` (the CLI banner) appends a
     ``Details: <raw cause>`` line for the raw SQLite text. Network filesystems (NFS/SMB/FUSE/ZFS)
     cannot host SQLite's write-ahead log: when the raw cause carries one of those markers the
-    message names the network-drive suspicion, because ``hermes doctor --fix`` cannot repair a
+    message names the network-drive suspicion, because ``haos doctor --fix`` cannot repair a
     mount — only moving the file can."""
     from hermes_constants import profile_cli_selector
 
