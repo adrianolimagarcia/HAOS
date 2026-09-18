@@ -309,6 +309,20 @@ class TestProfileFlagGatewayLifecycle:
     def test_sibling_allowed(self, text):
         assert not _contains_gateway_lifecycle_command(text), f"Should allow: {text!r}"
 
+    @pytest.mark.parametrize("cli", ["hermes", "haos"])
+    def test_both_spellings_of_the_cli_are_guarded(self, cli):
+        """O guard não pode depender de qual nome do CLI foi digitado.
+
+        `haos` é o entry canônico no appliance e `hermes` o do upstream; os dois
+        apontam para o mesmo alvo. O padrão casava só `hermes`, então
+        `haos -p <próprio-perfil> gateway restart` não era bloqueado — e um cron job
+        escrito na marca do fork recriava exatamente o loop de SIGTERM-respawn que
+        este guard existe para rejeitar. Sibling continua permitido nas duas grafias.
+        """
+        assert _contains_gateway_lifecycle_command(f"{cli} -p zeus gateway restart"), cli
+        assert _contains_gateway_lifecycle_command(f"{cli} --profile zeus gateway stop"), cli
+        assert not _contains_gateway_lifecycle_command(f"{cli} -p venus gateway restart"), cli
+
     @pytest.mark.parametrize("text", [
         "hermes -p zeus gateway start",
         "hermes -p zeus gateway start --all",

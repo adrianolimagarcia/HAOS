@@ -2149,6 +2149,28 @@ class TestLifecycleGuardLaunchctlParity:
         ):
             assert contains_gateway_lifecycle_command(cmd) is True, cmd
 
+    def test_approval_layer_covers_the_renamed_invocations(self):
+        """O mesmo princípio do hard block vale para a camada de aprovação.
+
+        O padrão casava só `hermes` enquanto a própria mensagem renderiza
+        ``product_command("update")`` — ou seja, ela dizia "haos update (restarts gateway,
+        kills running agents)" para um comando que o padrão não reconhecia. No appliance,
+        onde `haos` é o entry canônico, `haos update` e `haos -p X gateway restart`
+        passavam sem prompt. Ambas as grafias ficam cobertas: scripts e wrappers
+        pré-rename ainda escrevem `hermes`.
+        """
+        for cmd in (
+            "haos update",
+            "haos gateway restart",
+            "haos gateway stop",
+            "haos -p ade gateway restart",
+            "haos --profile ade gateway stop",
+            "hermes update",
+            "hermes -p ade gateway restart",
+        ):
+            dangerous, _, _ = detect_dangerous_command(cmd)
+            assert dangerous is True, cmd
+
     def test_bypassable_layer_is_never_stricter(self):
         """One-directional invariant: anything ``detect_dangerous_command``
         flags as gateway lifecycle, the hard block must also catch.
