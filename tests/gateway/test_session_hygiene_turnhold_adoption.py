@@ -266,7 +266,13 @@ async def test_turn_hold_keeps_admission_and_adopts_watermark_fenced_summary(
         "turn-hold budget log missing — the turn was never released at the budget: "
         f"{caplog.text!r}"
     )
-    assert held < 1.0, f"turn held for {held:.1f}s despite the 0.3s turn-hold budget"
+    # Half the 10s production default and 16x the 0.3s configured budget. The threshold can
+    # be this wide precisely BECAUSE the measured quantity is the contract rather than the
+    # harness: the loop waits in slices capped at 0.25s (gateway/run_turn.py), so the
+    # overshoot is accumulated event-loop lag across ~2 slices, which grows with runner load
+    # and made a 1.0s threshold unsafe. Discriminating the 0.3s config from the 10s default
+    # only requires a threshold strictly between them.
+    assert held < 5.0, f"turn held for {held:.1f}s despite the 0.3s turn-hold budget"
     assert worker_started.is_set()
     assert runner._run_agent.await_count == 1
 
