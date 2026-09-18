@@ -19,6 +19,13 @@ from tui_gateway.hosted_room_peer_http import PeerRunsHTTPClient
 from tui_gateway.hosted_room_peer_transport import PeerMemberRoute
 from tui_gateway.hosted_room_service import HostedRoomService
 
+# Liveness probe budget for "did the peer's member event arrive at all?", not "how fast is
+# delivery?". Sized at 5s it measured the runner instead, and the 2026-09-18 full-suite run
+# caught it: test_in_process_scoped_transport_contract_finishes_headlessly failed on attempt 1
+# and passed on retry. A loaded 16-worker runner spends seconds scheduling the peer thread.
+# 30s keeps real headroom while still failing fast against a genuinely dropped event.
+_LIVENESS_SECONDS = 30.0
+
 
 class _LocalRPC:
     def resolve_exact(self, **kwargs):
@@ -153,7 +160,7 @@ async def test_in_process_scoped_transport_contract_finishes_headlessly(
             event_id="user-1",
             payload={"text": "@reviewer inspect", "thread_id": "thread-1"},
         )
-        deadline = asyncio.get_running_loop().time() + 5
+        deadline = asyncio.get_running_loop().time() + _LIVENESS_SECONDS
         while asyncio.get_running_loop().time() < deadline:
             if any(
                 event["kind"] == "message.member"

@@ -174,7 +174,7 @@ tests/gateway/test_feishu_profile_scope_hops.py 1
 tests/gateway/test_feishu_ws_multiplex_isolation.py 3
 tests/gateway/test_finalize_session_off_loop.py 1
 tests/gateway/test_free_tier_startup_notice.py 1
-tests/gateway/test_gateway_shutdown.py 3
+tests/gateway/test_gateway_shutdown.py 2
 tests/gateway/test_handoff_watcher_async_db.py 1
 tests/gateway/test_handoff_watcher_multiprofile.py 4
 tests/gateway/test_handoff_watcher_resilience.py 6

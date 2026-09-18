@@ -446,7 +446,7 @@ def _fixed_clock():
     return lambda: now[0]
 
 
-def _wait_for(predicate, *, timeout: float = 5.0) -> None:
+def _wait_for(predicate, *, timeout: float = _LIVENESS_SECONDS) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():

@@ -12,6 +12,14 @@ from gateway.session import build_session_key
 from tests.gateway.restart_test_helpers import make_restart_runner, make_restart_source
 from tools import browser_tool_lifecycle as bt_lifecycle
 
+# Liveness probe budget: "did `runner.stop()` reach the adapter's disconnect at all?", not
+# "how fast is it?". Sized at 0.75s it measured the runner's load instead, and the 2026-09-18
+# full-suite run caught it: test_unexpected_signal_starts_teardown_after_bounded_interrupt_grace
+# failed on attempt 1 and passed on retry. A loaded 16-worker runner spends seconds scheduling
+# a task. The grace timeout under test is set to 0.01s by the test itself, so this bound only
+# decides liveness; 30s keeps real headroom while still failing fast on a genuine hang.
+_LIVENESS_SECONDS = 30.0
+
 
 @pytest.mark.asyncio
 async def test_cancel_background_tasks_cancels_inflight_message_processing():
@@ -188,7 +196,7 @@ async def test_unexpected_signal_starts_teardown_after_bounded_interrupt_grace()
         "gateway.status.write_runtime_status"
     ):
         stop_task = asyncio.create_task(runner.stop())
-        await asyncio.wait_for(disconnect_started.wait(), timeout=0.75)
+        await asyncio.wait_for(disconnect_started.wait(), timeout=_LIVENESS_SECONDS)
         await stop_task
 
     assert runner._shutdown_event.is_set() is True
