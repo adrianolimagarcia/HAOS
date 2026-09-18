@@ -14,6 +14,16 @@ from hermes_cli.dashboard_auth.base import ProviderError, RefreshExpiredError, S
 from hermes_cli.dashboard_auth.routes import router
 from tests.hermes_cli.conftest_dashboard_auth import StubAuthProvider
 
+# Every wait in this file is a LIVENESS probe — "did the other thread reach the point at all?" —
+# never a deadline on how long the code under test may take. The window they cover is dominated by
+# per-request `TestClient` construction (a fresh ASGI portal and event loop per request, in a worker
+# thread), not by the single-flight logic under test, so a tight budget measures the runner's load.
+# Measured: `provider.entered.wait(3)` in test_cookie_gate_burst... times out at 3.001s under 12 CPU
+# burners on an 8-core box, which is the flake the census recorded. The asserted contracts
+# (statuses, `provider.calls`, one scan/flight serving the burst) are unchanged; a genuine hang is
+# still caught by the runner's per-file subprocess timeout.
+_LIVENESS_SECONDS = 30.0
+
 
 class Provider(StubAuthProvider):
     def __init__(self, name, outcome="success"):
@@ -28,7 +38,7 @@ class Provider(StubAuthProvider):
     def refresh_session(self, *, refresh_token):
         self.calls += 1
         self.entered.set()
-        assert self.release.wait(5), "test provider timed out"
+        assert self.release.wait(_LIVENESS_SECONDS), "test provider timed out"
         if self.outcome == "expired":
             raise RefreshExpiredError("expired")
         if self.outcome == "outage":
@@ -123,13 +133,13 @@ def test_concurrent_refresh_uses_concrete_provider_identity(outcome, independent
     register_provider(other)
     with ThreadPoolExecutor(max_workers=3) as pool:
         first = pool.submit(coalesced, "same-token", "owner")
-        assert owner.entered.wait(3)
+        assert owner.entered.wait(_LIVENESS_SECONDS)
         second = pool.submit(coalesced, "same-token", "other")
         try:
             if independent:
-                assert other.entered.wait(3), "unrelated providers must not share a lock"
+                assert other.entered.wait(_LIVENESS_SECONDS), "unrelated providers must not share a lock"
             else:
-                deadline = time.monotonic() + 3
+                deadline = time.monotonic() + _LIVENESS_SECONDS
                 while time.monotonic() < deadline:
                     with replay._guard:
                         if any(key[0] == id(owner) and flight.users == 2 for key, flight in replay._flights.items()):
@@ -144,10 +154,10 @@ def test_concurrent_refresh_uses_concrete_provider_identity(outcome, independent
         if outcome == "outage":
             for future in (first, second):
                 with pytest.raises(ProviderError):
-                    future.result(timeout=3)
+                    future.result(timeout=_LIVENESS_SECONDS)
             assert owner.calls == 2
         else:
-            results = [first.result(timeout=3), second.result(timeout=3)]
+            results = [first.result(timeout=_LIVENESS_SECONDS), second.result(timeout=_LIVENESS_SECONDS)]
             if outcome == "expired":
                 assert results == [None, None]
             else:
@@ -172,7 +182,7 @@ class _RotatingReuseDetectingProvider(Provider):
             raise RefreshExpiredError("refresh token reuse detected")
         self.rotated.add(refresh_token)
         self.entered.set()
-        assert self.release.wait(5), "test provider timed out"
+        assert self.release.wait(_LIVENESS_SECONDS), "test provider timed out"
         return Session(user_id="u", email="u@example.test", display_name="u", org_id="o",
                        provider=self.name, expires_at=int(time.time()) + 900,
                        access_token="fresh-at", refresh_token=f"rt-{self.calls}")
@@ -207,8 +217,8 @@ def test_cookie_gate_burst_with_stale_rt_rotates_once(gated_web_app):
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(call) for _ in range(4)]
-        assert provider.entered.wait(3)
+        assert provider.entered.wait(_LIVENESS_SECONDS)
         provider.release.set()
-        statuses = sorted(f.result(timeout=10).status_code for f in futures)
+        statuses = sorted(f.result(timeout=_LIVENESS_SECONDS).status_code for f in futures)
     assert statuses == [200, 200, 200, 200]
     assert provider.calls == 1

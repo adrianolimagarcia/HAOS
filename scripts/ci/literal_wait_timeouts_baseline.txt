@@ -325,7 +325,7 @@ tests/hermes_cli/test_plugins_hub_perf_guard.py 2
 tests/hermes_cli/test_prompt_text_input_thread_safety.py 1
 tests/hermes_cli/test_pty_bridge.py 2
 tests/hermes_cli/test_pty_session.py 5
-tests/hermes_cli/test_refresh_singleflight.py 12
+tests/hermes_cli/test_refresh_singleflight.py 2
 tests/hermes_cli/test_relay_shared_metrics.py 5
 tests/hermes_cli/test_relay_shared_metrics_runtime.py 2
 tests/hermes_cli/test_resolve_token_memo.py 1
