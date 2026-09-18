@@ -34,6 +34,18 @@ from hermes_state import SessionDB
 # headroom; a genuinely stuck worker still fails against the runner's 900s file ceiling.
 _LIVENESS_SECONDS = 30.0
 
+# The HOST FENCE is a second, independent cause of the same failure, and it needs its own fix:
+# `_fence_gated_worker` checks the fence BEFORE calling the worker, so a job that starts LATE —
+# executor momentarily busy — is skipped outright ("Skipping stale compression job: fence
+# cancelled before start"). With a 0.6s fence the job had 1.2s of ceiling to start; under the
+# parallel runner it did not, so the worker never ran and `..._started.wait()` failed.
+# 15s idle / 45s ceiling clears a loaded runner's dispatch jitter while staying BELOW
+# `_BLOCKED_SECONDS`, so the
+# blocked engine still outlives the fence and the test cannot pass vacuously.
+_HOST_FENCE_SECONDS = 15.0
+_HOST_CEILING_SECONDS = 45.0
+_BLOCKED_SECONDS = 90.0
+
 
 def _drain_compression_admissions() -> None:
     """Wait until no compression job holds a pool slot, then assert it.
@@ -124,7 +136,7 @@ def test_f3_mutating_engine_cannot_touch_live_transcript_after_timeout(
     # Fast host timeout for the owned wrapper.
     monkeypatch.setattr(
         "agent.conversation_compression.resolve_context_compression_timeouts",
-        lambda cfg=None: (0.6, 1.2),
+        lambda cfg=None: (_HOST_FENCE_SECONDS, _HOST_CEILING_SECONDS),
     )
 
     engine_started = threading.Event()
@@ -136,7 +148,7 @@ def test_f3_mutating_engine_cannot_touch_live_transcript_after_timeout(
         engine_started.set()
         msgs[:] = [{"role": "assistant", "content": "ENGINE GARBAGE"}]
         mutated_lists.append(msgs)
-        assert release_engine.wait(timeout=30)
+        assert release_engine.wait(timeout=_BLOCKED_SECONDS)
         return msgs
 
     agent.context_compressor.compress.side_effect = _mutating_engine
@@ -194,7 +206,7 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
     monkeypatch.setattr(
         "agent.conversation_compression.resolve_context_compression_timeouts",
         # Allow provider-thread startup under the parallel runner before timing out.
-        lambda cfg=None: (2.0, 4.0),
+        lambda cfg=None: (_HOST_FENCE_SECONDS, _HOST_CEILING_SECONDS),
     )
 
     provider_started = threading.Event()
@@ -202,7 +214,7 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
 
     def _blocked_provider(_kwargs):
         provider_started.set()
-        assert release_provider.wait(timeout=30)
+        assert release_provider.wait(timeout=_BLOCKED_SECONDS)
         return "late-provider-result"
 
     def _compress_with_protected_provider(msgs, **_kwargs):
@@ -272,7 +284,7 @@ def test_f4_five_step_stale_holder_regression(tmp_path: Path) -> None:
 
     def _blocked_summary(*_args, **_kwargs):
         summary_started.set()
-        assert release_summary.wait(timeout=30)  # step 1: blocked
+        assert release_summary.wait(timeout=_BLOCKED_SECONDS)  # step 1: blocked
         return [
             {"role": "user", "content": "[CONTEXT COMPACTION] stale summary"},
             {"role": "user", "content": "tail"},
@@ -374,7 +386,7 @@ def test_f5_session_contextvar_rebound_after_rotation(
     # (the caller's ContextVar can only be repaired by the caller).
     monkeypatch.setattr(
         "agent.conversation_compression.resolve_context_compression_timeouts",
-        lambda cfg=None: (5.0, 10.0),
+        lambda cfg=None: (_HOST_FENCE_SECONDS, _HOST_CEILING_SECONDS),
     )
 
     # Simulate the gateway's bound session context for the caller.
