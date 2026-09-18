@@ -35,6 +35,37 @@ from hermes_state import SessionDB
 _LIVENESS_SECONDS = 30.0
 
 
+def _drain_compression_admissions() -> None:
+    """Wait until no compression job holds a pool slot, then assert it.
+
+    The owned wrapper REFUSES rather than queues when the pool is full
+    (``run_compress_context_with_progress_timeout``: "a queued job would wait out its budget
+    unstarted and run stale later"), returning the messages unchanged and NEVER running the
+    worker. A worker wedged by an earlier test in this file holds its slot until it returns, so a
+    test that needs its own worker to run must let the pool drain first. Without this its
+    ``..._started.wait()`` fails against a worker that was never dispatched — which is how this
+    file flaked under the full suite:
+    ``test_f3_mutating_engine_cannot_touch_live_transcript_after_timeout`` failed on
+    ``assert engine_started.wait(timeout=_LIVENESS_SECONDS)``.
+
+    A longer liveness budget cannot fix that (the worker is refused, not slow) and neither can a
+    longer host fence (the refusal returns before any fence matters).
+    """
+    from agent import conversation_compression as cc
+
+    deadline = time.time() + _LIVENESS_SECONDS
+    while time.time() < deadline:
+        with cc._compress_admission_lock:
+            if cc._compress_admitted_count == 0:
+                return
+        time.sleep(0.02)
+    with cc._compress_admission_lock:
+        assert cc._compress_admitted_count == 0, (
+            "compression pool never drained: a wedged worker still holds a slot, so this test's "
+            "own worker would be refused rather than dispatched"
+        )
+
+
 def _build_agent_with_db(db: SessionDB, session_id: str, **compressor_kwargs):
     with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
         from run_agent import AIAgent
@@ -86,6 +117,7 @@ def test_f3_mutating_engine_cannot_touch_live_transcript_after_timeout(
     db = SessionDB(db_path=tmp_path / "state.db")
     session_id = "F3_ISOLATION"
     db.create_session(session_id, source="cli")
+    _drain_compression_admissions()
     agent = _build_agent_with_db(db, session_id)
     agent._cached_system_prompt = "sys"
 
@@ -152,14 +184,7 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
     from agent import auxiliary_client as aux
     from agent import conversation_compression as cc
 
-    deadline = time.time() + _LIVENESS_SECONDS
-    while time.time() < deadline:
-        with cc._compress_admission_lock:
-            if cc._compress_admitted_count == 0:
-                break
-        time.sleep(0.02)
-    with cc._compress_admission_lock:
-        assert cc._compress_admitted_count == 0
+    _drain_compression_admissions()
 
     db = SessionDB(db_path=tmp_path / "state.db")
     session_id = "F3_PROVIDER_OWNER_RELEASE"
@@ -168,15 +193,8 @@ def test_host_timeout_releases_pool_slot_while_protected_provider_is_still_block
     agent._cached_system_prompt = "sys"
     monkeypatch.setattr(
         "agent.conversation_compression.resolve_context_compression_timeouts",
-        # Allow provider-thread startup under the parallel runner before timing out. 2s was not
-        # enough: under 16 workers the fence could expire before the worker ever reached the
-        # provider call, so `provider_started` was never set and the file failed on attempt 1
-        # (passing on retry). 15s clears a loaded runner's scheduling jitter.
-        #
-        # It must stay BELOW the 30s the blocked provider itself waits (`release_provider.wait`
-        # below), or the provider would give up on its own and the fence would prove nothing —
-        # the test would pass vacuously.
-        lambda cfg=None: (15.0, 30.0),
+        # Allow provider-thread startup under the parallel runner before timing out.
+        lambda cfg=None: (2.0, 4.0),
     )
 
     provider_started = threading.Event()
@@ -242,6 +260,7 @@ def test_f4_five_step_stale_holder_regression(tmp_path: Path) -> None:
     db = SessionDB(db_path=tmp_path / "state.db")
     session_id = "F4_FIVE_STEP"
     db.create_session(session_id, source="telegram")
+    _drain_compression_admissions()
     db.append_message(session_id, "user", "original durable")
 
     agent = _build_agent_with_db(db, session_id)
@@ -346,6 +365,7 @@ def test_f5_session_contextvar_rebound_after_rotation(
     db = SessionDB(db_path=tmp_path / "state.db")
     parent_sid = "F5_CTXVAR_PARENT"
     db.create_session(parent_sid, source="telegram")
+    _drain_compression_admissions()
     agent = _build_agent_with_db(db, parent_sid)
     agent.compression_in_place = False  # rotation mode
     agent._cached_system_prompt = "sys"
