@@ -18,6 +18,18 @@ from tools.delegate_tool_dispatch import _Batch, _dispatch_background
 from tools.interrupt import is_interrupted, set_interrupt
 from tools.process_registry import process_registry
 
+# Every numeric wait in this file is a LIVENESS probe — "did the child start, did it stop,
+# did the registry publish a state?" — not a latency contract. Sized at 5s they measured
+# the runner instead: the 2026-09-18 full-suite run caught
+# `test_rejected_background_child_stops_with_parent[soft-running-capacity]` in this file.
+#
+# The loops feed real contract assertions (`assert not worker.is_alive()`, `assert
+# child.finished.is_set()`), which is the trap worth naming: a liveness timeout surfaces
+# as a product-shaped failure, so a slow runner reads as broken cancellation. 30s answers
+# the liveness question with headroom; a genuinely stuck child still fails against the
+# runner's 900s file ceiling.
+_LIVENESS_SECONDS = 30.0
+
 
 class _Parent(InterruptControlMixin):
     def __init__(self):
@@ -163,7 +175,7 @@ def test_rejected_background_child_stops_with_parent(
             max_async_children=1,
         )
         assert accepted["status"] == "dispatched"
-        assert occupied.wait(5)
+        assert occupied.wait(_LIVENESS_SECONDS)
     elif rejection == "schedule_failure":
         class RejectingExecutor:
             def submit(self, *_args, **_kwargs):
@@ -195,7 +207,7 @@ def test_rejected_background_child_stops_with_parent(
         rejected_admission = 2 if background_child is not None else 1
         if admissions == rejected_admission:
             admission_started.set()
-            assert continue_admission.wait(5)
+            assert continue_admission.wait(_LIVENESS_SECONDS)
         result = dispatch(**kwargs)
         if result.get("status") == "dispatched":
             accepted_ids.append(result["delegation_id"])
@@ -212,20 +224,20 @@ def test_rejected_background_child_stops_with_parent(
     worker = threading.Thread(target=run_dispatch, daemon=True)
     worker.start()
     try:
-        assert admission_started.wait(5)
+        assert admission_started.wait(_LIVENESS_SECONDS)
         if background_child is not None:
-            assert background_child.started.wait(5)
+            assert background_child.started.wait(_LIVENESS_SECONDS)
         request_stop = parent.hard_interrupt if stop_kind == "hard" else parent.interrupt
         stop_message = "user correction or stop request"
         if stop_timing == "during_admission":
             request_stop(stop_message)
         continue_admission.set()
-        assert child.started.wait(5)
+        assert child.started.wait(_LIVENESS_SECONDS)
         if stop_timing == "running":
             request_stop(stop_message)
 
-        assert child.stop_received.wait(5), "fallback lost parent cancellation ownership"
-        assert child.unwinding.wait(5)
+        assert child.stop_received.wait(_LIVENESS_SECONDS), "fallback lost parent cancellation ownership"
+        assert child.unwinding.wait(_LIVENESS_SECONDS)
         assert child.observed_interrupt == (stop_message, stop_kind == "hard")
         if background_child is not None:
             assert not background_child.stop_received.is_set()
@@ -234,7 +246,7 @@ def test_rejected_background_child_stops_with_parent(
         assert not outcome.done(), "dispatch returned while its child still owned resources"
         assert child.close_count == 0
         child.allow_finish.set()
-        result = outcome.result(timeout=5)
+        result = outcome.result(timeout=_LIVENESS_SECONDS)
         if background_child is None:
             assert "SYNCHRONOUSLY" in result["note"]
             assert result["results"][0]["status"] == "interrupted"
@@ -242,7 +254,7 @@ def test_rejected_background_child_stops_with_parent(
             assert result["status"] == "dispatched"
             assert result["inline_results"][0]["status"] == "interrupted"
             assert not background_child.stop_received.is_set()
-            assert pending_child.unwinding.wait(5)
+            assert pending_child.unwinding.wait(_LIVENESS_SECONDS)
             assert pending_child.observed_interrupt == (stop_message, stop_kind == "hard")
         assert child.finished.is_set()
         assert child.close_count == 1
@@ -253,20 +265,20 @@ def test_rejected_background_child_stops_with_parent(
         if not child.finished.is_set():
             child.hard_interrupt("test teardown")
         child.allow_finish.set()
-        worker.join(timeout=5)
+        worker.join(timeout=_LIVENESS_SECONDS)
         release_occupier.set()
         if background_child is not None:
             async_delegation.interrupt_for_session(parent_session_id=parent.session_id)
             for extra in (background_child, pending_child):
                 extra.allow_finish.set()
-                assert extra.closed.wait(5)
+                assert extra.closed.wait(_LIVENESS_SECONDS)
                 assert extra.finished.is_set()
                 assert extra.close_count == 1
                 assert not extra.closed_while_running
-            completed_ids = {registry_state.get(timeout=5)["delegation_id"] for _ in accepted_ids}
+            completed_ids = {registry_state.get(timeout=_LIVENESS_SECONDS)["delegation_id"] for _ in accepted_ids}
             assert completed_ids == set(accepted_ids)
         if rejection == "capacity":
-            completion = registry_state.get(timeout=5)
+            completion = registry_state.get(timeout=_LIVENESS_SECONDS)
             assert completion["delegation_id"] == accepted["delegation_id"]
         assert not worker.is_alive()
 
@@ -276,7 +288,7 @@ def test_accepted_background_child_keeps_registry_cancellation_ownership(registr
     try:
         result = json.loads(_dispatch_background(_batch(parent, child)))
         assert result["status"] == "dispatched"
-        assert child.started.wait(5)
+        assert child.started.wait(_LIVENESS_SECONDS)
         parent.interrupt()
         # Parent interrupt fan-out is synchronous; observing it return establishes
         # that a detached child did not receive it without a timing-based wait.
@@ -287,11 +299,11 @@ def test_accepted_background_child_keeps_registry_cancellation_ownership(registr
         assert parent._hard_interrupt_requested.is_set()
         assert not child.stop_received.is_set()
         assert async_delegation.interrupt_for_session(parent_session_id=parent.session_id) == 1
-        assert child.unwinding.wait(5)
+        assert child.unwinding.wait(_LIVENESS_SECONDS)
         assert child.observed_interrupt[1] is True
         assert child.close_count == 0
         child.allow_finish.set()
-        completion = registry_state.get(timeout=5)
+        completion = registry_state.get(timeout=_LIVENESS_SECONDS)
         assert completion["delegation_id"] == result["delegation_id"]
         assert completion["results"][0]["status"] == "interrupted"
         assert child.finished.is_set()
@@ -302,4 +314,4 @@ def test_accepted_background_child_keeps_registry_cancellation_ownership(registr
         if not child.finished.is_set():
             child.hard_interrupt("test teardown")
         child.allow_finish.set()
-        assert child.closed.wait(5)
+        assert child.closed.wait(_LIVENESS_SECONDS)
