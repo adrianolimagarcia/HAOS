@@ -123,6 +123,15 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
    publicar um release. `--bump-only` roda **antes** de qualquer consulta de tag,
    de propósito: avançar a versão não pode depender de tags existirem.
 
+   **O patch é um contador monotônico deliberado, não semver** (confirmado pelo
+   dono, 19/09/2026): `0.21.5` hoje, `0.21.6` no próximo, `0.21.9` → `0.21.10` →
+   `0.21.11`, indefinidamente. Não há reset, não há significado de
+   compatibilidade, e o minor não se move. Isso é intencional — **não "conserte"**
+   para semver, não resete o patch, e não trate um patch de três dígitos como
+   sinal de erro. `bump_version` faz aritmética inteira pura, então
+   `0.21.999` → `0.21.1000` funciona sem padding nem rollover (verificado).
+   O `__release_date__` (CalVer) é independente e continua sendo a data.
+
    A versão vive em `hermes_cli/__init__.py` (`__version__` **e**
    `__release_date__`), `pyproject.toml`, `apps/desktop/package.json` e nos
    arquivos do bootstrap-installer (`package.json`, `tauri.conf.json`,

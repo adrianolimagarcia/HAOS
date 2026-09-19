@@ -14,8 +14,14 @@ past that); see the **routing table** at the end and read the area file before e
 >
 > **Todo commit no `main` incrementa +1 na versão** (`0.21.4` → `0.21.5`), no
 > mesmo commit. Rode `python scripts/release.py --bump patch --bump-only` — ele
-> escreve os arquivos de versão e para, sem commitar, taguear ou publicar. A
-> versão vive em `hermes_cli/__init__.py` (`__version__` e `__release_date__`),
+> escreve os arquivos de versão e para, sem commitar, taguear ou publicar.
+>
+> O patch é um **contador monotônico deliberado, não semver**: `0.21.9` →
+> `0.21.10` → `0.21.11`, indefinidamente, sem reset e sem significar
+> compatibilidade. Isso é intencional (dono, 19/09/2026) — não "conserte" para
+> semver nem resete o patch ao mexer no minor.
+>
+> A versão vive em `hermes_cli/__init__.py` (`__version__` e `__release_date__`),
 > `pyproject.toml`, `apps/desktop/package.json` e nos arquivos do
 > bootstrap-installer. Num install editable, rode `pip install -e . --no-deps`
 > depois, senão o metadado fica para trás — o agente lê a própria versão por
