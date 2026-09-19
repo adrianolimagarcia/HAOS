@@ -148,6 +148,30 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
    mostrava o certo e o resto do sistema, não. Um `git pull` sozinho não
    atualiza o metadado; ele é regenerado só pelo `pip install`.
 
+7. **Os assets do appliance seguem o `haos update` desde 19/09/2026.** O `haos-edge`
+   (binário Rust, vendorizado em `distro/.../usr/local/bin/haos-edge`) e os scripts
+   que o instalador copia para `HAOS_HOME/scripts/` **não** vivem na árvore Python,
+   então o pull não os alcançava — só `scripts/install_haos.sh` os escrevia. O
+   sintoma é silencioso: o lado Python fica atual, o appliance *parece* atualizado,
+   e `haos status` / `haos team` seguem rodando código velho. Aconteceu
+   (19/09/2026): o `haos-edge` instalado estava **6 commits atrás** do fonte,
+   faltando a autenticação de sessão persistente do WebUI e uma correção do
+   `haos doc search`; o `haos_memory_populate.py` do `HAOS_HOME` também estava
+   atrás. Os dois só foram corrigidos à mão. Agora a fase de manutenção pós-update
+   chama `sync_appliance_assets` (`hermes_cli/update_cmd_assets.py`), que copia só
+   o que difere e é no-op em install upstream/container (nunca cria o diretório
+   `scripts/`, que é do instalador).
+
+   **Armadilha ao rodar `haos update`:** o wrapper resolve o home por `$HOME`
+   (`HAOS_HOME="${HAOS_HOME:-$USER_HOME/.haos}"`). De um shell cujo `HOME` não é
+   `/root` — sessão de harness, cron com ambiente limpo — ele troca o código mas
+   **não reinicia o gateway**: enumera perfis a partir de outro home, não acha
+   serviço nenhum e reporta `Running Hermes services: none detected` enquanto os
+   três `haos-*.service` estão ativos. O update "dá certo" e o serviço segue no
+   código velho. Rode com `HOME=/root` (ou `HAOS_HOME=/root/.haos` explícito) e
+   confirme com `haos update --plan` antes de confiar no restart — o plan lista o
+   pid e o `code_sha` de cada gateway que será reiniciado.
+
 ### 5.1 Armadilha: artefatos ignorados do distro travam o build Python (já pago em sangue)
 
 Sintoma: `uv sync`, `uv lock` ou qualquer `pip install -e .` **não termina** —
