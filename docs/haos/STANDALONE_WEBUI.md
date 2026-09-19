@@ -68,14 +68,9 @@ bin/haos web                       # default: 127.0.0.1:8788, data ~/.haos
 bin/haos web --port 8788 --data-dir /caminho/do/data_dir
 ```
 
-Acesse `http://127.0.0.1:8788/`. `/api/state` expõe o mesmo payload em JSON.
+Acesse `http://127.0.0.1:8788/` localmente ou `http://<IP_TAILSCALE>:8788/` quando iniciado com `--host <IP_TAILSCALE>`. `/api/state` expõe o mesmo payload em JSON.
 
-> **Sem autenticação (fail-safe no bind).** Este servidor Python **não tem
-> login**: quem alcança a porta alcança o terminal PTY, o editor do
-> `config.yaml` e as tasks. Por isso o bind padrão é **`127.0.0.1`** (acesso
-> remoto por túnel SSH) e `--host 0.0.0.0` (ou `HAOS_HOST`) emite um aviso
-> explícito — exponha só atrás de um proxy com TLS + autenticação. Para acesso
-> remoto autenticado no appliance, use o daemon Rust (§3.1), que tem login.
+> **Sem autenticação (rede confiável בלבד).** Este servidor Python **não tem login**: quem alcança a porta alcança o terminal PTY, o editor do `config.yaml` e as tasks. O bind padrão é `127.0.0.1`; para uma rede Tailscale, use explicitamente um endereço IPv4 `100.64.0.0/10`. Endereços públicos, wildcard e outras redes são recusados. Use somente em uma tailnet controlada.
 
 ## 3.1 Acesso ao daemon Rust (`haos-edge server`) — autenticação
 

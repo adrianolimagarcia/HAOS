@@ -1475,11 +1475,13 @@ def make_standalone_server(
     """Constrói o servidor standalone. Retorna (server, state, base_url)."""
     try:
         parsed_host = ipaddress.ip_address(host)
-        loopback = parsed_host.version == 4 and parsed_host.is_loopback
+        loopback = parsed_host.is_loopback
+        tailscale = parsed_host.version == 4 and ipaddress.ip_address(host) in ipaddress.ip_network("100.64.0.0/10")
     except ValueError:
         loopback = host == "localhost"
-    if not loopback:
-        raise ValueError("standalone Control Plane only supports loopback; use haos-edge or an authenticated TLS proxy for remote access")
+        tailscale = False
+    if not (loopback or tailscale):
+        raise ValueError("standalone Control Plane only supports loopback or Tailscale CGNAT addresses")
     if data_dir is not None:
         data_dir = Path(data_dir)
     else:

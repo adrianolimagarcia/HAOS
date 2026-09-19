@@ -11,6 +11,7 @@ import os
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import urllib.request
 from pathlib import Path
 
@@ -482,7 +483,17 @@ class TestSymbolIndexCache(unittest.TestCase):
 
 
 class TestStandaloneDefaults(unittest.TestCase):
-    def test_default_data_dir_isolated_from_hermes(self):
+    def test_non_loopback_hosts_are_rejected(self):
+        for host in ("0.0.0.0", "192.0.2.1"):
+            with self.assertRaises(ValueError):
+                make_standalone_server(host=host, port=0)
+
+    def test_tailscale_host_is_allowed(self):
+        with patch("hermes.platform.webui.standalone.HAOSThreadingHTTPServer") as server_cls:
+            server_cls.return_value.server_address = ("100.64.0.1", 4321)
+            server, state, base = make_standalone_server(host="100.64.0.1", port=0)
+            self.assertTrue(base.startswith("http://100.64.0.1:"))
+
         with tempfile.TemporaryDirectory() as tmp_haos:
             old_haos_home = os.environ.get("HAOS_HOME")
             old_haos_data = os.environ.get("HAOS_DATA_DIR")
