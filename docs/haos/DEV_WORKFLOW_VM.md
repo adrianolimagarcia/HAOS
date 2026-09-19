@@ -111,6 +111,28 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
 4. Restauração do haos-setup DEV (ver §2) no snapshot — round-trip validado.
 5. Validação do squashfs (hostname, TODOS os `vmlinuz-*`, venv via
    `usr/bin/python3.13`, ausência de machine-id/chaves) + rename do ISO.
+6. **Versionamento: toda compilação incrementa +1 na versão** (regra do dono,
+   19/09/2026). Antes de gerar o artefato, suba o patch: `0.21.4` → `0.21.5`.
+   A versão vive em **dois** arquivos rastreados e eles andam juntos —
+   `hermes_cli/__init__.py` (`__version__` **e** `__release_date__`) e
+   `pyproject.toml` (`version`) — mais `apps/desktop/package.json` quando
+   existir. O caminho canônico é `python scripts/release.py --bump patch`, com
+   uma armadilha: **sem `--publish` ele é dry run puro**. `update_version_files`
+   só é chamado dentro de `if args.publish:` (`scripts/release.py:2614-2621`),
+   então o comando imprime o preview e **não escreve nada**. `--publish`
+   incrementa, commita, cria tag anotada e publica o release — mais do que um
+   bump, e provavelmente não é o que se quer a cada build.
+
+   **Nunca deixe o metadado pip para trás.** Em install editable
+   (`pip install -e .`), `importlib.metadata.version("hermes-agent")` continua
+   reportando o valor antigo até rodar `pip install -e . --no-deps` novamente. E
+   o agente lê a própria versão por esse caminho em quatro lugares:
+   `agent/transports/codex_app_server_session.py`,
+   `gateway/platforms/qqbot/utils.py`, `gateway/platforms/api_server.py` e
+   `hermes_cli/plugins_manifest.py`. Já aconteceu (19/09/2026): código em
+   `0.21.4`, dist-info em `0.21.3`, `egg-info` em `0.21.2` — o `haos --version`
+   mostrava o certo e o resto do sistema, não. Um `git pull` sozinho não
+   atualiza o metadado; ele é regenerado só pelo `pip install`.
 
 ### 5.1 Armadilha: artefatos ignorados do distro travam o build Python (já pago em sangue)
 
