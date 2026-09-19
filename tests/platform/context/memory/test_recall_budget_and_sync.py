@@ -210,6 +210,30 @@ def test_an_explicit_vault_still_wins() -> None:
     assert ObsidianAdapter("/tmp/vault-explicito").vault_path == Path("/tmp/vault-explicito")
 
 
+def test_a_projection_lands_in_the_vault_and_the_next_migration_skips_it(tmp_path: Path) -> None:
+    """O ciclo vault<->projeção só é seguro porque a projeção escreve onde a migração lê.
+
+    Antes da correção do adapter a projeção gravava num vault relativo ao CWD, então este
+    guarda nunca disparava contra o vault real: não havia projeção lá para reconhecer.
+    """
+    vault = tmp_path / "vault"
+    coordinator = FederatedMemoryCoordinator(vault_path=vault)
+    try:
+        store = coordinator.canonical_store
+        store.append(content="decisao de arquitetura sobre kubernetes", scope="project", kind="decision")
+        coordinator.projection_runner.drain(limit_per_projection=8)
+
+        written = list(vault.rglob("*.md"))
+        assert written, "a projeção obsidian precisa escrever no vault que a migração lê"
+
+        migrator = MemoryMigrator(store, coordinator.projection_runner)
+        report = migrator.backfill_obsidian(vault, rebuild=False)
+        assert report.skipped_projected >= 1, "sem isso a execução seguinte importa a própria projeção"
+        assert report.imported == 0
+    finally:
+        coordinator.canonical_store.close()
+
+
 # --------------------------------------------------------------------------
 # A declaração de cutover não pode ser lida como estado
 # --------------------------------------------------------------------------
