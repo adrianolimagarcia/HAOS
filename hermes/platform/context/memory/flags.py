@@ -27,8 +27,67 @@ The sequence, in order:
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+# Operator-facing names for each stage. The canonical spelling is the stage name upper-cased;
+# the extra entries are the ones the origin branch shipped for the same stage, kept so an
+# existing HAOS_MEMORY_* environment keeps meaning what it meant. A HAOS_MEMORY_* name with no
+# stage here is warned about, not fatal: the prefix is shared with future variables, so refusing
+# to start the fabric over one would be worse than saying it was ignored.
+_ENV_ALIASES: Dict[str, str] = {
+    "HAOS_MEMORY_CANONICAL_WRITES": "canonical_writes",
+    "HAOS_MEMORY_PROJECTIONS_VIA_OUTBOX": "projections_via_outbox",
+    "HAOS_MEMORY_DURABLE_PROJECTIONS": "projections_via_outbox",
+    "HAOS_MEMORY_CANONICAL_FTS": "canonical_fts",
+    "HAOS_MEMORY_CANONICAL_READS": "canonical_fts",
+    "HAOS_MEMORY_VECTOR_RRF": "vector_rrf",
+    "HAOS_MEMORY_HYBRID_RETRIEVAL": "vector_rrf",
+    "HAOS_MEMORY_VECTOR_RETRIEVAL": "vector_rrf",
+    "HAOS_MEMORY_LEGACY_WRITERS_DISABLED": "legacy_writers_disabled",
+    "HAOS_MEMORY_LEGACY_READERS_DISABLED": "legacy_readers_disabled",
+}
+
+_TRUTHY = frozenset({"1", "true", "yes"})
+_FALSY = frozenset({"0", "false", "no"})
+
+
+def _parse_bool(name: str, raw: str) -> bool:
+    value = raw.strip().lower()
+    if value in _TRUTHY:
+        return True
+    if value in _FALSY:
+        return False
+    raise FlagError("%s=%r is not a boolean (use 1/0, true/false or yes/no)" % (name, raw))
+
+
+def _load_cutover_config() -> Dict[str, Any]:
+    """``memory.fabric.cutover`` from the user config, or ``{}`` when unset.
+
+    The effective loader, not the defaults-merged one: this is a presence-sensitive read, and a
+    loader that injects ``DEFAULT_CONFIG`` cannot distinguish "the operator did not mention this
+    stage" (default: on) from "the operator set it to the default value".
+
+    A broken config yields ``{}`` — every stage stays at its default — because failing a cutover
+    read closed would silently roll the fabric back on a YAML typo.
+    """
+    try:
+        from hermes_cli.config_effective import load_user_config_effective
+
+        config = load_user_config_effective() or {}
+    except Exception as exc:  # noqa: BLE001 - a config read must never take the fabric down
+        logger.warning("memory cutover config unreadable, using defaults: %s", exc)
+        return {}
+    cutover = ((config.get("memory") or {}).get("fabric") or {}).get("cutover")
+    if cutover is None:
+        return {}
+    if not isinstance(cutover, Mapping):
+        raise FlagError("memory.fabric.cutover must be a mapping of stage -> bool, got %r" % type(cutover).__name__)
+    return dict(cutover)
 
 # Cutover order. Position in this tuple IS the dependency: each flag may only be
 # enabled once every earlier flag is enabled.
@@ -120,6 +179,66 @@ class MemoryFeatureFlags:
 
     def reset(self, *, enabled: bool) -> None:
         self.enabled_flags = set(CUTOVER_ORDER) if enabled else set()
+
+    # -- operator control ----------------------------------------------------
+
+    @classmethod
+    def from_config(cls, config: Optional[Mapping[str, Any]] = None) -> "MemoryFeatureFlags":
+        """The cutover state an operator asked for, from config then ``HAOS_MEMORY_*``.
+
+        Without this the cutover has transitions but no way to reach them: ``enable``/``rollback``
+        are only callable from code, so "roll back stage 5 on the appliance" means editing and
+        redeploying the tree — which is not a rollback, it is a release.
+
+        Stages are a prefix, not a set: the config is read in ``CUTOVER_ORDER`` and the first
+        disabled stage turns off everything after it. Naming a later stage as on while an earlier
+        one is off is refused rather than reconciled by the cascade — guessing which side the
+        operator meant is how a half-applied cutover happens, and the cascade would have ignored
+        the later ``true`` without saying so.
+        """
+        requested: Dict[str, Any] = dict(config) if config is not None else _load_cutover_config()
+        for env_name, stage in _ENV_ALIASES.items():
+            raw = os.getenv(env_name)
+            if raw is not None:
+                requested[stage] = _parse_bool(env_name, raw)
+        for env_name in os.environ:
+            if env_name.startswith("HAOS_MEMORY_") and env_name not in _ENV_ALIASES:
+                logger.warning(
+                    "%s names no cutover stage in this build and is ignored (known: %s)",
+                    env_name,
+                    ", ".join(sorted(_ENV_ALIASES)),
+                )
+
+        unknown = sorted(name for name in requested if name not in CUTOVER_ORDER)
+        if unknown:
+            raise FlagError(
+                "unknown memory feature flag(s): %s (known: %s)"
+                % (", ".join(unknown), ", ".join(CUTOVER_ORDER))
+            )
+
+        # Only an EXPLICIT true after the boundary is incoherent. An unset stage is not an
+        # opinion, so it follows the cascade instead of falling back to its default — otherwise
+        # disabling one stage would demand listing every later one as false.
+        off = [name for name in CUTOVER_ORDER if requested.get(name) is False]
+        if off:
+            first_off = CUTOVER_ORDER.index(off[0])
+            trailing_on = [
+                name
+                for name in CUTOVER_ORDER
+                if requested.get(name) is True and CUTOVER_ORDER.index(name) > first_off
+            ]
+            if trailing_on:
+                raise FlagError(
+                    "cutover stages are a prefix: %s cannot be on while %s is off"
+                    % (", ".join(trailing_on), off[0])
+                )
+
+        flags = cls(enabled_flags=set())
+        for name in CUTOVER_ORDER:
+            if requested.get(name) is False:
+                break
+            flags.enable(name)
+        return flags
 
     # -- internals -----------------------------------------------------------
 

@@ -8,8 +8,13 @@ them.
 
 What it measures, and why each one matters:
 
-* ``outbox_backlog`` / ``outbox_retries`` / ``expired_leases`` — a projection that
-  stops draining is silent data loss for that sink until someone looks.
+* ``outbox_backlog`` (per projection) and ``journal.outbox_retries`` /
+  ``journal.expired_leases`` — a projection that stops draining is silent data loss for
+  that sink until someone looks.
+* ``journal.records_active`` / ``journal.records_superseded`` / ``journal.outbox_events`` —
+  whether the canonical journal actually holds what the fabric claims it holds. These are
+  the numbers a cutover decision reads: a migration that wrote nothing looks exactly like a
+  healthy quiet fabric from the counters alone.
 * ``projection_seconds`` — per-projection latency, the first thing to blow up when
   Obsidian or GraphRAG gets slow.
 * ``dedupe_hits`` / ``dedupe_misses`` — the dedupe rate is the fabric's main
@@ -18,6 +23,10 @@ What it measures, and why each one matters:
   channel that never hits is dead weight in the prompt budget.
 * ``dropped_by_budget`` / ``dropped_by_acl`` — recall that was *deliberately*
   withheld. Without this, a scope bug and an empty store look identical.
+
+``journal`` is a separate key rather than flattened in: those numbers come from SQL over the
+canonical store (``CanonicalMemoryStore.operational_counters``), not from this process's
+counters, and mixing the two would make a store read failure look like a counter reset.
 """
 
 from __future__ import annotations

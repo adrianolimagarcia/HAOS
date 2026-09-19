@@ -228,7 +228,15 @@ class FederatedMemoryCoordinator:
         # Metrics and cutover flags are constructed first: the provider, the
         # projection runner and the vector index all record into them.
         self.metrics = MemoryFabricMetrics()
-        self.flags = MemoryFeatureFlags()
+        # A malformed cutover config must not be the thing that takes the appliance down: the
+        # fabric is constructed during plugin registration, so raising here would fail startup
+        # for the whole agent. Falling back to the defaults is exactly today's behaviour, and the
+        # ERROR line is what makes it diagnosable instead of a rollback that quietly did nothing.
+        try:
+            self.flags = MemoryFeatureFlags.from_config()
+        except FlagError as exc:
+            logger.error("memory cutover config rejected, using defaults (all stages on): %s", exc)
+            self.flags = MemoryFeatureFlags()
 
         # Provedor upstream
         self.memory_provider = memory_provider or HermesFabricMemoryProvider(
@@ -958,8 +966,10 @@ class FederatedMemoryCoordinator:
         return outcome
 
     def fabric_metrics(self) -> Dict[str, Any]:
-        """Metrics snapshot with the live outbox backlog folded in."""
-        return self.metrics.snapshot(backlog=self.canonical_store.pending_by_projection())
+        """Metrics snapshot with the live outbox backlog and journal counters folded in."""
+        snapshot = self.metrics.snapshot(backlog=self.canonical_store.pending_by_projection())
+        snapshot["journal"] = self.canonical_store.operational_counters()
+        return snapshot
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
         """Read through the canonical journal; _facts is only a transient cache."""

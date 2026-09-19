@@ -320,6 +320,42 @@ class CanonicalMemoryStore:
                 "SELECT COUNT(*) FROM memory_projection_jobs WHERE last_error IS NOT NULL"
             ).fetchone()[0]
 
+    def operational_counters(self) -> Dict[str, int]:
+        """Read-only counters for the fabric health snapshot (contract: ``memory.metrics``).
+
+        One lock acquisition for all of them, because they answer one question — "is the journal
+        capturing and draining what the fabric claims?" — and read separately they could report a
+        backlog that never coexisted with the record count printed beside it.
+
+        Deliberately does not recompute ``projection_backlog`` / ``projection_failures``:
+        ``pending_by_projection`` and ``failed_projections`` already own those queries, and a
+        second copy would be a second thing to keep in sync.
+        """
+        moment = time.time()
+        with self._lock:
+            active = self._conn.execute(
+                "SELECT COUNT(*) FROM memory_records WHERE status='active'"
+            ).fetchone()[0]
+            superseded = self._conn.execute(
+                "SELECT COUNT(*) FROM memory_records WHERE status='superseded'"
+            ).fetchone()[0]
+            events = self._conn.execute("SELECT COUNT(*) FROM memory_outbox").fetchone()[0]
+            retries = self._conn.execute(
+                "SELECT COALESCE(SUM(attempts), 0) FROM memory_projection_jobs"
+            ).fetchone()[0]
+            expired = self._conn.execute(
+                "SELECT COUNT(*) FROM memory_projection_jobs "
+                "WHERE lease_until IS NOT NULL AND lease_until<=?",
+                (moment,),
+            ).fetchone()[0]
+        return {
+            "records_active": active,
+            "records_superseded": superseded,
+            "outbox_events": events,
+            "outbox_retries": retries,
+            "expired_leases": expired,
+        }
+
     def claim(self, projection: str, worker_id: str, limit: int = 32, lease_seconds: float = 60.0) -> List[Tuple[str, MemoryRecord]]:
         if projection not in self.PROJECTIONS:
             raise ValueError("unknown projection: %r" % projection)
