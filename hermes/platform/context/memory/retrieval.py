@@ -24,6 +24,10 @@ def _fit_block(block: str, allowance: int) -> str:
     if len(block) <= allowance:
         return block
     marker = "\n[…truncado: %d de %d chars]" % (allowance, len(block))
+    if len(marker) >= allowance:
+        # Um marcador que não cabe no próprio budget que ele reporta estoura o budget: com um
+        # allowance minúsculo, o corte seco é a única resposta que mantém a promessa.
+        return block[: max(0, allowance)]
     room = max(0, allowance - len(marker))
     cut = block.rfind("\n", 0, room)
     if cut < room // 2:  # no usable line boundary near the cap: cut mid-line rather than lose it

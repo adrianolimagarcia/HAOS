@@ -79,6 +79,18 @@ def test_one_large_record_cannot_starve_the_rest_of_the_recall(tmp_path: Path) -
         retriever.store.close()
 
 
+@pytest.mark.parametrize("budget", [0, 1, 12, 50, 120])
+def test_a_degenerate_budget_still_holds_the_cap(tmp_path: Path, budget: int) -> None:
+    """O marcador de truncamento não pode custar mais que o budget que ele reporta."""
+    retriever = _retriever(tmp_path)
+    try:
+        _fill(retriever.store, [60_000, 3000, 2500])
+        rendered = retriever.format_context(TERM, ("project",), limit=8, budget_chars=budget)
+        assert len(rendered) <= budget, "budget=%d devolveu %d chars" % (budget, len(rendered))
+    finally:
+        retriever.store.close()
+
+
 def test_an_empty_journal_renders_nothing(tmp_path: Path) -> None:
     retriever = _retriever(tmp_path)
     try:
