@@ -1336,14 +1336,27 @@ function startHierarchyCouncil() {
   const nodes = h.nodes || [];
   const byParent = {};
   nodes.forEach(n => (byParent[n.parent_id || "__root"] ||= []).push(n));
-  const row = (n, depth=0) => `<div style="margin-left:${depth*20}px;padding:7px;border-bottom:1px solid #202938;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>${n.role === "master" ? "👑" : n.role === "manager" ? "🧠" : "🤖"}</span><b>${esc(n.name)}</b><span class="tag">${esc(n.role)}</span><span class="mono" style="color:var(--muted)">${esc(n.provider || h.bot_model.provider)}:${esc(n.model || h.bot_model.model || "shared")}</span><button class="act">Comando</button><button class="act">Editar</button></div>` + (byParent[n.id] || []).map(c => row(c, depth+1)).join("");
+  const row = (n, depth=0) => `<div style="margin-left:${depth*20}px;padding:7px;border-bottom:1px solid #202938;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>${n.role === "master" ? "👑" : n.role === "manager" ? "🧠" : "🤖"}</span><b>${esc(n.name)}</b><span class="tag">${esc(n.role)}</span><span class="mono" style="color:var(--muted)">${esc(n.profile || "independent")}:${esc(n.model || "unassigned")}</span><button class="act" data-hierarchy-command="${esc(n.id)}">Comando</button><button class="act" data-hierarchy-edit="${esc(n.id)}">Editar</button><button class="act danger" data-hierarchy-delete="${esc(n.id)}">Excluir</button></div>` + (byParent[n.id] || []).map(c => row(c, depth+1)).join("");
   box.innerHTML = (byParent.__root || []).map(n => row(n)).join("") || "Nenhum agente configurado.";
   const managers = nodes.filter(n => n.role === "manager");
   [$("councilFrom"), $("councilTo")].forEach(sel => { if (sel) sel.innerHTML = managers.map(n => `<option value="${esc(n.id)}">${esc(n.name)}</option>`).join(""); });
   $("hierBotProvider").value = h.bot_model.provider || "";
   $("hierBotModel").value = h.bot_model.model || "";
 }
-async function saveBotModel() {
+async function hierarchyAction(event) {
+  const target = event.target.closest("[data-hierarchy-command],[data-hierarchy-edit],[data-hierarchy-delete]");
+  if (!target) return;
+  const id = target.dataset.hierarchyCommand || target.dataset.hierarchyEdit || target.dataset.hierarchyDelete;
+  const node = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === id);
+  if (target.dataset.hierarchyCommand) return editHierarchyNode(id, true);
+  if (target.dataset.hierarchyEdit && node) {
+    $("hierNodeId").value=node.id; $("hierNodeName").value=node.name||""; $("hierNodeRole").value=node.role||"bot"; $("hierNodeParent").value=node.parent_id||""; $("hierNodeProfile").value=node.profile||""; $("hierNodeModel").value=node.model||""; $("hierNodeDescription").value=node.description||"";
+  } else if (target.dataset.hierarchyDelete && confirm(`Excluir ${node?.name || id}?`)) {
+    await api("/api/agent-hierarchy", {action:"delete_node", id}); await fetchState();
+  }
+}
+document.addEventListener("click", hierarchyAction);
+
   await api("/api/agent-hierarchy", {action:"set_bot_model", provider:$("hierBotProvider").value, model:$("hierBotModel").value}); fetchState();
 }
 async function addHierarchyNode() {
