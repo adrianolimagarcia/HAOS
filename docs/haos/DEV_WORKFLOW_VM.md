@@ -172,6 +172,51 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
    confirme com `haos update --plan` antes de confiar no restart — o plan lista o
    pid e o `code_sha` de cada gateway que será reiniciado.
 
+8. **O Memory Fabric só passou a existir de fato em 19/09/2026.** Antes disso o
+   subsistema era código completo e inalcançável: `MemoryMigrator` tinha `plan()` e
+   `backfill_obsidian()` e **nenhum chamador fora dos próprios testes**, o journal
+   canônico nunca tinha sido criado, e `plugins.enabled` listava só `dsh-bridge` e
+   `memory-recall`. A memória real do appliance vivia nos stores do dono
+   (`haos_memory_populate.py`, `dream_distill.py`), não no journal.
+
+   Três coisas destravam isso, e as três importam:
+
+   - **`memory.provider: hermes_fabric` é o que ativa o provider.** `plugin.yaml` +
+     `register(ctx)` **não** bastam: `ctx.register_memory_provider()` é inerte por
+     desenho — o docstring diz "Activation is owned by `plugins/memory` via
+     `memory.provider`". É `load_memory_provider(name)` →
+     `_load_provider_from_dir()` ("`register(ctx)` first, else a top-level
+     subclass") que constrói o provider de verdade. Habilitar em
+     `plugins.enabled` só registra um provider morto.
+   - **`haos memory migrate` faz o backfill** (`hermes_cli/subcommands/memory.py`,
+     handler em `main_agent_cmds.py`). Dry-run por padrão; `--apply` escreve.
+     Primeira execução real: 29 notas lidas, 11 decisões, 1 duplicata
+     (`curadoria/2026-09-13.md`), **28 importadas**, 112 projeções replayed.
+   - **O comando vive no grupo `memory` do wrapper, não no `haos haos`.** Registrar
+     em `hermes_cli/haos_cmd.py` deixa o comando alcançável por
+     `haos haos memory migrate` e **quebrado** no nome que alguém digita:
+     `haos memory: 'migrate' is not a \`haos memory\` command`. `dream`, `log` e
+     `revert` já moram nesse grupo; `migrate` é da mesma família.
+
+   **Rollback** (nesta ordem, se o fabric precisar sair):
+   1. `haos config unset memory.provider` — volta o provider para o built-in.
+   2. `haos gateway restart` — o gateway só relê o provider no boot.
+   3. O journal fica em `HAOS_HOME/memory/fabric.db`; apagá-lo (com `-wal`/`-shm`)
+      devolve o estado "sem fabric". Nada fora dele foi movido: o vault, o
+      `decisions.db`, o `vectors.db` e o GraphRAG continuam onde estavam.
+   4. Backup do estado pré-cutover: `/root/haos-backup-memory-<timestamp>/`
+      (`config.yaml`, `obsidian_vault/`, `memory/`).
+
+   **Controle do cutover sem editar código:** `MemoryFeatureFlags.from_config()`
+   lê `memory.fabric.cutover` do `config.yaml` e depois overrides
+   `HAOS_MEMORY_*` (aceita também os nomes do origin: `CANONICAL_READS`,
+   `DURABLE_PROJECTIONS`, `HYBRID_RETRIEVAL`, `VECTOR_RETRIEVAL`). Os estágios são
+   um **prefixo**: o primeiro desligado derruba os seguintes, e marcar um estágio
+   posterior como ligado com um anterior desligado é erro, não algo que a cascata
+   resolve em silêncio. Config malformada loga ERROR e mantém os defaults, porque
+   o fabric é construído no registro do plugin e derrubar o startup do agente por
+   um typo de YAML seria pior.
+
 ### 5.1 Armadilha: artefatos ignorados do distro travam o build Python (já pago em sangue)
 
 Sintoma: `uv sync`, `uv lock` ou qualquer `pip install -e .` **não termina** —
