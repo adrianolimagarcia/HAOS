@@ -490,7 +490,7 @@ haos-fetch https://example.com --text   # lazy-install + fetch OK
   gateway/mesh/edge/dns/antigravity/storage-init/hostname), então não está exposta.
   **Não tem login por design**: o bind default é `127.0.0.1:8788` (medido com
   `ss -ltnp`: `local=127.0.0.1:8799`) e um bind não-loopback (`--host`/`HAOS_HOST`)
-  emite aviso explícito em stderr — `hermes/platform/webui/standalone.py:1392-1398`,
+  recusa bind não-loopback com `ValueError` antes de criar o socket — `hermes/platform/webui/standalone.py`,
   verificado com `--host 10.255.255.1`: o aviso sai ANTES do bind, então nada é
   exposto durante o teste. `GET /api/state` responde 200 **sem credencial** (2862
   bytes de payload real), ou seja expor a porta é expor o PTY remoto. Acesso remoto

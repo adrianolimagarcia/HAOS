@@ -219,6 +219,7 @@ class MultiAgentTeamRuntime:
         mission_goal: str,
         domain_sub_goals: List[DomainSubGoal],
         worker_execution_fn: Callable[[TaskSpec, PooledSpecialist], Dict[str, Any]],
+        hierarchy_node_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Executes a multi-agent team mission across sub-orchestrators and worker pools."""
         mission_id = f"mission-{uuid.uuid4().hex[:8]}"
@@ -226,7 +227,7 @@ class MultiAgentTeamRuntime:
         self.event_store.append(
             Event(
                 name="team.formed",
-                payload={"mission_id": mission_id, "goal": mission_goal, "domains": [g.domain for g in domain_sub_goals]},
+                payload={"mission_id": mission_id, "goal": mission_goal, "domains": [g.domain for g in domain_sub_goals], **({"hierarchy_node_id": hierarchy_node_id} if hierarchy_node_id else {})},
             )
         )
 
@@ -270,7 +271,7 @@ class MultiAgentTeamRuntime:
                 self.event_store.append(
                     Event(
                         name="worker.acquired",
-                        payload={"task_id": task.id, "worker_id": specialist.worker_id, "posture": specialist.posture},
+                        payload={"task_id": task.id, "worker_id": specialist.worker_id, "posture": specialist.posture, "mission_id": mission_id, **({"hierarchy_node_id": hierarchy_node_id} if hierarchy_node_id else {})},
                     )
                 )
 
@@ -283,7 +284,7 @@ class MultiAgentTeamRuntime:
                     self.event_store.append(
                         Event(
                             name="task.completed",
-                            payload={"task_id": task.id, "worker_id": specialist.worker_id, "status": "success"},
+                            payload={"task_id": task.id, "worker_id": specialist.worker_id, "status": "success", "mission_id": mission_id, **({"hierarchy_node_id": hierarchy_node_id} if hierarchy_node_id else {})},
                         )
                     )
                 finally:

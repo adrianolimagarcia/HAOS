@@ -927,6 +927,7 @@ def _spec_dict(spec: TaskSpec) -> Dict[str, Any]:
         "required_agents": list(spec.required_agents),
         "preferred_agents": list(spec.preferred_agents),
         "model_profile_preferred": spec.model_profile_preferred,
+        "agent_profile": spec.agent_profile,
         # A4: forma de execução pedida (none|persistent|orchestrator).
         "reuse": spec.reuse,
     }

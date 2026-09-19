@@ -26,6 +26,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import sqlite3
 import sys
 import socket
 import threading
@@ -47,6 +48,7 @@ class HAOSThreadingHTTPServer(ThreadingHTTPServer):
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
+import ipaddress
 
 # Garante que a raiz do repositório esteja no sys.path para execução direta como script
 _REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent.parent)
@@ -56,6 +58,7 @@ if _REPO_ROOT not in sys.path:
 from hermes.platform.tasks.spec import TaskSpec
 from hermes.platform.tasks.kanban_adapter import KanbanAdapter
 from hermes.platform.observability.event_store import EventStore
+from hermes.platform.observability.events import Event
 from hermes.platform.observability.sink import EventStoreSink
 from hermes.platform.execution.backpressure import ConcurrencyGuard
 from hermes.platform.execution.dispatcher import HAOSDispatcher
@@ -64,6 +67,8 @@ from hermes.platform.evolution.analyzer import OuroborosAnalyzer
 from hermes.platform.ui.dashboard import dashboard_payload
 from hermes.platform.ui.stats import DashboardStats
 from hermes.platform.webui.controlplane import ControlPlaneService
+from hermes.platform.webui.agent_hierarchy import AgentHierarchyStore, HierarchyError
+from hermes.platform.webui.council_adapter import CouncilAdapter
 from hermes.platform.webui.harness_bindings import HARNESS_CATALOG
 
 from hermes.platform.webui import settings as engine_settings
@@ -110,6 +115,8 @@ class HAOSStandaloneState:
             concurrency_guard=self.guard,
             data_dir=data_dir,
         )
+        self.agent_hierarchy = AgentHierarchyStore(data_dir / "agent_hierarchy.json")
+        self.council = CouncilAdapter(self.agent_hierarchy, self.event_store)
 
         # Aplica settings persistidos (defaults se ausente) ao guard vivo.
         self.settings = engine_settings.load_settings(data_dir)
@@ -143,18 +150,26 @@ class HAOSStandaloneState:
         priority: int = 85,
         title: Optional[str] = None,
         requires_tasks: Optional[List[str]] = None,
+        assignee: Optional[str] = None,
+        model_profile: Optional[str] = None,
+        agent_target: Optional[str] = None,
     ) -> Dict[str, Any]:
+        tags = [f"agent:{agent_target}"] if agent_target else []
         spec = TaskSpec(
             id=f"T-{uuid.uuid4().hex[:6]}",
             title=title or f"Missão: {message[:60]}",
             goal=message,
             priority=int(priority),
             posture="implementer",
-            model_profile=None,
+            model_profile=model_profile,
+            model_profile_preferred=model_profile,
+            agent_profile=assignee if agent_target else None,
+            required_agents=[agent_target] if agent_target else [],
+            tags=tags,
             requires_tasks=[str(t) for t in (requires_tasks or []) if t],
             workspace_type="scratch",
         )
-        task_id = self.kanban.save_task(spec, status="READY")
+        task_id = self.kanban.save_task(spec, status="READY", assignee=assignee)
         return {"task_id": task_id, "spec_id": spec.id, "goal": message}
 
     def dispatch_in_background(self, *, max_spawn: int = 10) -> bool:
@@ -192,6 +207,8 @@ class HAOSStandaloneState:
             })
         payload["events_tail"] = events
         payload["team_graph"] = self.control_plane.get_team_graph_snapshot()
+        payload["team_graph"]["organizational_hierarchy"] = self.agent_hierarchy.snapshot()
+        payload["agent_hierarchy"] = payload["team_graph"]["organizational_hierarchy"]
         try:
             payload["control_overview"] = dataclasses.asdict(self.control_plane.get_overview())
         except Exception:
@@ -434,6 +451,7 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -476,13 +494,23 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         elif self.command == "GET" and path in ("/v1/models", "/api/v1/models"):
             self._handle_v1_models()
         elif self.command == "GET" and path in ("/api/team-graph", "/api/controlplane/team_graph"):
-            self._send_json(200, self.state.control_plane.get_team_graph_snapshot())
+            graph = self.state.control_plane.get_team_graph_snapshot()
+            graph["organizational_hierarchy"] = self.state.agent_hierarchy.snapshot()
+            self._send_json(200, graph)
+        elif self.command == "GET" and path in ("/api/agent-hierarchy", "/api/controlplane/agent-hierarchy"):
+            self._send_json(200, self.state.agent_hierarchy.snapshot())
         elif self.command == "GET" and path in ("/api/harnesses", "/api/controlplane/harnesses"):
             self._send_json(200, self.state.control_plane.harness_overview())
         elif self.command == "GET" and path in ("/api/controlplane/overview", "/api/overview"):
             self._send_json(200, dataclasses.asdict(self.state.control_plane.get_overview()))
+        elif self.command == "POST" and path in ("/api/agent-hierarchy/council", "/api/controlplane/agent-hierarchy/council"):
+            self._hierarchy_council()
         elif self.command == "POST" and path in ("/api/intervene", "/api/controlplane/intervene"):
             self._intervene()
+        elif self.command == "POST" and path in ("/api/agent-hierarchy", "/api/controlplane/agent-hierarchy"):
+            self._hierarchy_mutation()
+        elif self.command == "POST" and path in ("/api/agent-hierarchy/command", "/api/controlplane/agent-hierarchy/command"):
+            self._hierarchy_command()
         elif self.command == "POST" and path in ("/api/harness-binding", "/api/controlplane/harness_binding"):
             self._set_harness_binding()
         elif self.command == "GET" and path == "/api/agent-settings":
@@ -824,16 +852,61 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             except Exception:
                 break
 
-    def _intervene(self) -> None:
+    def _hierarchy_mutation(self) -> None:
         body = self._read_json_body()
-        target_id = str(body.get("target_id") or "").strip()
-        action = str(body.get("action") or "").strip()
-        reason = str(body.get("reason") or "Operator web intervention").strip()
-        if not target_id or not action:
-            self._send_json(400, {"error": "target_id_and_action_required"})
-            return
-        self.state.control_plane.record_intervention(target_id=target_id, action=action, reason=reason)
-        self._send_json(200, {"status": "ok", "success": True, "target_id": target_id, "action": action})
+        action = str(body.get("action") or "").strip().lower()
+        try:
+            if action == "set_bot_model":
+                result = self.state.agent_hierarchy.set_bot_model(body.get("provider", ""), body.get("model", ""))
+            elif action == "upsert_node":
+                result = self.state.agent_hierarchy.upsert_node(body, node_id=body.get("id"))
+            elif action == "delete_node":
+                self.state.agent_hierarchy.delete_node(str(body.get("id") or "")); result = {"deleted": body.get("id")}
+            elif action == "set_advisory_edge":
+                result = self.state.agent_hierarchy.set_advisory_edge(str(body.get("from_id") or ""), str(body.get("to_id") or ""), int(body.get("max_turns", 3)))
+            elif action == "remove_advisory_edge":
+                self.state.agent_hierarchy.remove_advisory_edge(str(body.get("from_id") or ""), str(body.get("to_id") or "")); result = {"removed": True}
+            else:
+                self._send_json(400, {"ok": False, "error": "unknown_hierarchy_action"}); return
+        except (HierarchyError, ValueError, TypeError) as exc:
+            self._send_json(400, {"ok": False, "error": str(exc)}); return
+        self._send_json(200, {"ok": True, "result": result, "agent_hierarchy": self.state.agent_hierarchy.snapshot()})
+
+    def _hierarchy_command(self) -> None:
+        body = self._read_json_body()
+        target = str(body.get("target_id") or "").strip()
+        command = str(body.get("command") or "").strip()
+        if not target or not command:
+            self._send_json(400, {"ok": False, "error": "target_id_and_command_required"}); return
+        snapshot = self.state.agent_hierarchy.snapshot()
+        node = next((n for n in snapshot["nodes"] if n.get("id") == target), None)
+        if not node or not node.get("enabled", True):
+            self._send_json(404, {"ok": False, "error": "unknown_agent"}); return
+        task = self.state.create_task_from_message(
+            command, title=f"Comando para {node['name']}",
+            model_profile=node.get("model") or None, agent_target=target,
+            assignee=node.get("profile") or target,
+        )
+        self.state.event_store.append(Event(name="agent_hierarchy.commanded", payload={"target_id": target, "profile": node.get("profile"), "model_profile": node.get("model"), "command": command}))
+        self.state.dispatch_in_background(max_spawn=1)
+        self._send_json(200, {"ok": True, "target_id": target, "task": task})
+
+    def _hierarchy_council(self) -> None:
+        body = self._read_json_body()
+        action = str(body.get("action") or "").strip().lower()
+        try:
+            if action == "start":
+                result = self.state.agent_hierarchy.start_council(str(body.get("from_id") or ""), str(body.get("to_id") or ""), str(body.get("topic") or ""), body.get("max_turns"))
+            elif action == "turn":
+                if body.get("execute", False):
+                    result = self.state.council.run_turn(str(body.get("council_id") or ""), str(body.get("speaker_id") or ""), str(body.get("message") or ""))
+                else:
+                    result = self.state.agent_hierarchy.append_council_turn(str(body.get("council_id") or ""), str(body.get("speaker_id") or ""), str(body.get("message") or ""))
+            else:
+                self._send_json(400, {"ok": False, "error": "unknown_council_action"}); return
+        except (HierarchyError, ValueError, TypeError) as exc:
+            self._send_json(400, {"ok": False, "error": str(exc)}); return
+        self._send_json(200, {"ok": True, "result": result})
 
     def _set_harness_binding(self) -> None:
         body = self._read_json_body()
@@ -850,6 +923,17 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         result["ok"] = True
         result["overview"] = self.state.control_plane.harness_overview()
         self._send_json(200, result)
+
+    def _intervene(self) -> None:
+        body = self._read_json_body()
+        target_id = str(body.get("target_id") or "").strip()
+        action = str(body.get("action") or "").strip()
+        reason = str(body.get("reason") or "Operator web intervention").strip()
+        if not target_id or not action:
+            self._send_json(400, {"error": "target_id_and_action_required"})
+            return
+        self.state.control_plane.record_intervention(target_id=target_id, action=action, reason=reason)
+        self._send_json(200, {"status": "ok", "success": True, "target_id": target_id, "action": action})
 
     def _evolution_analyze(self) -> None:
         submitted = self.state.analyze_and_submit_proposals()
@@ -1389,13 +1473,13 @@ def make_standalone_server(
     title: str = "HAOS Standalone",
 ) -> tuple[ThreadingHTTPServer, HAOSStandaloneState, str]:
     """Constrói o servidor standalone. Retorna (server, state, base_url)."""
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        print(
-            f"⚠ [HAOS STANDALONE] bind em {host} SEM autenticação: o control plane "
-            "(terminal PTY, config do agente, tasks) fica exposto a quem alcançar a "
-            "porta. Use 127.0.0.1 (default) ou ponha um proxy com TLS+auth na frente.",
-            file=sys.stderr,
-        )
+    try:
+        parsed_host = ipaddress.ip_address(host)
+        loopback = parsed_host.version == 4 and parsed_host.is_loopback
+    except ValueError:
+        loopback = host == "localhost"
+    if not loopback:
+        raise ValueError("standalone Control Plane only supports loopback; use haos-edge or an authenticated TLS proxy for remote access")
     if data_dir is not None:
         data_dir = Path(data_dir)
     else:

@@ -21,6 +21,7 @@ Em ambos, workspace e ciclo de vida são do kernel; o HAOS decide só o executor
 from __future__ import annotations
 
 import inspect
+import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -55,6 +56,8 @@ class HAOSDispatcher:
         self.board = board
         self.lane_worker = lane_worker
         self.concurrency_guard = concurrency_guard
+        self._profile_workers: Dict[str, LaneWorker] = {}
+        self._profile_workers_lock = threading.Lock()
 
     # ------------------------------------------------------------------ #
     # helpers
@@ -63,12 +66,29 @@ class HAOSDispatcher:
         spec = (self.adapter.get_task(task_id) or {}).get("spec") or {}
         return lane_for_spec(spec)
 
+    def _worker_for_spec(self, spec: Dict[str, Any], lane: str) -> LaneWorker:
+        """Resolve an executor per task; explicit hierarchy profiles are isolated."""
+        profile = str(spec.get("agent_profile") or "").strip()
+        if profile:
+            from hermes.platform.execution.lane_executor import HermesCliLaneWorker
+            with self._profile_workers_lock:
+                worker = self._profile_workers.get(profile)
+                if worker is None:
+                    from hermes_cli.profiles import resolve_profile_env
+                    try:
+                        resolve_profile_env(profile)
+                    except FileNotFoundError as exc:
+                        raise LaneError(f"Hermes profile does not exist: {profile}") from exc
+                    worker = HermesCliLaneWorker(profile=profile)
+                    if not worker.available():
+                        raise LaneError(f"Hermes profile runtime unavailable: {profile}")
+                    self._profile_workers[profile] = worker
+                return worker
+        return self.lane_worker or get_lane_worker(lane)
+
     @staticmethod
     def _contract_guard_for(spec: Dict[str, Any]) -> Optional[ContractGuard]:
-        """Reconstrói o ContractGuard persistido (None == sem contrato).
-
-        ``task_contract`` viaja no spec JSON como dict round-trippable
-        (KanbanAdapter._spec_dict); ausente/inválido ⇒ aceita-tudo."""
+        """Reconstrói o ContractGuard persistido (None == sem contrato)."""
         raw = (spec or {}).get("task_contract")
         if not raw or not isinstance(raw, dict):
             return None
@@ -95,7 +115,7 @@ class HAOSDispatcher:
         aceita (D3). Sem heartbeat o comportamento é o de ``_run_and_complete``."""
         spec = (self.adapter.get_task(task_id) or {}).get("spec") or {}
         lane = lane_for_spec(spec)
-        worker = self.lane_worker or get_lane_worker(lane)
+        worker = self._worker_for_spec(spec, lane)
         if hb_fn is None or not self._accepts_heartbeat(worker):
             self._execute_card(task_id, workspace, spec, lane, worker, {})
             return
@@ -164,7 +184,7 @@ class HAOSDispatcher:
     def _run_and_complete(self, task_id: str, workspace: Path) -> None:
         spec = (self.adapter.get_task(task_id) or {}).get("spec") or {}
         lane = lane_for_spec(spec)
-        worker = self.lane_worker or get_lane_worker(lane)
+        worker = self._worker_for_spec(spec, lane)
         self._execute_card(task_id, workspace, spec, lane, worker, {})
 
     # ------------------------------------------------------------------ #
@@ -293,7 +313,7 @@ class HAOSDispatcher:
                 # quando o worker aceita heartbeat_fn (lane agêntica real); senão,
                 # comportamento legado (wait único + TTL upstream).
                 hb_fn: Optional[Callable[[str], bool]] = None
-                worker = self.lane_worker or get_lane_worker(lane)
+                worker = self._worker_for_spec(spec, lane)
                 if heartbeat_fn is not None or self._accepts_heartbeat(worker):
                     if heartbeat_fn is None:
                         hb_fn = lambda tid: self.adapter.heartbeat(tid, worker_id=worker_id)

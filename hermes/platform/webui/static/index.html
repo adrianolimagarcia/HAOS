@@ -543,7 +543,32 @@
           </div>
         </div>
 
-        <!-- Model Binding Controls Card -->
+                 <div class="card" style="background:#0d1117; border:1px solid #30363d; padding:16px; margin-bottom:20px;">
+           <b style="color:#4fd1c5;">🧭 Hierarquia persistente de Bots</b>
+           <button class="act primary">＋ Adicionar agente</button>
+           <div id="agentHierarchyTree" style="margin-top:12px;color:var(--muted);">Carregando…</div>
+           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px;">
+             <input id="hierNodeId" placeholder="ID (vazio = novo)" />
+             <input id="hierNodeName" placeholder="Nome" />
+             <select id="hierNodeRole"><option value="master">Mestre</option><option value="manager">Gerente</option><option value="bot">Bot</option></select>
+             <input id="hierNodeParent" placeholder="ID do pai" />
+             <input id="hierNodeProfile" placeholder="Profile Hermes" />
+             <input id="hierNodeModel" placeholder="Modelo/profile de modelo" />
+             <input id="hierNodeDescription" placeholder="Descrição" />
+             <button class="act primary">Salvar agente</button>
+           </div>
+           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px;">
+             <select id="councilFrom"></select><select id="councilTo"></select><input id="councilTopic" placeholder="Tema do conselho" /><input id="councilTurns" type="number" min="1" value="3" /><button class="act">Iniciar conselho</button>
+           </div>
+           <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:14px;">
+             <label class="f">Provider compartilhado dos Bots<input id="hierBotProvider" type="text" placeholder="provider" /></label>
+             <label class="f">Modelo compartilhado dos Bots<input id="hierBotModel" type="text" placeholder="modelo" /></label>
+             <button class="act">Salvar modelo dos Bots</button>
+           </div>
+           <div id="hierarchyMsg" style="margin-top:8px;font-size:.8rem;color:var(--muted);"></div>
+         </div>
+
+         <!-- Model Binding Controls Card -->
         <div id="tgModelSelectorCard" class="card" style="background:#0d1117; border:1px solid #30363d; padding:16px; margin-bottom:20px; display:none;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
             <b style="font-size:0.95rem; color:#58a6ff;">⚙️ Model Binding dos Papéis (Salvo no config.yaml)</b>
@@ -977,6 +1002,7 @@ function render(stateData) {
   __hBind = st.harness_bindings || __hBind || {};
   __hLastTG = [st.team_graph, st.control_overview];
   renderTeamGraph(st.team_graph, st.control_overview);
+  renderAgentHierarchy(st.agent_hierarchy);
   if (!__hCat) ensureHarnessCatalog();
   renderScheduler(st.concurrency, st.critical_path, st.approvals);
   renderOuroboros(st.evolution_pending, st.evolution_history);
@@ -1297,6 +1323,39 @@ async function setHarnessBinding(sel, roleKey) {
     alert("✗ Erro ao vincular plataforma: " + err.message);
   }
 }
+
+function saveHierarchyNode() {
+  const p = {action:"upsert_node", id:$("hierNodeId").value || undefined, name:$("hierNodeName").value, role:$("hierNodeRole").value, parent_id:$("hierNodeParent").value || null, profile:$("hierNodeProfile").value, model:$("hierNodeModel").value, description:$("hierNodeDescription").value};
+  api("/api/agent-hierarchy", p).then(fetchState).catch(e => alert(e.message));
+}
+function startHierarchyCouncil() {
+  api("/api/agent-hierarchy/council", {action:"start", from_id:$("councilFrom").value, to_id:$("councilTo").value, topic:$("councilTopic").value, max_turns:Number($("councilTurns").value)}).then(fetchState).catch(e => alert(e.message));
+}
+  const box = $("agentHierarchyTree");
+  if (!box || !h) return;
+  const nodes = h.nodes || [];
+  const byParent = {};
+  nodes.forEach(n => (byParent[n.parent_id || "__root"] ||= []).push(n));
+  const row = (n, depth=0) => `<div style="margin-left:${depth*20}px;padding:7px;border-bottom:1px solid #202938;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>${n.role === "master" ? "👑" : n.role === "manager" ? "🧠" : "🤖"}</span><b>${esc(n.name)}</b><span class="tag">${esc(n.role)}</span><span class="mono" style="color:var(--muted)">${esc(n.provider || h.bot_model.provider)}:${esc(n.model || h.bot_model.model || "shared")}</span><button class="act">Comando</button><button class="act">Editar</button></div>` + (byParent[n.id] || []).map(c => row(c, depth+1)).join("");
+  box.innerHTML = (byParent.__root || []).map(n => row(n)).join("") || "Nenhum agente configurado.";
+  const managers = nodes.filter(n => n.role === "manager");
+  [$("councilFrom"), $("councilTo")].forEach(sel => { if (sel) sel.innerHTML = managers.map(n => `<option value="${esc(n.id)}">${esc(n.name)}</option>`).join(""); });
+  $("hierBotProvider").value = h.bot_model.provider || "";
+  $("hierBotModel").value = h.bot_model.model || "";
+}
+async function saveBotModel() {
+  await api("/api/agent-hierarchy", {action:"set_bot_model", provider:$("hierBotProvider").value, model:$("hierBotModel").value}); fetchState();
+}
+async function addHierarchyNode() {
+  const name = prompt("Nome do agente:"); if (!name) return;
+  const role = (prompt("Papel: master, manager ou bot", "bot") || "bot").toLowerCase();
+  const parent_id = prompt("ID do pai (vazio para raiz):") || null;
+  await api("/api/agent-hierarchy", {action:"upsert_node", name, role, parent_id}); fetchState();
+}
+async function editHierarchyNode(id) {
+  const command = prompt("Novo comando/persona para este agente:"); if (command) await api("/api/agent-hierarchy/command", {target_id:id, command});
+}
+async function sendHierarchyCommand(id) { editHierarchyNode(id); }
 
 function renderTeamGraph(tg, ov) {
   if (!tg) return;

@@ -105,6 +105,9 @@ class TaskSpec:
     # model_profile_preferred = perfil SOFT: usado SOMENTE quando não há
     #                           binding required nem postura com perfil;
     #                           nunca sobrescreve required/postura.
+    # Optional HAOS hierarchy runtime binding; empty means normal lane routing.
+    agent_profile: Optional[str] = None
+
     required_agents: List[str] = field(default_factory=list)
     preferred_agents: List[str] = field(default_factory=list)
     model_profile_preferred: Optional[str] = None

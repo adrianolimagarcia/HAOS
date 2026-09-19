@@ -131,6 +131,21 @@ class TestStandaloneServer(unittest.TestCase):
         self.assertIn("control_overview", payload)
         self.assertEqual(payload["team_graph"]["role"], "mayor")
 
+    def test_hierarchy_command_persists_target_binding(self):
+        created = self._post("/api/agent-hierarchy", {
+            "action": "upsert_node", "id": "master", "name": "Master", "role": "master",
+            "profile": "master", "model": "coding-primary",
+        })
+        self.assertTrue(created["ok"])
+        result = self._post("/api/agent-hierarchy/command", {
+            "target_id": "master", "command": "inspect status",
+        })
+        self.assertTrue(result["ok"])
+        task = json.loads(self._get("/api/tasks/" + result["task"]["task_id"]))
+        spec = task.get("spec") or {}
+        self.assertEqual(spec.get("model_profile"), "coding-primary")
+        self.assertIn("master", spec.get("required_agents", []))
+
     def test_team_graph_and_controlplane_endpoints(self):
         # 1. GET /api/team-graph
         tg = json.loads(self._get("/api/team-graph"))

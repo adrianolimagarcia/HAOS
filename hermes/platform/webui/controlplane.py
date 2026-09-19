@@ -204,9 +204,10 @@ class TeamGraphNode:
     harness_status: str = "available"  # "available" | "missing" | "allocated" | "fallback-native" | "unsupported"
     children: List[TeamGraphNode] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    hierarchy_node_id: Optional[str] = field(default=None, kw_only=True)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        out = {
             "node_id": self.node_id,
             "label": self.label,
             "role": self.role,
@@ -224,6 +225,9 @@ class TeamGraphNode:
             "children": [c.to_dict() for c in self.children],
             "metadata": self.metadata,
         }
+        if self.hierarchy_node_id is not None:
+            out["hierarchy_node_id"] = self.hierarchy_node_id
+        return out
 
 
 @dataclass
@@ -840,6 +844,7 @@ class ControlPlaneService:
                         "task": p.get("task_id", ""),
                         "tokens": p.get("tokens", 640 if posture == "coder" else 180),
                         "cost": 0.0006 if posture == "coder" else 0.0002,
+                        "hierarchy_node_id": p.get("hierarchy_node_id"),
                     }
                 else:
                     if p.get("task_id"):
@@ -868,6 +873,7 @@ class ControlPlaneService:
                     "task": p.get("goal") or task_id,
                     "tokens": p.get("tokens", 0),
                     "cost": p.get("cost", 0.0),
+                    "hierarchy_node_id": p.get("hierarchy_node_id"),
                 }
             elif ev.name == "haos.task.completed":
                 task_id = p.get("task_id")
@@ -987,6 +993,7 @@ class ControlPlaneService:
                         "task": coder_task,
                         "tokens": 0,
                         "cost": 0.0,
+                        "hierarchy_node_id": t.get("hierarchy_node_id") or (t.get("spec") or {}).get("hierarchy_node_id"),
                     },
                     "specialist-reviewer-01": {
                         "id": "specialist-reviewer-01",
@@ -999,6 +1006,7 @@ class ControlPlaneService:
                         "task": rev_task,
                         "tokens": 0,
                         "cost": 0.0,
+                        "hierarchy_node_id": t.get("hierarchy_node_id") or (t.get("spec") or {}).get("hierarchy_node_id"),
                     },
                 }
             else:
