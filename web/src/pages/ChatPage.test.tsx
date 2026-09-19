@@ -424,7 +424,7 @@ describe("ChatPage", () => {
 
   it("explains an expired login in plain words with a Reload button when auto-reload is spent", async () => {
     const { default: ChatPage } = await import("./ChatPage");
-    const { container } = await render(
+    await render(
       <MemoryRouter initialEntries={["/chat"]}>
         <ChatPage isActive />
       </MemoryRouter>,
