@@ -12,9 +12,12 @@ past that); see the **routing table** at the end and read the area file before e
 > DEV na VM, caminhos, pipeline VM→ISO, invariantes de deploy). Builds de imagem
 > vivem em `distro/haos-linux/`.
 >
-> **Toda compilação incrementa +1 na versão** (`0.21.4` → `0.21.5`). A versão
-> vive em `hermes_cli/__init__.py` (`__version__` e `__release_date__`) e em
-> `pyproject.toml`; num install editable, rode `pip install -e . --no-deps`
+> **Todo commit no `main` incrementa +1 na versão** (`0.21.4` → `0.21.5`), no
+> mesmo commit. Rode `python scripts/release.py --bump patch --bump-only` — ele
+> escreve os arquivos de versão e para, sem commitar, taguear ou publicar. A
+> versão vive em `hermes_cli/__init__.py` (`__version__` e `__release_date__`),
+> `pyproject.toml`, `apps/desktop/package.json` e nos arquivos do
+> bootstrap-installer. Num install editable, rode `pip install -e . --no-deps`
 > depois, senão o metadado fica para trás — o agente lê a própria versão por
 > `importlib.metadata` em quatro caminhos. Detalhes e armadilhas:
 > `docs/haos/DEV_WORKFLOW_VM.md` §5 item 6.

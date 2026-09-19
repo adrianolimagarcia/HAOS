@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "release.py"
 
@@ -142,3 +145,45 @@ def test_version_files_to_stage_omits_missing_installer(tmp_path, monkeypatch):
     assert str(paths["desktop_pkg"]) in staged
     assert str(paths["init_py"]) in staged
     assert str(paths["pyproject"]) in staged
+
+
+def test_bump_only_writes_the_bump_and_never_reaches_the_release_machinery(
+    tmp_path, monkeypatch, capsys
+):
+    """`--bump-only` advances the version without committing, tagging or publishing.
+
+    Before this mode existed the ONLY path that wrote a bump was `--publish`, which
+    also commits, creates an annotated tag and publishes a release — far more than
+    "increment by one on every commit" wants. The three release helpers are booby
+    trapped rather than merely asserted-absent, so the test fails if the early
+    return is ever moved back below them.
+    """
+    paths = _patch_repo(tmp_path, monkeypatch)
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("--bump-only must not reach the release/tag machinery")
+
+    monkeypatch.setattr(release, "next_available_tag", _must_not_run)
+    monkeypatch.setattr(release, "get_last_tag", _must_not_run)
+    monkeypatch.setattr(release, "get_commits", _must_not_run)
+    monkeypatch.setattr(
+        sys, "argv", ["release.py", "--bump", "patch", "--bump-only", "--date", "2026.9.19"]
+    )
+
+    release.main()
+
+    init_text = paths["init_py"].read_text(encoding="utf-8")
+    assert '__version__ = "0.0.2"' in init_text
+    assert '__release_date__ = "2026.9.19"' in init_text
+    assert 'version = "0.0.2"' in paths["pyproject"].read_text(encoding="utf-8")
+    assert _json_version(paths["desktop_pkg"]) == "0.0.2"
+    assert "Bumped 0.0.1 -> 0.0.2" in capsys.readouterr().out
+
+
+def test_bump_only_without_a_bump_part_is_an_error(tmp_path, monkeypatch):
+    """Writing "the next version" needs to know which component moves."""
+    _patch_repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["release.py", "--bump-only"])
+
+    with pytest.raises(SystemExit):
+        release.main()

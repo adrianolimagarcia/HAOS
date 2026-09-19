@@ -111,17 +111,22 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
 4. Restauração do haos-setup DEV (ver §2) no snapshot — round-trip validado.
 5. Validação do squashfs (hostname, TODOS os `vmlinuz-*`, venv via
    `usr/bin/python3.13`, ausência de machine-id/chaves) + rename do ISO.
-6. **Versionamento: toda compilação incrementa +1 na versão** (regra do dono,
-   19/09/2026). Antes de gerar o artefato, suba o patch: `0.21.4` → `0.21.5`.
-   A versão vive em **dois** arquivos rastreados e eles andam juntos —
-   `hermes_cli/__init__.py` (`__version__` **e** `__release_date__`) e
-   `pyproject.toml` (`version`) — mais `apps/desktop/package.json` quando
-   existir. O caminho canônico é `python scripts/release.py --bump patch`, com
-   uma armadilha: **sem `--publish` ele é dry run puro**. `update_version_files`
-   só é chamado dentro de `if args.publish:` (`scripts/release.py:2614-2621`),
-   então o comando imprime o preview e **não escreve nada**. `--publish`
-   incrementa, commita, cria tag anotada e publica o release — mais do que um
-   bump, e provavelmente não é o que se quer a cada build.
+6. **Versionamento: todo commit no `main` incrementa +1 na versão** (regra do dono,
+   19/09/2026). `0.21.4` → `0.21.5`, **no mesmo commit** — não num commit separado,
+   senão o commit do próprio bump exigiria outro bump. O comando é
+   `python scripts/release.py --bump patch --bump-only`: escreve os arquivos e
+   para — **não** commita, **não** cria tag, **não** publica.
+
+   `--bump-only` existe desde 19/09/2026 por causa disso: antes, o único caminho
+   que escrevia um bump era `--publish`, porque `update_version_files` só era
+   alcançado dentro de `if args.publish:` — então incrementar a versão obrigava a
+   publicar um release. `--bump-only` roda **antes** de qualquer consulta de tag,
+   de propósito: avançar a versão não pode depender de tags existirem.
+
+   A versão vive em `hermes_cli/__init__.py` (`__version__` **e**
+   `__release_date__`), `pyproject.toml`, `apps/desktop/package.json` e nos
+   arquivos do bootstrap-installer (`package.json`, `tauri.conf.json`,
+   `Cargo.toml`); `update_version_files` cuida de todos.
 
    **Nunca deixe o metadado pip para trás.** Em install editable
    (`pip install -e .`), `importlib.metadata.version("hermes-agent")` continua

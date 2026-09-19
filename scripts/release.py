@@ -2285,6 +2285,20 @@ def version_files_to_stage() -> list[str]:
     return [str(path) for path in candidates if path.exists()]
 
 
+def apply_version_bump(part: str, calver_date: str) -> tuple[str, str]:
+    """Bump the version files in place; return (old, new).
+
+    The write half of a release without the release: no commit, no tag, no GitHub
+    call. This is what `--bump-only` runs, so advancing the version does not
+    require publishing anything. `--publish` still does the whole release and
+    calls `update_version_files` itself.
+    """
+    current = get_current_version()
+    new_version = bump_version(current, part)
+    update_version_files(new_version, calver_date)
+    return current, new_version
+
+
 def resolve_author(name: str, email: str) -> str:
     """Resolve a git author to a GitHub @mention."""
     # Try email lookup first
@@ -2544,6 +2558,8 @@ def main():
                         help="Which semver component to bump")
     parser.add_argument("--publish", action="store_true",
                         help="Actually create the tag and GitHub release (otherwise dry run)")
+    parser.add_argument("--bump-only", action="store_true",
+                        help="Write the version files and stop: no commit, no tag, no release")
     parser.add_argument("--date", type=str,
                         help="Override CalVer date (format: YYYY.M.D)")
     parser.add_argument("--first-release", action="store_true",
@@ -2558,6 +2574,17 @@ def main():
     else:
         now = datetime.now()
         calver_date = f"{now.year}.{now.month}.{now.day}"
+
+    if args.bump_only:
+        # Deliberately before any tag lookup: advancing the version must not depend on
+        # tags existing, and must not create one. Without this the only way to write a
+        # bump was --publish, which also commits, tags and publishes a release.
+        if not args.bump:
+            parser.error("--bump-only requires --bump <part> (major|minor|patch)")
+        old_version, new_version = apply_version_bump(args.bump, calver_date)
+        print(f"Bumped {old_version} -> {new_version} ({calver_date})")
+        print("Version files written. No commit, tag or release created.")
+        return
 
     base_tag = f"v{calver_date}"
     tag_name, calver_date = next_available_tag(base_tag)
