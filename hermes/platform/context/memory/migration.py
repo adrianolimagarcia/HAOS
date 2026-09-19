@@ -60,8 +60,10 @@ class MigrationReport:
     notes_seen: int = 0
     decisions: int = 0
     imported: int = 0
+    updated: int = 0
     skipped_existing: int = 0
     skipped_projected: int = 0
+    skipped_oversized: int = 0
     entries: List[MigrationEntry] = field(default_factory=list)
     scopes: Dict[str, int] = field(default_factory=dict)
     owners: Dict[str, int] = field(default_factory=dict)
@@ -86,8 +88,10 @@ class MigrationReport:
             "notes_seen": self.notes_seen,
             "decisions": self.decisions,
             "imported": self.imported,
+            "updated": self.updated,
             "skipped_existing": self.skipped_existing,
             "skipped_projected": self.skipped_projected,
+            "skipped_oversized": self.skipped_oversized,
             "duplicates": len(self.duplicates),
             "scopes": dict(self.scopes),
             "owners": dict(self.owners),
@@ -97,6 +101,13 @@ class MigrationReport:
 
 class MemoryMigrator:
     VERSION = 1
+
+    #: Where a note stops being memory and becomes a document. Derived from what recall can
+    #: actually use (``provider.prefetch`` asks for 5000 chars per turn) and from the vault this
+    #: runs against: its ADRs and diary entries top out near 10k, while the two derived documents
+    #: — a 52k auto-generated REGISTRY mirror and a 25k research article — sit far above. The
+    #: ceiling lands in that gap, so it excludes documents without touching an authored note.
+    MAX_CONTENT_CHARS = 20_000
 
     def __init__(self, store: CanonicalMemoryStore, runner: ProjectionRunner) -> None:
         self.store = store
@@ -135,6 +146,7 @@ class MemoryMigrator:
         access: Optional[MemoryAccessContext] = None,
         owner_id: str = "",
         skip_projected: bool = True,
+        max_content_chars: int = MAX_CONTENT_CHARS,
     ) -> MigrationReport:
         """Build the import plan without writing anything.
 
@@ -146,6 +158,12 @@ class MemoryMigrator:
         ``skip_projected`` ignores notes the fabric itself wrote. The Obsidian
         projection targets the same vault a migration reads from, so without this
         a second run would import its own projections back as new facts.
+
+        ``max_content_chars`` keeps documents out of the journal. Memory is recalled into a
+        turn under a budget of a few thousand chars, so a note an order of magnitude past that
+        can only ever be recalled as a fragment of itself — and it wins the rank anyway, pushing
+        the records that would have answered the query out of the budget. Skipping it is not
+        data loss: the note stays in the vault, and the report says how many were left there.
         """
         vault = Path(vault_path)
         if not vault.is_dir():
@@ -161,6 +179,9 @@ class MemoryMigrator:
             content = path.read_text(encoding="utf-8")
             if skip_projected and self.is_projection(content):
                 report.skipped_projected += 1
+                continue
+            if len(content) > max_content_chars:
+                report.skipped_oversized += 1
                 continue
             digest = self.content_hash(content)
             kind = self._kind_for(path)
@@ -187,6 +208,27 @@ class MemoryMigrator:
 
     # -- applying ------------------------------------------------------------
 
+    def active_revision(self, record: MemoryRecord) -> MemoryRecord:
+        """Follow the supersession chain to the revision that is active now.
+
+        ``store.get`` resolves by record id, and an updated note keeps its original id as the
+        anchor of the chain — so comparing against the record ``get`` returns would compare
+        against a superseded revision, find it different every time, and append a fresh
+        supersession on every single sync.
+        """
+        successors = self.store.superseded_by_map()
+        seen = {record.record_id}
+        current = record
+        while True:
+            successor_id = successors.get(current.record_id)
+            if successor_id is None or successor_id in seen:
+                return current
+            successor = self.store.get(successor_id)
+            if successor is None:
+                return current
+            seen.add(successor_id)
+            current = successor
+
     def backfill_obsidian(
         self,
         vault_path: str | Path,
@@ -196,16 +238,26 @@ class MemoryMigrator:
         owner_id: str = "",
         dry_run: bool = False,
         rebuild: bool = True,
+        max_content_chars: int = MAX_CONTENT_CHARS,
     ) -> MigrationReport:
-        """Import vault notes into the canonical journal.
+        """Import vault notes into the canonical journal, converging it to the vault.
 
         ``dry_run=True`` returns the plan and writes nothing — neither canonical
         records nor projections. ``rebuild`` drains the outbox afterwards, which
         is how GraphRAG and the vector index are reconstructed: by replay, never
         by the migrator writing to them.
+
+        Re-running this is the sync: a note that changed since the last run is superseded by a
+        new revision rather than skipped. Skipping it was silent staleness — the journal would
+        keep serving the old text for a note the operator had already corrected, and nothing in
+        the report said so.
         """
         report = self.plan(
-            vault_path, default_scope=default_scope, access=access, owner_id=owner_id
+            vault_path,
+            default_scope=default_scope,
+            access=access,
+            owner_id=owner_id,
+            max_content_chars=max_content_chars,
         )
         if dry_run:
             return report
@@ -225,12 +277,31 @@ class MemoryMigrator:
                 metadata.update(access.write_metadata(entry.scope))
             elif entry.owner_id:
                 metadata["owner_id"] = entry.owner_id
+            content = Path(str(vault_path), entry.relative_path).read_text(encoding="utf-8")
             existing = self.store.get(entry.record_id)
             if existing is not None:
-                report.skipped_existing += 1
+                active = self.active_revision(existing)
+                if active.content_hash == entry.content_hash:
+                    report.skipped_existing += 1
+                    continue
+                # No idempotency_key: that argument IS the record id, and reusing the note's
+                # would collide with the revision being replaced. logical_id carries the
+                # lineage, supersedes retires the old revision, and recall — which reads active
+                # records only — starts answering with the new text.
+                self.store.append(
+                    content=content,
+                    scope=entry.scope,
+                    kind=entry.kind,
+                    logical_id=active.logical_id,
+                    provenance=({"uri": entry.uri, "migration_version": self.VERSION},),
+                    metadata=metadata,
+                    valid_from=entry.valid_from,
+                    supersedes=(active.record_id,),
+                )
+                report.updated += 1
                 continue
             self.store.append(
-                content=Path(str(vault_path), entry.relative_path).read_text(encoding="utf-8"),
+                content=content,
                 scope=entry.scope,
                 kind=entry.kind,
                 provenance=({"uri": entry.uri, "migration_version": self.VERSION},),

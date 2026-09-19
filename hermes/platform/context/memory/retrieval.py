@@ -10,6 +10,27 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
 from hermes.platform.context.memory.access import MemoryAccessContext
 
+#: Below this a block is a provenance header with no payload left: it stops being memory and
+#: becomes prompt noise. It is also the reservation held back for each not-yet-rendered hit.
+_MIN_BLOCK_CHARS = 400
+
+
+def _fit_block(block: str, allowance: int) -> str:
+    """Truncate ``block`` to at most ``allowance`` chars, at a line boundary, and say so.
+
+    The marker is part of the allowance, so the result is bounded by construction rather than by
+    arithmetic that has to stay in sync with the marker's length.
+    """
+    if len(block) <= allowance:
+        return block
+    marker = "\n[…truncado: %d de %d chars]" % (allowance, len(block))
+    room = max(0, allowance - len(marker))
+    cut = block.rfind("\n", 0, room)
+    if cut < room // 2:  # no usable line boundary near the cap: cut mid-line rather than lose it
+        cut = room
+    return block[:cut] + marker
+
+
 @dataclass(frozen=True)
 class RetrievalHit:
     record: MemoryRecord
@@ -68,27 +89,67 @@ class HybridMemoryRetriever:
 
         chosen: List[RetrievalHit] = []
         used = 0
+        # O que um hit pode ocupar de fato no prompt é, no máximo, a cota justa de um hit: o
+        # render corta o que passar disso. Cobrar ``len(content)`` integral fazia um registro de
+        # 60k esgotar o budget e derrubar todos os menores depois dele — justamente os que
+        # caberiam —, então um único documento grande apagava o resto do recall.
+        share = max(1, budget_chars // max(1, limit))
         # Same logical memory is emitted once: latest active revision wins.
         seen_logical = set()
         for record_id, score in sorted(ranks.items(), key=lambda item: item[1], reverse=True):
             record = by_id[record_id]
             if record.logical_id in seen_logical:
                 continue
-            cost = len(record.content)
-            if chosen and used + cost > budget_chars:
+            charge = min(len(record.content), share)
+            if chosen and used + charge > budget_chars:
                 self._count("dropped_by_budget")
                 continue
             seen_logical.add(record.logical_id)
-            used += cost
+            used += charge
             chosen.append(RetrievalHit(record, score, tuple(channels[record_id])))
             if len(chosen) >= limit:
                 break
         return chosen
 
     def format_context(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000, access: Optional[MemoryAccessContext] = None) -> str:
-        blocks = []
-        for hit in self.retrieve(query, allowed_scopes, limit, budget_chars, access):
-            rec = hit.record
-            provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
-            blocks.append("[memory:%s scope=%s provenance=%s]\n%s" % (rec.record_id, rec.scope, provenance or "unknown", rec.content))
-        return "\n\n".join(blocks)
+        """Render the recalled records as one prompt-ready block, hard-capped at ``budget_chars``.
+
+        The cap is a contract, not a hint. This string is appended to the user message on every
+        turn, so anything over it is paid for on every request — and ``retrieve``'s budget cannot
+        enforce it: that budget bounds *candidate selection*, and deliberately admits the best hit
+        whatever its size (``chosen and ...``) so a large-but-relevant record is not invisible.
+        Enforcing the cap therefore has to happen here, on the rendered text.
+
+        A record too large for its share is truncated rather than dropped, with the truncation
+        marked in the text: silently cutting memory would let the model read a fragment as if it
+        were the whole record, and dropping it outright would hide the most relevant hit.
+        """
+        hits = self.retrieve(query, allowed_scopes, limit, budget_chars, access)
+        if not hits:
+            return ""
+        blocks = [self._render(hit) for hit in hits]
+        # Never return nothing for a budget that is merely small: the floor shrinks with it.
+        floor = min(_MIN_BLOCK_CHARS, budget_chars)
+        rendered: List[str] = []
+        used = 0
+        for index, block in enumerate(blocks):
+            remaining = budget_chars - used
+            if remaining < floor:
+                self._count("dropped_by_budget", len(blocks) - index)
+                break
+            # Reserve the floor for every later hit, so one large record cannot starve the rest:
+            # a budget that always returns a single document is not a recall budget.
+            reserve = floor * (len(blocks) - index - 1)
+            allowance = min(len(block), max(floor, remaining - reserve))
+            fitted = _fit_block(block, allowance)
+            rendered.append(fitted)
+            used += len(fitted) + 2  # the "\n\n" joiner; over-counts by 2 on the last block
+            if len(fitted) < len(block):
+                self._count("truncated_blocks")
+        return "\n\n".join(rendered)
+
+    @staticmethod
+    def _render(hit: RetrievalHit) -> str:
+        rec = hit.record
+        provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
+        return "[memory:%s scope=%s provenance=%s]\n%s" % (rec.record_id, rec.scope, provenance or "unknown", rec.content)

@@ -31,8 +31,18 @@ class ObsidianAdapter(ContextSource):
     def __init__(self, vault_path: Optional[Path | str] = None):
         if isinstance(vault_path, str):
             self.vault_path = Path(vault_path)
+        elif vault_path is not None:
+            self.vault_path = vault_path
         else:
-            self.vault_path = vault_path or Path(".hermes/obsidian_vault")
+            # O home canônico, nunca o CWD. Este adapter não só lê: a projeção ``obsidian`` do
+            # fabric escreve por ele, e um caminho relativo fazia cada processo gravar num vault
+            # diferente conforme de onde rodava — da árvore de desenvolvimento, para dentro do
+            # próprio repo (40 notas em ``.hermes/obsidian_vault`` em 19/09/2026), enquanto o
+            # vault real ficava com zero. O provider já resolvia assim (``provider.py``); o
+            # adapter tinha ficado para trás, e é ele que a projeção usa.
+            from hermes_constants import get_hermes_home  # function-level: lint A6
+
+            self.vault_path = Path(get_hermes_home()) / "obsidian_vault"
         self._cache: Dict[str, ContextItem] = {}
         # Lazy FTS index over the vault; None until first built, and rebuilt
         # when set_vault_path() points the adapter at another vault.
