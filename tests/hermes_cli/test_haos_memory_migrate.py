@@ -18,6 +18,12 @@ import pytest
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore
 
 
+def _migrate(args: argparse.Namespace) -> int:
+    from hermes_cli.main_agent_cmds import _cmd_memory_migrate
+
+    return _cmd_memory_migrate(args)
+
+
 def _vault(tmp_path: Path) -> Path:
     vault = tmp_path / "vault"
     (vault / "curadoria").mkdir(parents=True)
@@ -52,10 +58,8 @@ def _counters() -> dict:
 
 
 def test_dry_run_plans_without_writing(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-    from hermes_cli.haos_cmd import cmd_haos_memory_migrate
-
     vault = _vault(tmp_path)
-    assert cmd_haos_memory_migrate(_args(vault)) == 0
+    assert _migrate(_args(vault)) == 0
 
     summary = json.loads(capsys.readouterr().out)
     assert summary["dry_run"] is True
@@ -69,16 +73,14 @@ def test_dry_run_plans_without_writing(tmp_path: Path, capsys: pytest.CaptureFix
 
 
 def test_apply_imports_and_is_idempotent(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
-    from hermes_cli.haos_cmd import cmd_haos_memory_migrate
-
     vault = _vault(tmp_path)
-    assert cmd_haos_memory_migrate(_args(vault, apply=True)) == 0
+    assert _migrate(_args(vault, apply=True)) == 0
     first = json.loads(capsys.readouterr().out)
     assert first["imported"] == 2
     assert _counters()["records_active"] == 2
 
     # Re-running must not double the journal: the migrator keys on the legacy record id.
-    assert cmd_haos_memory_migrate(_args(vault, apply=True)) == 0
+    assert _migrate(_args(vault, apply=True)) == 0
     second = json.loads(capsys.readouterr().out)
     assert second["imported"] == 0
     assert second["skipped_existing"] == 2
@@ -88,8 +90,6 @@ def test_apply_imports_and_is_idempotent(tmp_path: Path, capsys: pytest.CaptureF
 def test_a_missing_vault_is_refused_without_touching_the_journal(
     tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:
-    from hermes_cli.haos_cmd import cmd_haos_memory_migrate
-
-    assert cmd_haos_memory_migrate(_args(tmp_path / "nope", apply=True)) == 2
+    assert _migrate(_args(tmp_path / "nope", apply=True)) == 2
     assert "não encontrado" in capsys.readouterr().out
     assert _counters().get("records_active", 0) == 0

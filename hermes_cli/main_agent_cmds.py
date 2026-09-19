@@ -68,9 +68,85 @@ def cmd_memory(args):
         _cmd_memory_log(args)
     elif sub == "revert":
         _cmd_memory_revert(args)
+    elif sub == "migrate":
+        _cmd_memory_migrate(args)
     else:
         from hermes_cli.memory_setup import memory_command
         memory_command(args)
+
+
+def _cmd_memory_migrate(args):
+    """Backfill the vault into the canonical journal — the MemoryMigrator's only caller.
+
+    Dry-run unless ``--apply``: the migrator writes canonical records and replays projections,
+    and the numbers worth reviewing (what is new, what is a duplicate) only exist after a plan,
+    so the safe default has to be the one that writes nothing.
+    """
+    import json
+    from pathlib import Path
+
+    from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
+    from hermes.platform.context.memory.migration import MemoryMigrator
+
+    vault_arg = getattr(args, "vault", "") or ""
+    if vault_arg:
+        vault = Path(vault_arg).expanduser()
+    else:
+        from hermes_constants import get_hermes_home
+
+        vault = Path(get_hermes_home()) / "obsidian_vault"
+
+    if not vault.is_dir():
+        print(f"  ✗ vault não encontrado: {vault}")
+        return 2
+
+    dry_run = not getattr(args, "apply", False)
+    coordinator = FederatedMemoryCoordinator()
+    try:
+        migrator = MemoryMigrator(coordinator.canonical_store, coordinator.projection_runner)
+        report = migrator.backfill_obsidian(
+            vault,
+            default_scope=getattr(args, "scope", "") or "project",
+            dry_run=dry_run,
+        )
+        summary = report.summary()
+    finally:
+        coordinator.canonical_store.close()
+
+    if getattr(args, "json", False):
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return 0
+
+    print("=" * 58)
+    print("      HAOS MEMORY FABRIC — MIGRAÇÃO PARA O JOURNAL      ")
+    print("=" * 58)
+    print(f"Vault   : {summary['vault']}")
+    print(f"Modo    : {'DRY-RUN (nada foi escrito)' if summary['dry_run'] else 'APLICADO'}")
+    print("-" * 58)
+    print(f"  Notas lidas        : {summary['notes_seen']}")
+    print(f"  Decisões           : {summary['decisions']}")
+    print(f"  Duplicatas no plano: {summary['duplicates']}")
+    print(f"  Projeções do fabric: {summary['skipped_projected']} (ignoradas)")
+    # In a dry-run the migrator returns the plan before its write loop, so report.imported is 0 by
+    # construction — printing it as the answer would tell the operator "0 to import" about 28 notes.
+    if summary["dry_run"]:
+        would_import = len([entry for entry in report.entries if not entry.is_duplicate])
+        print("-" * 58)
+        print(f"  Seriam importadas  : {would_import}")
+        for entry in report.duplicates[:5]:
+            print(f"    duplicata: {entry.relative_path}")
+    else:
+        print(f"  Importadas         : {summary['imported']}")
+        print(f"  Já existentes      : {summary['skipped_existing']}")
+        print(f"  Projeções replayed : {summary['projections_replayed']}")
+    if summary["scopes"]:
+        print("-" * 58)
+        for scope, count in sorted(summary["scopes"].items()):
+            print(f"  {scope:<19}: {count}")
+    if summary["dry_run"]:
+        print("-" * 58)
+        print("  Nada foi escrito. Rode com --apply para migrar.")
+    return 0
 
 
 def _cmd_memory_dream(args):

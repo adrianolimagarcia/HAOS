@@ -41,4 +41,12 @@ def build_memory_parser(subparsers, *, cmd_memory: Callable) -> None:
     _revert_parser = memory_sub.add_parser("revert", help="Rollback a dream consolidation commit")
     _revert_parser.add_argument("sha", help="Git commit SHA to revert")
 
+    # HAOS Memory Fabric — backfill the vault into the canonical journal.
+    _migrate_parser = memory_sub.add_parser(
+        "migrate", help="Backfill do vault Obsidian para o journal canônico (dry-run por padrão)")
+    _migrate_parser.add_argument("--apply", action="store_true", help="Escreve de verdade; sem isto é dry-run")
+    _migrate_parser.add_argument("--vault", default="", help="Caminho do vault (padrão: $HERMES_HOME/obsidian_vault)")
+    _migrate_parser.add_argument("--scope", default="", help="Escopo padrão das notas importadas (padrão: project)")
+    _migrate_parser.add_argument("--json", action="store_true", help="Saída do relatório em JSON")
+
     memory_parser.set_defaults(func=cmd_memory)
