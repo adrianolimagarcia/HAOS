@@ -510,7 +510,6 @@ describe("ChatPage", () => {
     } finally {
       vi.useRealTimers();
     }
->>>>>>> upstream/main
   });
 
   it("attaches visualViewport keyboard-inset listeners only while the chat tab is active", async () => {
