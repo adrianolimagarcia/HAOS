@@ -502,8 +502,24 @@ def test_turn_lease_revives_expired_row_still_owned_by_writer(tmp_path):
         "shared",
         [{"role": "assistant", "content": "after ttl"}],
         turn_lease_holder=holder,
-        turn_lease_ttl_seconds=0.2,
+        # The renewal TTL must outlast the two statements below. At 0.2s it did not: the writer
+        # stores `expires_at = now + max(0.1, ttl)` (hermes_state_messages.py:222-227) and the
+        # contender samples its own `now`, reclaiming whenever `expires_at <= now`
+        # (hermes_state_compression.py:519-536). Under the parallel runner more than 200ms elapsed
+        # between the two, the revived row expired again, and the contender legitimately won — the
+        # assertion below then saw `True`. Production always renews with 300s
+        # (agent/turn_facade_lease.py LEASE_TTL_SECONDS); this was the only sub-second renewal TTL
+        # in the repo.
+        turn_lease_ttl_seconds=30,
     ) == 1
+    # Witness that the writer actually revived the row, so the fence below cannot pass by the
+    # revival silently not happening.
+    lease = db._read_one(
+        "SELECT holder, expires_at FROM session_turn_leases WHERE conversation_id = ?",
+        ("shared",),
+    )
+    assert lease["holder"] == holder
+    assert float(lease["expires_at"]) > time.time()
     assert not db.try_acquire_session_turn_lease(
         "shared", f"pid={os.getpid()}:turn=contender", ttl_seconds=5
     )
