@@ -196,3 +196,37 @@ def test_an_explicit_vault_still_wins() -> None:
     from hermes.platform.context.memory.obsidian import ObsidianAdapter
 
     assert ObsidianAdapter("/tmp/vault-explicito").vault_path == Path("/tmp/vault-explicito")
+
+
+# --------------------------------------------------------------------------
+# A declaração de cutover não pode ser lida como estado
+# --------------------------------------------------------------------------
+
+
+def test_a_declared_cutover_does_not_claim_there_is_something_to_serve(tmp_path: Path) -> None:
+    """A config declara o cutover completo desde o primeiro boot; o journal é que diz se serve."""
+    coordinator = FederatedMemoryCoordinator(vault_path=tmp_path / "fabric-vault")
+    try:
+        cutover = coordinator.fabric_metrics()["cutover"]
+        assert cutover["declared_position"] > 0, "a configuração declara estágios ativos"
+        assert len(cutover["declared_stages"]) == cutover["declared_position"]
+        assert cutover["serving"] is False, "um journal vazio não serve nada, declarado ou não"
+        assert "journal_empty" in cutover["blockers"]
+    finally:
+        coordinator.canonical_store.close()
+
+
+def test_a_pending_outbox_is_evidence_the_fabric_is_not_serving_yet(tmp_path: Path) -> None:
+    coordinator = FederatedMemoryCoordinator(vault_path=tmp_path / "fabric-vault")
+    try:
+        migrator = MemoryMigrator(coordinator.canonical_store, coordinator.projection_runner)
+        # rebuild=False deixa o outbox com trabalho pendente, e isso é evidência sobre estado:
+        # declarar o cutover completo não drena outbox nenhum.
+        migrator.backfill_obsidian(_vault(tmp_path, oversized=False), rebuild=False)
+        cutover = coordinator.fabric_metrics()["cutover"]
+        assert cutover["outbox_pending"], "as projeções ainda não rodaram"
+        assert "projections_pending" in cutover["blockers"]
+        assert cutover["serving"] is False
+        assert cutover["serving"] == (cutover["blockers"] == []), "serving é derivado dos blockers"
+    finally:
+        coordinator.canonical_store.close()

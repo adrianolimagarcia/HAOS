@@ -965,10 +965,48 @@ class FederatedMemoryCoordinator:
             self.metrics.increment("supersessions_restored")
         return outcome
 
+    def cutover_evidence(self, counters: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+        """O que o cutover *declara*, ao lado do que o journal *mostra*.
+
+        ``MemoryFeatureFlags.position()`` afirma quais caminhos de código estão ativos — uma
+        afirmação sobre configuração — e vinha sendo lida como afirmação sobre estado. Em
+        19/09/2026 ela devolvia 6 ("pós-cutover") minutos depois de o journal receber os
+        primeiros registros, e as duas coisas eram verdadeiras ao mesmo tempo: a configuração
+        estava completa, a migração tinha acabado de começar. Reportá-las juntas é o que impede
+        uma de ser lida como a outra — e ``serving`` responde sobre estado, derivado de
+        evidência, não de intenção.
+        """
+        counters = counters if counters is not None else self.canonical_store.operational_counters()
+        backlog = self.canonical_store.pending_by_projection()
+        failures = self.canonical_store.failed_projections()
+        blockers: List[str] = []
+        if counters.get("records_active", 0) == 0:
+            blockers.append("journal_empty")
+        if backlog:
+            blockers.append("projections_pending")
+        if failures:
+            blockers.append("projections_failed")
+        if counters.get("expired_leases", 0):
+            blockers.append("leases_expired")
+        return {
+            "declared_position": self.flags.position(),
+            "declared_stages": list(self.flags.active()),
+            "serving": not blockers,
+            "blockers": blockers,
+            "outbox_pending": backlog,
+            "outbox_failures": failures,
+        }
+
     def fabric_metrics(self) -> Dict[str, Any]:
-        """Metrics snapshot with the live outbox backlog and journal counters folded in."""
-        snapshot = self.metrics.snapshot(backlog=self.canonical_store.pending_by_projection())
-        snapshot["journal"] = self.canonical_store.operational_counters()
+        """Metrics snapshot with the live outbox backlog, journal counters and cutover evidence."""
+        counters = self.canonical_store.operational_counters()
+        evidence = self.cutover_evidence(counters)
+        snapshot = self.metrics.snapshot(backlog=evidence["outbox_pending"])
+        # The journal is a separate key, not folded into the projection snapshot: the outbox
+        # backlog says how far the projections have to catch up, the journal says what there is
+        # to project. Conflating them made "no backlog" read as "nothing to serve".
+        snapshot["journal"] = counters
+        snapshot["cutover"] = evidence
         return snapshot
 
     def get_fact(self, fact_id: str) -> Optional[FederatedFactRecord]:
