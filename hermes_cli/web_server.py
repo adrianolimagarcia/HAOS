@@ -154,12 +154,16 @@ async def _lifespan(app: "FastAPI"):
     # (#79531/#80037): a store left behind by `haos update` otherwise 500s
     # every poll while the read-probe heal loses to sibling lock contention.
     # Daemon thread so a locked store never delays the socket (Desktop
-    # ready-probe times out at 10s, GH-73083).
-    threading.Thread(
+    # ready-probe times out at 10s, GH-73083). The handle is KEPT and joined in
+    # the lifespan finally: unowned, the thread outlives the server and closes
+    # its SessionDB only after something else already may have — the cross-thread
+    # close-vs-probe use-after-free that segfaulted test_web_profiles_off_loop.
+    reconcile_thread = threading.Thread(
         target=_eager_reconcile_own_session_db,
         daemon=True,
         name="statedb-eager-reconcile",
-    ).start()
+    )
+    reconcile_thread.start()
 
     # Import hermes_cli.gateway *before* the yield: on Windows + 3.11 the
     # import holds the GIL, so run_in_executor still froze the loop 15-22s and
@@ -260,6 +264,9 @@ async def _lifespan(app: "FastAPI"):
         hosted_room_start_cancel.set()
         _hosted_groups.stop_hosted_room_service(timeout=5.0)
         hosted_room_start_thread.join(timeout=1.0)
+        # Bound the reconcile thread's lifetime: it holds a SessionDB and must not
+        # outlive the server that started it (see the start site above).
+        reconcile_thread.join(timeout=5.0)
         if cron_stop is not None:
             cron_stop.set()
         pty_reaper_task.cancel()

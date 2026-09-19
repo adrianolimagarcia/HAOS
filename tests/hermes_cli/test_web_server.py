@@ -5120,7 +5120,18 @@ class TestDesktopCronTicker:
         monkeypatch.setenv("HERMES_DESKTOP", "1")
 
         with self._client():
-            assert called.wait(3.0), "expected cron tick under HERMES_DESKTOP=1"
+            # Liveness, not promptness: this asserts the desktop cron ticker eventually ticks, and
+            # the product promises no "first tick within N seconds". Before the tick the daemon
+            # thread cold-imports several modules and runs per-profile cron-store recovery
+            # (cron/scheduler_provider.py:533-544 -> cron/executions.py:92, which creates
+            # executions.db + WAL + schema on the fresh temp HERMES_HOME); that step alone measured
+            # 0.118s -> 1.926s (16x) across identical empty stores, and the full 191-test file put
+            # the first tick past the old 3.0s bound. 10.0 matches this repo's own idiom for the
+            # same assertion (_wait_until(..., timeout=10.0) in tests/cron/test_scheduler_provider.py).
+            # `interval=60` is NOT the cause and is untouched: the first tick fires at the top of
+            # the loop, before the first stop_event.wait(). A ticker that never ticks still fails
+            # here at any timeout.
+            assert called.wait(10.0), "expected cron tick under HERMES_DESKTOP=1"
 
 
 class TestServeIndexMissingIndex:

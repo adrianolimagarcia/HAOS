@@ -139,8 +139,15 @@ def _open_session_db_at_path(db_path: Path, *, read_only: bool):
         conn = getattr(db, "_conn", None)
         if conn is not None and str(db_path) not in _session_db_heal_exhausted:
             try:
-                for statement in _session_db_read_probe_statements():
-                    conn.execute(statement).fetchone()
+                # Hold the instance lock across the probe so a concurrent `close()` cannot free the
+                # connection out from under `execute` — pysqlite segfaults on that (reproduced 5/5
+                # with a stdlib A/B; `close()` takes this same lock at hermes_state.py:1442, so the
+                # two become mutually exclusive by construction). The `with` sits INSIDE the `try`
+                # deliberately: the lock must be released before the handler's `db.close()`, which
+                # would otherwise deadlock on it.
+                with db._lock:
+                    for statement in _session_db_read_probe_statements():
+                        conn.execute(statement).fetchone()
             except BaseException:
                 db.close()
                 raise
