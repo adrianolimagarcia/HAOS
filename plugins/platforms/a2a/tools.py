@@ -116,6 +116,11 @@ def _send_task(agent_label: str, peer: dict, message: str, context_id: str) -> t
     protocol.persist_message(ctx, "user", safe_message, rpc_body["id"])
     protocol.metrics.outbound_total += 1
     resp = _http_post_json(_rpc_url(base_url, card), rpc_body, headers, timeout)
+    if _is_method_not_found(resp):
+        # Go/nanobot/haosbot peers implement the older tasks/send dialect. Retrying once on
+        # -32601 is what makes them reachable at all; without it every send to such a peer
+        # fails at the error raise below with "Method not found".
+        resp = _http_post_json(_rpc_url(base_url, card), _tasks_send_body(rpc_body, safe_message), headers, timeout)
     if "error" in resp:
         raise ValueError(f"Peer '{agent_label}' returned an error: {resp['error'].get('message', resp['error'])}")
     payload = protocol.unwrap_send_message_response(resp.get("result", {}))
@@ -123,16 +128,64 @@ def _send_task(agent_label: str, peer: dict, message: str, context_id: str) -> t
     reply_ctx, state = ctx, ""
     if isinstance(payload, dict):
         reply_ctx = payload.get("contextId", ctx)
-        state = (payload.get("status") or {}).get("state", "")
+        state = _status_state(payload.get("status"))
     protocol.persist_message(reply_ctx, "agent", reply, rpc_body["id"])
     protocol.metrics.inbound_total += 1
     return reply, reply_ctx, state
+
+
+def _is_method_not_found(resp: Any) -> bool:
+    """True when the peer rejected SendMessage because it does not implement it.
+
+    JSON-RPC reserves -32601 for exactly this. Scoped to SendMessage so an unrelated
+    method-not-found (a broken proxy, a different API) is not silently reinterpreted as
+    "this peer speaks the old dialect".
+    """
+    if not isinstance(resp, dict):
+        return False
+    err = resp.get("error")
+    if not isinstance(err, dict) or err.get("code") != -32601:
+        return False
+    return "SendMessage" in str(err.get("message", ""))
+
+
+def _tasks_send_body(rpc_body: dict, text: str) -> dict:
+    """The pre-1.0 tasks/send body used by Go/nanobot/haosbot peers.
+
+    Those implementations take the text at params.input and expect a Message-shaped
+    params.message; the task id is reused so the reply is correlated with the request.
+    """
+    return {
+        "jsonrpc": "2.0",
+        "id": rpc_body["id"],
+        "method": "tasks/send",
+        "params": {"input": text, "message": {"text": text}},
+    }
+
+
+def _status_state(status: Any) -> str:
+    """Normalize a task status to a bare state string.
+
+    The v1.0 spec sends an object ({"state": "completed"}); Go/nanobot/haosbot peers send
+    the state as a plain string. Reading only the object shape turns their reply into an
+    empty state, which callers cannot distinguish from "no status at all".
+    """
+    if isinstance(status, dict):
+        return status.get("state") or ""
+    if isinstance(status, str):
+        return status
+    return ""
 
 
 def _reply_text_from_result(result: Any) -> str:
     result = protocol.unwrap_send_message_response(result)
     if not isinstance(result, dict):
         return str(result)
+    # Go/nanobot/haosbot peers return the reply as a bare top-level `output` string; it is
+    # the final answer, so it outranks artifacts and the interim status message below.
+    output = result.get("output")
+    if isinstance(output, str) and output:
+        return output
     # Artifacts first (final output), then status message (interim/clarify), else bare Message.
     for artifact in result.get("artifacts", []) or []:
         txt = protocol.extract_text(artifact)

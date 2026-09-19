@@ -1746,3 +1746,57 @@ class TestMultiplexConstructionScope:
         assert adapter.agent_name == "default-profile-agent"
         assert adapter._agents[""]["description"] == "Default profile's own agent."
         assert adapter._public_url == "https://default-profile.example.com/"
+
+
+class TestClientLegacyDialect:
+    """Peers that predate SendMessage: the tasks/send fallback and its reply shapes.
+
+    Go/nanobot/haosbot implement JSON-RPC but not SendMessage, so they answer -32601;
+    their replies carry the state as a bare string and the text as a top-level `output`.
+    Before the fallback existed, every send to such a peer died at the error raise.
+    """
+
+    @staticmethod
+    def _peer(monkeypatch, post):
+        def no_card(url, headers, timeout):
+            # The card probe is best-effort; failing it must not attempt a real connection.
+            raise OSError("no agent card")
+
+        monkeypatch.setattr(tools, "_http_get_json", no_card)
+        monkeypatch.setattr(tools, "_http_post_json", post)
+        return {"url": "http://peer.example", "auth": {}, "timeout": 5}
+
+    def test_send_task_retries_as_tasks_send_when_send_message_is_missing(self, monkeypatch):
+        bodies = []
+
+        def fake_post(url, body, headers, timeout):
+            bodies.append(body)
+            if body["method"] == "SendMessage":
+                return {"jsonrpc": "2.0", "id": body["id"],
+                        "error": {"code": -32601, "message": "Method not found: SendMessage"}}
+            return {"jsonrpc": "2.0", "id": body["id"],
+                    "result": {"output": "legacy reply", "status": "completed"}}
+
+        peer = self._peer(monkeypatch, fake_post)
+        reply, _ctx, state = tools._send_task("legacy", peer, "hello", "ctx-1")
+
+        assert [b["method"] for b in bodies] == ["SendMessage", "tasks/send"]
+        assert bodies[1]["params"]["input"] == "hello"
+        # The legacy peer's reply shapes: text at `output`, state as a bare string.
+        assert reply == "legacy reply"
+        assert state == "completed"
+
+    def test_method_not_found_for_another_method_does_not_trigger_the_fallback(self, monkeypatch):
+        """-32601 is only evidence of the old dialect when SendMessage is what was missing."""
+        bodies = []
+
+        def fake_post(url, body, headers, timeout):
+            bodies.append(body)
+            return {"jsonrpc": "2.0", "id": body["id"],
+                    "error": {"code": -32601, "message": "Method not found: SomethingElse"}}
+
+        peer = self._peer(monkeypatch, fake_post)
+        with pytest.raises(ValueError, match="returned an error"):
+            tools._send_task("odd", peer, "hello", "ctx-1")
+
+        assert len(bodies) == 1
