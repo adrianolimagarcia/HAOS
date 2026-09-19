@@ -331,6 +331,14 @@ def test_recovered_db_rows_survive_fallback_structural_save(monkeypatch, tmp_pat
         sessions_dir,
         GatewayConfig(sessions_dir=sessions_dir, write_sessions_json=False),
     )
+    # `SessionStore.__init__` primes this cache on the REAL monotonic clock, so whether the default
+    # 1s retry backoff is still open by the time `_ensure_loaded()` runs depends on how long the
+    # routing-home open takes — i.e. on runner load. When it outlasts the backoff, the opener is
+    # retried (calls == 2), SUCCEEDS, and `RecoverableHandleCache.get` pops `_unavailable[db_path]`
+    # (gateway/session_db_recovery.py:119) -> the poke below raises KeyError. Own the clock: a frozen
+    # 0.0 keeps `_clock() < next_retry_at` true through `_ensure_loaded()`, so the entry cannot be
+    # popped; setting `next_retry_at = 0` then releases exactly one retry.
+    store._db_handle_cache._clock = _Clock()
     store._ensure_loaded()
     store._db_handle_cache._unavailable[db_path].next_retry_at = 0
 
