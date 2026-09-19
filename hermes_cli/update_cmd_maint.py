@@ -1108,6 +1108,19 @@ def _run_post_update_maintenance(
         print("→ Syncing bundled skills...")
         _print_bundled_skills_sync_report()
 
+    # The vendored haos-edge binary and the HAOS_HOME scripts are installed by
+    # scripts/install_haos.sh, not by the Python pull, so without this they lag the checkout
+    # silently: the Python side looks current while `haos status`/`haos team` run old code.
+    with _best_effort('Appliance asset sync during update failed: %s'):
+        from hermes_cli.update_cmd_assets import sync_appliance_assets
+
+        appliance_assets = sync_appliance_assets(project_root=_m().PROJECT_ROOT)
+        if appliance_assets:
+            print()
+            print("→ Syncing appliance assets...")
+            for _line in appliance_assets:
+                print(_line)
+
     _sync_profiles_after_update()
 
     _check_and_apply_config_migration(
