@@ -8,8 +8,22 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+def _slugify(title: str) -> str:
+    """Deriva o nome de arquivo de um título, transliterando acentos.
+
+    Acentos são DOBRADOS para ASCII (``ç``→``c``, ``ã``→``a``), não trocados por
+    hífen. A versão anterior usava ``re.sub(r"[^a-zA-Z0-9_\\-]+", "-", ...)``, que
+    tratava cada caractere acentuado como separador: "Medição de recuperação"
+    virava ``medi-o-de-recupera-o``, ilegível e sem relação com o título.
+    """
+    folded = unicodedata.normalize("NFKD", title.lower())
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9_\-]+", "-", folded).strip("-")
 
 
 class OKFDocument:
@@ -174,7 +188,7 @@ class OKFStore:
         target_dir = self.bundle_dir / folder if folder else self.bundle_dir
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        slug = re.sub(r"[^a-zA-Z0-9_\-]+", "-", title.lower()).strip("-")
+        slug = _slugify(title)
         filepath = target_dir / (filename or f"{slug}.md")
         import yaml  # function-level: o lint A6 de hermes/platform só permite stdlib no topo
 
