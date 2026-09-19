@@ -31,6 +31,35 @@ from gateway.session import SessionEntry, SessionSource
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Bound on the inline hygiene wait itself, ~10x the 0.3s budget the tests configure.
+_TURN_HOLD_WAIT_BOUND_S = 3.0
+
+
+def _record_hygiene_wait(monkeypatch) -> list[float]:
+    """Measure the budgeted inline hygiene wait itself, returning the list it appends to.
+
+    ``hygiene_max_turn_hold_seconds`` bounds THIS wait, not the whole gateway turn.
+    ``_handle_message`` also runs plugin-hook discovery, transcript persistence and delivery, which
+    measured 1.2-3.0s on an IDLE box and past 5s under the parallel runner, while this wait is a
+    flat 0.30-0.31s in every run (measured idle and under load). Asserting a bound on the whole turn
+    therefore measured the runner's load, not the contract: the full suite flaked at 5.667s against
+    a 5.0s bound while the budgeted wait was 0.305s.
+    """
+    gateway_run = importlib.import_module("gateway.run")
+    waits: list[float] = []
+    real = gateway_run.GatewayRunner._hmwa_hygiene_wait_for_summary
+
+    async def _timed(self, *args, **kwargs):
+        started = time.monotonic()
+        try:
+            return await real(self, *args, **kwargs)
+        finally:
+            waits.append(time.monotonic() - started)
+
+    monkeypatch.setattr(gateway_run.GatewayRunner, "_hmwa_hygiene_wait_for_summary", _timed)
+    return waits
+
+
 # Ceiling on every "stall until released" fake worker in this file.
 #
 # The release sits on the LAST line of each test, after the assertions, so a failing
@@ -805,14 +834,21 @@ async def test_session_hygiene_turn_hold_budget_abandons_streaming_wait(
         message_id="1",
     )
 
-    started = time.monotonic()
+    # 15s is the anti-ceiling guard, not a latency assertion: with the turn-hold budget removed the
+    # host waits for the still-streaming worker (released only at the end of this test) and this
+    # raises TimeoutError, so the regression still fails here.
+    hyg_waits = _record_hygiene_wait(monkeypatch)
     result = await asyncio.wait_for(runner._handle_message(event), timeout=15)
-    elapsed = time.monotonic() - started
 
     # The turn proceeded on the uncompressed transcript well under the 600s
     # ceiling — the turn-hold budget (~0.3s) abandoned the streaming wait.
     assert result == "ok"
-    assert elapsed < 5.0, f"turn held for {elapsed:.1f}s despite the turn-hold budget"
+    # Bound the wait the budget actually governs. `elapsed` used to wrap the whole turn and so
+    # measured the runner's load; see `_record_hygiene_wait`.
+    assert hyg_waits, "hygiene never entered its inline wait — nothing was exercised"
+    assert hyg_waits[0] < _TURN_HOLD_WAIT_BOUND_S, (
+        f"inline hygiene wait ran {hyg_waits[0]:.2f}s despite the 0.3s turn-hold budget"
+    )
     assert worker_started.is_set()
     assert runner._run_agent.await_count == 1
     # The stale commit must be fenced: the late worker never mutates the session.
@@ -984,14 +1020,18 @@ async def test_session_hygiene_idle_timeout_still_takes_failure_path(
         message_id="1",
     )
 
-    started = time.monotonic()
+    # 15s is the anti-ceiling guard, not a latency assertion — see the turn-hold test above.
+    hyg_waits = _record_hygiene_wait(monkeypatch)
     result = await asyncio.wait_for(runner._handle_message(event), timeout=15)
-    elapsed = time.monotonic() - started
 
     # The turn proceeded on the uncompressed transcript after the idle
     # timeout fired (~0.1s).
     assert result == "ok"
-    assert elapsed < 5.0
+    # The idle timeout bounds the same inline wait; see `_record_hygiene_wait`.
+    assert hyg_waits, "hygiene never entered its inline wait — nothing was exercised"
+    assert hyg_waits[0] < _TURN_HOLD_WAIT_BOUND_S, (
+        f"inline hygiene wait ran {hyg_waits[0]:.2f}s despite the 0.1s idle timeout"
+    )
     assert worker_started.is_set()
     assert runner._run_agent.await_count == 1
 
