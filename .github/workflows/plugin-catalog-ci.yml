@@ -142,6 +142,17 @@ jobs:
               echo "::error file=$entry::self-updating code in catalog build (fetches GitHub AND writes plugin files): $SELF_UPDATE"
               FAILED=1; echo "::endgroup::"; continue
             fi
+
+            # README rule 5 also promises a credential-store check, and the self-updater
+            # gate above only reads JS/TS. This scans the plugin's Python for both:
+            # direct credential-store paths (~/.ssh/id_rsa, ~/.aws/credentials, ...) and
+            # writes to a __file__-derived path. Advisory while it calibrates — printed
+            # into the log for the reviewer, never fails the entry. Calibrated against
+            # this repo's own plugins/ tree (249 files, 0 high-confidence hits); promote
+            # to --strict once a full sweep of catalog entries is clean.
+            if [ -f "$GITHUB_WORKSPACE/scripts/scan_plugin_source.py" ]; then
+              python3 "$GITHUB_WORKSPACE/scripts/scan_plugin_source.py" "$PLUGIN_DIR" || true
+            fi
             echo "✅ PASS: $entry"
             echo "::endgroup::"
           done <<< "$CHANGED_FILES"

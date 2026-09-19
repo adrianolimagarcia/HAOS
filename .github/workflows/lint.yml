@@ -185,6 +185,16 @@ jobs:
       - name: Forbid in-tree use of plugin-compat pointers
         run: python scripts/check_compat_pointers.py
 
+      # A module in a governed scope must ship its contract document (Purpose / Contract /
+      # Side effects / Verification) as a `<name>.py.dox.md` sibling. Retrofitting that onto the
+      # 483 modules that predate the rule would be a wall of stub files, so
+      # scripts/ci/dox_coverage_baseline.txt grandfathers them and only un-grandfathered modules
+      # must comply. The ratchet may only tighten: documenting a grandfathered module without
+      # dropping it from the baseline fails here (stale baseline). Backlog:
+      #   python scripts/check_dox_coverage.py --report
+      - name: Per-file contract docs in governed scopes
+        run: python scripts/check_dox_coverage.py
+
       # The OS lanes import only files carrying the matching marker, so a test that fakes
       # macOS (is_macos -> True, sys.platform -> "darwin") without `macos_only` is green on
       # Linux over a faked branch and never runs on macOS (#111866, AGENTS.md § Don't fake the host OS).
