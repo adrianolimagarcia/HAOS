@@ -408,7 +408,7 @@
   <button data-tab="terminal" class="active"><span class="dot"></span>Terminal</button>
   <button data-tab="console"><span class="dot"></span>Console</button>
   <button data-tab="taskboard"><span class="dot"></span>Taskboard</button>
-  <button data-tab="teamgraph"><span class="dot"></span>🌲 Team Graph</button>
+  <button data-tab="bots"><span class="dot"></span>🤖 Bots / Hierarquia</button>
   <button data-tab="scheduler"><span class="dot"></span>Scheduler</button>
   <button data-tab="ouroboros"><span class="dot"></span>Ouroboros</button>
   <button data-tab="agent"><span class="dot"></span>Config Agente</button>
@@ -543,33 +543,7 @@
           </div>
         </div>
 
-                 <div class="card" style="background:#0d1117; border:1px solid #30363d; padding:16px; margin-bottom:20px;">
-           <b style="color:#4fd1c5;">🧭 Agent Hierarchy / Bots (independente do Team Graph)</b>
-           <div style="color:var(--muted);font-size:.8rem;margin-top:5px;">Este painel gerencia o organograma persistente: Master → Gerentes/Orquestradores → Bots. O Team Graph abaixo é somente a visão de execução das missões e não altera estas personas.</div>
-           <button class="act primary" data-hierarchy-add>＋ Adicionar gerente/bot</button>
-           <div id="agentHierarchyTree" style="margin-top:12px;color:var(--muted);">Carregando…</div>
-           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px;">
-             <input id="hierNodeId" placeholder="ID (vazio = novo)" />
-             <input id="hierNodeName" placeholder="Nome" />
-             <select id="hierNodeRole"><option value="master">Mestre</option><option value="manager">Gerente</option><option value="bot">Bot</option></select>
-             <input id="hierNodeParent" placeholder="ID do pai" />
-             <input id="hierNodeProfile" placeholder="Profile Hermes" />
-             <input id="hierNodeModel" placeholder="Modelo/profile de modelo" />
-             <input id="hierNodeDescription" placeholder="Descrição" />
-             <button class="act primary" data-hierarchy-save>Salvar agente</button>
-           </div>
-           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px;">
-             <div style="grid-column:1/-1;color:#4fd1c5;font-size:.8rem;">Conselho entre gerentes</div><select id="councilFrom"></select><select id="councilTo"></select><input id="councilTopic" placeholder="Tema do conselho" /><input id="councilTurns" type="number" min="1" value="3" /><button class="act" data-hierarchy-start-council>Iniciar conselho</button>
-           </div>
-           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:12px;"><div style="grid-column:1/-1;color:#4fd1c5;font-size:.8rem;">Arestas consultivas (gerente ↔ gerente)</div><select id="edgeFrom"></select><select id="edgeTo"></select><input id="edgeTurns" type="number" min="1" value="3" /><button class="act" data-hierarchy-edge-save>Salvar relação</button><button class="act danger" data-hierarchy-edge-remove>Remover relação</button></div>
-             <label class="f">Provider compartilhado dos Bots<input id="hierBotProvider" type="text" placeholder="provider" /></label>
-             <label class="f">Modelo compartilhado dos Bots<input id="hierBotModel" type="text" placeholder="modelo" /></label>
-             <button class="act" data-hierarchy-save-model>Salvar modelo dos Bots</button>
-           </div>
-           <div id="hierarchyMsg" style="margin-top:8px;font-size:.8rem;color:var(--muted);"></div>
-         </div>
-
-         <!-- Model Binding Controls Card -->
+                 <!-- Model Binding Controls Card -->
         <div id="tgModelSelectorCard" class="card" style="background:#0d1117; border:1px solid #30363d; padding:16px; margin-bottom:20px; display:none;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
             <b style="font-size:0.95rem; color:#58a6ff;">⚙️ Model Binding dos Papéis (Salvo no config.yaml)</b>
@@ -604,7 +578,9 @@
     </div>
   </section>
 
-  <!-- ============ SCHEDULER ============ -->
+   <!-- ============ BOTS / AGENT HIERARCHY ============ -->
+   <section class="tab" id="tab-bots"><div class="card" style="padding:24px;"><h2>🤖 Bots / Agent Hierarchy</h2><p style="color:var(--muted)">Organização persistente: Master → Gerentes/Orquestradores → Bots. O Team Graph é separado e mostra somente missões em execução.</p><div id="botWizard" style="background:#111827;border:1px solid #334155;padding:14px;border-radius:8px;margin-bottom:14px;"><b>Como configurar</b><ol style="color:var(--muted);line-height:1.7"><li>Crie um agente e escolha o papel.</li><li>Gerentes apontam para o Master; Bots apontam para Gerentes.</li><li>Defina profile, modelo independente e persona.</li><li>Configure relações e conselhos entre gerentes.</li></ol></div><div id="agentHierarchyTree" style="margin:12px 0;color:var(--muted)">Carregando…</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;"><label class="f">ID (editar)<input id="hierNodeId" placeholder="vazio para criar" /></label><label class="f">Nome<input id="hierNodeName" placeholder="Ex.: Gerente de Pesquisa" /></label><label class="f">Papel<select id="hierNodeRole"><option value="master">Master</option><option value="manager">Gerente / Orquestrador</option><option value="bot">Bot executor</option></select></label><label class="f">ID do pai<input id="hierNodeParent" placeholder="obrigatório para gerente/bot" /></label><label class="f">Profile Hermes<input id="hierNodeProfile" placeholder="Ex.: research-manager" /></label><label class="f">Modelo independente<input id="hierNodeModel" placeholder="Ex.: manager-primary" /></label><label class="f" style="grid-column:1/-1">Persona / descrição<textarea id="hierNodeDescription" placeholder="Missão, estilo, limites e especialidade"></textarea></label><button class="act primary" data-hierarchy-add>Limpar para novo agente</button><button class="act primary" data-hierarchy-save>Salvar agente</button></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid #334155;"><b style="grid-column:1/-1">Conselho e relações entre gerentes</b><select id="edgeFrom"></select><select id="edgeTo"></select><input id="edgeTurns" type="number" min="1" value="3"/><button class="act" data-hierarchy-edge-save>Salvar relação</button><button class="act danger" data-hierarchy-edge-remove>Remover relação</button><select id="councilFrom"></select><select id="councilTo"></select><input id="councilTopic" placeholder="Tema"/><input id="councilTurns" type="number" min="1" value="3"/><button class="act" data-hierarchy-start-council>Iniciar conselho</button></div><div id="hierarchyMsg" style="margin-top:10px;color:var(--muted)"></div></div></section>
+
   <section class="tab" id="tab-scheduler">
     <div class="grid">
       <div class="card">
