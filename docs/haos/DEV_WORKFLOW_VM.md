@@ -217,6 +217,11 @@ Exemplos de estilo: `e420377c9`, `5f8f46034`, `2cd603b9b`; assuntos
    o fabric é construído no registro do plugin e derrubar o startup do agente por
    um typo de YAML seria pior.
 
+   **Referência completa do subsistema** — as quatro projeções e o papel de cada uma,
+   os dois orçamentos de recall, o teto de ingestão, a semântica do sync, cutover
+   como declaração vs evidência, comandos de verificação e lacunas conhecidas:
+   `docs/haos/MEMORY_FABRIC.md`.
+
 ### 5.1 Armadilha: artefatos ignorados do distro travam o build Python (já pago em sangue)
 
 Sintoma: `uv sync`, `uv lock` ou qualquer `pip install -e .` **não termina** —

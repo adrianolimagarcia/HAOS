@@ -108,11 +108,13 @@ The agent core unifies three decoupled, resilient engines:
   * `global`: System-wide cross-project facts, user preferences, and global invariant policies.
 - **Content-Hash Deduplication:** Facts are indexed by canonical cryptographic content hashes (SHA-256). Redundant insertions of identical semantic statements are collapsed without storage explosion.
 - **Temporal Supersession Chains:** When facts evolve, old facts are not blindly deleted. Instead, the new fact references `supersedes_id`, marking the predecessor as `superseded` while maintaining full historical auditability.
-- **Multi-Store Synchronization:** Managed by `FederatedMemoryCoordinator`, synchronizing across four backends:
-  1. *Hermes Memory Engine:* Fast key-value and vector index for in-turn retrieval.
-  2. *Obsidian Vault:* Human-auditable Markdown files with YAML frontmatter located in `.hermes/obsidian_vault` (Canonical Human Truth).
-  3. *GraphRAG:* Relational and conceptual entity graph connecting architectural components, APIs, and dependencies.
-  4. *DecisionStore:* Chronological ledger of Architectural Decision Records (ADRs).
+- **Multi-Store Synchronization:** Managed by `FederatedMemoryCoordinator`, projecting the canonical journal into four sinks, each with its own role (`PROJECTIONS` in `canonical_store.py`):
+  1. *Embeddings:* Vector index for hybrid retrieval (`memory/vectors.db`).
+  2. *Obsidian Vault:* Human-auditable Markdown notes with YAML frontmatter, written under `HAOS_HOME/obsidian_vault/{10-Memory,20-Architecture}/` (Canonical Human Truth). Resolved via `get_hermes_home()`, never a CWD-relative path — a relative default made every process write to a different vault, so the projection landed outside the canonical home and the `skip_projected` guard never fired against it.
+  3. *GraphRAG:* Relational and conceptual entity graph connecting architectural components, APIs, and dependencies (`memory/graphrag.db`).
+  4. *DecisionStore:* Chronological ledger of Architectural Decision Records (`memory/decisions.db`). Specialised by design: it only receives records that are decisions.
+
+  Operational reference — roles, filters, budgets, verification commands and known gaps: `docs/haos/MEMORY_FABRIC.md`.
 
 #### 3.1.2. Procedural Skills Engine (`hermes.platform.skills.procedural_engine`)
 - **`SkillSpec` Data Model:** Structured specification containing:
