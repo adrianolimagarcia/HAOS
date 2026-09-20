@@ -38,7 +38,7 @@
   nav button.active { color: #fff; background: #1b2537; border-color: var(--border); }
   nav button .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
   nav button.active .dot { background: var(--accent); }
-  main { flex: 1; padding: 18px 22px 40px; max-width: 1280px; width: 100%; margin: 0 auto; }
+  main { flex: 1; padding: 18px 22px 40px; max-width: 1780px; width: 100%; margin: 0 auto; }
   .tab { display: none; }
   .tab.active { display: block; animation: fade .18s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(3px);} to { opacity: 1;} }
@@ -69,12 +69,15 @@
   button.act.primary { background: #0f3d38; border-color: #15554c; }
   button.act.danger:hover { border-color: var(--err); }
   button.act:disabled { opacity: .45; cursor: not-allowed; }
-  input[type=text], input[type=number], textarea, select {
-    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
-    border-radius: 8px; padding: 8px 12px; font-size: .9rem; width: 100%;
+  input, select, textarea {
+    background: #161b22; border: 1px solid #30363d; color: var(--text);
+    border-radius: 8px; padding: 8px 12px; font-size: .88rem; width: 100%;
+    box-sizing: border-box; font-family: inherit;
   }
-  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
-  label.f { display: block; font-size: .78rem; color: var(--muted); margin: 10px 0 4px; }
+  input::placeholder, textarea::placeholder { color: #6e7681; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,209,197,0.15); }
+  label.f { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; color: #8b949e; margin: 8px 0 2px; }
+  label.f input, label.f select, label.f textarea { margin-top: 2px; }
   /* Console */
   .console { display: flex; flex-direction: column; height: calc(100vh - 250px); min-height: 420px; }
   .msgs { flex: 1; overflow-y: auto; padding: 8px 2px; display: flex; flex-direction: column; gap: 12px; }
@@ -211,6 +214,362 @@
   .tg-btn { flex: 1; padding: 5px 8px; font-size: 0.72rem; border-radius: 6px; cursor: pointer; background: #1a2230; border: 1px solid var(--border); color: var(--text); font-weight: 500; }
   .tg-btn:hover { border-color: var(--accent); color: #fff; background: #222c3e; }
   .tg-btn.abort:hover { border-color: var(--err); color: var(--err); }
+
+  /* Persistent bot hierarchy (Visual Studio Team Graph Style) ---------------- */
+  .bot-config-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(460px, 1.15fr);
+    gap: 22px;
+    align-items: stretch;
+  }
+  .bot-graph-card, .bot-editor-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+  }
+  .bot-graph-card h3, .bot-editor-card h3 {
+    margin: 0 0 6px;
+    font-size: 1.1rem;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bot-graph-subtitle {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin: 0 0 16px;
+    line-height: 1.4;
+  }
+  .bot-graph {
+    min-height: 440px;
+    flex: 1;
+    padding: 36px 20px;
+    overflow: auto;
+    background: radial-gradient(circle at 50% 15%, #141c2b 0%, #0c1017 100%);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+  .bot-graph-empty {
+    margin: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    text-align: center;
+    padding: 40px 20px;
+  }
+  .bot-level {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    min-width: max-content;
+    width: 100%;
+  }
+  .bot-branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+  .bot-children {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    padding-top: 32px;
+    position: relative;
+    width: 100%;
+  }
+  /* Linhas conectores idênticas ao Team Graph */
+  .bot-branch > .bot-node::after {
+    content: "";
+    position: absolute;
+    bottom: -32px;
+    left: 50%;
+    width: 2px;
+    height: 32px;
+    background: linear-gradient(180deg, var(--accent), #3a5275);
+    transform: translateX(-50%);
+    display: none;
+  }
+  .bot-branch:has(> .bot-children) > .bot-node::after {
+    display: block;
+  }
+  .bot-children::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: calc(100% - 140px);
+    height: 16px;
+    transform: translateX(-50%);
+    border-top: 2px solid #3a5275;
+    border-left: 2px solid #3a5275;
+    border-right: 2px solid #3a5275;
+    border-radius: 6px 6px 0 0;
+  }
+  .bot-children > .bot-branch::before {
+    content: "";
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    width: 2px;
+    height: 16px;
+    background: #3a5275;
+    transform: translateX(-50%);
+  }
+  /* Card visual idêntico ao .tg-node */
+  .bot-node {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    width: 330px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    transition: transform 0.2s, border-color 0.2s;
+    position: relative;
+    z-index: 2;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .bot-node:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .bot-node.master {
+    border-top: 4px solid var(--accent2);
+    background: linear-gradient(180deg, rgba(122,162,255,0.12) 0%, var(--panel) 100%);
+  }
+  .bot-node.manager {
+    border-top: 4px solid var(--accent);
+    background: linear-gradient(180deg, rgba(79,209,197,0.12) 0%, var(--panel) 100%);
+  }
+  .bot-node.bot {
+    border-top: 4px solid var(--ok);
+    background: linear-gradient(180deg, rgba(63,185,80,0.12) 0%, var(--panel) 100%);
+  }
+  .bot-node-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .bot-node-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .bot-node-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bot-del-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #8b949e;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 2px 6px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+  .bot-del-btn:hover {
+    background: rgba(248,81,73,0.15);
+    border-color: rgba(248,81,73,0.4);
+    color: #ff7b72;
+  }
+  .bot-node-meta {
+    font-size: 0.78rem;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 4px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding-top: 8px;
+  }
+  .bot-node-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .bot-node-row .val {
+    font-family: var(--mono);
+    color: var(--text);
+    font-size: 0.76rem;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bot-node-actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .bot-node-actions button {
+    width: 100%;
+    padding: 6px 2px;
+    font-size: 0.73rem;
+    white-space: nowrap;
+    text-align: center;
+    border-radius: 6px;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bot-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-top: 14px;
+    align-items: center;
+  }
+  .bot-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bot-legend span::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .bot-legend .master::before { background: var(--accent2); }
+  .bot-legend .manager::before { background: var(--accent); }
+  .bot-legend .bot::before { background: var(--ok); }
+
+  /* Seletor visual de papéis */
+  .bot-role-picker {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 10px 0 14px;
+  }
+  .bot-role-choice {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 8px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .bot-role-choice:hover {
+    border-color: #58a6ff;
+    background: #1f2937;
+  }
+  .bot-role-choice.selected {
+    border-color: var(--accent);
+    background: rgba(79,209,197,0.12);
+  }
+  .bot-role-choice.selected.master { border-color: var(--accent2); background: rgba(122,162,255,0.15); }
+  .bot-role-choice.selected.manager { border-color: var(--accent); background: rgba(79,209,197,0.15); }
+  .bot-role-choice.selected.bot { border-color: var(--ok); background: rgba(63,185,80,0.15); }
+  .bot-role-choice b { display: block; font-size: 0.85rem; color: #fff; margin-bottom: 2px; }
+  .bot-role-choice span { font-size: 0.68rem; color: var(--muted); display: block; }
+
+  .hub-nav-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #8b949e;
+    padding: 10px 16px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .hub-nav-tab:hover {
+    color: #f0f6fc;
+  }
+  .hub-nav-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: rgba(79, 209, 197, 0.06);
+  }
+
+  /* Form layout limpo e alinhado */
+  .bot-field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+    width: 100%;
+    flex: 1;
+  }
+  .bot-field-grid .bot-field-wide {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+  .bot-field-grid .bot-field-wide textarea {
+    width: 100%;
+    min-height: 160px;
+    flex: 1;
+    box-sizing: border-box;
+    resize: vertical;
+  }
+  .advisory-edge-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #1c2333;
+    border: 1px solid #334155;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-family: var(--mono);
+    color: #cbd5e1;
+  }
+  .advisory-edge-chip button {
+    background: transparent;
+    border: none;
+    color: var(--err);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 0.8rem;
+  }
+  .advisory-edge-chip button:hover {
+    color: #ff7b72;
+  }
+  @media (max-width: 900px) {
+    .bot-config-shell { grid-template-columns: 1fr; }
+    .bot-field-grid { grid-template-columns: 1fr; }
+  }
 
   /* ==================================================================== */
   /* KANBAN MULTI-LANE VISUALS (FASE 1)                                   */
@@ -408,6 +767,7 @@
   <button data-tab="terminal" class="active"><span class="dot"></span>Terminal</button>
   <button data-tab="console"><span class="dot"></span>Console</button>
   <button data-tab="taskboard"><span class="dot"></span>Taskboard</button>
+  <button data-tab="teamgraph"><span class="dot"></span>🌲 Team Graph</button>
   <button data-tab="bots"><span class="dot"></span>🤖 Bots / Hierarquia</button>
   <button data-tab="scheduler"><span class="dot"></span>Scheduler</button>
   <button data-tab="ouroboros"><span class="dot"></span>Ouroboros</button>
@@ -578,10 +938,526 @@
     </div>
   </section>
 
-   <!-- ============ BOTS / AGENT HIERARCHY ============ -->
-   <section class="tab" id="tab-bots"><div class="card" style="padding:24px;"><h2>🤖 Bots / Agent Hierarchy</h2><p style="color:var(--muted)">Organização persistente: Master → Gerentes/Orquestradores → Bots. O Team Graph é separado e mostra somente missões em execução.</p><div id="botWizard" style="background:#111827;border:1px solid #334155;padding:14px;border-radius:8px;margin-bottom:14px;"><b>Como configurar</b><ol style="color:var(--muted);line-height:1.7"><li>Crie um agente e escolha o papel.</li><li>Gerentes apontam para o Master; Bots apontam para Gerentes.</li><li>Defina profile, modelo independente e persona.</li><li>Configure relações e conselhos entre gerentes.</li></ol></div><div id="agentHierarchyTree" style="margin:12px 0;color:var(--muted)">Carregando…</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;"><label class="f">ID (editar)<input id="hierNodeId" placeholder="vazio para criar" /></label><label class="f">Nome<input id="hierNodeName" placeholder="Ex.: Gerente de Pesquisa" /></label><label class="f">Papel<select id="hierNodeRole"><option value="master">Master</option><option value="manager">Gerente / Orquestrador</option><option value="bot">Bot executor</option></select></label><label class="f">ID do pai<input id="hierNodeParent" placeholder="obrigatório para gerente/bot" /></label><label class="f">Profile Hermes<input id="hierNodeProfile" placeholder="Ex.: research-manager" /></label><label class="f">Modelo independente<input id="hierNodeModel" placeholder="Ex.: manager-primary" /></label><label class="f" style="grid-column:1/-1">Persona / descrição<textarea id="hierNodeDescription" placeholder="Missão, estilo, limites e especialidade"></textarea></label><button class="act primary" data-hierarchy-add>Limpar para novo agente</button><button class="act primary" data-hierarchy-save>Salvar agente</button></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid #334155;"><b style="grid-column:1/-1">Conselho e relações entre gerentes</b><select id="edgeFrom"></select><select id="edgeTo"></select><input id="edgeTurns" type="number" min="1" value="3"/><button class="act" data-hierarchy-edge-save>Salvar relação</button><button class="act danger" data-hierarchy-edge-remove>Remover relação</button><select id="councilFrom"></select><select id="councilTo"></select><input id="councilTopic" placeholder="Tema"/><input id="councilTurns" type="number" min="1" value="3"/><button class="act" data-hierarchy-start-council>Iniciar conselho</button></div><div id="hierarchyMsg" style="margin-top:10px;color:var(--muted)"></div></div></section>
+   <section class="tab" id="tab-bots">
+     <!-- ============ BOTS / AGENT HIERARCHY ============ -->
+     <div class="bot-config-shell">
+       <div class="bot-graph-card">
+         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:12px;flex-wrap:wrap;">
+           <div>
+             <h3>🤖 Arquitetura Persistente dos Bots</h3>
+             <p class="bot-graph-subtitle" style="margin-bottom:0;">
+               Visualização em árvore da hierarquia permanente: <b>Master ⟶ Gerente ⟶ Bots</b>.<br/>
+               Diferente do Team Graph (que reflete missões dinâmicas), esta é a estrutura operacional fixa.
+             </p>
+           </div>
+           <button class="act" onclick="fetchState()">🔄 Atualizar</button>
+         </div>
 
-  <section class="tab" id="tab-scheduler">
+         <div id="agentHierarchyTree" class="bot-graph">
+           <div class="bot-graph-empty">Carregando estrutura…</div>
+         </div>
+
+         <div class="bot-legend">
+           <span class="master">👑 Master</span>
+           <span class="manager">🧠 Gerente / Orquestrador</span>
+           <span class="bot">🤖 Bot Executor</span>
+         </div>
+       </div>
+
+       <div class="bot-editor-card">
+         <h3>⚙️ Configuração do Agente</h3>
+         <p class="bot-graph-subtitle">Selecione o papel do nó e preencha os parâmetros de runtime e modelo.</p>
+
+         <!-- Seletor de Papel Estilizado -->
+         <div class="bot-role-picker">
+           <button type="button" class="bot-role-choice master" onclick="selectBotRole('master')">
+             <b>👑 Master</b>
+             <span>Líder Executivo</span>
+           </button>
+           <button type="button" class="bot-role-choice manager" onclick="selectBotRole('manager')">
+             <b>🧠 Gerente</b>
+             <span>Orquestrador</span>
+           </button>
+           <button type="button" class="bot-role-choice bot selected" onclick="selectBotRole('bot')">
+             <b>🤖 Bot</b>
+             <span>Executor</span>
+           </button>
+         </div>
+
+         <input type="hidden" id="hierNodeRole" value="bot" />
+         <input type="hidden" id="hierNodeId" />
+
+         <div class="bot-field-grid">
+           <label class="f">
+             Nome do Agente
+             <input type="text" id="hierNodeName" placeholder="Ex.: Gerente de Pesquisa" />
+           </label>
+
+           <label class="f">
+             Agente Superior (Pai)
+             <select id="hierNodeParentSelect" onchange="$('hierNodeParent').value=this.value">
+               <option value="">Nenhum (Raiz / Master)</option>
+             </select>
+             <input type="hidden" id="hierNodeParent" />
+           </label>
+
+           <label class="f">
+             Profile Hermes (Instância / Pasta)
+             <span style="font-size:0.71rem;color:var(--muted);margin-bottom:2px;">Mapeia para <code>~/.hermes/profiles/&lt;nome&gt;/</code></span>
+             <input type="text" id="hierNodeProfile" placeholder="Ex.: research-manager" />
+           </label>
+
+           <label class="f" style="position:relative;">
+             Modelo LLM Específico (LLM Engine)
+             <span style="font-size:0.71rem;color:var(--muted);margin-bottom:2px;">Formato: <code>provider/modelo</code> ou <code>modelo</code></span>
+             <input type="text" id="hierNodeModel" placeholder="Digite para filtrar... (ex: deepseek, claude, gpt)" autocomplete="off" oninput="filterHierModelDropdown()" onfocus="filterHierModelDropdown()" />
+             <div id="drop_hier_model" class="tg-model-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:220px;overflow-y:auto;background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:100;margin-top:2px;box-shadow:0 8px 24px rgba(0,0,0,0.6);"></div>
+           </label>
+
+           <label class="f bot-field-wide">
+             Persona / Missão / Diretrizes Operacionais
+             <span style="font-size:0.71rem;color:var(--muted);margin-bottom:2px;">Injetado nas missões e base do papel deste nó no grafo.</span>
+             <textarea id="hierNodeDescription" rows="5" placeholder="Defina missão, tom, postura crítica, ferramentas permitidas e limites de atuação..."></textarea>
+           </label>
+
+           <div class="f bot-field-wide" style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;margin-top:6px;">
+             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+               <b style="font-size:0.8rem;color:#f0f6fc;">🛠️ Restrição Opcional de Ferramentas (Toolsets / Blast Radius)</b>
+               <label style="font-size:0.73rem;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;">
+                 <input type="checkbox" id="hierNodeYoloMode" /> ⚡ Modo YOLO (execução autônoma sem portão de aprovação para este bot)
+               </label>
+             </div>
+             <div style="font-size:0.72rem;color:var(--muted);margin-bottom:8px;">
+               Por padrão, <b>todas as 60+ ferramentas ficam liberadas</b> e o prompt do bot orienta a execução. Marque caixas abaixo <i>apenas se desejar blindar estritamente</i> este bot a um subconjunto seguro de ferramentas.
+             </div>
+             <div id="hierNodeToolsetsContainer" style="display:flex;flex-wrap:wrap;gap:6px;max-height:100px;overflow-y:auto;background:#0d1117;padding:8px;border-radius:6px;border:1px solid #21262d;">
+               Carregando toolsets...
+             </div>
+           </div>
+         </div>
+
+         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap;">
+           <div style="display:flex;gap:8px;">
+             <button class="act" type="button" id="btnEditSoulDirect" onclick="openSoulModalFromEditor()" style="display:none;background:#1e1e38;border-color:#5856d6;color:#d2a8ff;" title="Abrir e editar o arquivo SOUL.md deste profile">
+               🔮 Editar SOUL.md
+             </button>
+           </div>
+           <div style="display:flex;gap:10px;">
+             <button class="act" type="button" onclick="addHierarchyNode()">Limpar Formulário</button>
+             <button class="act primary" type="button" onclick="saveHierarchyNode()">💾 Salvar Agente</button>
+           </div>
+         </div>
+       </div>
+     </div>
+
+     <!-- Painel de Coordenação Avançada e Conselho -->
+     <div id="hierarchyAdvanced" class="card" style="margin-top:20px;padding:20px;">
+       <details>
+         <summary style="cursor:pointer;font-weight:600;font-size:0.92rem;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+           <span>⚖️ Conselho e Regras de Deliberação entre Gerentes</span>
+         </summary>
+         <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
+           <label class="f">
+             Modelo Padrão dos Bots (Fallback)
+             <div style="display:flex;gap:6px;margin-top:4px;">
+               <input type="text" id="hierBotProvider" placeholder="provider (ex: deepseek)" style="flex:1;" />
+               <input type="text" id="hierBotModel" placeholder="model (ex: deepseek-chat)" style="flex:1;" />
+             </div>
+             <button class="act" type="button" onclick="saveBotModel()" style="margin-top:8px;align-self:flex-start;">Salvar Modelo Padrão</button>
+           </label>
+
+           <label class="f">
+             Debate Consultivo (Conselho)
+             <div style="display:flex;gap:6px;margin-top:4px;">
+               <select id="councilFrom" style="flex:1;"></select>
+               <span style="align-self:center;color:var(--muted);">➔</span>
+               <select id="councilTo" style="flex:1;"></select>
+             </div>
+             <div style="display:flex;gap:6px;margin-top:6px;">
+               <input type="text" id="councilTopic" placeholder="Tema da deliberação mútua..." style="flex:2;" />
+               <input type="number" id="councilTurns" value="3" min="1" max="10" title="Turnos máximos de debate" style="width:75px;" />
+               <button class="act primary" type="button" onclick="startHierarchyCouncil()">Iniciar Conselho</button>
+             </div>
+           </label>
+
+           <label class="f" style="grid-column: 1 / -1;">
+             Relações Consultivas entre Gerentes (Advisory Edges)
+             <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px;">
+               Permite que dois gerentes deliberem formalmente entre si quando convocados em conselho.
+             </div>
+             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+               <select id="edgeFrom" style="flex:1;min-width:160px;"></select>
+               <span style="color:var(--accent);">⇄</span>
+               <select id="edgeTo" style="flex:1;min-width:160px;"></select>
+               <input type="number" id="edgeTurns" value="3" min="1" max="20" title="Limite de turnos" style="width:80px;" placeholder="Turnos" />
+               <button class="act primary" type="button" onclick="saveAdvisoryEdge()">＋ Vincular Relação</button>
+             </div>
+             <div id="advisoryEdgesList" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+               <!-- Populado dinamicamente -->
+             </div>
+           </label>
+         </div>
+       </details>
+     </div>
+
+     <!-- Dialogs Nativos macOS Glassmorphic (Substitui window.prompt, alert e confirm) -->
+     <div id="macModalOverlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.65);z-index:100000;align-items:center;justify-content:center;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);">
+       <div id="macModalWindow" style="background:rgba(26, 31, 46, 0.85);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.18);border-radius:14px;width:90%;max-width:460px;box-shadow:0 20px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2);display:flex;flex-direction:column;overflow:hidden;">
+         <div style="padding:16px 20px 10px 20px;display:flex;align-items:center;gap:12px;">
+           <span id="macModalIcon" style="font-size:1.8rem;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.4));"></span>
+           <div style="flex:1;">
+             <h3 id="macModalTitle" style="font-size:0.95rem;color:#ffffff;font-weight:600;margin:0 0 4px 0;letter-spacing:-0.01em;">Confirmação</h3>
+             <div id="macModalMessage" style="font-size:0.8rem;color:#94a3b8;line-height:1.4;">Mensagem do sistema</div>
+           </div>
+         </div>
+         <div id="macModalInputWrap" style="padding:0 20px 14px 20px;display:none;">
+           <input type="text" id="macModalInput" style="width:100%;box-sizing:border-box;background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:8px 12px;color:#ffffff;font-size:0.85rem;outline:none;font-family:inherit;transition:border-color 0.2s;" onkeydown="if(event.key==='Enter') macModalSubmit(); if(event.key==='Escape') macModalCancel();" />
+         </div>
+         <div style="display:flex;justify-content:flex-end;gap:10px;padding:12px 20px;background:rgba(15,23,42,0.4);border-top:1px solid rgba(255,255,255,0.08);">
+           <button id="macModalCancelBtn" type="button" onclick="macModalCancel()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#cbd5e1;padding:6px 14px;border-radius:7px;font-size:0.8rem;cursor:pointer;font-weight:500;transition:all 0.15s;">Cancelar</button>
+           <button id="macModalConfirmBtn" type="button" onclick="macModalSubmit()" style="background:linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);border:1px solid rgba(255,255,255,0.2);color:#ffffff;padding:6px 16px;border-radius:7px;font-size:0.8rem;cursor:pointer;font-weight:600;box-shadow:0 2px 10px rgba(37,99,235,0.4);transition:all 0.15s;">Confirmar</button>
+         </div>
+       </div>
+     </div>
+
+     <!-- Modal macOS de Edição de Código HTML/JS do Microapp -->
+     <div id="macCodeEditorModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.7);z-index:100000;align-items:center;justify-content:center;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);">
+       <div style="background:rgba(18, 24, 38, 0.9);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.18);border-radius:16px;width:92%;max-width:860px;height:84vh;box-shadow:0 24px 70px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.25);display:flex;flex-direction:column;overflow:hidden;">
+         <div style="padding:12px 20px;display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.08);">
+           <div style="display:flex;align-items:center;gap:10px;">
+             <div style="display:flex;gap:6px;">
+               <span onclick="closeMacCodeEditor()" style="width:11px;height:11px;border-radius:50%;background:#ff5f56;border:1px solid #e0443e;cursor:pointer;display:inline-block;"></span>
+               <span style="width:11px;height:11px;border-radius:50%;background:#ffbd2e;border:1px solid #dea123;display:inline-block;"></span>
+               <span style="width:11px;height:11px;border-radius:50%;background:#27c93f;border:1px solid #1aab29;display:inline-block;"></span>
+             </div>
+             <b style="font-size:0.86rem;color:#f8fafc;letter-spacing:-0.01em;" id="macCodeEditorTitle">Editor de Microapp HTML/JS</b>
+           </div>
+           <div style="display:flex;gap:8px;">
+             <button type="button" onclick="closeMacCodeEditor()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#cbd5e1;padding:5px 12px;border-radius:6px;font-size:0.75rem;cursor:pointer;">Descartar</button>
+             <button type="button" onclick="saveMacCodeEditor()" style="background:linear-gradient(135deg, #10b981 0%, #059669 100%);border:1px solid rgba(255,255,255,0.25);color:#ffffff;padding:5px 16px;border-radius:6px;font-size:0.75rem;cursor:pointer;font-weight:600;box-shadow:0 2px 10px rgba(16,185,129,0.35);">Salvar & Aplicar</button>
+           </div>
+         </div>
+         <div style="flex:1;padding:16px;display:flex;flex-direction:column;min-height:0;">
+           <textarea id="macCodeEditorTextarea" style="flex:1;width:100%;box-sizing:border-box;background:#090d16;border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#38bdf8;padding:16px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:0.82rem;line-height:1.5;outline:none;resize:none;" spellcheck="false"></textarea>
+         </div>
+       </div>
+     </div>
+
+     <!-- Modal Ultra-SOTA de Operação do Agente (Hub Multi-Abas estilo gawkbot) -->
+     <div id="agentHubModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.8);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(5px);">
+       <div style="background:#0d1117;border:1px solid #30363d;border-radius:14px;width:92%;max-width:980px;height:86vh;max-height:850px;display:flex;flex-direction:column;box-shadow:0 24px 48px rgba(0,0,0,0.85);overflow:hidden;">
+         <!-- Header do Hub -->
+         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px;border-bottom:1px solid #21262d;background:#161b22;">
+           <div style="display:flex;align-items:center;gap:12px;">
+             <span id="hubBotIcon" style="font-size:1.6rem;">🤖</span>
+             <div>
+               <div style="display:flex;align-items:center;gap:10px;">
+                 <b id="hubBotName" style="font-size:1.05rem;color:#f0f6fc;">Nome do Agente</b>
+                 <span id="hubBotBadge" class="tg-badge running">bot</span>
+                 <span id="hubApprovalIndicator" style="display:none;background:#d2992222;border:1px solid #d2992288;color:#f0b72f;padding:2px 8px;border-radius:12px;font-size:0.7rem;font-weight:600;">⚠️ Portão de Aprovação Ativo</span>
+                 <label id="hubYoloToggleLabel" style="display:none;align-items:center;gap:4px;font-size:0.72rem;color:#f0b72f;cursor:pointer;background:#2d1b04;padding:2px 10px;border-radius:12px;border:1px solid #d29922;" title="Controla a autonomia da frota inteira: o Master define o modo YOLO e todos os níveis abaixo herdam">
+                   <input type="checkbox" id="hubSessionYolo" onchange="toggleMasterYolo()" /> ⚡ Modo YOLO Global da Frota
+                 </label>
+                 <span id="hubYoloInheritedBadge" style="display:none;background:#23863622;border:1px solid #2ea04366;color:#3fb950;padding:2px 8px;border-radius:12px;font-size:0.7rem;font-weight:600;" title="Este agente herda a permissão autônoma YOLO concedida pelo Master">⚡ YOLO Herdado do Master</span>
+               </div>
+               <div style="font-size:0.75rem;color:var(--muted);font-family:var(--mono);margin-top:2px;">
+                 ID: <span id="hubBotId">—</span> | Profile: <span id="hubBotProfile">—</span> | Modelo: <span id="hubBotModel" style="color:var(--accent);">—</span>
+               </div>
+             </div>
+           </div>
+           <button class="act" type="button" onclick="closeAgentHubModal()" style="font-size:1.1rem;padding:4px 10px;">✕</button>
+         </div>
+
+         <!-- Navegação interna de Abas do Hub -->
+         <div style="display:flex;background:#131822;border-bottom:1px solid #21262d;padding:0 16px;">
+           <button class="hub-nav-tab active" data-hub-tab="command" onclick="switchHubTab('command')">💬 Missão & Terminal</button>
+           <button class="hub-nav-tab" data-hub-tab="routines" onclick="switchHubTab('routines')">⏰ Rotinas & Transcrições</button>
+           <button class="hub-nav-tab" data-hub-tab="memory" onclick="switchHubTab('memory')">🧠 Memória & Wiki</button>
+           <button class="hub-nav-tab" data-hub-tab="microapps" onclick="switchHubTab('microapps')">📱 Microapps</button>
+           <button class="hub-nav-tab" data-hub-tab="soul" onclick="switchHubTab('soul')">🔮 Alma (SOUL.md)</button>
+           <button class="hub-nav-tab" data-hub-tab="feed" onclick="switchHubTab('feed')">📜 Histórico & Auditoria</button>
+         </div>
+
+         <!-- Conteúdo das Abas -->
+         <div style="flex:1;overflow-y:auto;padding:20px;position:relative;background:#090d13;">
+           <!-- Aba 1: Comando e Disparo Rápido -->
+           <div id="hubTab_command" class="hub-tab-pane active" style="display:flex;flex-direction:column;gap:16px;height:100%;">
+             <!-- Card do Portão de Aprovação (se houver ação pendente para este bot) -->
+             <div id="hubApprovalCard" style="display:none;background:#2d1b04;border:1px solid #d29922;border-radius:8px;padding:14px;">
+               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                 <div style="display:flex;align-items:center;gap:8px;">
+                   <span style="font-size:1.1rem;">⚠️</span>
+                   <b style="color:#f0b72f;font-size:0.88rem;">Portão de Aprovação Humana: Ação Externa Retida</b>
+                 </div>
+                 <span class="tg-badge" style="background:#d2992233;color:#f0b72f;border:1px solid #d29922;">REQUER REVISÃO</span>
+               </div>
+               <div id="hubApprovalDetails" style="font-size:0.78rem;color:#c9d1d9;margin-bottom:12px;background:#161b22;padding:10px;border-radius:6px;border:1px solid #30363d;">
+                 Carregando detalhes da aprovação...
+               </div>
+               <div style="display:flex;justify-content:flex-end;gap:10px;">
+                 <button class="act danger" type="button" onclick="resolveApproval('changes_requested')">❌ Rejeitar Ação</button>
+                 <button class="act primary" type="button" onclick="resolveApproval('approved')" style="background:#238636;border-color:#2ea043;">✅ Aprovar Execução</button>
+               </div>
+             </div>
+
+             <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;">
+               <div style="font-size:0.86rem;color:#f0f6fc;font-weight:600;margin-bottom:4px;">Enviar Missão para o Agente</div>
+               <div style="font-size:0.76rem;color:var(--muted);margin-bottom:10px;">
+                 O agente receberá esta diretriz isolada, executará sob sua Persona/SOUL e reportará no Kanban e no feed de eventos.
+               </div>
+               <textarea id="hubCommandInput" rows="4" style="width:100%;font-size:0.84rem;padding:10px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;box-sizing:border-box;" placeholder="Descreva o que este bot deve fazer agora..."></textarea>
+               <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+                 <label style="font-size:0.76rem;color:var(--muted);display:flex;align-items:center;gap:6px;">
+                   <input type="checkbox" id="hubAutoDispatch" checked /> Despachar worker em segundo plano imediatamente
+                 </label>
+                 <button class="act primary" type="button" onclick="dispatchHubCommand()">🚀 Disparar Missão</button>
+               </div>
+             </div>
+
+             <div style="flex:1;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;display:flex;flex-direction:column;">
+               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                 <b style="font-size:0.84rem;color:#f0f6fc;">Atividades Recentes deste Agente</b>
+                 <button class="act" type="button" onclick="loadHubFeed()" style="font-size:0.74rem;padding:2px 8px;">🔄 Atualizar</button>
+               </div>
+               <div id="hubRecentTasks" style="flex:1;overflow-y:auto;font-family:var(--mono);font-size:0.76rem;color:#8b949e;background:#0d1117;padding:10px;border-radius:6px;border:1px solid #21262d;">
+                 Carregando tarefas...
+               </div>
+             </div>
+           </div>
+
+           <!-- Aba 2: Rotinas Periódicas (Estilo gawkbot) -->
+           <div id="hubTab_routines" class="hub-tab-pane" style="display:none;flex-direction:column;gap:16px;">
+             <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;">
+               <b style="font-size:0.88rem;color:#f0f6fc;">⏰ Programar Nova Rotina Autônoma</b>
+               <div style="font-size:0.76rem;color:var(--muted);margin-top:2px;margin-bottom:12px;">
+                 Gera um cron job persistente no scheduler do HAOS. O bot executará este prompt sozinho no intervalo configurado.
+               </div>
+               <div style="display:grid;grid-template-columns:1fr 180px;gap:12px;margin-bottom:10px;">
+                 <input type="text" id="hubRoutineName" placeholder="Nome da rotina (ex.: Verificação de Integridade)" style="font-size:0.82rem;" />
+                 <input type="text" id="hubRoutineSchedule" placeholder="Frequência (ex: every 2h, 0 9 * * *)" value="every 24h" style="font-size:0.82rem;" />
+               </div>
+               <textarea id="hubRoutinePrompt" rows="3" style="width:100%;font-size:0.82rem;padding:8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;box-sizing:border-box;" placeholder="Prompt que o bot deve rodar em cada ciclo agendado..."></textarea>
+               <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+                 <button class="act primary" type="button" onclick="createHubRoutine()">➕ Adicionar Rotina Agendada</button>
+               </div>
+             </div>
+
+             <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px;">
+               <b style="font-size:0.88rem;color:#f0f6fc;">Rotinas Ativas deste Agente</b>
+               <div id="hubRoutinesList" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">
+                 Carregando rotinas...
+               </div>
+             </div>
+           </div>
+
+           <!-- Aba 3: Memória Cognitiva em Duas Camadas (Notebook Privado + Team Wiki) -->
+           <div id="hubTab_memory" class="hub-tab-pane" style="display:none;flex-direction:column;gap:14px;height:100%;">
+             <!-- Sub-Navegador de Camadas de Memória -->
+             <div style="display:flex;justify-content:space-between;align-items:center;background:#161b22;padding:6px 10px;border-radius:8px;border:1px solid #30363d;">
+               <div style="display:flex;gap:6px;">
+                 <button class="act primary" id="btnMemSubNotebook" type="button" onclick="switchMemSubView('notebook')" style="font-size:0.78rem;">📝 Caderno Privado (Notebook)</button>
+                 <button class="act" id="btnMemSubWiki" type="button" onclick="switchMemSubView('wiki')" style="font-size:0.78rem;">📚 Wiki Compartilhada da Equipe</button>
+               </div>
+               <div style="font-size:0.73rem;color:var(--muted);font-family:var(--mono);" id="hubMemScopeIndicator">
+                 🔒 Escopo: Privado deste Agente (DRAFT)
+               </div>
+             </div>
+
+             <!-- Sub-Vista 1: Caderno Privado (Notebook) -->
+             <div id="memSubView_notebook" style="display:flex;flex-direction:column;gap:10px;flex:1;min-height:0;">
+               <div style="display:flex;justify-content:space-between;align-items:center;">
+                 <div>
+                   <b style="font-size:0.86rem;color:#f0f6fc;">📝 Caderno de Campo & Rascunhos do Agente</b>
+                   <div style="font-size:0.74rem;color:#8b949e;margin-top:2px;">
+                     Notas de trabalho e observações parciais. <b>Nenhum outro bot lê este caderno</b> até que uma descoberta seja promovida.
+                   </div>
+                 </div>
+                 <div style="display:flex;gap:8px;">
+                   <button class="act" type="button" onclick="saveHubNotebook()">💾 Salvar Rascunho</button>
+                   <button class="act primary" type="button" onclick="openPromoteModal()" style="background:#238636;border-color:#2ea043;" title="Promover esta lição aprendida para a Wiki de toda a equipe">⭐ Promover para a Wiki</button>
+                 </div>
+               </div>
+               <textarea id="hubNotebookTextarea" style="flex:1;min-height:340px;font-family:var(--mono);font-size:0.82rem;line-height:1.5;padding:12px;background:#090d13;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;resize:vertical;" placeholder="# Rascunho de Trabalho..."></textarea>
+               <div id="hubNotebookStatus" style="font-size:0.74rem;color:var(--muted);font-family:var(--mono);"></div>
+             </div>
+
+             <!-- Sub-Vista 2: Wiki Compartilhada da Equipe (Team Wiki) -->
+             <div id="memSubView_wiki" style="display:none;gap:14px;flex:1;min-height:0;">
+               <!-- Barra Lateral de Artigos da Wiki -->
+               <div style="width:280px;background:#161b22;border:1px solid #30363d;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;">
+                 <div style="padding:10px 12px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center;">
+                   <b style="font-size:0.8rem;color:#f0f6fc;">Artigos da Wiki</b>
+                   <button class="act" type="button" onclick="prepareNewWikiArticle()" style="font-size:0.72rem;padding:2px 6px;">➕ Novo</button>
+                 </div>
+                 <div id="hubWikiArticlesList" style="flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:4px;">
+                   Carregando artigos...
+                 </div>
+               </div>
+
+               <!-- Leitor / Editor do Artigo Canônico -->
+               <div style="flex:1;background:#161b22;border:1px solid #30363d;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;padding:14px;">
+                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                   <div>
+                     <b id="hubWikiArticleTitle" style="font-size:0.95rem;color:#f0f6fc;">Selecione um Artigo</b>
+                     <div id="hubWikiArticleMeta" style="font-size:0.73rem;color:var(--muted);font-family:var(--mono);margin-top:2px;">—</div>
+                   </div>
+                   <div style="display:flex;gap:8px;">
+                     <button class="act" type="button" id="btnToggleEditWiki" onclick="toggleEditWikiMode()">✏️ Editar</button>
+                     <button class="act primary" type="button" id="btnSaveWikiArticle" onclick="saveActiveWikiArticle()" style="display:none;">💾 Salvar Artigo</button>
+                   </div>
+                 </div>
+                 <!-- Visualizador de Leitura (Markdown) -->
+                 <div id="hubWikiArticleReader" style="flex:1;overflow-y:auto;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:16px;font-size:0.84rem;line-height:1.6;color:#c9d1d9;white-space:pre-wrap;font-family:system-ui, -apple-system, sans-serif;">
+                   Nenhum artigo selecionado. Escolha um artigo na lista à esquerda ou crie um novo.
+                 </div>
+                 <!-- Editor de Texto (Markdown) -->
+                 <textarea id="hubWikiArticleEditor" style="display:none;flex:1;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:var(--mono);font-size:0.82rem;line-height:1.5;resize:none;"></textarea>
+                 <div id="hubWikiStatus" style="font-size:0.74rem;color:var(--muted);font-family:var(--mono);margin-top:6px;"></div>
+               </div>
+             </div>
+           </div>
+
+           <!-- Modal de Promoção para a Wiki -->
+           <div id="promoteModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.8);z-index:10001;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+             <div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;width:90%;max-width:620px;padding:20px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 40px rgba(0,0,0,0.9);">
+               <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #21262d;padding-bottom:10px;">
+                 <b style="font-size:1rem;color:#f0f6fc;">⭐ Promover Rascunho para a Wiki da Equipe</b>
+                 <button class="act" type="button" onclick="closePromoteModal()" style="padding:2px 8px;">✕</button>
+               </div>
+               <div style="font-size:0.78rem;color:#8b949e;line-height:1.4;">
+                 Este rascunho se tornará um <b>artigo canônico compartilhado</b> na Wiki do HAOS. Todos os outros bots e gerentes passarão a consultar esta verdade consolidada com citação ao autor original.
+               </div>
+               <div>
+                 <label style="font-size:0.76rem;color:var(--muted);display:block;margin-bottom:4px;">Título do Artigo Canônico</label>
+                 <input type="text" id="promoteArticleTitle" placeholder="Ex: Arquitetura de Deploy e Portas" style="width:100%;font-size:0.84rem;" />
+               </div>
+               <div>
+                 <label style="font-size:0.76rem;color:var(--muted);display:block;margin-bottom:4px;">Origem / Tarefa de Evidência</label>
+                 <input type="text" id="promoteSourceRef" placeholder="Ex: Tarefa de deploy em produção / Análise de logs" style="width:100%;font-size:0.84rem;" />
+               </div>
+               <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:10px;">
+                 <button class="act" type="button" onclick="closePromoteModal()">Cancelar</button>
+                 <button class="act primary" type="button" onclick="confirmPromoteToWiki()" style="background:#238636;border-color:#2ea043;">🚀 Confirmar Promoção</button>
+               </div>
+             </div>
+           </div>
+
+           <!-- Aba 4: Microapps do Bot (Design macOS Glassmorphic Premium) -->
+           <div id="hubTab_microapps" class="hub-tab-pane" style="display:none;flex-direction:column;gap:14px;height:100%;">
+             <!-- macOS Unified App Window -->
+             <div style="flex:1;min-height:0;display:flex;flex-direction:column;background:rgba(18, 24, 38, 0.7);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255, 255, 255, 0.12);border-radius:14px;box-shadow:0 20px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18);overflow:hidden;">
+               <!-- macOS Integrated Window Titlebar -->
+               <div style="padding:10px 16px;background:rgba(255, 255, 255, 0.04);border-bottom:1px solid rgba(255, 255, 255, 0.08);display:flex;justify-content:space-between;align-items:center;user-select:none;">
+                 <div style="display:flex;align-items:center;gap:14px;">
+                   <!-- macOS Traffic Lights -->
+                   <div style="display:flex;gap:7px;align-items:center;">
+                     <span style="width:11px;height:11px;border-radius:50%;background:#ff5f56;border:1px solid #e0443e;box-shadow:0 1px 3px rgba(255,95,86,0.4);display:inline-block;"></span>
+                     <span style="width:11px;height:11px;border-radius:50%;background:#ffbd2e;border:1px solid #dea123;box-shadow:0 1px 3px rgba(255,189,46,0.4);display:inline-block;"></span>
+                     <span style="width:11px;height:11px;border-radius:50%;background:#27c93f;border:1px solid #1aab29;box-shadow:0 1px 3px rgba(39,201,63,0.4);display:inline-block;"></span>
+                   </div>
+                   <div style="display:flex;align-items:center;gap:6px;">
+                     <span style="font-size:0.88rem;color:#f8fafc;font-weight:600;letter-spacing:-0.01em;">macOS Microapps</span>
+                     <span style="font-size:0.7rem;background:rgba(255,255,255,0.08);color:#94a3b8;padding:2px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.06);">Glass Runtime</span>
+                   </div>
+                 </div>
+                 <div style="display:flex;gap:8px;align-items:center;">
+                   <button type="button" onclick="loadHubMicroapps()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#cbd5e1;padding:5px 12px;border-radius:7px;font-size:0.75rem;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.15s;">
+                     <span>🔄</span> Atualizar
+                   </button>
+                   <button type="button" onclick="createSampleMicroapp()" style="background:linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);border:1px solid rgba(255,255,255,0.2);color:#ffffff;padding:5px 14px;border-radius:7px;font-size:0.75rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;box-shadow:0 2px 10px rgba(37,99,235,0.35);transition:all 0.15s;">
+                     <span>➕</span> Novo Microapp
+                   </button>
+                 </div>
+               </div>
+
+               <!-- macOS Split Pane (Finder / Settings Layout) -->
+               <div style="flex:1;min-height:0;display:flex;">
+                 <!-- Sidebar / Finder-style Navigation Panel -->
+                 <div style="width:250px;background:rgba(15, 20, 32, 0.5);border-right:1px solid rgba(255, 255, 255, 0.08);padding:12px 10px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;" id="hubMicroappsList">
+                   Carregando microapps...
+                 </div>
+
+                 <!-- Content View / Stage -->
+                 <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:rgba(10, 14, 23, 0.85);">
+                   <div style="padding:10px 18px;background:rgba(255, 255, 255, 0.02);border-bottom:1px solid rgba(255, 255, 255, 0.06);display:flex;justify-content:space-between;align-items:center;">
+                     <div style="display:flex;align-items:center;gap:8px;">
+                       <span style="font-size:0.9rem;">✨</span>
+                       <span id="hubMicroappTitle" style="font-size:0.84rem;color:#f8fafc;font-weight:600;letter-spacing:-0.01em;">Selecione um Microapp</span>
+                     </div>
+                     <button type="button" onclick="editMicroappSource()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;padding:4px 12px;border-radius:6px;font-size:0.73rem;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all 0.15s;">
+                       <span>✏️</span> Editar Código HTML/JS
+                     </button>
+                   </div>
+                   <iframe id="hubMicroappFrame" sandbox="allow-scripts allow-forms" style="flex:1;width:100%;border:none;background:#0d1117;" srcdoc="<body style='font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:30px;color:#94a3b8;background:#0d1117;'>Selecione um microapp à esquerda para carregar.</body>"></iframe>
+                 </div>
+               </div>
+             </div>
+           </div>
+
+           <!-- Aba 5: SOUL.md Integrado -->
+           <div id="hubTab_soul" class="hub-tab-pane" style="display:none;flex-direction:column;gap:12px;height:100%;">
+             <div style="display:flex;justify-content:space-between;align-items:center;">
+               <div>
+                 <b style="font-size:0.88rem;color:#f0f6fc;">🔮 Alma do Agente (SOUL.md)</b>
+                 <div style="font-size:0.75rem;color:var(--muted);font-family:var(--mono);" id="hubSoulPath">—</div>
+               </div>
+               <button class="act primary" type="button" onclick="saveHubSoul()">💾 Salvar SOUL.md</button>
+             </div>
+             <div style="font-size:0.76rem;color:#8b949e;">
+               Identidade, princípios éticos, tom de resposta e restrições fundamentais gravadas no perfil do agente.
+             </div>
+             <textarea id="hubSoulTextarea" style="flex:1;min-height:380px;font-family:var(--mono);font-size:0.82rem;line-height:1.5;padding:12px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;resize:vertical;" placeholder="# Identidade e Diretrizes..."></textarea>
+             <div id="hubSoulStatus" style="font-size:0.76rem;color:var(--muted);font-family:var(--mono);"></div>
+           </div>
+
+           <!-- Aba 5: Histórico e Feed de Eventos -->
+           <div id="hubTab_feed" class="hub-tab-pane" style="display:none;flex-direction:column;gap:12px;height:100%;">
+             <div style="display:flex;justify-content:space-between;align-items:center;">
+               <b style="font-size:0.88rem;color:#f0f6fc;">📜 Log Append-Only e Auditoria de Eventos</b>
+               <button class="act" type="button" onclick="loadHubFeed()" style="font-size:0.74rem;">🔄 Atualizar Feed</button>
+             </div>
+             <div id="hubFeedTimeline" style="flex:1;overflow-y:auto;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;font-family:var(--mono);font-size:0.76rem;display:flex;flex-direction:column;gap:6px;">
+               Carregando eventos...
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+
+     <!-- Modal Legado de SOUL (compatibilidade) -->
+     <div id="soulModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+       <div style="background:#0d1117;border:1px solid #30363d;border-radius:12px;width:90%;max-width:820px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.8);overflow:hidden;">
+         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #21262d;background:#161b22;">
+           <div style="display:flex;align-items:center;gap:10px;">
+             <span style="font-size:1.3rem;">🔮</span>
+             <div>
+               <b style="font-size:0.95rem;color:#f0f6fc;">Editor de Alma do Agente (SOUL.md)</b>
+               <div style="font-size:0.75rem;color:var(--muted);font-family:var(--mono);" id="soulModalPath">—</div>
+             </div>
+           </div>
+           <button class="act" type="button" onclick="closeSoulModal()" style="font-size:1.1rem;padding:2px 8px;">✕</button>
+         </div>
+         <div style="padding:16px 20px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden;">
+           <div style="font-size:0.78rem;color:#8b949e;line-height:1.4;">
+             O <code>SOUL.md</code> define a identidade primária, postura, estilo de raciocínio, tom e regras invioláveis deste perfil do Hermes.
+             Qualquer alteração feita aqui é gravada diretamente no disco do perfil.
+           </div>
+           <input type="hidden" id="soulModalTargetId" />
+           <input type="hidden" id="soulModalProfile" />
+           <textarea id="soulModalTextarea" style="flex:1;min-height:360px;font-family:var(--mono);font-size:0.82rem;line-height:1.5;padding:12px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;resize:vertical;" placeholder="# Identidade e Diretrizes..."></textarea>
+           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+             <div id="soulModalStatus" style="font-size:0.78rem;color:#8b949e;font-family:var(--mono);"></div>
+             <div style="display:flex;gap:10px;">
+               <button class="act" type="button" onclick="closeSoulModal()">Cancelar</button>
+               <button class="act primary" type="button" id="soulModalSaveBtn" onclick="saveSoulContent()">💾 Salvar SOUL.md</button>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
+   <section class="tab" id="tab-scheduler">
     <div class="grid">
       <div class="card">
         <h3><span class="n">✧</span> Critical Path Method (CPM)</h3>
@@ -1210,6 +2086,55 @@ function filterModelDropdown(role) {
   drop.style.display = "block";
 }
 
+async function ensureCachedModels() {
+  if (!cachedAvailableModels || !cachedAvailableModels.length) {
+    try {
+      const modelsResp = await api("/v1/models");
+      cachedAvailableModels = (modelsResp && modelsResp.data) || [];
+    } catch (e) {
+      console.error("Failed to load models list:", e);
+    }
+  }
+  return cachedAvailableModels || [];
+}
+
+async function filterHierModelDropdown() {
+  const input = $("hierNodeModel");
+  const drop = $("drop_hier_model");
+  if (!input || !drop) return;
+
+  await ensureCachedModels();
+  const q = input.value.trim().toLowerCase();
+  const matched = (cachedAvailableModels || []).filter(m => {
+    const id = String(m.id || "").toLowerCase();
+    const owner = String(m.owned_by || "").toLowerCase();
+    return !q || id.includes(q) || owner.includes(q);
+  });
+
+  if (!matched.length) {
+    drop.style.display = "none";
+    return;
+  }
+
+  drop.innerHTML = matched.slice(0, 30).map(m => {
+    const id = esc(m.id || "");
+    const prov = esc(m.owned_by || "custom");
+    return `<div class="tg-model-item" style="padding:7px 12px; cursor:pointer; border-bottom:1px solid #21262d; display:flex; justify-content:space-between; align-items:center;" onmousedown="selectHierModelOption('${id}')">
+      <span style="color:#e2e8f0; font-family:var(--mono); font-size:0.83rem;">${id}</span>
+      <span style="font-size:0.72rem; color:#58a6ff; background:#1f242c; padding:2px 6px; border-radius:4px; border:1px solid #388bfd33;">${prov}</span>
+    </div>`;
+  }).join("");
+
+  drop.style.display = "block";
+}
+
+function selectHierModelOption(modelId) {
+  const input = $("hierNodeModel");
+  const drop = $("drop_hier_model");
+  if (input) input.value = modelId;
+  if (drop) drop.style.display = "none";
+}
+
 function selectModelOption(role, modelId) {
   const input = role === "mayor" ? $("tgMayorModel") : (role === "orch" ? $("tgOrchModel") : $("tgLeafModel"));
   const drop = $(`drop_${role}`);
@@ -1219,8 +2144,10 @@ function selectModelOption(role, modelId) {
 
 // Fechar dropdowns ao clicar fora
 document.addEventListener("click", (e) => {
-  if (!e.target.closest(".tg-model-drop") && !e.target.id.startsWith("tgMayor") && !e.target.id.startsWith("tgOrch") && !e.target.id.startsWith("tgLeaf")) {
-    document.querySelectorAll(".tg-model-drop").forEach(d => d.style.display = "none");
+  if (!e.target.closest(".tg-model-drop") && !e.target.closest(".tg-model-dropdown") &&
+      !e.target.id.startsWith("tgMayor") && !e.target.id.startsWith("tgOrch") && !e.target.id.startsWith("tgLeaf") &&
+      e.target.id !== "hierNodeModel") {
+    document.querySelectorAll(".tg-model-drop, .tg-model-dropdown").forEach(d => d.style.display = "none");
   }
 });
 
@@ -1301,60 +2228,1470 @@ async function setHarnessBinding(sel, roleKey) {
   }
 }
 
-function saveHierarchyNode() {
-  const p = {action:"upsert_node", id:$("hierNodeId").value || undefined, name:$("hierNodeName").value, role:$("hierNodeRole").value, parent_id:$("hierNodeParent").value || null, profile:$("hierNodeProfile").value, model:$("hierNodeModel").value, description:$("hierNodeDescription").value};
-  api("/api/agent-hierarchy", p).then(fetchState).catch(e => alert(e.message));
+function selectBotRole(role) {
+  const select = $("hierNodeRole");
+  if (select) select.value = role;
+  document.querySelectorAll(".bot-role-choice").forEach(btn => {
+    btn.classList.toggle("selected", btn.classList.contains(role));
+  });
 }
+
+async function saveHierarchyNode() {
+  const name = ($("hierNodeName")?.value || "").trim();
+  if (!name) {
+    alert("Por favor, digite o nome do agente.");
+    $("hierNodeName")?.focus();
+    return;
+  }
+  const role = $("hierNodeRole")?.value || "bot";
+  const parentId = $("hierNodeParent")?.value || null;
+  if ((role === "manager" || role === "bot") && !parentId) {
+    const nodes = (state.last?.agent_hierarchy?.nodes || []);
+    const master = nodes.find(n => n.role === "master");
+    if (master) {
+      if (confirm(`Nenhum superior selecionado. Vincular este ${role === 'manager' ? 'gerente' : 'bot'} ao Master "${master.name}"?`)) {
+        if ($("hierNodeParent")) $("hierNodeParent").value = master.id;
+        if ($("hierNodeParentSelect")) $("hierNodeParentSelect").value = master.id;
+      } else {
+        $("hierNodeParentSelect")?.focus();
+        return;
+      }
+    }
+  }
+
+  const p = {
+    action: "upsert_node",
+    id: $("hierNodeId")?.value || undefined,
+    name: name,
+    role: role,
+    parent_id: $("hierNodeParent")?.value || null,
+    profile: $("hierNodeProfile")?.value || "",
+    model: $("hierNodeModel")?.value || "",
+    description: $("hierNodeDescription")?.value || "",
+    yolo_mode: Boolean($("hierNodeYoloMode")?.checked),
+    toolsets: getSelectedToolsets()
+  };
+
+  try {
+    const res = await api("/api/agent-hierarchy", p);
+    addHierarchyNode();
+    await fetchState();
+    console.log("Agente salvo com sucesso:", res);
+  } catch (e) {
+    alert("Erro ao salvar agente: " + (e.message || e));
+  }
+}
+
+async function saveBotModel() {
+  const provider = ($("hierBotProvider")?.value || "").trim();
+  const model = ($("hierBotModel")?.value || "").trim();
+  try {
+    await api("/api/agent-hierarchy", { action: "set_bot_model", provider, model });
+    await fetchState();
+    alert("Modelo padrão dos bots atualizado!");
+  } catch (e) {
+    alert("Erro ao salvar modelo: " + (e.message || e));
+  }
+}
+
+async function startHierarchyCouncil() {
+  const from_id = $("councilFrom")?.value;
+  const to_id = $("councilTo")?.value;
+  const topic = ($("councilTopic")?.value || "").trim();
+  const max_turns = Number($("councilTurns")?.value || 3);
+  if (!from_id || !to_id) {
+    alert("Selecione os gerentes participantes do conselho.");
+    return;
+  }
+  if (!topic) {
+    alert("Digite o tema a ser deliberado.");
+    $("councilTopic")?.focus();
+    return;
+  }
+  try {
+    await api("/api/agent-hierarchy/council", { action: "start", from_id, to_id, topic, max_turns });
+    await fetchState();
+    alert("Conselho deliberativo iniciado!");
+  } catch (e) {
+    alert("Erro ao iniciar conselho: " + (e.message || e));
+  }
+}
+
 function renderAgentHierarchy(h) {
+  if (!availableToolsetsList || !availableToolsetsList.length) {
+    loadAvailableToolsets();
+  }
   const box = $("agentHierarchyTree");
   if (!box || !h) return;
   const nodes = h.nodes || [];
   const byParent = {};
   nodes.forEach(n => (byParent[n.parent_id || "__root"] ||= []).push(n));
-  const row = (n, depth=0) => `<div style="margin-left:${depth*20}px;padding:7px;border-bottom:1px solid #202938;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>${n.role === "master" ? "👑" : n.role === "manager" ? "🧠" : "🤖"}</span><b>${esc(n.name)}</b><span class="tag">${esc(n.role)}</span><span class="mono" style="color:var(--muted)">${esc(n.profile || "independent")}:${esc(n.model || "unassigned")}</span><button class="act" data-hierarchy-command="${esc(n.id)}">Comando</button><button class="act" data-hierarchy-edit="${esc(n.id)}">Editar</button><button class="act danger" data-hierarchy-delete="${esc(n.id)}">Excluir</button></div>` + (byParent[n.id] || []).map(c => row(c, depth+1)).join("");
-  box.innerHTML = (byParent.__root || []).map(n => row(n)).join("") || "Nenhum agente configurado.";
+
+  const icon = n => n.role === "master" ? "👑" : n.role === "manager" ? "🧠" : "🤖";
+  const roleLabel = n => n.role === "master" ? "Master (Executivo)" : n.role === "manager" ? "Gerente / Orquestrador" : "Bot Executor";
+  const roleClass = n => n.role === "master" ? "master" : n.role === "manager" ? "manager" : "bot";
+
+  const card = n => `
+    <div class="bot-node ${roleClass(n)}" id="bnode_${esc(n.id)}">
+      <div class="bot-node-header">
+        <div class="bot-node-title" title="${esc(n.name || n.id)}">
+          <span>${icon(n)}</span>
+          <span>${esc(n.name || n.id)}</span>
+        </div>
+        <div class="bot-node-header-right">
+          <span class="tg-badge ${n.role === 'master' ? 'running' : 'idle'}">${esc(n.role)}</span>
+          <button class="bot-del-btn" type="button" onclick="deleteHierarchyNode('${esc(n.id)}')" title="Excluir este agente e seus subordinados">🗑️</button>
+        </div>
+      </div>
+      <div class="bot-node-meta">
+        <div class="bot-node-row">
+          <span>ID:</span>
+          <span class="val mono" title="${esc(n.id)}">${esc(n.id.slice(0, 10))}</span>
+        </div>
+        <div class="bot-node-row">
+          <span>Profile:</span>
+          <span class="val" title="${esc(n.profile || '')}">${esc(n.profile || 'default')}</span>
+        </div>
+        <div class="bot-node-row">
+          <span>Modelo:</span>
+          <span class="val" style="color:var(--accent);">${esc(n.model || "padrão herdado")}</span>
+        </div>
+        ${n.description ? `<div style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-style:italic;line-height:1.3;max-height:2.6em;overflow:hidden;text-overflow:ellipsis;">"${esc(n.description)}"</div>` : ""}
+      </div>
+      <div class="bot-node-actions">
+        <button class="act" type="button" onclick="openAgentHubModal('${esc(n.id)}')" title="Painel de controle: disparar missão, rotinas agendadas, memória e auditoria">⚡ Operar</button>
+        <button class="act" type="button" onclick="openSoulModal('${esc(n.id)}')" title="Visualizar e editar o SOUL.md deste perfil">🔮 SOUL</button>
+        <button class="act" type="button" onclick="cloneHierarchyNode('${esc(n.id)}')" title="Clonar este agente">📋 Clonar</button>
+        <button class="act" type="button" onclick="editHierarchyNode('${esc(n.id)}')" title="Editar propriedades deste agente">✏️ Editar</button>
+      </div>
+    </div>
+  `;
+
+  const branch = n => `
+    <div class="bot-branch">
+      ${card(n)}
+      ${(byParent[n.id] || []).length ? `<div class="bot-children">${(byParent[n.id] || []).map(branch).join("")}</div>` : ""}
+    </div>
+  `;
+
+  const roots = byParent.__root || [];
+  box.innerHTML = roots.length
+    ? `<div class="bot-level">${roots.map(branch).join("")}</div>`
+    : `<div class="bot-graph-empty">
+         <div style="font-size:2.5rem;margin-bottom:10px;">🤖</div>
+         <b style="color:#fff;font-size:1rem;">Nenhum Agente Configurado</b>
+         <div style="margin-top:6px;font-size:0.8rem;">Comece cadastrando o Líder (Master) no painel ao lado.</div>
+       </div>`;
+
+  // Atualiza selects de dependência pai
+  const parentSelect = $("hierNodeParentSelect");
+  if (parentSelect) {
+    const curVal = $("hierNodeParent") ? $("hierNodeParent").value : "";
+    let opts = '<option value="">Nenhum (Raiz / Master)</option>';
+    nodes.forEach(n => {
+      opts += `<option value="${esc(n.id)}" ${n.id === curVal ? "selected" : ""}>${icon(n)} ${esc(n.name || n.id)} (${esc(n.role)})</option>`;
+    });
+    parentSelect.innerHTML = opts;
+  }
+
+  // Atualiza selects de conselho e advisory edges (somente gerentes)
   const managers = nodes.filter(n => n.role === "manager");
-  const managerOptions = managers.map(n => `<option value="${esc(n.id)}">${esc(n.name)}</option>`).join("");
-  [$("councilFrom"), $("councilTo"), $("edgeFrom"), $("edgeTo")].forEach(sel => { if (sel) sel.innerHTML = managerOptions; });
-  $("hierBotProvider").value = h.bot_model.provider || "";
-  $("hierBotModel").value = h.bot_model.model || "";
-}
-async function hierarchyAction(event) {
-  const target = event.target.closest("[data-hierarchy-command],[data-hierarchy-edit],[data-hierarchy-delete]");
-  if (!target) return;
-  const id = target.dataset.hierarchyCommand || target.dataset.hierarchyEdit || target.dataset.hierarchyDelete;
-  const node = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === id);
-  if (target.dataset.hierarchyCommand) return editHierarchyNode(id, true);
-  if (target.dataset.hierarchyEdit && node) {
-    $("hierNodeId").value=node.id; $("hierNodeName").value=node.name||""; $("hierNodeRole").value=node.role||"bot"; $("hierNodeParent").value=node.parent_id||""; $("hierNodeProfile").value=node.profile||""; $("hierNodeModel").value=node.model||""; $("hierNodeDescription").value=node.description||"";
-  } else if (target.dataset.hierarchyDelete && confirm(`Excluir ${node?.name || id}?`)) {
-    await api("/api/agent-hierarchy", {action:"delete_node", id}); await fetchState();
+  const managerOptions = managers.map(n => `<option value="${esc(n.id)}">${icon(n)} ${esc(n.name || n.id)}</option>`).join("");
+  [$("councilFrom"), $("councilTo"), $("edgeFrom"), $("edgeTo")].forEach(sel => {
+    if (sel) sel.innerHTML = managerOptions || '<option value="">Nenhum gerente cadastrado</option>';
+  });
+
+  // Renderiza a lista de advisory edges existentes
+  const edgesList = $("advisoryEdgesList");
+  if (edgesList) {
+    const edges = h.advisory_edges || [];
+    if (edges.length === 0) {
+      edgesList.innerHTML = '<span style="font-size:0.75rem;color:var(--muted);">Nenhuma relação consultiva configurada.</span>';
+    } else {
+      const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n.name || n.id]));
+      edgesList.innerHTML = edges.map(e => `
+        <div class="advisory-edge-chip">
+          <span>🧠 ${esc(nodeMap[e.from_id] || e.from_id)} ⇄ ${esc(nodeMap[e.to_id] || e.to_id)} (máx ${e.max_turns}t)</span>
+          <button type="button" onclick="removeAdvisoryEdge('${esc(e.from_id)}', '${esc(e.to_id)}')" title="Remover esta relação">✕</button>
+        </div>
+      `).join("");
+    }
+  }
+
+  if (h.bot_model) {
+    if ($("hierBotProvider")) $("hierBotProvider").value = h.bot_model.provider || "";
+    if ($("hierBotModel")) $("hierBotModel").value = h.bot_model.model || "";
   }
 }
-document.addEventListener("click", hierarchyAction);
-document.addEventListener("click", event => {
-  if (event.target.closest("[data-hierarchy-add]")) addHierarchyNode();
-  if (event.target.closest("[data-hierarchy-save]")) saveHierarchyNode();
-  if (event.target.closest("[data-hierarchy-start-council]")) startHierarchyCouncil();
-  if (event.target.closest("[data-hierarchy-save-model]")) saveBotModel();
-  if (event.target.closest("[data-hierarchy-edge-save]")) api("/api/agent-hierarchy", {action:"set_advisory_edge", from_id:$("edgeFrom").value, to_id:$("edgeTo").value, max_turns:Number($("edgeTurns").value)}).then(fetchState).catch(e=>alert(e.message));
-  if (event.target.closest("[data-hierarchy-edge-remove]")) api("/api/agent-hierarchy", {action:"remove_advisory_edge", from_id:$("edgeFrom").value, to_id:$("edgeTo").value}).then(fetchState).catch(e=>alert(e.message));
-});
 
-async function startHierarchyCouncil() {
-  await api("/api/agent-hierarchy/council", {action:"start", from_id:$("councilFrom").value, to_id:$("councilTo").value, topic:$("councilTopic").value, max_turns:Number($("councilTurns").value)}); fetchState();
+function addHierarchyNode() {
+  if ($("hierNodeId")) $("hierNodeId").value = "";
+  if ($("hierNodeName")) $("hierNodeName").value = "";
+  selectBotRole("bot");
+  if ($("hierNodeParent")) $("hierNodeParent").value = "";
+  if ($("hierNodeParentSelect")) $("hierNodeParentSelect").value = "";
+  if ($("hierNodeProfile")) $("hierNodeProfile").value = "";
+  if ($("hierNodeModel")) $("hierNodeModel").value = "";
+  if ($("hierNodeDescription")) $("hierNodeDescription").value = "";
+  if ($("hierNodeYoloMode")) $("hierNodeYoloMode").checked = false;
+  setSelectedToolsets(null);
+  if ($("btnEditSoulDirect")) $("btnEditSoulDirect").style.display = "none";
+  $("hierNodeName")?.focus();
 }
-async function saveBotModel() {
-  await api("/api/agent-hierarchy", {action:"set_bot_model", provider:$("hierBotProvider").value, model:$("hierBotModel").value}); fetchState();
+
+function getSelectedToolsets() {
+  const container = $("hierNodeToolsetsContainer");
+  if (!container) return null;
+  const checked = Array.from(container.querySelectorAll("input[type=checkbox]:checked")).map(cb => cb.value);
+  // Se nenhum estiver marcado, significa "todas liberadas por padrão"
+  return checked.length > 0 ? checked : null;
 }
-async function addHierarchyNode() {
-  $("hierNodeId").value = ""; $("hierNodeName").focus();
+
+function setSelectedToolsets(toolsets) {
+  const container = $("hierNodeToolsetsContainer");
+  if (!container) return;
+  const set = new Set(Array.isArray(toolsets) ? toolsets : []);
+  container.querySelectorAll("input[type=checkbox]").forEach(cb => {
+    cb.checked = set.has(cb.value);
+  });
 }
-async function editHierarchyNode(id, commandMode=false) {
-  if (!commandMode) return;
-  const command = prompt("Comando para este agente:"); if (command) await api("/api/agent-hierarchy/command", {target_id:id, command});
+
+async function loadAvailableToolsets() {
+  const container = $("hierNodeToolsetsContainer");
+  if (!container) return;
+  try {
+    const res = await fetch("/api/agent-hierarchy/toolsets");
+    const data = await res.json();
+    if (data.ok && data.toolsets) {
+      availableToolsetsList = data.toolsets;
+      container.innerHTML = availableToolsetsList.map(t => `
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.72rem;color:#c9d1d9;background:#161b22;padding:2px 6px;border-radius:4px;border:1px solid #30363d;cursor:pointer;">
+          <input type="checkbox" value="${esc(t)}" /> ${esc(t)}
+        </label>
+      `).join("");
+    }
+  } catch (e) {
+    container.innerHTML = `<span style="color:var(--muted);font-size:0.72rem;">Todas as ferramentas liberadas por padrão.</span>`;
+  }
 }
-async function sendHierarchyCommand(id) { return editHierarchyNode(id, true); }
+
+// ==========================================
+// macOS Glassmorphic Dialog System
+// (Substitutos de alto padrão para window.prompt, alert e confirm)
+// ==========================================
+let macModalResolve = null;
+
+function showMacPrompt(title, message, defaultValue = "", icon = "✏️") {
+  return new Promise((resolve) => {
+    macModalResolve = resolve;
+    $("macModalTitle").textContent = title;
+    $("macModalMessage").textContent = message;
+    $("macModalIcon").textContent = icon;
+    $("macModalInputWrap").style.display = "block";
+    const input = $("macModalInput");
+    input.value = defaultValue;
+    $("macModalCancelBtn").style.display = "inline-block";
+    $("macModalConfirmBtn").textContent = "Confirmar";
+    $("macModalConfirmBtn").style.background = "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)";
+    $("macModalOverlay").style.display = "flex";
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 50);
+  });
+}
+
+function showMacAlert(title, message, icon = "ℹ️") {
+  return new Promise((resolve) => {
+    macModalResolve = resolve;
+    $("macModalTitle").textContent = title;
+    $("macModalMessage").textContent = message;
+    $("macModalIcon").textContent = icon;
+    $("macModalInputWrap").style.display = "none";
+    $("macModalCancelBtn").style.display = "none";
+    $("macModalConfirmBtn").textContent = "Entendido";
+    $("macModalConfirmBtn").style.background = "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)";
+    $("macModalOverlay").style.display = "flex";
+    $("macModalConfirmBtn").focus();
+  });
+}
+
+function showMacConfirm(title, message, icon = "⚠️") {
+  return new Promise((resolve) => {
+    macModalResolve = resolve;
+    $("macModalTitle").textContent = title;
+    $("macModalMessage").textContent = message;
+    $("macModalIcon").textContent = icon;
+    $("macModalInputWrap").style.display = "none";
+    $("macModalCancelBtn").style.display = "inline-block";
+    $("macModalConfirmBtn").textContent = "Sim, Continuar";
+    $("macModalConfirmBtn").style.background = "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)";
+    $("macModalOverlay").style.display = "flex";
+    $("macModalConfirmBtn").focus();
+  });
+}
+
+function macModalSubmit() {
+  const overlay = $("macModalOverlay");
+  overlay.style.display = "none";
+  if (macModalResolve) {
+    const isPrompt = $("macModalInputWrap").style.display !== "none";
+    const isAlert = $("macModalCancelBtn").style.display === "none";
+    if (isPrompt) {
+      macModalResolve($("macModalInput").value);
+    } else if (isAlert) {
+      macModalResolve(true);
+    } else {
+      macModalResolve(true);
+    }
+    macModalResolve = null;
+  }
+}
+
+function macModalCancel() {
+  $("macModalOverlay").style.display = "none";
+  if (macModalResolve) {
+    const isPrompt = $("macModalInputWrap").style.display !== "none";
+    macModalResolve(isPrompt ? null : false);
+    macModalResolve = null;
+  }
+}
+
+// Editor de Código HTML/JS estilo macOS
+function openMacCodeEditor(title, code) {
+  $("macCodeEditorTitle").textContent = "macOS Code Studio — " + title;
+  $("macCodeEditorTextarea").value = code;
+  $("macCodeEditorModal").style.display = "flex";
+  setTimeout(() => $("macCodeEditorTextarea").focus(), 50);
+}
+
+function closeMacCodeEditor() {
+  $("macCodeEditorModal").style.display = "none";
+}
+
+async function saveMacCodeEditor() {
+  const newHtml = $("macCodeEditorTextarea").value;
+  const app = activeMicroappsList[activeMicroappIndex];
+  if (!app || !activeHubBotId) return;
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/microapps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: activeHubBotId, title: app.title, slug: app.slug, html: newHtml })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    closeMacCodeEditor();
+    await loadHubMicroapps();
+    await showMacAlert("Salvo com Sucesso", "O código HTML/JS do microapp foi atualizado no disco do agente.", "✨");
+  } catch (err) {
+    await showMacAlert("Erro ao Salvar", err.message || err, "❌");
+  }
+}
+
+function editHierarchyNode(id) {
+  const node = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === id);
+  if (!node) return;
+  if ($("hierNodeId")) $("hierNodeId").value = node.id;
+  if ($("hierNodeName")) $("hierNodeName").value = node.name || "";
+  selectBotRole(node.role || "bot");
+  if ($("hierNodeParent")) $("hierNodeParent").value = node.parent_id || "";
+  if ($("hierNodeParentSelect")) $("hierNodeParentSelect").value = node.parent_id || "";
+  if ($("hierNodeProfile")) $("hierNodeProfile").value = node.profile || "";
+  if ($("hierNodeModel")) $("hierNodeModel").value = node.model || "";
+  if ($("hierNodeDescription")) $("hierNodeDescription").value = node.description || "";
+  if ($("hierNodeYoloMode")) $("hierNodeYoloMode").checked = Boolean(node.yolo_mode);
+  setSelectedToolsets(node.toolsets);
+  if ($("btnEditSoulDirect")) $("btnEditSoulDirect").style.display = "inline-flex";
+  $("hierNodeName")?.focus();
+}
+
+let activeHubBotId = null;
+let activeHubBot = null;
+
+let availableToolsetsList = [];
+let activeMicroappsList = [];
+let activeMicroappIndex = 0;
+
+function switchHubTab(tabName) {
+  document.querySelectorAll(".hub-nav-tab").forEach(t => {
+    t.classList.toggle("active", t.dataset.hubTab === tabName);
+  });
+  document.querySelectorAll(".hub-tab-pane").forEach(p => {
+    p.style.display = p.id === `hubTab_${tabName}` ? "flex" : "none";
+  });
+  if (tabName === "routines") loadHubRoutines();
+  if (tabName === "memory") loadHubMemory();
+  if (tabName === "microapps") loadHubMicroapps();
+  if (tabName === "soul") loadHubSoul();
+  if (tabName === "feed") loadHubFeed();
+}
+
+async function openAgentHubModal(id) {
+  const node = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === id);
+  if (!node) return;
+  activeHubBotId = id;
+  activeHubBot = node;
+
+  const modal = $("agentHubModal");
+  if (!modal) return;
+  modal.style.display = "flex";
+
+  const icon = node.role === "master" ? "👑" : node.role === "manager" ? "🧠" : "🤖";
+  $("hubBotIcon").textContent = icon;
+  $("hubBotName").textContent = node.name || node.id;
+  $("hubBotId").textContent = node.id;
+  $("hubBotProfile").textContent = node.profile || "default";
+  $("hubBotModel").textContent = node.model || "padrão herdado";
+
+  const badge = $("hubBotBadge");
+  badge.textContent = node.role;
+  badge.className = `tg-badge ${node.role === 'master' ? 'running' : 'idle'}`;
+
+  // YOLO toggle: visível exclusivamente no Master; nos outros exibe badge de herança se ativo
+  const isMaster = node.role === "master";
+  const masterYolo = Boolean(state.last?.agent_hierarchy?.master_yolo || (isMaster && node.yolo_mode));
+  const effectiveYolo = Boolean(node.effective_yolo ?? (isMaster ? node.yolo_mode : masterYolo));
+
+  const yoloLabel = $("hubYoloToggleLabel");
+  const yoloInherited = $("hubYoloInheritedBadge");
+
+  if (isMaster) {
+    if (yoloLabel) {
+      yoloLabel.style.display = "flex";
+      $("hubSessionYolo").checked = Boolean(node.yolo_mode);
+    }
+    if (yoloInherited) yoloInherited.style.display = "none";
+  } else {
+    if (yoloLabel) yoloLabel.style.display = "none";
+    if (yoloInherited) {
+      yoloInherited.style.display = effectiveYolo ? "inline-block" : "none";
+    }
+  }
+
+  // Verifica aprovações pendentes para este bot ou para a sessão
+  checkBotApprovals();
+
+  // Abre na aba de comando
+  switchHubTab("command");
+  loadHubFeed();
+}
+
+async function checkBotApprovals() {
+  const pending = state.last?.approvals?.pending || [];
+  const card = $("hubApprovalCard");
+  const indicator = $("hubApprovalIndicator");
+  const details = $("hubApprovalDetails");
+
+  if (!card || !indicator) return;
+
+  const myApproval = pending.find(p => p.assignee === activeHubBotId || p.worker === activeHubBotId) || pending[0];
+  const isMaster = activeHubBot?.role === "master";
+  const effectiveYolo = Boolean(activeHubBot?.effective_yolo || (isMaster && activeHubBot?.yolo_mode));
+  if (myApproval && !effectiveYolo) {
+    indicator.style.display = "inline-block";
+    card.style.display = "block";
+    if (details) {
+      details.innerHTML = `
+        <div><b>Ação / Tarefa:</b> [${esc(myApproval.id)}] ${esc(myApproval.title || myApproval.goal || 'Operação')}</div>
+        <div style="margin-top:4px;color:#8b949e;"><b>Status retido:</b> ${esc(myApproval.status || 'pending')} | <b>Postura:</b> ${esc(myApproval.posture || 'worker')}</div>
+        <input type="hidden" id="hubPendingTaskId" value="${esc(myApproval.id)}" />
+      `;
+    }
+  } else {
+    indicator.style.display = "none";
+    card.style.display = "none";
+  }
+}
+
+async function resolveApproval(verdict) {
+  const taskId = $("hubPendingTaskId")?.value;
+  if (!taskId) return;
+  const rationale = await showMacPrompt(
+    verdict === 'approved' ? 'Aprovação de Execução' : 'Rejeição de Execução',
+    `Informe a diretriz / observação para a tarefa ${taskId}:`,
+    verdict === 'approved' ? 'Aprovado pelo operador via HAOS Glass UI' : 'Ação rejeitada por segurança',
+    verdict === 'approved' ? '✅' : '🛑'
+  );
+  if (rationale === null) return;
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/approvals/decide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_id: taskId, verdict, rationale })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha");
+    await showMacAlert("Veredito Registrado", `Decisão "${verdict}" registrada com sucesso no grafo de tarefas!`, "✓");
+    await fetchState();
+    checkBotApprovals();
+  } catch (err) {
+    await showMacAlert("Erro na Aprovação", err.message || err, "❌");
+  }
+}
+
+async function toggleMasterYolo() {
+  const nodes = state.last?.agent_hierarchy?.nodes || [];
+  const master = nodes.find(n => n.role === "master");
+  if (!master) return;
+  const isYolo = $("hubSessionYolo")?.checked;
+  try {
+    await api("/api/agent-hierarchy", {
+      id: master.id,
+      yolo_mode: isYolo
+    });
+    await fetchState();
+    if (activeHubBot) {
+      activeHubBot = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === activeHubBot.id);
+    }
+    checkBotApprovals();
+  } catch (e) {
+    alert("Erro ao salvar modo YOLO Master: " + (e.message || e));
+  }
+}
+
+async function loadHubMicroapps() {
+  if (!activeHubBotId) return;
+  const list = $("hubMicroappsList");
+  if (list) list.innerHTML = '<span style="color:var(--muted);font-size:0.75rem;">Carregando microapps...</span>';
+
+  try {
+    const res = await fetch(`/api/agent-hierarchy/microapps?target_id=${encodeURIComponent(activeHubBotId)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    activeMicroappsList = data.microapps || [];
+    if (!activeMicroappsList.length) {
+      if (list) list.innerHTML = '<span style="color:var(--muted);font-size:0.75rem;padding:6px;">Nenhum microapp registrado para este bot.</span>';
+      setMicroappFrameContent("Nenhum microapp", "<body style='font-family:sans-serif;padding:30px;color:#666;'><h3>Nenhum Microapp Ativo</h3><p>Clique em <b>➕ Novo Microapp</b> acima para criar uma interface interativa para este agente.</p></body>");
+      return;
+    }
+
+    if (list) {
+      list.innerHTML = activeMicroappsList.map((app, idx) => `
+        <div onclick="selectMicroapp(${idx})" style="padding:10px 12px;border-radius:8px;cursor:pointer;background:${idx === activeMicroappIndex ? 'linear-gradient(135deg, rgba(59,130,246,0.25) 0%, rgba(37,99,235,0.15) 100%)' : 'rgba(255,255,255,0.03)'};border:1px solid ${idx === activeMicroappIndex ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.06)'};box-shadow:${idx === activeMicroappIndex ? '0 4px 12px rgba(37,99,235,0.2)' : 'none'};transition:all 0.15s;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1rem;">📱</span>
+            <b style="color:#f8fafc;font-size:0.8rem;letter-spacing:-0.01em;">${esc(app.title)}</b>
+          </div>
+          <div style="font-size:0.68rem;color:#94a3b8;font-family:var(--mono);margin-top:3px;padding-left:24px;">${esc(app.slug)}</div>
+        </div>
+      `).join("");
+    }
+    selectMicroapp(0);
+  } catch (err) {
+    if (list) list.innerHTML = `<span style="color:var(--err);font-size:0.75rem;">Erro: ${esc(err.message || err)}</span>`;
+  }
+}
+
+function selectMicroapp(index) {
+  activeMicroappIndex = index;
+  const app = activeMicroappsList[index];
+  if (!app) return;
+
+  const list = $("hubMicroappsList");
+  if (list) {
+    list.querySelectorAll("div[onclick]").forEach((d, i) => {
+      const isSel = i === index;
+      d.style.background = isSel ? "linear-gradient(135deg, rgba(59,130,246,0.25) 0%, rgba(37,99,235,0.15) 100%)" : "rgba(255,255,255,0.03)";
+      d.style.borderColor = isSel ? "rgba(59,130,246,0.5)" : "rgba(255,255,255,0.06)";
+      d.style.boxShadow = isSel ? "0 4px 12px rgba(37,99,235,0.2)" : "none";
+    });
+  }
+  setMicroappFrameContent(app.title, app.html);
+}
+
+function setMicroappFrameContent(title, html) {
+  if ($("hubMicroappTitle")) $("hubMicroappTitle").textContent = title;
+  const frame = $("hubMicroappFrame");
+  if (frame) frame.srcdoc = html;
+}
+
+async function createSampleMicroapp() {
+  if (!activeHubBotId) return;
+  const title = await showMacPrompt("Novo Microapp", "Digite o nome para o novo mini-dashboard operacional:", "Painel Operacional do Agente", "📱");
+  if (!title || !title.trim()) return;
+
+  const sampleHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>${esc(title)}</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: rgba(255, 255, 255, 0.05);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --text: #f0f6fc;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --purple: #bc8cff;
+      --amber: #d29922;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at 10% 20%, #161f36, #090d16 90%);
+      color: var(--text);
+      padding: 24px;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .header h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .glass-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .glass-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .glass-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .card-title {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-val {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .glass-table-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    th {
+      text-align: left;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-weight: 500;
+      border-bottom: 1px solid var(--card-border);
+    }
+    td {
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+    .badge-ok { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
+    .badge-blue { background: rgba(88, 166, 255, 0.15); color: #58a6ff; border: 1px solid rgba(88, 166, 255, 0.3); }
+    .btn-action {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.2s;
+    }
+    .btn-action:hover {
+      background: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 0 14px rgba(88, 166, 255, 0.25);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>${esc(title)}</h1>
+      <p style="font-size: 0.78rem; color: var(--muted); margin-top: 4px;">Ambiente de Controle Operacional macOS Glassmorphic</p>
+    </div>
+    <button class="btn-action" onclick="refreshData()">⚡ Atualizar Telemetria</button>
+  </div>
+
+  <div class="glass-grid">
+    <div class="glass-card">
+      <div class="card-title">Taxa de Sucesso <span>🟢</span></div>
+      <div class="card-val" style="color: var(--green);" id="kpiSuccess">99.8%</div>
+    </div>
+    <div class="glass-card">
+      <div class="card-title">Tarefas Executadas <span>⚡</span></div>
+      <div class="card-val" style="color: var(--accent);" id="kpiTasks">214</div>
+    </div>
+    <div class="glass-card">
+      <div class="card-title">Latência Média <span>⏱️</span></div>
+      <div class="card-val" style="color: var(--purple);" id="kpiLatency">24ms</div>
+    </div>
+    <div class="glass-card">
+      <div class="card-title">Portão de Aprovação <span>🛡️</span></div>
+      <div class="card-val" style="font-size: 1.2rem; color: var(--amber);" id="kpiGate">Nominal</div>
+    </div>
+  </div>
+
+  <div class="glass-table-card">
+    <div class="table-header">
+      <h3 style="font-size: 0.95rem; font-weight: 600;">Eventos & Auditoria de Ciclo</h3>
+      <span class="badge badge-blue">Tempo Real</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Fluxo de Execução</th>
+          <th>Ferramenta Utilizada</th>
+          <th>Duração</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr>
+          <td style="font-family: monospace; color: var(--muted);">14:20:05</td>
+          <td><b>Auditoria de Integridade do Host</b></td>
+          <td><code>terminal(local)</code></td>
+          <td>120ms</td>
+          <td><span class="badge badge-ok">Nominal</span></td>
+        </tr>
+        <tr>
+          <td style="font-family: monospace; color: var(--muted);">14:15:32</td>
+          <td><b>Sincronização de Conhecimento</b></td>
+          <td><code>wiki_promote</code></td>
+          <td>45ms</td>
+          <td><span class="badge badge-ok">Promovido</span></td>
+        </tr>
+        <tr>
+          <td style="font-family: monospace; color: var(--muted);">13:58:10</td>
+          <td><b>Varredura de Logs de Erro</b></td>
+          <td><code>scrapling_mcp</code></td>
+          <td>280ms</td>
+          <td><span class="badge badge-ok">Sem Falhas</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    function refreshData() {
+      const now = new Date().toLocaleTimeString();
+      document.getElementById('kpiTasks').textContent = Math.floor(214 + Math.random() * 20);
+      document.getElementById('kpiLatency').textContent = Math.floor(20 + Math.random() * 15) + 'ms';
+      const tbody = document.getElementById('tableBody');
+      const tr = document.createElement('tr');
+      tr.innerHTML = \`
+        <td style="font-family: monospace; color: var(--muted);">\${now}</td>
+        <td><b>Varredura Operacional Disparada</b></td>
+        <td><code>cronjob_scheduler</code></td>
+        <td>\${Math.floor(20 + Math.random() * 80)}ms</td>
+        <td><span class="badge badge-ok">Concluído</span></td>
+      \`;
+      tbody.insertBefore(tr, tbody.firstChild);
+    }
+  <" + "/script>\\n</body>\\n</html>`;
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/microapps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: activeHubBotId, title: title.trim(), html: sampleHtml })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    await loadHubMicroapps();
+    await showMacAlert("Microapp Criado", `Microapp "${title}" criado com sucesso com design macOS Glassmorphic!`, "📱");
+  } catch (err) {
+    await showMacAlert("Erro ao Criar Microapp", err.message || err, "❌");
+  }
+}
+
+function editMicroappSource() {
+  const app = activeMicroappsList[activeMicroappIndex];
+  if (!app) return;
+  openMacCodeEditor(app.title, app.html);
+}
+
+function closeAgentHubModal() {
+  const modal = $("agentHubModal");
+  if (modal) modal.style.display = "none";
+  activeHubBotId = null;
+  activeHubBot = null;
+}
+
+async function dispatchHubCommand() {
+  if (!activeHubBotId) return;
+  const input = $("hubCommandInput");
+  const command = (input?.value || "").trim();
+  if (!command) {
+    alert("Digite a instrução para a missão.");
+    input?.focus();
+    return;
+  }
+  try {
+    const res = await api("/api/agent-hierarchy/command", { target_id: activeHubBotId, command });
+    if (input) input.value = "";
+    alert(`Missão despachada para ${activeHubBot?.name || activeHubBotId}!`);
+    loadHubFeed();
+    await fetchState();
+  } catch (err) {
+    alert("Erro ao disparar comando: " + (err.message || err));
+  }
+}
+
+async function loadHubFeed() {
+  if (!activeHubBotId) return;
+  const tasksBox = $("hubRecentTasks");
+  const feedBox = $("hubFeedTimeline");
+  if (tasksBox) tasksBox.innerHTML = "Carregando tarefas...";
+  if (feedBox) feedBox.innerHTML = "Carregando eventos...";
+
+  try {
+    const res = await fetch(`/api/agent-hierarchy/feed?target_id=${encodeURIComponent(activeHubBotId)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha");
+
+    // Renderiza tarefas recentes
+    if (tasksBox) {
+      const tasks = data.tasks || [];
+      if (!tasks.length) {
+        tasksBox.innerHTML = '<span style="color:var(--muted);">Nenhuma missão registrada para este agente ainda.</span>';
+      } else {
+        tasksBox.innerHTML = tasks.slice().reverse().map(t => `
+          <div style="padding:6px 0;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <span style="color:#58a6ff;font-weight:600;">[${esc(t.id || '')}]</span>
+              <span style="color:#c9d1d9;margin-left:6px;">${esc(t.title || t.goal || '')}</span>
+            </div>
+            <span class="tg-badge ${t.status === 'DONE' ? 'idle' : 'running'}" style="font-size:0.68rem;">${esc(t.status || 'READY')}</span>
+          </div>
+        `).join("");
+      }
+    }
+
+    // Renderiza log de eventos
+    if (feedBox) {
+      const events = data.events || [];
+      if (!events.length) {
+        feedBox.innerHTML = '<span style="color:var(--muted);">Nenhum evento auditado para este agente.</span>';
+      } else {
+        feedBox.innerHTML = events.slice().reverse().map(ev => `
+          <div style="padding:5px 0;border-bottom:1px solid #161b22;line-height:1.3;">
+            <span style="color:var(--muted);">[${new Date(ev.timestamp * 1000).toLocaleTimeString()}]</span>
+            <span style="color:var(--accent);font-weight:600;margin-left:4px;">${esc(ev.name)}</span>
+            <span style="color:#8b949e;margin-left:6px;">${esc(JSON.stringify(ev.payload || {}).slice(0, 100))}</span>
+          </div>
+        `).join("");
+      }
+    }
+  } catch (e) {
+    if (tasksBox) tasksBox.innerHTML = `<span style="color:var(--err);">Erro: ${esc(e.message || e)}</span>`;
+  }
+}
+
+async function loadHubRoutines() {
+  if (!activeHubBotId) return;
+  const list = $("hubRoutinesList");
+  if (!list) return;
+  list.innerHTML = '<span style="color:var(--muted);">Carregando rotinas agendadas...</span>';
+
+  try {
+    const res = await fetch(`/api/agent-hierarchy/routines?target_id=${encodeURIComponent(activeHubBotId)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    const routines = data.routines || [];
+    if (!routines.length) {
+      list.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">Nenhuma rotina periódica vinculada a este bot.</span>';
+      return;
+    }
+
+    const transcripts = data.transcripts || {};
+
+    list.innerHTML = routines.map(r => {
+      const execList = transcripts[r.id] || [];
+      const transcriptHtml = execList.length ? `
+        <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #21262d;">
+          <b style="font-size:0.72rem;color:var(--muted);">Últimas Transcrições de Execução (Run Transcripts):</b>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px;">
+            ${execList.map(ex => `
+              <div style="font-size:0.7rem;color:#8b949e;background:#161b22;padding:4px 8px;border-radius:4px;display:flex;justify-content:space-between;">
+                <span>${new Date(ex.claimed_at * 1000).toLocaleTimeString()} - Status: <b style="color:${ex.status === 'succeeded' ? '#3fb950' : '#f85149'};">${esc(ex.status)}</b> (${round(ex.duration_seconds || 0, 2)}s)</span>
+                <span style="color:var(--muted);">${esc(ex.summary || 'Executado')}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      ` : `<div style="font-size:0.7rem;color:var(--muted);margin-top:4px;font-style:italic;">Nenhum ciclo executado ainda para gerar transcrição.</div>`;
+
+      return `
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <b style="color:#f0f6fc;font-size:0.84rem;">⏰ ${esc(r.name || r.id)}</b>
+              <div style="font-size:0.75rem;color:var(--accent);font-family:var(--mono);margin-top:2px;">
+                Frequência: ${esc(r.schedule?.display || r.schedule?.expr || JSON.stringify(r.schedule))}
+              </div>
+              <div style="font-size:0.75rem;color:#8b949e;font-style:italic;margin-top:3px;max-width:550px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                "${esc(r.prompt || '')}"
+              </div>
+            </div>
+            <button class="act danger" type="button" onclick="deleteHubRoutine('${esc(r.id)}')" title="Remover rotina agendada">🗑️</button>
+          </div>
+          ${transcriptHtml}
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    list.innerHTML = `<span style="color:var(--err);">Erro ao carregar rotinas: ${esc(err.message || err)}</span>`;
+  }
+}
+
+async function createHubRoutine() {
+  if (!activeHubBotId) return;
+  const name = ($("hubRoutineName")?.value || "").trim();
+  const schedule = ($("hubRoutineSchedule")?.value || "every 24h").trim();
+  const prompt = ($("hubRoutinePrompt")?.value || "").trim();
+
+  if (!prompt) {
+    alert("Digite o prompt que o bot deve rodar periodicamente.");
+    $("hubRoutinePrompt")?.focus();
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/routines", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: activeHubBotId, name, schedule, prompt })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha ao criar rotina");
+
+    if ($("hubRoutineName")) $("hubRoutineName").value = "";
+    if ($("hubRoutinePrompt")) $("hubRoutinePrompt").value = "";
+    await showMacAlert("Rotina Programada", "Rotina periódica registrada com sucesso no cron scheduler do HAOS!", "⏰");
+    loadHubRoutines();
+  } catch (e) {
+    await showMacAlert("Erro ao Criar Rotina", e.message || e, "❌");
+  }
+}
+
+async function deleteHubRoutine(jobId) {
+  const confirmed = await showMacConfirm("Excluir Rotina", "Deseja realmente remover esta rotina agendada permanente?", "🗑️");
+  if (!confirmed) return;
+  try {
+    const res = await fetch("/api/agent-hierarchy/routines/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ job_id: jobId })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha");
+    loadHubRoutines();
+    await showMacAlert("Rotina Removida", "A rotina foi excluída do scheduler.", "✓");
+  } catch (e) {
+    await showMacAlert("Erro ao Excluir Rotina", e.message || e, "❌");
+  }
+}
+
+let activeMemSubView = "notebook";
+let activeWikiArticleSlug = null;
+let isEditingWikiArticle = false;
+
+function switchMemSubView(view) {
+  activeMemSubView = view;
+  const btnNb = $("btnMemSubNotebook");
+  const btnWiki = $("btnMemSubWiki");
+  const viewNb = $("memSubView_notebook");
+  const viewWiki = $("memSubView_wiki");
+  const indicator = $("hubMemScopeIndicator");
+
+  if (view === "notebook") {
+    if (btnNb) btnNb.className = "act primary";
+    if (btnWiki) btnWiki.className = "act";
+    if (viewNb) viewNb.style.display = "flex";
+    if (viewWiki) viewWiki.style.display = "none";
+    if (indicator) indicator.textContent = "🔒 Escopo: Privado deste Agente (DRAFT)";
+    loadHubNotebook();
+  } else {
+    if (btnNb) btnNb.className = "act";
+    if (btnWiki) btnWiki.className = "act primary";
+    if (viewNb) viewNb.style.display = "none";
+    if (viewWiki) viewWiki.style.display = "flex";
+    if (indicator) indicator.textContent = "🌐 Escopo: Wiki Compartilhada de Toda a Equipe (CANONICAL)";
+    loadHubWikiArticles();
+  }
+}
+
+async function loadHubNotebook() {
+  if (!activeHubBotId) return;
+  const textarea = $("hubNotebookTextarea");
+  const status = $("hubNotebookStatus");
+  if (status) status.textContent = "Lendo caderno privado do disco...";
+
+  try {
+    const res = await fetch(`/api/agent-hierarchy/notebook?target_id=${encodeURIComponent(activeHubBotId)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    if (textarea) textarea.value = data.content || "";
+    if (status) status.textContent = data.exists ? `✓ Caderno carregado (${data.path})` : "📝 Caderno limpo (será criado ao salvar ou promover).";
+  } catch (e) {
+    if (status) status.textContent = "Erro ao carregar caderno: " + (e.message || e);
+  }
+}
+
+async function saveHubNotebook() {
+  if (!activeHubBotId) return;
+  const content = $("hubNotebookTextarea")?.value || "";
+  const status = $("hubNotebookStatus");
+  if (status) status.textContent = "Salvando caderno...";
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/notebook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: activeHubBotId, content })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    if (status) status.textContent = "✓ Rascunho privado salvo com sucesso!";
+  } catch (e) {
+    if (status) status.textContent = "Erro ao salvar caderno: " + (e.message || e);
+  }
+}
+
+function openPromoteModal() {
+  const content = ($("hubNotebookTextarea")?.value || "").trim();
+  if (!content) {
+    alert("O caderno deste bot está vazio. Escreva algo antes de promover para a Wiki.");
+    $("hubNotebookTextarea")?.focus();
+    return;
+  }
+  const modal = $("promoteModal");
+  if (modal) modal.style.display = "flex";
+  if ($("promoteArticleTitle")) $("promoteArticleTitle").focus();
+}
+
+function closePromoteModal() {
+  const modal = $("promoteModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function confirmPromoteToWiki() {
+  if (!activeHubBotId) return;
+  const title = ($("promoteArticleTitle")?.value || "").trim();
+  const source_ref = ($("promoteSourceRef")?.value || "").trim() || "Execução autônoma do agente";
+  const content = ($("hubNotebookTextarea")?.value || "").trim();
+
+  if (!title) {
+    alert("Por favor, dê um título descritivo para o artigo canônico.");
+    $("promoteArticleTitle")?.focus();
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/wiki/promote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: activeHubBotId, title, content, source_ref })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha ao promover");
+
+    closePromoteModal();
+    alert(`⭐ Sucesso! Artigo "${data.title}" promovido para a Wiki Compartilhada da equipe!`);
+    switchMemSubView("wiki");
+    loadHubWikiArticles(data.slug);
+  } catch (e) {
+    alert("Erro ao promover para a Wiki: " + (e.message || e));
+  }
+}
+
+async function loadHubWikiArticles(selectSlug = null) {
+  const list = $("hubWikiArticlesList");
+  if (list) list.innerHTML = '<span style="color:var(--muted);font-size:0.75rem;">Carregando artigos...</span>';
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/wiki/articles");
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    const articles = data.articles || [];
+    if (!articles.length) {
+      if (list) list.innerHTML = '<span style="color:var(--muted);font-size:0.75rem;padding:6px;">Nenhum artigo canônico criado ainda.</span>';
+      return;
+    }
+
+    if (list) {
+      list.innerHTML = articles.map(a => `
+        <div onclick="selectWikiArticle('${esc(a.slug)}')" style="padding:8px 10px;border-radius:6px;cursor:pointer;background:${a.slug === activeWikiArticleSlug ? '#21262d' : 'transparent'};border:1px solid ${a.slug === activeWikiArticleSlug ? '#388bfd' : 'transparent'};display:flex;flex-direction:column;gap:2px;">
+          <b style="color:#f0f6fc;font-size:0.78rem;">📄 ${esc(a.title)}</b>
+          <span style="font-size:0.68rem;color:var(--muted);font-family:var(--mono);">Autor: ${esc(a.author)}</span>
+        </div>
+      `).join("");
+    }
+
+    if (selectSlug) {
+      selectWikiArticle(selectSlug);
+    } else if (!activeWikiArticleSlug && articles.length > 0) {
+      selectWikiArticle(articles[0].slug);
+    }
+  } catch (e) {
+    if (list) list.innerHTML = `<span style="color:var(--err);font-size:0.75rem;">Erro: ${esc(e.message || e)}</span>`;
+  }
+}
+
+async function selectWikiArticle(slug) {
+  activeWikiArticleSlug = slug;
+  isEditingWikiArticle = false;
+
+  const reader = $("hubWikiArticleReader");
+  const editor = $("hubWikiArticleEditor");
+  const titleEl = $("hubWikiArticleTitle");
+  const metaEl = $("hubWikiArticleMeta");
+  const btnEdit = $("btnToggleEditWiki");
+  const btnSave = $("btnSaveWikiArticle");
+  const status = $("hubWikiStatus");
+
+  if (btnEdit) btnEdit.style.display = "inline-flex";
+  if (btnSave) btnSave.style.display = "none";
+  if (reader) reader.style.display = "block";
+  if (editor) editor.style.display = "none";
+  if (status) status.textContent = "";
+
+  // Atualiza seleção na lista
+  loadHubWikiArticlesSilentSelection(slug);
+
+  try {
+    const res = await fetch(`/api/agent-hierarchy/wiki/article?slug=${encodeURIComponent(slug)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    if (titleEl) titleEl.textContent = slug.replace(/-/g, " ").toUpperCase();
+    if (metaEl) metaEl.textContent = `Arquivo: ${data.path}`;
+    if (reader) reader.textContent = data.content || "";
+    if (editor) editor.value = data.content || "";
+  } catch (e) {
+    if (reader) reader.innerHTML = `<span style="color:var(--err);">Erro ao carregar artigo: ${esc(e.message || e)}</span>`;
+  }
+}
+
+function loadHubWikiArticlesSilentSelection(slug) {
+  const list = $("hubWikiArticlesList");
+  if (!list) return;
+  list.querySelectorAll("div[onclick]").forEach(d => {
+    const isThis = d.getAttribute("onclick").includes(`'${slug}'`);
+    d.style.background = isThis ? "#21262d" : "transparent";
+    d.style.borderColor = isThis ? "#388bfd" : "transparent";
+  });
+}
+
+function toggleEditWikiMode() {
+  isEditingWikiArticle = !isEditingWikiArticle;
+  const reader = $("hubWikiArticleReader");
+  const editor = $("hubWikiArticleEditor");
+  const btnEdit = $("btnToggleEditWiki");
+  const btnSave = $("btnSaveWikiArticle");
+
+  if (isEditingWikiArticle) {
+    if (reader) reader.style.display = "none";
+    if (editor) {
+      editor.style.display = "block";
+      editor.focus();
+    }
+    if (btnEdit) btnEdit.textContent = "👁️ Ver Leitura";
+    if (btnSave) btnSave.style.display = "inline-flex";
+  } else {
+    if (reader) {
+      reader.textContent = editor?.value || "";
+      reader.style.display = "block";
+    }
+    if (editor) editor.style.display = "none";
+    if (btnEdit) btnEdit.textContent = "✏️ Editar";
+    if (btnSave) btnSave.style.display = "none";
+  }
+}
+
+async function saveActiveWikiArticle() {
+  if (!activeWikiArticleSlug) return;
+  const content = $("hubWikiArticleEditor")?.value || "";
+  const status = $("hubWikiStatus");
+  if (status) status.textContent = "Salvando artigo canônico...";
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/wiki/article", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: activeWikiArticleSlug, content })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    if (status) status.textContent = "✓ Artigo canônico atualizado com sucesso!";
+    toggleEditWikiMode();
+    loadHubWikiArticles(activeWikiArticleSlug);
+  } catch (e) {
+    if (status) status.textContent = "Erro ao salvar: " + (e.message || e);
+  }
+}
+
+async function prepareNewWikiArticle() {
+  const title = await showMacPrompt("Novo Artigo Canônico", "Digite o título para o artigo compartilhado da Wiki da Equipe:", "Arquitetura e Boas Práticas", "📚");
+  if (!title || !title.trim()) return;
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const initialContent = `# ${title}\n\nDescreva aqui o conhecimento consolidado, padrões de arquitetura ou procedimentos operacionais...`;
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/wiki/article", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, title: title.trim(), content: initialContent })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      await loadHubWikiArticles(slug);
+      await showMacAlert("Artigo Canônico Criado", `O artigo "${title}" foi criado na Wiki da Equipe.`, "✓");
+    } else {
+      await showMacAlert("Erro ao Criar Artigo", data.error || "Erro", "❌");
+    }
+  } catch (err) {
+    await showMacAlert("Erro de Conexão", err.message || err, "❌");
+  }
+}
+
+function loadHubMemory() {
+  switchMemSubView("notebook");
+}
+
+async function loadHubSoul() {
+  if (!activeHubBot) return;
+  const prof = activeHubBot.profile || activeHubBot.id;
+  $("hubSoulStatus").textContent = "Lendo SOUL.md do disco...";
+  $("hubSoulTextarea").value = "";
+
+  try {
+    const res = await fetch(`/api/agent-hierarchy/soul?profile=${encodeURIComponent(prof)}&target_id=${encodeURIComponent(activeHubBot.id)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    $("hubSoulPath").textContent = data.path || "";
+    $("hubSoulTextarea").value = data.content || "";
+    $("hubSoulStatus").textContent = data.exists ? "✓ Alma carregada com sucesso." : "⚠️ Arquivo ainda não existe (será inicializado ao salvar).";
+  } catch (e) {
+    $("hubSoulStatus").textContent = "Erro: " + (e.message || e);
+  }
+}
+
+async function saveHubSoul() {
+  if (!activeHubBot) return;
+  const prof = activeHubBot.profile || activeHubBot.id;
+  const content = $("hubSoulTextarea")?.value || "";
+  $("hubSoulStatus").textContent = "Gravando SOUL.md no disco...";
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/soul", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: activeHubBot.id, profile: prof, content })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    $("hubSoulStatus").textContent = "✓ SOUL.md salvo com sucesso!";
+  } catch (e) {
+    $("hubSoulStatus").textContent = "Erro ao salvar SOUL: " + (e.message || e);
+  }
+}
+
+function openSoulModalFromEditor() {
+  const id = $("hierNodeId")?.value;
+  const prof = $("hierNodeProfile")?.value;
+  if (!id && !prof) {
+    alert("Selecione um agente ou preencha o Profile para abrir o SOUL.md.");
+    return;
+  }
+  openSoulModal(id, prof);
+}
+
+async function openSoulModal(targetId, profileName) {
+  const modal = $("soulModal");
+  if (!modal) return;
+  modal.style.display = "flex";
+  $("soulModalStatus").textContent = "Carregando SOUL.md do disco...";
+  $("soulModalTextarea").value = "";
+  $("soulModalSaveBtn").disabled = true;
+
+  try {
+    const p = new URLSearchParams();
+    if (targetId) p.set("target_id", targetId);
+    if (profileName) p.set("profile", profileName);
+    const res = await fetch(`/api/agent-hierarchy/soul?${p.toString()}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha ao ler SOUL");
+
+    $("soulModalTargetId").value = targetId || "";
+    $("soulModalProfile").value = data.profile || profileName || "";
+    $("soulModalPath").textContent = data.path || "";
+    $("soulModalTextarea").value = data.content || "";
+    $("soulModalStatus").textContent = data.exists ? "✓ Arquivo carregado do perfil." : "⚠️ Arquivo ainda não existe (será criado ao salvar).";
+    $("soulModalSaveBtn").disabled = false;
+  } catch (err) {
+    $("soulModalStatus").textContent = "Erro: " + (err.message || err);
+  }
+}
+
+function closeSoulModal() {
+  const modal = $("soulModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function saveSoulContent() {
+  const target_id = $("soulModalTargetId")?.value || "";
+  const profile = $("soulModalProfile")?.value || "";
+  const content = $("soulModalTextarea")?.value || "";
+  const btn = $("soulModalSaveBtn");
+  if (btn) btn.disabled = true;
+  $("soulModalStatus").textContent = "Salvando no disco...";
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/soul", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id, profile, content })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha ao salvar SOUL");
+    $("soulModalStatus").textContent = "✓ SOUL.md salvo com sucesso em " + (data.path || "");
+    setTimeout(() => closeSoulModal(), 1200);
+  } catch (err) {
+    $("soulModalStatus").textContent = "Erro ao salvar: " + (err.message || err);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function cloneHierarchyNode(id) {
+  const node = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === id);
+  const currentName = node ? node.name : id;
+  const newName = await showMacPrompt("Clonar Agente", `Clonar agente "${currentName}". Digite o nome para a nova cópia:`, `${currentName} (Cópia)`, "👥");
+  if (newName === null) return;
+  const finalName = newName.trim() || `${currentName} (Cópia)`;
+
+  try {
+    const res = await fetch("/api/agent-hierarchy/clone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_id: id, name: finalName })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Falha ao clonar agente");
+    await fetchState();
+    await showMacAlert("Clonagem Concluída", `Agente "${finalName}" clonado com sucesso!`, "✓");
+  } catch (err) {
+    await showMacAlert("Erro ao Clonar", err.message || err, "❌");
+  }
+}
+
+async function deleteHierarchyNode(id) {
+  const node = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === id);
+  const label = node ? `"${node.name}" (${node.role})` : id;
+  const confirmed = await showMacConfirm("Excluir Agente", `Deseja realmente excluir o agente ${label}? Subordinados diretos também serão removidos.`, "🗑️");
+  if (!confirmed) return;
+
+  try {
+    await api("/api/agent-hierarchy", { action: "delete_node", id });
+    if ($("hierNodeId")?.value === id) addHierarchyNode();
+    await fetchState();
+    await showMacAlert("Agente Removido", `Agente ${label} foi excluído do grafo.`, "✓");
+  } catch (e) {
+    await showMacAlert("Erro ao Excluir", e.message || e, "❌");
+  }
+}
+
+async function sendHierarchyCommand(id) {
+  const node = (state.last?.agent_hierarchy?.nodes || []).find(n => n.id === id);
+  const label = node ? `"${node.name}"` : id;
+  const command = await showMacPrompt("Instrução Direta", `Enviar comando direto para ${label}:`, "", "⚡");
+  if (!command || !command.trim()) return;
+  try {
+    await api("/api/agent-hierarchy/command", { target_id: id, command: command.trim() });
+    await showMacAlert("Comando Despachado", `Comando enviado com sucesso para ${label}!`, "✓");
+    await fetchState();
+  } catch (e) {
+    await showMacAlert("Erro ao Enviar Comando", e.message || e, "❌");
+  }
+}
+
+async function saveAdvisoryEdge() {
+  const from_id = $("edgeFrom")?.value;
+  const to_id = $("edgeTo")?.value;
+  const max_turns = Number($("edgeTurns")?.value || 3);
+  if (!from_id || !to_id || from_id === to_id) {
+    alert("Selecione dois gerentes distintos para criar uma relação consultiva.");
+    return;
+  }
+  try {
+    await api("/api/agent-hierarchy", { action: "set_advisory_edge", from_id, to_id, max_turns });
+    await fetchState();
+  } catch (e) {
+    alert("Erro ao salvar relação consultiva: " + (e.message || e));
+  }
+}
+
+async function removeAdvisoryEdge(from_id, to_id) {
+  if (!confirm("Remover esta relação consultiva entre os gerentes?")) return;
+  try {
+    await api("/api/agent-hierarchy", { action: "remove_advisory_edge", from_id, to_id });
+    await fetchState();
+  } catch (e) {
+    alert("Erro ao remover relação: " + (e.message || e));
+  }
+}
 
 function renderTeamGraph(tg, ov) {
   if (!tg) return;
@@ -1514,7 +3851,7 @@ function directNodeTerminal(nodeId, label) {
 }
 
 async function intervene(targetId, action) {
-  const reason = prompt(`Ação: ${action.toUpperCase()} para o agente ${targetId}.\nInforme a razão / instrução:`, "Instrução do operador via UI");
+  const reason = await showMacPrompt(`Intervenção: ${action.toUpperCase()}`, `Agente alvo: ${targetId}.\nInforme a razão ou instrução operacional:`, "Instrução do operador via UI Glass", "🎯");
   if (!reason) return;
   try {
     const res = await api("/api/intervene", { target_id: targetId, action: action, reason: reason });
@@ -1526,7 +3863,7 @@ async function intervene(targetId, action) {
     navigateToTerminalTab();
     fetchState();
   } catch (err) {
-    alert(`✗ Erro na intervenção: ${err.message}`);
+    await showMacAlert("Erro na Intervenção", err.message || err, "❌");
   }
 }
 

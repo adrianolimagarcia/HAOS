@@ -1,7 +1,9 @@
 mod auth;
 mod db;
+mod mcp;
 mod pty;
 mod server;
+mod supervisor;
 
 use clap::{Parser, Subcommand};
 use db::DbHelper;
@@ -43,6 +45,12 @@ enum Commands {
 
         #[arg(long)]
         static_dir: Option<PathBuf>,
+
+        #[arg(long)]
+        upstream: Option<String>,
+
+        #[arg(long)]
+        gateway_upstream: Option<String>,
     },
 
     /// Fast diagnostics of HAOS environment and persistence
@@ -53,6 +61,17 @@ enum Commands {
         #[command(subcommand)]
         action: AdminCommands,
     },
+
+    /// High-performance parent-death supervisor for MCP child process groups
+    #[command(name = "mcp-supervisor")]
+    McpSupervisor {
+        #[arg(long = "parent-pgid")]
+        parent_pgid: i32,
+    },
+
+    /// High-performance stdio MCP (Model Context Protocol) Server in native Rust
+    #[command(name = "mcp-serve")]
+    McpServe,
 }
 
 #[derive(Subcommand, Debug)]
@@ -108,8 +127,8 @@ async fn main() {
                 delegate_to_python(&p_args);
             }
         },
-        Some(Commands::Server { port, host, static_dir }) => {
-            if let Err(e) = server::run_server(port, &host, static_dir).await {
+        Some(Commands::Server { port, host, static_dir, upstream, gateway_upstream }) => {
+            if let Err(e) = server::run_server(port, &host, static_dir, upstream, gateway_upstream).await {
                 eprintln!("✗ Server error: {e}");
                 std::process::exit(1);
             }
@@ -120,6 +139,18 @@ async fn main() {
         Some(Commands::Admin { action }) => match action {
             AdminCommands::SetPassword { password } => {
                 cmd_set_password(password);
+            }
+        },
+        Some(Commands::McpSupervisor { parent_pgid }) => {
+            if let Err(e) = supervisor::run_mcp_supervisor(parent_pgid) {
+                eprintln!("✗ MCP supervisor error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Some(Commands::McpServe) => {
+            if let Err(e) = mcp::run_mcp_server() {
+                eprintln!("✗ MCP server error: {e}");
+                std::process::exit(1);
             }
         },
         None => {

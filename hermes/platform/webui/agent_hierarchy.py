@@ -72,7 +72,18 @@ class AgentHierarchyStore:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            return json.loads(json.dumps(self._data))
+            snap = json.loads(json.dumps(self._data))
+            # Herança de YOLO do Master para todos os nós subordinados
+            master_node = next((n for n in snap.get("nodes", []) if n.get("role") == "master"), None)
+            master_yolo = bool(master_node.get("yolo_mode")) if master_node else False
+            snap["master_yolo"] = master_yolo
+            for n in snap.get("nodes", []):
+                # Se o nó for master, reflete seu yolo_mode; nós abaixo herdam o do master
+                if n.get("role") == "master":
+                    n["effective_yolo"] = bool(n.get("yolo_mode"))
+                else:
+                    n["effective_yolo"] = master_yolo
+            return snap
 
     def _node(self, node_id: str) -> dict[str, Any]:
         for node in self._data["nodes"]:
@@ -132,6 +143,9 @@ class AgentHierarchyStore:
     def upsert_node(self, payload: dict[str, Any], node_id: str | None = None) -> dict[str, Any]:
         with self._lock:
             ident = node_id or str(payload.get("id") or uuid.uuid4().hex[:12])
+            toolsets_raw = payload.get("toolsets")
+            toolsets = [str(t).strip() for t in toolsets_raw if str(t).strip()] if isinstance(toolsets_raw, list) else None
+            yolo_mode = bool(payload.get("yolo_mode", False))
             node = {
                 "id": ident,
                 "name": str(payload.get("name") or ident).strip(),
@@ -141,6 +155,8 @@ class AgentHierarchyStore:
                 "model": str(payload.get("model") or "").strip(),
                 "profile": str(payload.get("profile") or ident).strip(),
                 "description": str(payload.get("description") or "").strip(),
+                "toolsets": toolsets,  # None significa "todas liberadas por padrão"
+                "yolo_mode": yolo_mode,  # True = aprovações de escrita liberadas autonomamente
                 "enabled": bool(payload.get("enabled", True)),
             }
             old = next((n for n in self._data["nodes"] if n["id"] == ident), None)
@@ -187,6 +203,17 @@ class AgentHierarchyStore:
                 raise
             self._save()
             return dict(edge)
+
+    def remove_advisory_edge(self, from_id: str, to_id: str) -> None:
+        with self._lock:
+            self._data["advisory_edges"] = [
+                e for e in self._data.get("advisory_edges", [])
+                if not (
+                    (e.get("from_id") == from_id and e.get("to_id") == to_id)
+                    or (e.get("from_id") == to_id and e.get("to_id") == from_id)
+                )
+            ]
+            self._save()
 
     def start_council(self, from_id: str, to_id: str, topic: str, max_turns: int | None = None) -> dict[str, Any]:
         """Open a durable, bounded advisory discussion between two managers."""

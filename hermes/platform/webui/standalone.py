@@ -499,6 +499,44 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._send_json(200, graph)
         elif self.command == "GET" and path in ("/api/agent-hierarchy", "/api/controlplane/agent-hierarchy"):
             self._send_json(200, self.state.agent_hierarchy.snapshot())
+        elif self.command == "GET" and path == "/api/agent-hierarchy/soul":
+            self._get_hierarchy_soul()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/soul":
+            self._save_hierarchy_soul()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/memory":
+            self._get_hierarchy_memory()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/memory":
+            self._save_hierarchy_memory()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/notebook":
+            self._get_hierarchy_notebook()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/notebook":
+            self._save_hierarchy_notebook()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/wiki/articles":
+            self._get_hierarchy_wiki_articles()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/wiki/article":
+            self._get_hierarchy_wiki_article()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/wiki/article":
+            self._save_hierarchy_wiki_article()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/wiki/promote":
+            self._promote_hierarchy_notebook_to_wiki()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/microapps":
+            self._get_hierarchy_microapps()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/microapps":
+            self._save_hierarchy_microapp()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/approvals/decide":
+            self._decide_hierarchy_approval()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/toolsets":
+            self._get_hierarchy_toolsets()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/routines":
+            self._get_hierarchy_routines()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/routines":
+            self._save_hierarchy_routine()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/routines/delete":
+            self._delete_hierarchy_routine()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/feed":
+            self._get_hierarchy_feed()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/clone":
+            self._clone_hierarchy_node()
         elif self.command == "GET" and path in ("/api/harnesses", "/api/controlplane/harnesses"):
             self._send_json(200, self.state.control_plane.harness_overview())
         elif self.command == "GET" and path in ("/api/controlplane/overview", "/api/overview"):
@@ -851,6 +889,637 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
                 time.sleep(1.0)
             except Exception:
                 break
+
+    def _resolve_profile_soul_path(self, profile_name: str) -> Path:
+        """Resolve path to SOUL.md for a given Hermes profile name or default."""
+        from hermes_constants import get_hermes_home
+        from hermes_cli.profiles import _get_profiles_root
+        pname = (profile_name or "").strip()
+        if not pname or pname.lower() == "default":
+            return get_hermes_home() / "SOUL.md"
+        profiles_root = _get_profiles_root()
+        prof_dir = profiles_root / pname
+        prof_dir.mkdir(parents=True, exist_ok=True)
+        return prof_dir / "SOUL.md"
+
+    def _resolve_profile_memory_path(self, profile_name: str) -> Path:
+        """Resolve path to MEMORY.md for a given Hermes profile name or default."""
+        from hermes_constants import get_hermes_home
+        from hermes_cli.profiles import _get_profiles_root
+        pname = (profile_name or "").strip()
+        if not pname or pname.lower() == "default":
+            mem_path = get_hermes_home() / "memories" / "MEMORY.md"
+            if not mem_path.is_file():
+                mem_path = get_hermes_home() / "MEMORY.md"
+            return mem_path
+        profiles_root = _get_profiles_root()
+        prof_dir = profiles_root / pname
+        prof_dir.mkdir(parents=True, exist_ok=True)
+        return prof_dir / "MEMORY.md"
+
+    def _get_hierarchy_soul(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        target_id = query.get("target_id", [""])[0].strip()
+        profile = query.get("profile", [""])[0].strip()
+
+        if target_id and not profile:
+            snapshot = self.state.agent_hierarchy.snapshot()
+            node = next((n for n in snapshot.get("nodes", []) if n.get("id") == target_id), None)
+            if node:
+                profile = node.get("profile") or node.get("id")
+
+        soul_path = self._resolve_profile_soul_path(profile)
+        content = ""
+        if soul_path.is_file():
+            try:
+                content = soul_path.read_text(encoding="utf-8")
+            except Exception as e:
+                self._send_json(500, {"ok": False, "error": f"read_error: {e}"})
+                return
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "profile": profile,
+            "path": str(soul_path),
+            "exists": soul_path.is_file(),
+            "content": content
+        })
+
+    def _save_hierarchy_soul(self) -> None:
+        body = self._read_json_body()
+        target_id = str(body.get("target_id") or "").strip()
+        profile = str(body.get("profile") or "").strip()
+        content = str(body.get("content") or "")
+
+        if target_id and not profile:
+            snapshot = self.state.agent_hierarchy.snapshot()
+            node = next((n for n in snapshot.get("nodes", []) if n.get("id") == target_id), None)
+            if node:
+                profile = node.get("profile") or node.get("id")
+
+        soul_path = self._resolve_profile_soul_path(profile)
+        try:
+            soul_path.parent.mkdir(parents=True, exist_ok=True)
+            soul_path.write_text(content, encoding="utf-8")
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"write_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "profile": profile,
+            "path": str(soul_path),
+            "saved": True
+        })
+
+    def _get_hierarchy_memory(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        target_id = query.get("target_id", [""])[0].strip()
+        profile = query.get("profile", [""])[0].strip()
+
+        if target_id and not profile:
+            snapshot = self.state.agent_hierarchy.snapshot()
+            node = next((n for n in snapshot.get("nodes", []) if n.get("id") == target_id), None)
+            if node:
+                profile = node.get("profile") or node.get("id")
+
+        mem_path = self._resolve_profile_memory_path(profile)
+        content = ""
+        if mem_path.is_file():
+            try:
+                content = mem_path.read_text(encoding="utf-8")
+            except Exception as e:
+                self._send_json(500, {"ok": False, "error": f"read_error: {e}"})
+                return
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "profile": profile,
+            "path": str(mem_path),
+            "exists": mem_path.is_file(),
+            "content": content
+        })
+
+    def _save_hierarchy_memory(self) -> None:
+        body = self._read_json_body()
+        target_id = str(body.get("target_id") or "").strip()
+        profile = str(body.get("profile") or "").strip()
+        content = str(body.get("content") or "")
+
+        if target_id and not profile:
+            snapshot = self.state.agent_hierarchy.snapshot()
+            node = next((n for n in snapshot.get("nodes", []) if n.get("id") == target_id), None)
+            if node:
+                profile = node.get("profile") or node.get("id")
+
+        mem_path = self._resolve_profile_memory_path(profile)
+        try:
+            mem_path.parent.mkdir(parents=True, exist_ok=True)
+            mem_path.write_text(content, encoding="utf-8")
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"write_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "profile": profile,
+            "path": str(mem_path),
+            "saved": True
+        })
+
+    def _resolve_bot_notebook_path(self, target_id: str) -> Path:
+        """Resolve private notebook directory and draft_notes.md path for a given agent node."""
+        from hermes_constants import get_hermes_home
+        base_dir = get_hermes_home() / "notebooks" / target_id
+        base_dir.mkdir(parents=True, exist_ok=True)
+        return base_dir / "draft_notes.md"
+
+    def _resolve_team_wiki_dir(self) -> Path:
+        """Resolve shared team wiki directory path."""
+        from hermes_constants import get_hermes_home
+        wiki_dir = get_hermes_home() / "wiki" / "articles"
+        wiki_dir.mkdir(parents=True, exist_ok=True)
+        return wiki_dir
+
+    def _get_hierarchy_notebook(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        target_id = query.get("target_id", [""])[0].strip()
+        if not target_id:
+            self._send_json(400, {"ok": False, "error": "target_id_required"})
+            return
+
+        notebook_file = self._resolve_bot_notebook_path(target_id)
+        content = ""
+        if notebook_file.is_file():
+            try:
+                content = notebook_file.read_text(encoding="utf-8")
+            except Exception as e:
+                self._send_json(500, {"ok": False, "error": f"read_error: {e}"})
+                return
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "path": str(notebook_file),
+            "exists": notebook_file.is_file(),
+            "content": content
+        })
+
+    def _save_hierarchy_notebook(self) -> None:
+        body = self._read_json_body()
+        target_id = str(body.get("target_id") or "").strip()
+        content = str(body.get("content") or "")
+        if not target_id:
+            self._send_json(400, {"ok": False, "error": "target_id_required"})
+            return
+
+        notebook_file = self._resolve_bot_notebook_path(target_id)
+        try:
+            notebook_file.write_text(content, encoding="utf-8")
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"write_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "path": str(notebook_file),
+            "saved": True
+        })
+
+    def _get_hierarchy_wiki_articles(self) -> None:
+        wiki_dir = self._resolve_team_wiki_dir()
+        articles = []
+        for file in sorted(wiki_dir.glob("*.md")):
+            slug = file.stem
+            try:
+                text = file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            title = slug.replace("-", " ").title()
+            author = "Sistema"
+            promoted_at = ""
+            # Analisa metadados se houver
+            lines = text.splitlines()
+            for line in lines[:15]:
+                if line.startswith("# "):
+                    title = line[2:].strip()
+                elif "* **Autor**:" in line or "* **Promovido por**:" in line:
+                    author = line.split(":", 1)[1].strip().strip("* ")
+                elif "* **Data**:" in line:
+                    promoted_at = line.split(":", 1)[1].strip().strip("* ")
+
+            articles.append({
+                "slug": slug,
+                "title": title,
+                "author": author,
+                "promoted_at": promoted_at,
+                "path": str(file),
+                "preview": text[:200]
+            })
+
+        self._send_json(200, {"ok": True, "articles": articles})
+
+    def _get_hierarchy_wiki_article(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        slug = query.get("slug", [""])[0].strip()
+        if not slug:
+            self._send_json(400, {"ok": False, "error": "slug_required"})
+            return
+
+        wiki_dir = self._resolve_team_wiki_dir()
+        article_file = wiki_dir / f"{slug}.md"
+        if not article_file.is_file():
+            self._send_json(404, {"ok": False, "error": "article_not_found"})
+            return
+
+        try:
+            content = article_file.read_text(encoding="utf-8")
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"read_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "slug": slug,
+            "path": str(article_file),
+            "content": content
+        })
+
+    def _save_hierarchy_wiki_article(self) -> None:
+        body = self._read_json_body()
+        slug = str(body.get("slug") or "").strip()
+        title = str(body.get("title") or "").strip()
+        content = str(body.get("content") or "").strip()
+
+        if not slug and title:
+            import re
+            slug = re.sub(r'[^a-zA-Z0-9_\-]+', '-', title.lower()).strip('-')
+
+        if not slug or not content:
+            self._send_json(400, {"ok": False, "error": "slug_and_content_required"})
+            return
+
+        wiki_dir = self._resolve_team_wiki_dir()
+        article_file = wiki_dir / f"{slug}.md"
+        try:
+            article_file.write_text(content, encoding="utf-8")
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"write_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "slug": slug,
+            "path": str(article_file),
+            "saved": True
+        })
+
+    def _promote_hierarchy_notebook_to_wiki(self) -> None:
+        """Promove um rascunho de caderno para a Wiki Compartilhada com proveniência e citação formal."""
+        import datetime
+        import re
+        body = self._read_json_body()
+        target_id = str(body.get("target_id") or "").strip()
+        title = str(body.get("title") or "").strip()
+        slug = str(body.get("slug") or "").strip()
+        draft_content = str(body.get("content") or "").strip()
+        source_ref = str(body.get("source_ref") or "Sessão / Execução do Agente").strip()
+
+        if not title:
+            self._send_json(400, {"ok": False, "error": "title_required"})
+            return
+        if not draft_content:
+            self._send_json(400, {"ok": False, "error": "content_required"})
+            return
+
+        if not slug:
+            slug = re.sub(r'[^a-zA-Z0-9_\-]+', '-', title.lower()).strip('-')
+
+        snapshot = self.state.agent_hierarchy.snapshot()
+        node = next((n for n in snapshot.get("nodes", []) if n.get("id") == target_id), None)
+        node_name = node.get("name") if node else (target_id or "Agente Autônomo")
+        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        # Injeta cabeçalho e rodapé formal de citação e proveniência estilo Wikipedia / gawkbot
+        wiki_text = f"""# {title}
+
+{draft_content}
+
+---
+### 📚 Proveniência & Citações Canônicas
+* **Autor Original**: `{node_name}` (ID: `{target_id or 'unknown'}`)
+* **Data de Promoção**: {now_str}
+* **Origem da Evidência**: {source_ref}
+* **Nível de Confiança**: Validado & Promovido para a Wiki Compartilhada
+"""
+
+        wiki_dir = self._resolve_team_wiki_dir()
+        article_file = wiki_dir / f"{slug}.md"
+        try:
+            article_file.write_text(wiki_text, encoding="utf-8")
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"write_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "slug": slug,
+            "title": title,
+            "path": str(article_file),
+            "promoted": True,
+            "promoted_by": node_name
+        })
+
+    def _get_hierarchy_routines(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        target_id = query.get("target_id", [""])[0].strip()
+        try:
+            from cron.jobs import list_jobs
+            jobs = list_jobs(include_disabled=True)
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"cron_error: {e}"})
+            return
+
+        tag_prefix = f"[{target_id}]"
+        matching = []
+        job_ids = []
+        for j in jobs:
+            name = str(j.get("name") or "")
+            if not target_id or tag_prefix in name or f"bot:{target_id}" in name:
+                matching.append(j)
+                job_ids.append(j.get("id"))
+
+        # Carrega histórico detalhado de execuções/transcrições (Run Transcripts)
+        transcripts = {}
+        try:
+            from cron.executions import list_executions
+            for jid in job_ids:
+                execs = list_executions(job_id=jid, limit=5)
+                if execs:
+                    transcripts[jid] = execs
+        except Exception:
+            pass
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "routines": matching,
+            "transcripts": transcripts
+        })
+
+    def _save_hierarchy_routine(self) -> None:
+        body = self._read_json_body()
+        target_id = str(body.get("target_id") or "").strip()
+        prompt = str(body.get("prompt") or "").strip()
+        schedule = str(body.get("schedule") or "every 24h").strip()
+        name = str(body.get("name") or "").strip()
+
+        if not target_id or not prompt:
+            self._send_json(400, {"ok": False, "error": "target_id_and_prompt_required"})
+            return
+
+        snapshot = self.state.agent_hierarchy.snapshot()
+        node = next((n for n in snapshot.get("nodes", []) if n.get("id") == target_id), None)
+        node_name = node.get("name") if node else target_id
+        routine_name = f"[{target_id}] {name}" if name else f"[{target_id}] Rotina {node_name[:20]}"
+
+        try:
+            from cron.jobs import create_job
+            job = create_job(
+                prompt=prompt,
+                schedule=schedule,
+                name=routine_name,
+                model=node.get("model") if node else None,
+            )
+        except Exception as e:
+            self._send_json(400, {"ok": False, "error": f"create_job_error: {e}"})
+            return
+
+        self._send_json(200, {"ok": True, "routine": job})
+
+    def _delete_hierarchy_routine(self) -> None:
+        body = self._read_json_body()
+        job_id = str(body.get("job_id") or "").strip()
+        if not job_id:
+            self._send_json(400, {"ok": False, "error": "job_id_required"})
+            return
+        try:
+            from cron.jobs import remove_job
+            removed = remove_job(job_id)
+        except Exception as e:
+            self._send_json(400, {"ok": False, "error": f"remove_job_error: {e}"})
+            return
+        self._send_json(200, {"ok": True, "removed": removed, "job_id": job_id})
+
+    def _get_hierarchy_feed(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        target_id = query.get("target_id", [""])[0].strip()
+
+        snapshot = self.state.agent_hierarchy.snapshot()
+        node = next((n for n in snapshot.get("nodes", []) if n.get("id") == target_id), None)
+        profile = node.get("profile") if node else None
+
+        # Busca tarefas no Kanban atribuídas ou com tag deste agente
+        all_tasks = self.state.kanban.list_tasks() or []
+        bot_tasks = []
+        for t in all_tasks:
+            tags = t.get("tags") or []
+            assignee = t.get("assignee")
+            if target_id and (f"agent:{target_id}" in tags or assignee == target_id or (profile and assignee == profile)):
+                bot_tasks.append(t)
+            elif not target_id:
+                bot_tasks.append(t)
+
+        # Busca eventos recentes no EventStore vinculados a este bot
+        all_events = self.state.event_store.get_all(limit=150)
+        bot_events = []
+        for ev in all_events:
+            p = ev.payload if isinstance(ev.payload, dict) else {}
+            if not target_id or p.get("target_id") == target_id or p.get("assignee") == target_id or (profile and p.get("profile") == profile):
+                bot_events.append({
+                    "name": ev.name,
+                    "timestamp": round(float(ev.timestamp), 3),
+                    "trace_id": ev.trace_id,
+                    "payload": p
+                })
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "tasks": bot_tasks[-15:],
+            "events": bot_events[-30:]
+        })
+
+    def _resolve_bot_microapps_dir(self, target_id: str) -> Path:
+        """Resolve directory where bot microapps are stored."""
+        from hermes_constants import get_hermes_home
+        m_dir = get_hermes_home() / "microapps" / target_id
+        m_dir.mkdir(parents=True, exist_ok=True)
+        return m_dir
+
+    def _get_hierarchy_microapps(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        target_id = query.get("target_id", [""])[0].strip()
+        if not target_id:
+            self._send_json(400, {"ok": False, "error": "target_id_required"})
+            return
+
+        m_dir = self._resolve_bot_microapps_dir(target_id)
+        apps = []
+        for file in sorted(m_dir.glob("*.html")):
+            slug = file.stem
+            try:
+                content = file.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            title = slug.replace("-", " ").title()
+            for line in content.splitlines()[:5]:
+                if "<title>" in line.lower():
+                    title = line.split(">")[1].split("<")[0].strip()
+            apps.append({
+                "slug": slug,
+                "title": title,
+                "path": str(file),
+                "html": content
+            })
+
+        self._send_json(200, {"ok": True, "target_id": target_id, "microapps": apps})
+
+    def _save_hierarchy_microapp(self) -> None:
+        body = self._read_json_body()
+        target_id = str(body.get("target_id") or "").strip()
+        title = str(body.get("title") or "").strip()
+        html = str(body.get("html") or "").strip()
+        slug = str(body.get("slug") or "").strip()
+
+        if not target_id or not html:
+            self._send_json(400, {"ok": False, "error": "target_id_and_html_required"})
+            return
+
+        if not slug and title:
+            import re
+            slug = re.sub(r'[^a-zA-Z0-9_\-]+', '-', title.lower()).strip('-')
+        if not slug:
+            slug = f"app-{int(time.time())}"
+
+        m_dir = self._resolve_bot_microapps_dir(target_id)
+        app_file = m_dir / f"{slug}.html"
+        try:
+            app_file.write_text(html, encoding="utf-8")
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"write_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "slug": slug,
+            "path": str(app_file),
+            "saved": True
+        })
+
+    def _decide_hierarchy_approval(self) -> None:
+        """Processa decisão humana no Portão de Aprovação (Aprovar / Rejeitar) com suporte a YOLO mode."""
+        body = self._read_json_body()
+        task_id = str(body.get("task_id") or "").strip()
+        verdict = str(body.get("verdict") or "").strip().lower()  # approved | changes_requested
+        approver = str(body.get("approver") or "operator_web").strip()
+        rationale = str(body.get("rationale") or "").strip()
+
+        if not task_id or verdict not in ("approved", "changes_requested"):
+            self._send_json(400, {"ok": False, "error": "task_id_and_valid_verdict_required"})
+            return
+
+        try:
+            res = self.state.kanban.record_review_verdict(
+                task_id,
+                verdict,
+                approver=approver,
+                rationale=rationale,
+                acceptance_status="passed" if verdict == "approved" else "failed"
+            )
+            self._send_json(200, {
+                "ok": True,
+                "task_id": task_id,
+                "verdict": verdict,
+                "approver": approver,
+                "reviewer_verdict": res.reviewer_verdict
+            })
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": str(e)})
+
+    def _get_hierarchy_toolsets(self) -> None:
+        """Lista todos os toolsets disponíveis no Hermes para seleção opcional no bot."""
+        try:
+            from toolsets import TOOLSETS
+            names = sorted(list(TOOLSETS.keys()))
+        except Exception:
+            names = ["web", "search", "terminal", "file", "coding", "memory", "kanban", "skills", "browser"]
+        self._send_json(200, {"ok": True, "toolsets": names})
+
+    def _clone_hierarchy_node(self) -> None:
+        body = self._read_json_body()
+        source_id = str(body.get("source_id") or "").strip()
+        new_name = str(body.get("name") or "").strip()
+        if not source_id:
+            self._send_json(400, {"ok": False, "error": "source_id_required"})
+            return
+
+        snapshot = self.state.agent_hierarchy.snapshot()
+        source = next((n for n in snapshot.get("nodes", []) if n.get("id") == source_id), None)
+        if not source:
+            self._send_json(404, {"ok": False, "error": "source_node_not_found"})
+            return
+
+        clone_name = new_name or f"{source['name']} (Cópia)"
+        source_role = source.get("role", "bot")
+        # Se for master, a cópia vira gerente (só pode haver 1 master)
+        new_role = "manager" if source_role == "master" else source_role
+        new_parent = source.get("parent_id")
+        if source_role == "master":
+            new_parent = source["id"]
+
+        import uuid
+        new_profile = f"{source.get('profile') or 'agent'}-clone-{uuid.uuid4().hex[:6]}"
+        new_node_payload = {
+            "name": clone_name,
+            "role": new_role,
+            "parent_id": new_parent,
+            "profile": new_profile,
+            "model": source.get("model", ""),
+            "provider": source.get("provider", ""),
+            "description": source.get("description", ""),
+            "enabled": True,
+        }
+
+        try:
+            created = self.state.agent_hierarchy.upsert_node(new_node_payload)
+            # Clona o SOUL.md se o source tiver um configurado
+            src_soul_path = self._resolve_profile_soul_path(source.get("profile") or source.get("id"))
+            if src_soul_path.is_file():
+                dest_soul_path = self._resolve_profile_soul_path(new_profile)
+                dest_soul_path.parent.mkdir(parents=True, exist_ok=True)
+                dest_soul_path.write_text(src_soul_path.read_text(encoding="utf-8"), encoding="utf-8")
+        except Exception as e:
+            self._send_json(400, {"ok": False, "error": str(e)})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "source_id": source_id,
+            "created": created,
+            "agent_hierarchy": self.state.agent_hierarchy.snapshot()
+        })
 
     def _hierarchy_mutation(self) -> None:
         body = self._read_json_body()

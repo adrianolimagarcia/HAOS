@@ -37,7 +37,19 @@ HAOS_STT_FALLBACK_MODEL = "large-v3"
 # ociosidade media ~0s e o modelo NUNCA saia da VRAM — a GTX 1050 Ti (4 GB) e
 # compartilhada com o docling-serve, que ficava sem placa.
 _IDLE_CHECK_SECONDS = 15.0
+_start_time = time.time()
 _state = {"model": None, "key": None, "last_used": 0.0, "effective": None, "inflight": 0}
+
+
+def _should_exit_on_idle() -> bool:
+    """True quando o processo deve encerrar para liberar os ~170MB de RAM do Python.
+
+    Ativado sob Systemd Socket Activation (LISTEN_FDS presente) ou explicitamente
+    via HAOS_STT_EXIT_ON_IDLE=1.
+    """
+    if os.environ.get("LISTEN_FDS"):
+        return True
+    return os.environ.get("HAOS_STT_EXIT_ON_IDLE", "").lower() in ("1", "true", "yes")
 
 
 def _release_model():
@@ -148,12 +160,17 @@ def _get_model():
 
 def _maybe_unload():
     secs = _unload_after_idle_seconds()
-    if not secs or _state["model"] is None:
+    if not secs:
         return
-    if _state.get("inflight"):  # nunca soltar o modelo com requisicao em andamento
+    if _state.get("inflight"):  # nunca soltar o modelo ou sair com requisicao em andamento
         return
-    if time.time() - _state["last_used"] > secs:
-        _release_model()
+    last = _state["last_used"] or _start_time
+    if time.time() - last > secs:
+        if _state["model"] is not None:
+            _release_model()
+        if _should_exit_on_idle():
+            print(f"[haos-stt] ocioso ha mais de {secs}s — encerrando processo para liberar RAM (socket activation reabre sob demanda)", flush=True)
+            os._exit(0)
 
 
 def _check_auth(request: Request):
@@ -221,6 +238,13 @@ async def transcriptions(
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.environ.get("HAOS_STT_HOST", "0.0.0.0" if API_TOKEN else "127.0.0.1")
-    port = int(os.environ.get("HAOS_STT_PORT", "8645"))
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    # Suporte a Systemd Socket Activation (LISTEN_FDS=1, fd=3)
+    listen_fds = int(os.environ.get("LISTEN_FDS", "0"))
+    if listen_fds > 0:
+        sd_listen_fd = 3
+        print(f"[haos-stt] iniciando sob Systemd Socket Activation (fd={sd_listen_fd})", flush=True)
+        uvicorn.run(app, fd=sd_listen_fd, log_level="info")
+    else:
+        host = os.environ.get("HAOS_STT_HOST", "0.0.0.0" if API_TOKEN else "127.0.0.1")
+        port = int(os.environ.get("HAOS_STT_PORT", "8645"))
+        uvicorn.run(app, host=host, port=port, log_level="info")

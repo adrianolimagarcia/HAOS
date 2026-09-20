@@ -1,0 +1,23 @@
+[Unit]
+Description=HAOS STT (OpenAI-compatible transcription server)
+Documentation=https://github.com/adrianolimagarcia/HAOS
+After=network-online.target tailscaled.service
+Wants=tailscaled.service
+Requires=haos-stt.socket
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/haos
+Environment="HAOS_HOME=/home/haos/.haos"
+Environment="CUDA_VISIBLE_DEVICES=0"
+Environment="HAOS_STT_EXIT_ON_IDLE=1"
+EnvironmentFile=-/home/haos/.haos/.env
+ExecStart=/opt/haos/venv/bin/python /opt/haos/scripts/haos_stt_server.py
+Restart=no
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

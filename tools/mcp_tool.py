@@ -530,13 +530,20 @@ _supervised_pgids: set = set()
 
 def _spawn_death_supervisor():
     """Start the shared supervisor, or None if it cannot be started."""
+    import shutil
     import subprocess
-    supervisor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_death_supervisor.py")
+    parent_pgid = str(os.getpgid(0))
+    rust_supervisor = shutil.which("haos-edge") or "/usr/local/bin/haos-edge"
+    if os.path.isfile(rust_supervisor) and os.access(rust_supervisor, os.X_OK):
+        cmd = [rust_supervisor, "mcp-supervisor", "--parent-pgid", parent_pgid]
+    else:
+        supervisor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_death_supervisor.py")
+        cmd = [sys.executable, supervisor, "--parent-pgid", parent_pgid]
     try:
         # start_new_session=True is load-bearing: shutdown paths killpg this process's own group,
         # which would kill the supervisor before it could reap anything.
         return subprocess.Popen(
-            [sys.executable, supervisor, "--parent-pgid", str(os.getpgid(0))],
+            cmd,
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=_get_mcp_stderr_log(),
             start_new_session=True, close_fds=True, text=True)
     except Exception:

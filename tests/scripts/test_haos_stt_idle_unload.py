@@ -122,3 +122,30 @@ def test_lifespan_skips_the_task_when_unload_is_disabled(monkeypatch):
             assert not pending, "no idle task should start when the window is 0"
 
     asyncio.run(run())
+
+
+def test_should_exit_on_idle_respects_systemd_and_env(monkeypatch):
+    monkeypatch.delenv("LISTEN_FDS", raising=False)
+    monkeypatch.delenv("HAOS_STT_EXIT_ON_IDLE", raising=False)
+    assert not stt._should_exit_on_idle()
+
+    monkeypatch.setenv("LISTEN_FDS", "1")
+    assert stt._should_exit_on_idle()
+
+    monkeypatch.delenv("LISTEN_FDS", raising=False)
+    monkeypatch.setenv("HAOS_STT_EXIT_ON_IDLE", "1")
+    assert stt._should_exit_on_idle()
+
+
+def test_maybe_unload_exits_when_socket_activation_enabled(monkeypatch, idle_window):
+    """When running under socket activation, idleness triggers clean process exit."""
+    monkeypatch.setenv("HAOS_STT_EXIT_ON_IDLE", "1")
+    _load(seconds_ago=10_000)
+
+    exited = []
+    monkeypatch.setattr(stt.os, "_exit", lambda code: exited.append(code))
+
+    stt._maybe_unload()
+    assert exited == [0]
+    assert stt._state["model"] is None
+

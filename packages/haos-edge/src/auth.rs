@@ -208,6 +208,13 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 }
 
 pub fn session_valid(data_dir: &Path, cookie_header: Option<&str>) -> bool {
+    if std::env::var("HAOS_NO_AUTH").map(|v| v == "1" || v.to_lowercase() == "true").unwrap_or(false) {
+        return true;
+    }
+    if !password_is_set(data_dir) {
+        // Sem senha configurada no nó, permite acesso transparente (compativel com rede confiavel)
+        return true;
+    }
     match extract_cookie(cookie_header) {
         Some(token) => sessions_dir(data_dir).join(token).is_file(),
         None => false,

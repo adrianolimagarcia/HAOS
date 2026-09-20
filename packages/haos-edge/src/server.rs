@@ -21,6 +21,9 @@ pub struct AppState {
     pub pty_manager: Arc<PtyManager>,
     pub static_dir: PathBuf,
     pub data_dir: PathBuf,
+    pub upstream_url: Option<String>,
+    pub gateway_upstream_url: Option<String>,
+    pub http_client: reqwest::Client,
 }
 
 #[derive(Deserialize)]
@@ -47,7 +50,13 @@ pub struct DrainResponse {
     pub exit_code: i32,
 }
 
-pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> Result<(), String> {
+pub async fn run_server(
+    port: u16,
+    host: &str,
+    static_path: Option<PathBuf>,
+    upstream: Option<String>,
+    gateway_upstream: Option<String>,
+) -> Result<(), String> {
     let data_dir = PathBuf::from(
         std::env::var("HAOS_DATA_DIR").unwrap_or_else(|_| "/tmp/haos_shared_data".into()),
     );
@@ -78,11 +87,26 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
             .unwrap_or_else(|| PathBuf::from("static"))
     };
 
+    let upstream_url = upstream
+        .or_else(|| std::env::var("HAOS_UPSTREAM_URL").ok())
+        .or_else(|| std::env::var("HAOS_UPSTREAM_WEBUI").ok());
+
+    let gateway_upstream_url = gateway_upstream
+        .or_else(|| std::env::var("HAOS_UPSTREAM_GATEWAY").ok());
+
+    let http_client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to create reqwest client: {e}"))?;
+
     let pty_manager = Arc::new(PtyManager::new());
     let state = AppState {
         pty_manager,
         static_dir: static_dir.clone(),
         data_dir: data_dir.clone(),
+        upstream_url: upstream_url.clone(),
+        gateway_upstream_url: gateway_upstream_url.clone(),
+        http_client,
     };
 
     // Background WAL auto-checkpoint thread every 5 minutes
@@ -105,6 +129,14 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
         .route("/api/terminal/{sid}/resize", post(resize_terminal))
         .route("/api/terminal/{sid}/kill", post(kill_terminal))
         .route("/api/tasks", get(get_tasks_handler))
+        .route("/api/state", get(state_handler))
+        .route("/api/doc/search", get(doc_search_handler))
+        .route("/api/rag/search", get(doc_search_handler))
+        .route("/api/settings", get(get_settings_handler).post(post_settings_handler))
+        .route("/api/system-facts", get(system_facts_handler))
+        .route("/api/agent-config", get(agent_config_handler))
+        .route("/api/v1/models", get(models_handler))
+        .route("/v1/models", get(models_handler))
         .route("/", get(index_handler))
         .route("/chat", get(index_handler))
         .route("/terminal", get(index_handler))
@@ -113,6 +145,7 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
         .route("/events", get(index_handler))
         .route("/config", get(index_handler))
         .nest_service("/static", ServeDir::new(&static_dir))
+        .fallback(proxy_fallback_handler)
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -124,6 +157,12 @@ pub async fn run_server(port: u16, host: &str, static_path: Option<PathBuf>) -> 
     println!("🦀 HAOS Edge Rust Daemon online!");
     println!("   • Bind Address: http://{addr}/");
     println!("   • Static Dir:   {}", static_dir.display());
+    if let Some(ref u) = upstream_url {
+        println!("   • WebUI Fallback   -> {u}");
+    }
+    if let Some(ref g) = gateway_upstream_url {
+        println!("   • Gateway Fallback -> {g}");
+    }
     println!("   • Endpoints:    /health, /chat, /terminal, /api/terminal/*");
     println!("============================================================");
 
@@ -302,3 +341,211 @@ async fn get_tasks_handler(State(state): State<AppState>, headers: HeaderMap) ->
         Err(e) => Json(serde_json::json!({ "error": e, "tasks": [] })).into_response(),
     }
 }
+
+async fn state_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let payload = DbHelper::get_state_payload(&state.data_dir);
+    Json(payload).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+    pub limit: Option<usize>,
+}
+
+async fn doc_search_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<SearchQuery>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let limit = query.limit.unwrap_or(10).clamp(1, 100);
+    match DbHelper::search_ragflow(&query.q, limit) {
+        Ok(results) => {
+            let items: Vec<serde_json::Value> = results
+                .into_iter()
+                .map(|(doc_path, header_path, anchor, content)| {
+                    serde_json::json!({
+                        "doc_path": doc_path,
+                        "header_path": header_path,
+                        "anchor": anchor,
+                        "content": content,
+                    })
+                })
+                .collect();
+            Json(serde_json::json!({
+                "query": query.q,
+                "count": items.len(),
+                "results": items,
+            }))
+            .into_response()
+        }
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_settings_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let p = state.data_dir.join("settings.json");
+    let val: serde_json::Value = if p.exists() {
+        std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({ "max_global_concurrency": 8, "auto_dispatch": true })
+    };
+    Json(val).into_response()
+}
+
+async fn post_settings_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let p = state.data_dir.join("settings.json");
+    let _ = std::fs::write(&p, serde_json::to_string_pretty(&payload).unwrap_or_default());
+    Json(serde_json::json!({ "success": true, "settings": payload })).into_response()
+}
+
+async fn system_facts_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({
+        "engine": "haos-edge-rust",
+        "runtime": "tokio+axum",
+        "data_dir": state.data_dir.display().to_string(),
+        "models_suggestions": ["google/gemini-2.5-flash", "deepseek/deepseek-chat", "anthropic/claude-3-5-sonnet"],
+        "note": "HAOS High-Performance Rust Control Plane"
+    })).into_response()
+}
+
+async fn agent_config_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let haos_home = DbHelper::get_haos_home();
+    let cfg_path = haos_home.join("config.yaml");
+    let exists = cfg_path.exists();
+    Json(serde_json::json!({
+        "config_path": cfg_path.display().to_string(),
+        "exists": exists,
+        "managed": false,
+        "sections": {}
+    })).into_response()
+}
+
+async fn models_handler() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "object": "list",
+        "data": [
+            { "id": "google/gemini-2.5-flash", "object": "model", "owned_by": "haos" },
+            { "id": "deepseek/deepseek-chat", "object": "model", "owned_by": "haos" },
+            { "id": "anthropic/claude-3-5-sonnet", "object": "model", "owned_by": "haos" }
+        ]
+    }))
+}
+
+async fn proxy_fallback_handler(
+    State(state): State<AppState>,
+    req: axum::extract::Request,
+) -> axum::response::Response {
+    let raw_path = req.uri().path();
+    let is_prefixed_gateway = raw_path.starts_with("/gateway/");
+    let is_gateway_route = is_prefixed_gateway
+        || raw_path.starts_with("/v1/")
+        || raw_path.starts_with("/api/jobs")
+        || raw_path.starts_with("/api/platforms/")
+        || raw_path.starts_with("/api/cron/");
+
+    let upstream_base = if is_gateway_route && state.gateway_upstream_url.is_some() {
+        state.gateway_upstream_url.as_ref().map(|u| u.trim_end_matches('/'))
+    } else {
+        state.upstream_url.as_ref().map(|u| u.trim_end_matches('/'))
+    };
+
+    let upstream = match upstream_base {
+        Some(u) => u,
+        None => {
+            if !raw_path.starts_with("/api/") && !raw_path.starts_with("/v1/") && !is_prefixed_gateway {
+                let index_file = state.static_dir.join("index.html");
+                if index_file.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&index_file) {
+                        return Html(content).into_response();
+                    }
+                }
+            }
+            return (StatusCode::NOT_FOUND, "Not found").into_response();
+        }
+    };
+
+    let raw_pq = req
+        .uri()
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or(req.uri().path());
+
+    let final_path = if is_prefixed_gateway {
+        raw_pq.strip_prefix("/gateway").unwrap_or(raw_pq)
+    } else {
+        raw_pq
+    };
+
+    let target_url = format!("{upstream}{final_path}");
+
+    let method = req.method().clone();
+    let (parts, body) = req.into_parts();
+
+    let reqwest_method = reqwest::Method::from_bytes(method.as_str().as_bytes())
+        .unwrap_or(reqwest::Method::GET);
+    let mut client_req = state.http_client.request(reqwest_method, &target_url);
+
+    for (name, val) in parts.headers.iter() {
+        if name != header::HOST {
+            client_req = client_req.header(name.as_str(), val.as_bytes());
+        }
+    }
+
+    let body_stream = body.into_data_stream();
+    client_req = client_req.body(reqwest::Body::wrap_stream(body_stream));
+
+    match client_req.send().await {
+        Ok(upstream_resp) => {
+            let status = upstream_resp.status();
+            let headers = upstream_resp.headers().clone();
+
+            let mut resp_builder = axum::response::Response::builder().status(status.as_u16());
+            for (k, v) in headers.iter() {
+                resp_builder = resp_builder.header(k.as_str(), v.as_bytes());
+            }
+
+            let stream = upstream_resp.bytes_stream();
+            let body = axum::body::Body::from_stream(stream);
+
+            resp_builder.body(body).unwrap_or_else(|_| {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response").into_response()
+            })
+        }
+        Err(err) => (
+            StatusCode::BAD_GATEWAY,
+            format!("HAOS Edge Proxy Error connecting to {target_url}: {err}"),
+        )
+            .into_response(),
+    }
+}
+

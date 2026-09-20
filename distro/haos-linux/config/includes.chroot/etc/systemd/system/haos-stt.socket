@@ -1,0 +1,13 @@
+[Unit]
+Description=HAOS STT Activation Socket (OpenAI-compatible speech-to-text)
+Documentation=https://github.com/adrianolimagarcia/HAOS
+After=tailscaled.service
+Wants=tailscaled.service
+
+[Socket]
+ListenStream=8645
+Accept=no
+KeepAlive=true
+
+[Install]
+WantedBy=sockets.target

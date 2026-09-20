@@ -10,6 +10,8 @@ Group=haos
 WorkingDirectory=/opt/haos
 Environment="HAOS_HOME=/home/haos/.haos"
 Environment="HAOS_DATA_DIR=/var/lib/haos/edge"
+Environment="HAOS_UPSTREAM_WEBUI=http://127.0.0.1:8787"
+Environment="HAOS_UPSTREAM_GATEWAY=http://127.0.0.1:9900"
 Environment="PATH=/opt/haos/venv/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=/usr/local/bin/haos-edge server --port 8788 --host 127.0.0.1 --static-dir /opt/haos/hermes/platform/webui/static
 Restart=always
