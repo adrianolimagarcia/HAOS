@@ -185,5 +185,71 @@ class TestDashboardPluginDerivation(unittest.TestCase):
         self.assertEqual(view["pending"][0]["proposal_id"], pid)
 
 
+class TestDashboardPluginBotRoutes(unittest.TestCase):
+    """Exercise bot HTTP routes through FastAPI and the real event ledger."""
+
+    @unittest.skipUnless(HAVE_FASTAPI, "fastapi ausente (host do dashboard não disponível)")
+    def test_bot_lifecycle_routes_use_injected_manager_and_event_store(self):
+        try:
+            from starlette.testclient import TestClient  # type: ignore[import-not-found]
+            from hermes.platform.bots.manager import BotSpecManager
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"TestClient indisponível: {exc}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = EventStore(Path(tmp) / "events.db")
+            adapter = KanbanAdapter(Path(tmp) / "kanban.db")
+            plugin_api.configure_stats(DashboardStats(kanban=adapter, event_store=store))
+            manager = BotSpecManager(store)
+            mod = _load_plugin_api()
+            mod.configure_bot_manager(manager)
+            mod.configure_stats(DashboardStats(kanban=adapter, event_store=store))
+            app = FastAPI()
+            app.include_router(mod.router, prefix="/api/plugins/haos")
+            spec = {
+                "id": "bot-e2e", "name": "E2E bot",
+                "routines": {"daily": {"version": 1, "prompt": "daily"}},
+                "triggers": [{"id": "manual", "type": "manual"}],
+            }
+            try:
+                with TestClient(app) as client:
+                    created = client.post("/api/plugins/haos/bots", json=spec)
+                    self.assertEqual(created.status_code, 200)
+                    self.assertFalse(created.json()["paused"])
+                    listed = client.get("/api/plugins/haos/bots")
+                    self.assertEqual([b["id"] for b in listed.json()["bots"]], ["bot-e2e"])
+
+                    self.assertEqual(client.post("/api/plugins/haos/bots/bot-e2e/pause").status_code, 200)
+                    self.assertTrue(client.get("/api/plugins/haos/bots/bot-e2e").json()["paused"])
+                    self.assertEqual(client.post("/api/plugins/haos/bots/bot-e2e/resume").status_code, 200)
+
+                    triggered = client.post("/api/plugins/haos/bots/bot-e2e/trigger", json={"routine": "daily", "goal": "check"})
+                    self.assertEqual(triggered.status_code, 200)
+                    self.assertIn("task_id", triggered.json())
+                    manager.record_run("bot-e2e", "daily", triggered.json()["task_id"], "completed")
+                    runs = client.get("/api/plugins/haos/bots/bot-e2e/runs")
+                    self.assertEqual(runs.status_code, 200)
+                    self.assertIn("completed", {run["status"] for run in runs.json()["runs"]})
+                    cron = client.post("/api/plugins/haos/bots/bot-e2e/routines/daily/cron", json={"schedule": "0 0 * * *"})
+                    self.assertEqual(cron.status_code, 200)
+
+                    updated = client.patch("/api/plugins/haos/bots/bot-e2e", json={"name": "Updated"})
+                    self.assertEqual(updated.status_code, 200)
+                    self.assertEqual(updated.json()["name"], "Updated")
+                    triggers = client.get("/api/plugins/haos/bots/bot-e2e/triggers")
+                    self.assertEqual(triggers.status_code, 200)
+                    self.assertEqual(triggers.json()["triggers"][0]["id"], "manual")
+                    duplicate = client.post("/api/plugins/haos/bots/bot-e2e/duplicate", json={"new_id": "bot-copy"})
+                    self.assertEqual(duplicate.status_code, 200)
+                    self.assertEqual(duplicate.json()["id"], "bot-copy")
+                    deleted = client.delete("/api/plugins/haos/bots/bot-copy")
+                    self.assertEqual(deleted.status_code, 200)
+                    self.assertEqual(client.get("/api/plugins/haos/bots/bot-copy").status_code, 404)
+                    self.assertEqual(client.delete("/api/plugins/haos/bots/missing").status_code, 404)
+            finally:
+                mod.configure_bot_manager(None)
+                store.close()
+
+
 if __name__ == "__main__":
     unittest.main()

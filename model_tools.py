@@ -946,6 +946,31 @@ def handle_function_call(
             except Exception:
                 pass  # file_tools may not be loaded yet
 
+        # Verificação Nativa de Anti-Loop via haos-edge (adaptado de rustfox)
+        try:
+            import json, urllib.request
+            sess_key = session_id or task_id or "default_session"
+            loop_payload = json.dumps({
+                "session_id": sess_key,
+                "tool_name": function_name,
+                "arguments": json.dumps(function_args, sort_keys=True, default=str),
+                "iteration": 1,
+                "threshold": 3
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "http://127.0.0.1:8788/api/tools/detect-loop",
+                data=loop_payload,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=0.1) as lresp:
+                ldata = json.loads(lresp.read().decode("utf-8"))
+                if ldata.get("loop_detected"):
+                    alert_msg = ldata.get("alert", {}).get("message", "Loop infinito detectado pelo HAOS Edge.")
+                    logger.warning("[ANTI-LOOP] %s para ferramenta %s", alert_msg, function_name)
+                    return _emit(tool_error(alert_msg), status="blocked", error_type="LoopDetected", error_message=alert_msg)
+        except Exception:
+            pass  # Fallback: executa normalmente se o edge não estiver acessível
+
         # duration_ms (monotonic) is exposed to post_tool_call / transform_tool_result.
         start = time.monotonic()
         result = _execute_tool(function_name, function_args, original_args, ids, user_task=user_task,

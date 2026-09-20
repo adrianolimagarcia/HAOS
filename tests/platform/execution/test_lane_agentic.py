@@ -147,6 +147,42 @@ class TestLaneAgentic(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old_env)
 
+    def test_yolo_spec_spawns_worker_with_yolo_flag(self):
+        """spec.yolo_mode (console/chat do control plane) -> filho nasce em --yolo.
+
+        O worker é headless: sem --yolo ele para num prompt de aprovação que
+        ninguém vê, e a missão nunca termina.
+        """
+        workspace = self.root / "ws-yolo"
+        spec = {"id": "T-Y", "required_capabilities": [], "yolo_mode": True}
+        argv = self._spawn_and_read_argv(workspace, spec, "yolo")
+        self.assertIn("--yolo", argv)
+
+    def test_non_yolo_spec_keeps_the_approval_gate(self):
+        """Sem yolo_mode no spec o portão de aprovação do kernel segue de pé."""
+        for label, spec in (
+            ("absent", {"id": "T-N", "required_capabilities": []}),
+            ("false", {"id": "T-F", "required_capabilities": [], "yolo_mode": False}),
+        ):
+            with self.subTest(yolo=label):
+                workspace = self.root / f"ws-{label}"
+                argv = self._spawn_and_read_argv(workspace, spec, label)
+                self.assertNotIn("--yolo", argv)
+
+    def _spawn_and_read_argv(self, workspace, spec, label):
+        """Executa o worker real (fake peer) e devolve o argv do spawn."""
+        fake_log = self.root / f"fake-{label}.log"
+        env = self._run_worker(workspace, spec, fake_log=fake_log)
+        old_env = dict(os.environ)
+        os.environ.update(env)
+        try:
+            self.worker.execute(f"t_{label}", workspace, spec)
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+        # A primeira linha é o probe --help do available(); a última é o spawn.
+        return json.loads(fake_log.read_text(encoding="utf-8").splitlines()[-1])["argv"]
+
     def test_claim_tick_e2e_with_fake_lane_worker(self):
         spec = TaskSpec(id="T-E2E", title="Agentic task", goal="g",
                         workspace_type="scratch")

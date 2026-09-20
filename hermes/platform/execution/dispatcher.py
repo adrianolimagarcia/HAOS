@@ -295,15 +295,22 @@ class HAOSDispatcher:
                 # com orçamento, como os demais outcomes de falha).
                 spec = (self.adapter.get_task(claimed.id) or {}).get("spec") or {}
                 lane = lane_for_spec(spec)
+                agent_profile = str(spec.get("agent_profile") or getattr(claimed, "assignee", "") or "").strip()
                 eligible, _ = agent_eligibility(
                     spec.get("required_agents") or [],
                     spec.get("preferred_agents") or [],
                     lane,
                 )
+                if not eligible and agent_profile:
+                    eligible, _ = agent_eligibility(
+                        spec.get("required_agents") or [],
+                        spec.get("preferred_agents") or [],
+                        agent_profile,
+                    )
                 if not eligible:
                     self.adapter.record_task_failure(
                         claimed.id,
-                        f"lane/agent '{lane}' not in required_agents "
+                        f"lane/agent '{lane}' (profile: '{agent_profile}') not in required_agents "
                         f"{list(spec.get('required_agents') or [])}",
                         outcome="agent_required_missing",
                     )

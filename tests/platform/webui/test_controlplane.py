@@ -17,7 +17,40 @@ from hermes.platform.webui.controlplane import (
     ControlPlaneService,
     NodeStatus,
     TeamGraphNode,
+    _resolve_role_model_binding,
 )
+
+
+class TestResolveRoleModelBinding(unittest.TestCase):
+    """Covers role-specific model bindings from active configuration."""
+
+    @patch("hermes_cli.config.load_config")
+    def test_configured_defaults_and_role_mappings(self, load_config):
+        load_config.return_value = {
+            "model": {"default": "default-model", "provider": "default-provider"},
+            "delegation": {
+                "role_models": {
+                    "mayor": "mayor-model",
+                    "orchestrator": "orchestrator-model",
+                    "leaf": "leaf-model",
+                    "witness": "witness-model",
+                }
+            },
+        }
+
+        self.assertEqual(_resolve_role_model_binding("mayor"), ("mayor-model", "default-provider"))
+        self.assertEqual(_resolve_role_model_binding("architect"), ("orchestrator-model", "default-provider"))
+        self.assertEqual(_resolve_role_model_binding("coder"), ("leaf-model", "default-provider"))
+        self.assertEqual(_resolve_role_model_binding("qa"), ("witness-model", "default-provider"))
+        self.assertEqual(_resolve_role_model_binding("mayor", fallback_model="fallback-model", fallback_provider="fallback-provider"), ("mayor-model", "default-provider"))
+
+    @patch("hermes_cli.config.load_config", return_value={})
+    def test_missing_config_returns_empty(self, _load_config):
+        self.assertEqual(_resolve_role_model_binding("worker"), ("", ""))
+
+    @patch("hermes_cli.config.load_config", return_value={"model": {}, "delegation": {}})
+    def test_does_not_use_hardcoded_invalid_defaults(self, _load_config):
+        self.assertEqual(_resolve_role_model_binding("mayor"), ("", ""))
 
 
 class TestPhase5ControlPlane(unittest.TestCase):

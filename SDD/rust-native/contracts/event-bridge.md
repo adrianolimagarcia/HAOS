@@ -1,0 +1,3 @@
+# Event bridge contract
+
+Events are immutable envelopes: `event_id`, `topic`, `source`, `sequence`, `occurred_at`, `trace_id`, `schema`, and bounded `payload`. Producers own event IDs and monotonically increasing sequences per `(source, topic)`; consumers acknowledge by event ID. Delivery is at-least-once, ordered only within a source/topic, and duplicates are expected. Replay requires an explicit cursor and is bounded by the global replay window. Unknown schemas are retained but not dispatched. Backpressure returns `RESOURCE_EXHAUSTED`; no silent drops. ACLs authorize topic publish/subscribe independently.

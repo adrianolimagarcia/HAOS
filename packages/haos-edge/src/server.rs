@@ -1,6 +1,13 @@
 use crate::auth;
+use crate::blast_analyzer::FastAstAnalyzer;
+use crate::cancel_registry::CancelRegistry;
+use crate::context_hasher::ContextHasher;
 use crate::db::DbHelper;
+use crate::event_hub::{EventHub, PlatformEvent};
+use crate::loop_detector::LoopDetector;
 use crate::pty::PtyManager;
+use crate::worktree_engine::NativeWorktreeEngine;
+use tokio::sync::Mutex as TokioMutex;
 use axum::extract::{Path as AxPath, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Json};
@@ -19,6 +26,9 @@ use tower_http::services::ServeDir;
 #[derive(Clone)]
 pub struct AppState {
     pub pty_manager: Arc<PtyManager>,
+    pub event_hub: Arc<EventHub>,
+    pub cancel_registry: Arc<CancelRegistry>,
+    pub loop_detectors: Arc<TokioMutex<HashMap<String, LoopDetector>>>,
     pub static_dir: PathBuf,
     pub data_dir: PathBuf,
     pub upstream_url: Option<String>,
@@ -100,8 +110,14 @@ pub async fn run_server(
         .map_err(|e| format!("Failed to create reqwest client: {e}"))?;
 
     let pty_manager = Arc::new(PtyManager::new());
+    let event_hub = Arc::new(EventHub::new(data_dir.join("events.db")));
+    let cancel_registry = Arc::new(CancelRegistry::new());
+    let loop_detectors = Arc::new(TokioMutex::new(HashMap::new()));
     let state = AppState {
         pty_manager,
+        event_hub,
+        cancel_registry,
+        loop_detectors,
         static_dir: static_dir.clone(),
         data_dir: data_dir.clone(),
         upstream_url: upstream_url.clone(),
@@ -132,6 +148,17 @@ pub async fn run_server(
         .route("/api/state", get(state_handler))
         .route("/api/doc/search", get(doc_search_handler))
         .route("/api/rag/search", get(doc_search_handler))
+        .route("/api/memory/vector-search", post(vector_search_handler))
+        .route("/api/events/ingest", post(event_ingest_handler))
+        .route("/api/events/stream", get(event_stream_handler))
+        .route("/api/context/hash", post(context_hash_handler))
+        .route("/api/worktree/spawn", post(worktree_spawn_handler))
+        .route("/api/worktree/discard", post(worktree_discard_handler))
+        .route("/api/analysis/blast-radius", post(blast_radius_handler))
+        .route("/api/tools/detect-loop", post(detect_loop_handler))
+        .route("/api/cancel/register", post(cancel_register_handler))
+        .route("/api/cancel/trigger", post(cancel_trigger_handler))
+        .route("/api/cancel/status", get(cancel_status_handler))
         .route("/api/settings", get(get_settings_handler).post(post_settings_handler))
         .route("/api/system-facts", get(system_facts_handler))
         .route("/api/agent-config", get(agent_config_handler))
@@ -391,6 +418,238 @@ async fn doc_search_handler(
         )
             .into_response(),
     }
+}
+
+#[derive(Deserialize)]
+pub struct VectorSearchPayload {
+    pub query_vector: Vec<f32>,
+    pub model_version: String,
+    pub limit: Option<usize>,
+    pub db_path: Option<String>,
+}
+
+async fn vector_search_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<VectorSearchPayload>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+
+    let limit = payload.limit.unwrap_or(20).clamp(1, 200);
+    let db_path = if let Some(p) = payload.db_path {
+        PathBuf::from(p)
+    } else {
+        state.data_dir.join("memory").join("vectors.db")
+    };
+
+    match crate::vector_search::NativeVectorEngine::search_vectors(
+        &db_path,
+        &payload.query_vector,
+        &payload.model_version,
+        limit,
+    ) {
+        Ok(results) => Json(serde_json::json!({
+            "ok": true,
+            "count": results.len(),
+            "results": results,
+            "engine": "rust_native_simd"
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+// 1. Ingestão de Eventos via Rust Hub (Zero GIL / Batching Assíncrono)
+async fn event_ingest_handler(
+    State(state): State<AppState>,
+    Json(event): Json<PlatformEvent>,
+) -> impl IntoResponse {
+    match state.event_hub.publish(event) {
+        Ok(_) => Json(serde_json::json!({ "ok": true, "ingested": true })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+// 2. Stream SSE de Eventos em Tempo Real para WebUI / Dashboards
+async fn event_stream_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let mut rx = state.event_hub.sender.subscribe();
+    let stream = async_stream::stream! {
+        loop {
+            if let Ok(evt) = rx.recv().await {
+                if let Ok(json_str) = serde_json::to_string(&evt) {
+                    yield Ok::<_, axum::Error>(format!("data: {json_str}\n\n"));
+                }
+            }
+        }
+    };
+    axum::response::Response::builder()
+        .header("Content-Type", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("Connection", "keep-alive")
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+// 3. Token & Context Hasher (SHA-256 SIMD / Rolling Prefixes)
+#[derive(Deserialize)]
+pub struct ContextHashPayload {
+    pub text: String,
+    pub segments: Option<usize>,
+}
+
+async fn context_hash_handler(
+    Json(payload): Json<ContextHashPayload>,
+) -> impl IntoResponse {
+    let segments = payload.segments.unwrap_or(4);
+    let fp = ContextHasher::compute_fingerprint(&payload.text, segments);
+    Json(serde_json::json!({ "ok": true, "fingerprint": fp }))
+}
+
+// 4. Git Worktree Spawn & Discard em Rust Nativo
+#[derive(Deserialize)]
+pub struct WorktreeSpawnPayload {
+    pub repo_dir: Option<String>,
+    pub parent_bot_id: String,
+    pub custom_leaf_id: Option<String>,
+    pub base_commit: Option<String>,
+}
+
+async fn worktree_spawn_handler(
+    State(_state): State<AppState>,
+    Json(payload): Json<WorktreeSpawnPayload>,
+) -> impl IntoResponse {
+    let repo_dir = payload.repo_dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let shadows_root = PathBuf::from("/tmp/haos-shadows");
+    let base_commit = payload.base_commit.as_deref().unwrap_or("HEAD");
+
+    match NativeWorktreeEngine::spawn_worktree(
+        &repo_dir,
+        &shadows_root,
+        &payload.parent_bot_id,
+        payload.custom_leaf_id.as_deref(),
+        base_commit,
+    ) {
+        Ok(info) => Json(serde_json::json!({ "ok": true, "worktree": info })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct WorktreeDiscardPayload {
+    pub repo_dir: Option<String>,
+    pub worktree_path: String,
+    pub branch_name: Option<String>,
+}
+
+async fn worktree_discard_handler(
+    Json(payload): Json<WorktreeDiscardPayload>,
+) -> impl IntoResponse {
+    let repo_dir = payload.repo_dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let wt_path = PathBuf::from(payload.worktree_path);
+
+    match NativeWorktreeEngine::discard_worktree(&repo_dir, &wt_path, payload.branch_name.as_deref()) {
+        Ok(_) => Json(serde_json::json!({ "ok": true, "discarded": true })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+// 5. Blast Radius AST Analysis
+#[derive(Deserialize)]
+pub struct BlastRadiusPayload {
+    pub root_dir: Option<String>,
+    pub modified_files: Option<Vec<String>>,
+    pub target_symbols: Option<Vec<String>>,
+    pub max_depth: Option<usize>,
+}
+
+async fn blast_radius_handler(
+    Json(payload): Json<BlastRadiusPayload>,
+) -> impl IntoResponse {
+    let root_dir = payload.root_dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let mod_files = payload.modified_files.unwrap_or_default();
+    let symbols = payload.target_symbols.unwrap_or_default();
+    let max_depth = payload.max_depth.unwrap_or(4);
+
+    let result = FastAstAnalyzer::calculate_impact(&root_dir, &mod_files, &symbols, max_depth);
+    Json(serde_json::json!({ "ok": true, "blast_radius": result }))
+}
+
+// 6. Loop Detector API (Anti-Infinite Loop de Ferramentas)
+#[derive(Deserialize)]
+pub struct DetectLoopPayload {
+    pub session_id: String,
+    pub tool_name: String,
+    pub arguments: String,
+    pub iteration: usize,
+    pub threshold: Option<usize>,
+}
+
+async fn detect_loop_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<DetectLoopPayload>,
+) -> impl IntoResponse {
+    let mut map = state.loop_detectors.lock().await;
+    let threshold = payload.threshold.unwrap_or(3);
+    let detector = map
+        .entry(payload.session_id)
+        .or_insert_with(|| LoopDetector::new(threshold, true));
+
+    match detector.record_and_evaluate(&payload.tool_name, &payload.arguments, payload.iteration) {
+        Some(alert) => Json(serde_json::json!({ "ok": true, "loop_detected": true, "alert": alert })),
+        None => Json(serde_json::json!({ "ok": true, "loop_detected": false })),
+    }
+}
+
+// 7. Cancel Registry API (Cancelamento Deterministico de Sombras e Subagentes)
+#[derive(Deserialize)]
+pub struct CancelPayload {
+    pub id: String,
+}
+
+async fn cancel_register_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<CancelPayload>,
+) -> impl IntoResponse {
+    let (tx, _rx) = tokio::sync::oneshot::channel();
+    state.cancel_registry.register(payload.id.clone(), tx).await;
+    Json(serde_json::json!({ "ok": true, "registered": true, "id": payload.id }))
+}
+
+async fn cancel_trigger_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<CancelPayload>,
+) -> impl IntoResponse {
+    let success = state.cancel_registry.cancel(&payload.id).await;
+    Json(serde_json::json!({ "ok": true, "cancelled": success, "id": payload.id }))
+}
+
+async fn cancel_status_handler(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let id = params.get("id").cloned().unwrap_or_default();
+    let is_active = state.cancel_registry.is_active(&id).await;
+    Json(serde_json::json!({ "ok": true, "id": id, "active": is_active }))
 }
 
 async fn get_settings_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {

@@ -480,6 +480,37 @@ class ImpactAnalyzer:
             for sym in file_syms:
                 symbols_to_process.add(sym.id)
 
+        # Tentativa de Aceleração Nativa em Rust via haos-edge
+        try:
+            import json, urllib.request
+            req_payload = json.dumps({
+                "root_dir": root_dir or str(self.graph.root_dir if hasattr(self.graph, "root_dir") else "."),
+                "modified_files": list(files_set),
+                "target_symbols": list(symbols_to_process),
+                "max_depth": max_call_depth
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "http://127.0.0.1:8788/api/analysis/blast-radius",
+                data=req_payload,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=0.3) as resp:
+                rdata = json.loads(resp.read().decode("utf-8"))
+                if rdata.get("ok") and "blast_radius" in rdata:
+                    br = rdata["blast_radius"]
+                    return BlastRadius(
+                        modified_symbols=set(br.get("target_symbols", [])),
+                        modified_files=set(br.get("directly_modified_files", [])),
+                        affected_files=set(br.get("affected_files", [])),
+                        affected_callers=set(br.get("affected_callers", [])),
+                        affected_references=set(),
+                        affected_test_suites=set(),
+                        depth_reached=br.get("depth_reached", 0),
+                        severity=br.get("severity", "low"),
+                    )
+        except Exception:
+            pass  # Fallback gracioso para a travessia local em Python
+
         # Collect transitive callers, references, and affected files
         affected_callers: Set[str] = set()
         affected_refs: Set[SymbolLocation] = set()

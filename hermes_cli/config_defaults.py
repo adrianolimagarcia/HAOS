@@ -307,7 +307,16 @@ DEFAULT_CONFIG = {
         # HOME for host tool subprocesses: "auto" = host keeps the real OS-user HOME, containers use
         # HERMES_HOME/home; "real" = force real HOME; "profile" = force HERMES_HOME/home when it
         # exists (strict per-profile isolation).
-        "home_mode": "auto",
+        "hermes_exec": {
+            "enabled": False,
+            "binary": "",
+            "argv_preferred": True,
+            "max_output_bytes": 1048576,
+            "max_cpu_seconds": 0,
+            "max_memory_bytes": 0,
+            "max_pids": 0,
+        },
+
         # Extra files sourced in the login shell when building the per-session env snapshot — for
         # nvm/pyenv/asdf/PATH entries registered by files a bash login shell skips (~/.bashrc,
         # ~/.zshrc, ~/.zprofile). Supports ~ and ${VAR}; missing files skipped. When empty and the

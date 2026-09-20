@@ -48,12 +48,14 @@ class SpawnResolver:
             reuse=task.reuse,
         )
 
-        # Emenda 8: required_agents é allow-list — lane escolhida fora dela
-        # falha rápido (nunca executa com agente não permitido).
+        # Emenda 8: required_agents é allow-list — lane ou agent_profile escolhidos
+        # fora dela falha rápido (nunca executa com agente não permitido).
         eligible, _ = agent_eligibility(task.required_agents, task.preferred_agents, lane)
+        if not eligible and task.agent_profile:
+            eligible, _ = agent_eligibility(task.required_agents, task.preferred_agents, task.agent_profile)
         if not eligible:
             raise AgentRequirementError(
-                f"lane/agent '{lane}' not in required_agents {list(task.required_agents)}"
+                f"lane/agent '{lane}' (profile: '{task.agent_profile}') not in required_agents {list(task.required_agents)}"
             )
 
         run_id = f"R-{uuid.uuid4().hex[:8]}"

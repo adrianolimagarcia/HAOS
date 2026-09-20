@@ -157,7 +157,7 @@ def read_live_board(db_path: str) -> Dict[str, Any]:
     return result
 
 
-def _resolve_role_model_binding(role: str, fallback_model: str = "deepseek-v4-flash", fallback_provider: str = "a6api") -> Tuple[str, str]:
+def _resolve_role_model_binding(role: str, fallback_model: str = "", fallback_provider: str = "") -> Tuple[str, str]:
     """Dynamically reads delegation.role_models and model.provider from active config.yaml."""
     try:
         from hermes_cli.config import load_config
@@ -177,9 +177,11 @@ def _resolve_role_model_binding(role: str, fallback_model: str = "deepseek-v4-fl
             target_model = del_roles.get("witness") or del_roles.get("reviewer") or del_roles.get("leaf") or default_model
 
         if not target_model:
-            target_model = fallback_model
+            target_model = fallback_model or default_model
 
         provider = default_provider or fallback_provider
+        if not target_model or not provider:
+            return "", ""
         return target_model, provider
     except Exception:
         return fallback_model, fallback_provider
@@ -488,8 +490,8 @@ class ControlPlaneService:
                     label=worker_data.get("label", "Specialist"),
                     role=worker_data.get("role", "worker"),
                     posture=worker_data.get("posture", "coder"),
-                    model_id=worker_data.get("model", "deepseek-v4-flash"),
-                    provider_id=worker_data.get("provider", "a6api"),
+                    model_id=worker_data.get("model") or _resolve_role_model_binding(worker_data.get("role", "worker"))[0],
+                    provider_id=worker_data.get("provider") or _resolve_role_model_binding(worker_data.get("role", "worker"))[1],
                     status=node_st,
                     current_task=worker_data.get("task"),
                     tokens_consumed=worker_data.get("tokens", 0),
@@ -868,8 +870,8 @@ class ControlPlaneService:
                     "role": role,
                     "posture": posture,
                     "status": "running" if p.get("status") in ("in_progress", "running") else "idle",
-                    "model": p.get("model") or "deepseek-v4-flash",
-                    "provider": p.get("provider") or "a6api",
+                    "model": p.get("model") or _resolve_role_model_binding(posture)[0],
+                    "provider": p.get("provider") or _resolve_role_model_binding(posture)[1],
                     "task": p.get("goal") or task_id,
                     "tokens": p.get("tokens", 0),
                     "cost": p.get("cost", 0.0),
@@ -934,8 +936,8 @@ class ControlPlaneService:
                     "role": role,
                     "posture": posture,
                     "status": st,
-                    "model": "deepseek-v4-flash",
-                    "provider": "a6api",
+                    "model": _resolve_role_model_binding(posture)[0],
+                    "provider": _resolve_role_model_binding(posture)[1],
                     "task": cur_task,
                     "tokens": 500,
                     "cost": 0.0005,

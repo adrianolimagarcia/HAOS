@@ -1,0 +1,8 @@
+{
+  "environment": {"python": "3.14.7", "sqlite": "3.53.4", "platform": "Linux-7.2.4-3-cachyos-x86_64-with-glibc2.44"},
+  "config": {"docs": 100, "chars": 4000, "repetitions": 20, "workers": 4},
+  "indexing": {"median_s": 0.0007170015305746347, "p95_s": 0.0011018090299330652},
+  "search": {"median_s": 0.0026490004966035485, "p95_s": 0.003222869010642171, "p99_s": 0.003222869010642171},
+  "concurrency": {"workers": 4, "ops": 20, "wall_s": 0.08218787203077227, "throughput": 243.3431295741819, "median_s": 0.014448019996052608},
+  "db_bytes": 4426392
+}

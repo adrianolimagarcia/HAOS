@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+bin="${HERMES_EXEC_BIN:-/usr/local/bin/hermes-exec}"
+command -v "$bin" >/dev/null 2>&1 || { echo "hermes-exec unavailable" >&2; exit 1; }
+"$bin" --version >/dev/null
+root="$(mktemp -d /run/hermes-exec-health.XXXXXX)"
+trap 'rm -rf "$root"' EXIT
+response="$(printf '%s\n' '{"id":1,"method":"exec","params":{"argv":["true"],"cwd":".","timeout_ms":1000,"max_output_bytes":1024}}' | HERMES_EXEC_ROOT="$root" "$bin")"
+printf '%s' "$response" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r.get("result",{}).get("returncode") == 0 and not r.get("error")'

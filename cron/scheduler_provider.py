@@ -216,6 +216,19 @@ class CronScheduler(ABC):
         """Converge the external registry toward jobs.json (desired state). Built-in: no-op."""
         return None
 
+    def get_due_bot_triggers(self):
+        """Return due jobs with a valid bot-chat delivery target without claiming them."""
+        from cron.jobs import get_due_jobs
+        from cron.scheduler_delivery import parse_bot_chat_deliver_token
+
+        triggers = []
+        for job in get_due_jobs():
+            values = job.get("deliver")
+            tokens = values if isinstance(values, list) else [values]
+            if any(parse_bot_chat_deliver_token(str(token)) is not None for token in tokens if token):
+                triggers.append(job)
+        return triggers
+
 
 def provider_supports_force_fire(provider: Any) -> bool:
     """Return whether a provider can safely receive ``fire_due(force=...)`` (signature-detected)."""

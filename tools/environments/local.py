@@ -871,6 +871,9 @@ class LocalEnvironment(BaseEnvironment):
     def _run_bash(self, cmd_string: str, *, login: bool = False, timeout: int = 120,
                   stdin_data: str | None = None) -> subprocess.Popen:
         bash = _find_bash()
+        from tools.environments import local_hermes_exec
+        if local_hermes_exec.enabled():
+            return local_hermes_exec.spawn(cmd_string, self.cwd, _make_run_env(self.env), timeout, stdin_data)
         # Login invocations (init_session's env snapshot) source the user's rc /
         # custom init files so nvm/asdf/pyenv land on PATH in the snapshot.
         if login:

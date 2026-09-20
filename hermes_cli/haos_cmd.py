@@ -796,6 +796,81 @@ def cmd_haos_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _bot_manager():
+    from hermes.platform.bots.manager import BotSpecManager
+    from hermes.platform.observability.event_store import get_event_store
+    return BotSpecManager(get_event_store())
+
+
+def _bot_print(spec, paused: bool = False) -> None:
+    print(json.dumps({**spec.to_dict(), "paused": paused}, ensure_ascii=False))
+
+
+def cmd_haos_bot_list(args: argparse.Namespace) -> int:
+    manager = _bot_manager()
+    for spec in manager.list():
+        print(f"{spec.id}\t{spec.name}\t{'paused' if manager.is_paused(spec.id) else 'active'}")
+    return 0
+
+
+def cmd_haos_bot_show(args: argparse.Namespace) -> int:
+    manager = _bot_manager()
+    spec = manager.get(args.bot_id)
+    if spec is None:
+        print(f"BotSpec not found: {args.bot_id}")
+        return 1
+    _bot_print(spec, manager.is_paused(args.bot_id))
+    return 0
+
+
+def cmd_haos_bot_create(args: argparse.Namespace) -> int:
+    try:
+        from hermes.platform.bots.spec import BotSpec
+        spec = BotSpec(id=args.bot_id, name=args.name, description=args.description or "")
+        _bot_manager().register(spec)
+    except (ValueError, TypeError) as exc:
+        print(f"Error creating BotSpec: {exc}")
+        return 1
+    _bot_print(spec)
+    return 0
+
+
+def _bot_state_action(args: argparse.Namespace, action: str) -> int:
+    try:
+        manager = _bot_manager()
+        getattr(manager, action)(args.bot_id)
+        spec = manager.get(args.bot_id)
+        _bot_print(spec, manager.is_paused(args.bot_id))
+        return 0
+    except (KeyError, ValueError, RuntimeError) as exc:
+        print(f"Error {action}ing BotSpec '{args.bot_id}': {exc}")
+        return 1
+
+
+def cmd_haos_bot_pause(args): return _bot_state_action(args, "pause")
+def cmd_haos_bot_resume(args): return _bot_state_action(args, "resume")
+
+
+def cmd_haos_bot_duplicate(args: argparse.Namespace) -> int:
+    try:
+        spec = _bot_manager().duplicate(args.bot_id, args.new_id)
+    except (KeyError, ValueError) as exc:
+        print(f"Error duplicating BotSpec: {exc}")
+        return 1
+    _bot_print(spec)
+    return 0
+
+
+def cmd_haos_bot_delete(args: argparse.Namespace) -> int:
+    try:
+        _bot_manager().delete(args.bot_id)
+    except KeyError:
+        print(f"BotSpec not found: {args.bot_id}")
+        return 1
+    print(f"Deleted BotSpec: {args.bot_id}")
+    return 0
+
+
 def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     """Builds and registers the parser for 'haos haos'."""
     haos_parser = subparsers.add_parser(
@@ -804,6 +879,29 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
         description="HAOS Control Plane: inspect Tríade status, federated nodes, and procedural skills lifecycle.",
     )
     haos_sub = haos_parser.add_subparsers(dest="haos_command")
+
+    # haos haos bot {list,show,create,pause,resume,duplicate,delete}
+    bot_parser = haos_sub.add_parser("bot", help="Manage event-sourced BotSpecs")
+    bot_sub = bot_parser.add_subparsers(dest="bot_command")
+    bot_list = bot_sub.add_parser("list", help="List BotSpecs")
+    bot_list.set_defaults(func=cmd_haos_bot_list)
+    bot_show = bot_sub.add_parser("show", help="Show a BotSpec")
+    bot_show.add_argument("bot_id")
+    bot_show.set_defaults(func=cmd_haos_bot_show)
+    bot_create = bot_sub.add_parser("create", help="Create a BotSpec")
+    bot_create.add_argument("bot_id")
+    bot_create.add_argument("name")
+    bot_create.add_argument("--description", default="")
+    bot_create.set_defaults(func=cmd_haos_bot_create)
+    for action, handler in (("pause", cmd_haos_bot_pause), ("resume", cmd_haos_bot_resume), ("delete", cmd_haos_bot_delete)):
+        parser = bot_sub.add_parser(action, help=f"{action.title()} a BotSpec")
+        parser.add_argument("bot_id")
+        parser.set_defaults(func=handler)
+    bot_dup = bot_sub.add_parser("duplicate", help="Duplicate a BotSpec")
+    bot_dup.add_argument("bot_id")
+    bot_dup.add_argument("new_id")
+    bot_dup.set_defaults(func=cmd_haos_bot_duplicate)
+    bot_parser.set_defaults(func=lambda args: bot_parser.print_help() or 0)
 
     # haos haos status [--json]
     status_parser = haos_sub.add_parser("status", help="Show full HAOS platform summary")

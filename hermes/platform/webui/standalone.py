@@ -60,6 +60,7 @@ from hermes.platform.tasks.kanban_adapter import KanbanAdapter
 from hermes.platform.observability.event_store import EventStore
 from hermes.platform.observability.events import Event
 from hermes.platform.observability.sink import EventStoreSink
+from hermes.platform.bots.knowledge import KnowledgePage, KnowledgePageManager
 from hermes.platform.execution.backpressure import ConcurrencyGuard
 from hermes.platform.execution.dispatcher import HAOSDispatcher
 from hermes.platform.evolution.ledger import EvolutionLedger
@@ -75,6 +76,12 @@ from hermes.platform.webui import settings as engine_settings
 
 _DEFAULT_PORT = 8788
 _STATIC_DIR = Path(__file__).parent / "static"
+
+# Console/chat do control plane: a missão nasce de uma ordem humana explícita do
+# operador, então o worker roda em YOLO por padrão — sem isso o filho para num
+# prompt de aprovação que ninguém está vendo na superfície web. A hardline
+# blocklist do kernel continua valendo (não é bypassável nem sob --yolo).
+CHAT_YOLO_DEFAULT = True
 
 
 def _jsonable(obj: Any) -> Any:
@@ -99,6 +106,7 @@ class HAOSStandaloneState:
 
         self.event_store = EventStore(str(self.events_db))
         self.event_sink = EventStoreSink(self.event_store)
+        self.knowledge = KnowledgePageManager(self.event_store)
         self.kanban = KanbanAdapter(self.kanban_db, event_sink=self.event_sink)
         self.guard = ConcurrencyGuard()
         self.stats = DashboardStats(
@@ -117,6 +125,8 @@ class HAOSStandaloneState:
         )
         self.agent_hierarchy = AgentHierarchyStore(data_dir / "agent_hierarchy.json")
         self.council = CouncilAdapter(self.agent_hierarchy, self.event_store)
+        from hermes.platform.shadow_leaf import ShadowLeafManager
+        self.shadow_manager = ShadowLeafManager(base_repo_dir=Path.cwd())
 
         # Aplica settings persistidos (defaults se ausente) ao guard vivo.
         self.settings = engine_settings.load_settings(data_dir)
@@ -153,6 +163,7 @@ class HAOSStandaloneState:
         assignee: Optional[str] = None,
         model_profile: Optional[str] = None,
         agent_target: Optional[str] = None,
+        yolo_mode: bool = False,
     ) -> Dict[str, Any]:
         tags = [f"agent:{agent_target}"] if agent_target else []
         spec = TaskSpec(
@@ -168,6 +179,7 @@ class HAOSStandaloneState:
             tags=tags,
             requires_tasks=[str(t) for t in (requires_tasks or []) if t],
             workspace_type="scratch",
+            yolo_mode=bool(yolo_mode),
         )
         task_id = self.kanban.save_task(spec, status="READY", assignee=assignee)
         return {"task_id": task_id, "spec_id": spec.id, "goal": message}
@@ -447,13 +459,16 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ #
     def _send(self, code: int, body: bytes, ctype: str = "application/json") -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _send_json(self, code: int, payload: Any) -> None:
         self._send(code, json.dumps(payload, ensure_ascii=False,
@@ -482,10 +497,61 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         self._serve()
 
+    def do_DELETE(self) -> None:  # noqa: N802
+        self._serve()
+
+    def _knowledge_list(self, bot_id: str) -> None:
+        self._send_json(200, {"pages": [p.to_dict() for p in self.state.knowledge.list(bot_id)]})
+
+    def _knowledge_get(self, bot_id: str, page_id: str) -> None:
+        page = self.state.knowledge.get(page_id)
+        if page is None or page.bot_id != bot_id:
+            self._send_json(404, {"error": "page_not_found"})
+            return
+        self._send_json(200, page.to_dict())
+
+    def _knowledge_upsert(self, bot_id: str) -> None:
+        body = self._read_json_body()
+        try:
+            page = KnowledgePage.from_dict({**body, "bot_id": bot_id, "id": str(body.get("id") or uuid.uuid4().hex)})
+            self._send_json(200, self.state.knowledge.upsert(page).to_dict())
+        except (TypeError, ValueError) as exc:
+            self._send_json(400, {"error": str(exc)})
+
+    def _knowledge_dispute(self, bot_id: str, page_id: str, action: str) -> None:
+        page = self.state.knowledge.get(page_id)
+        if page is None or page.bot_id != bot_id:
+            self._send_json(404, {"error": "page_not_found"})
+            return
+        try:
+            if action == "dispute":
+                reason = str(self._read_json_body().get("reason") or "").strip()
+                if not reason:
+                    self._send_json(400, {"error": "reason_required"})
+                    return
+                self.state.knowledge.dispute(page_id, reason)
+            else:
+                self.state.knowledge.resolve_dispute(page_id)
+            self._send_json(200, self.state.knowledge.get(page_id).to_dict())
+        except KeyError:
+            self._send_json(404, {"error": "page_not_found"})
+
     # ------------------------------------------------------------------ #
     def _serve(self) -> None:
         path = urlparse(self.path).path
-        if self.command in ("GET", "HEAD") and (path in ("/", "/index.html", "/chat", "/console", "/terminal", "/taskboard", "/scheduler", "/ouroboros", "/agent", "/system", "/events", "/config") or not path.startswith(("/api/", "/health", "/v1/"))):
+        parts = path.strip("/").split("/")
+        if len(parts) == 3 and parts[:2] == ["bots", parts[1]] and parts[2] == "knowledge":
+            if self.command == "GET":
+                self._knowledge_list(parts[1])
+            elif self.command == "POST":
+                self._knowledge_upsert(parts[1])
+            else:
+                self._send_json(405, {"error": "method_not_allowed"})
+        elif len(parts) == 4 and parts[0] == "bots" and parts[2] == "knowledge" and self.command == "GET":
+            self._knowledge_get(parts[1], parts[3])
+        elif len(parts) == 5 and parts[0] == "bots" and parts[2] == "knowledge" and parts[4] in ("dispute", "resolve") and self.command == "POST":
+            self._knowledge_dispute(parts[1], parts[3], parts[4])
+        elif self.command in ("GET", "HEAD") and (path in ("/", "/index.html", "/chat", "/console", "/terminal", "/taskboard", "/scheduler", "/ouroboros", "/agent", "/system", "/events", "/config") or not path.startswith(("/api/", "/health", "/v1/"))):
             self._serve_index()
         elif self.command == "GET" and path in ("/health", "/api/health"):
             self._send_json(200, {"status": "healthy", "service": "haos-controlplane"})
@@ -519,10 +585,18 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._save_hierarchy_wiki_article()
         elif self.command == "POST" and path == "/api/agent-hierarchy/wiki/promote":
             self._promote_hierarchy_notebook_to_wiki()
+        elif self.command == "GET" and path == "/api/agent-hierarchy/shadows":
+            self._get_hierarchy_shadows()
+        elif self.command == "POST" and path == "/api/agent-hierarchy/shadows":
+            self._spawn_hierarchy_shadow()
+        elif (self.command == "DELETE" or (self.command == "POST" and path == "/api/agent-hierarchy/shadows/discard")) and path in ("/api/agent-hierarchy/shadows", "/api/agent-hierarchy/shadows/discard"):
+            self._discard_hierarchy_shadow()
         elif self.command == "GET" and path == "/api/agent-hierarchy/microapps":
             self._get_hierarchy_microapps()
         elif self.command == "POST" and path == "/api/agent-hierarchy/microapps":
             self._save_hierarchy_microapp()
+        elif (self.command == "DELETE" or (self.command == "POST" and path == "/api/agent-hierarchy/microapps/delete")) and path in ("/api/agent-hierarchy/microapps", "/api/agent-hierarchy/microapps/delete"):
+            self._delete_hierarchy_microapp()
         elif self.command == "POST" and path == "/api/agent-hierarchy/approvals/decide":
             self._decide_hierarchy_approval()
         elif self.command == "GET" and path == "/api/agent-hierarchy/toolsets":
@@ -654,12 +728,32 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
     def _console(self) -> None:
         body = self._read_json_body()
         message = str(body.get("message") or "").strip()
+        bot_id = str(body.get("bot_id") or "").strip()
         if not message:
             self._send_json(400, {"error": "message_required"})
             return
+
+        model_profile = None
+        assignee = None
+        agent_target = None
+        if bot_id:
+            try:
+                snap = self.state.agent_hierarchy.snapshot()
+                node = next((n for n in snap.get("nodes", []) if n.get("id") == bot_id), None)
+                if node:
+                    agent_target = bot_id
+                    assignee = node.get("profile") or bot_id
+                    model_profile = node.get("model") or None
+            except Exception:
+                pass
+
         created = self.state.create_task_from_message(
             message,
             priority=int(body.get("priority") or 85),
+            model_profile=model_profile,
+            assignee=assignee,
+            agent_target=agent_target,
+            yolo_mode=CHAT_YOLO_DEFAULT,
         )
         self.state.dispatch_in_background(max_spawn=1)
         self._send_json(200, {"accepted": True, **created})
@@ -861,13 +955,23 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             cur_task = self.state.kanban.get_task(task_id)
             if cur_task:
                 cur_status = str(cur_task.get("status", "")).lower()
+                task_res = cur_task.get("result")
+                live_summary = ""
+                if task_res:
+                    if hasattr(task_res, "summary") and task_res.summary:
+                        live_summary = task_res.summary
+                    elif isinstance(task_res, dict) and task_res.get("summary"):
+                        live_summary = task_res["summary"]
+                    elif hasattr(task_res, "__dict__") and task_res.__dict__.get("summary"):
+                        live_summary = task_res.__dict__["summary"]
+
                 status_pkt = json.dumps({
                     "task_id": task_id,
                     "status": cur_status,
                     "elapsed_seconds": cur_task.get("elapsed_seconds", 0),
                     "tokens": cur_task.get("tokens", 0),
                     "cost": cur_task.get("cost", 0.0),
-                    "summary": (cur_task.get("result") or {}).get("summary", "") if hasattr(cur_task.get("result"), "get") else "",
+                    "summary": live_summary,
                 })
                 try:
                     self.wfile.write(f"event: status\ndata: {status_pkt}\n\n".encode("utf-8"))
@@ -879,7 +983,7 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
 
                 if cur_status in ("done", "failed", "blocked", "completed"):
                     try:
-                        self.wfile.write(b"event: done\ndata: {}\n\n")
+                        self.wfile.write(f"event: done\ndata: {status_pkt}\n\n".encode("utf-8"))
                         self.wfile.flush()
                     except Exception:
                         pass
@@ -1428,6 +1532,130 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             "saved": True
         })
 
+    def _delete_hierarchy_microapp(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        target_id = query.get("target_id", [""])[0].strip()
+        slug = query.get("slug", [""])[0].strip()
+
+        # Fallback para body JSON se não estiver na query string
+        if not target_id or not slug:
+            try:
+                body = self._read_json_body()
+                target_id = target_id or str(body.get("target_id") or "").strip()
+                slug = slug or str(body.get("slug") or "").strip()
+            except Exception:
+                pass
+
+        if not target_id or not slug:
+            self._send_json(400, {"ok": False, "error": "target_id_and_slug_required"})
+            return
+
+        # Sanitização segura de path traversal
+        import re
+        safe_slug = re.sub(r'[^a-zA-Z0-9_\-]+', '', slug)
+        if not safe_slug or safe_slug != slug:
+            self._send_json(400, {"ok": False, "error": "invalid_slug"})
+            return
+
+        m_dir = self._resolve_bot_microapps_dir(target_id)
+        app_file = (m_dir / f"{safe_slug}.html").resolve()
+
+        # Garante que o arquivo está estritamente contido no diretório do bot
+        try:
+            app_file.relative_to(m_dir.resolve())
+        except ValueError:
+            self._send_json(403, {"ok": False, "error": "access_denied"})
+            return
+
+        if not app_file.exists():
+            self._send_json(404, {"ok": False, "error": "microapp_not_found"})
+            return
+
+        try:
+            app_file.unlink()
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"unlink_error: {e}"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "target_id": target_id,
+            "slug": safe_slug,
+            "deleted": True
+        })
+
+    def _get_hierarchy_shadows(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        parent_bot_id = query.get("parent_bot_id", [""])[0].strip() or None
+        leaves = self.state.shadow_manager.list_shadows(parent_bot_id=parent_bot_id)
+        self._send_json(200, {
+            "ok": True,
+            "parent_bot_id": parent_bot_id,
+            "shadows": [l.to_dict() for l in leaves]
+        })
+
+    def _spawn_hierarchy_shadow(self) -> None:
+        body = self._read_json_body()
+        parent_bot_id = str(body.get("parent_bot_id") or "").strip()
+        task_description = str(body.get("task_description") or "Tarefa isolada de Sombra").strip()
+
+        if not parent_bot_id:
+            self._send_json(400, {"ok": False, "error": "parent_bot_id_required"})
+            return
+
+        snapshot = self.state.agent_hierarchy.snapshot()
+        node = next((n for n in snapshot.get("nodes", []) if n.get("id") == parent_bot_id), None)
+        if not node:
+            self._send_json(404, {"ok": False, "error": "parent_bot_not_found"})
+            return
+
+        parent_bot_name = node.get("name") or parent_bot_id
+        profile = node.get("profile") or parent_bot_id
+
+        try:
+            leaf = self.state.shadow_manager.spawn_shadow(
+                parent_bot_id=parent_bot_id,
+                parent_bot_name=parent_bot_name,
+                profile=profile,
+                task_description=task_description,
+                metadata={"spawned_by": "controlplane_ui"}
+            )
+            self._send_json(200, {
+                "ok": True,
+                "shadow": leaf.to_dict()
+            })
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"spawn_error: {e}"})
+
+    def _discard_hierarchy_shadow(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(self.path).query)
+        leaf_id = query.get("leaf_id", [""])[0].strip()
+
+        if not leaf_id:
+            try:
+                body = self._read_json_body()
+                leaf_id = leaf_id or str(body.get("leaf_id") or "").strip()
+            except Exception:
+                pass
+
+        if not leaf_id:
+            self._send_json(400, {"ok": False, "error": "leaf_id_required"})
+            return
+
+        success = self.state.shadow_manager.discard_shadow(leaf_id)
+        if not success:
+            self._send_json(404, {"ok": False, "error": "shadow_not_found"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "leaf_id": leaf_id,
+            "discarded": True
+        })
+
     def _decide_hierarchy_approval(self) -> None:
         """Processa decisão humana no Portão de Aprovação (Aprovar / Rejeitar) com suporte a YOLO mode."""
         body = self._read_json_body()
@@ -1555,6 +1783,7 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             command, title=f"Comando para {node['name']}",
             model_profile=node.get("model") or None, agent_target=target,
             assignee=node.get("profile") or target,
+            yolo_mode=CHAT_YOLO_DEFAULT,
         )
         self.state.event_store.append(Event(name="agent_hierarchy.commanded", payload={"target_id": target, "profile": node.get("profile"), "model_profile": node.get("model"), "command": command}))
         self.state.dispatch_in_background(max_spawn=1)

@@ -1,0 +1,10 @@
+FROM rust:1.85-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip procps jq && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY packages/haos-exec /workspace/packages/haos-exec
+COPY packages/haos-exec/tests /workspace/packages/haos-exec/tests
+COPY scripts/bench_memory_rag.py /workspace/scripts/bench_memory_rag.py
+COPY hermes /workspace/hermes
+RUN cargo test --manifest-path packages/haos-exec/Cargo.toml && cargo build --manifest-path packages/haos-exec/Cargo.toml --release
+RUN ln -s packages/haos-exec/target /workspace/target
+CMD ["bash"]

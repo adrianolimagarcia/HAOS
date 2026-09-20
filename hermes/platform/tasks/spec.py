@@ -86,6 +86,11 @@ class TaskSpec:
     allow_delegation: bool = True
     allow_child_tasks: bool = True
 
+    # YOLO: o worker spawnado roda sem portão de aprovação de comando perigoso.
+    # Default False — só a superfície interativa do operador (chat/console do
+    # control plane) liga, onde a missão nasce de uma decisão humana explícita.
+    yolo_mode: bool = False
+
     # Entregáveis esperados e tags
     expected_artifacts: List[str] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)

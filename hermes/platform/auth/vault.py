@@ -120,6 +120,7 @@ class SecretBroker:
         *,
         policy: str = "auto",
         requester: Optional[str] = None,
+        expires_at: Optional[str] = None,
     ) -> str:
         """Concede (ou solicita) acesso de *scope* a um credential_ref.
 
@@ -141,6 +142,7 @@ class SecretBroker:
             "status": "approved" if policy != "requires_approval" else "pending",
             "requester": requester,
             "granted_at": _now_iso(),
+            "expires_at": expires_at,
         })
         return grant_id
 
@@ -160,11 +162,24 @@ class SecretBroker:
         existing = self._find_grant(scope, credential_ref)
         if existing is None:
             raise VaultError(f"grant inexistente: {scope}::{credential_ref}")
+        if existing.get("status") != "pending":
+            raise VaultError(f"grant não pendente: {scope}::{credential_ref}")
+        if self._grant_expired(existing):
+            raise VaultError(f"grant expirado: {scope}::{credential_ref}")
         updated = dict(existing)
         updated["status"] = "approved"
         updated["approver"] = approver
         updated["rationale"] = rationale
         updated["approved_at"] = _now_iso()
+        self._write_grant(updated)
+
+    def reject_grant(self, scope: str, credential_ref: str, approver: str, rationale: Optional[str] = None) -> None:
+        existing = self._find_grant(scope, credential_ref)
+        if existing is None:
+            raise VaultError(f"grant inexistente: {scope}::{credential_ref}")
+        if existing.get("status") != "pending":
+            raise VaultError(f"grant não pendente: {scope}::{credential_ref}")
+        updated = dict(existing, status="rejected", approver=approver, rationale=rationale, rejected_at=_now_iso())
         self._write_grant(updated)
 
     def pending_approvals(self) -> List[Dict[str, Any]]:
@@ -174,7 +189,7 @@ class SecretBroker:
         """
         return [
             g for g in self._grants()
-            if g.get("policy") == "requires_approval" and g.get("status") != "approved"
+            if g.get("policy") == "requires_approval" and g.get("status") == "pending" and not self._grant_expired(g)
         ]
 
     def revoke(self, scope: str, credential_ref: str) -> None:
@@ -185,7 +200,10 @@ class SecretBroker:
     def check_grant(self, scope: str, credential_ref: str) -> bool:
         """Verdadeiro apenas quando o grant existe e está APROVADO."""
         grant = self._find_grant(scope, credential_ref)
-        return bool(grant and grant.get("status") == "approved")
+        return bool(grant and grant.get("status") == "approved" and not self._grant_expired(grant))
+
+    def _grant_expired(self, grant: Dict[str, Any]) -> bool:
+        return bool(grant.get("expires_at") and _is_expired_iso(grant.get("expires_at")))
 
     def resolve_credential_for(self, scope: str, credential_ref: str) -> Optional[str]:
         """resolve_credential + gate de grant aprovado (None sem permissão)."""

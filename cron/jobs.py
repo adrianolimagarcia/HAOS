@@ -1776,6 +1776,8 @@ def create_job(
     failure_deliver: Optional[str] = None,
     paused: bool = False,
     paused_reason: Optional[str] = None,
+    bot_id: Optional[str] = None,
+    routine: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a new cron job and return the stored record.
 
@@ -1863,6 +1865,8 @@ def create_job(
         "failure_streak": 0,
         "deliver": deliver,
         "origin": origin,  # Tracks where job was created for "origin" delivery
+        "bot_id": bot_id,
+        "routine": routine,
         "enabled_toolsets": f["enabled_toolsets"],
         "workdir": f["workdir"],
     }

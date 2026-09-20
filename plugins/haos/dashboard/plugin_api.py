@@ -833,7 +833,14 @@ if _HAS_FASTAPI and APIRouter is not None:
     # ----------------------------------------------------------------------- #
     @router.post("/console")  # type: ignore[union-attr]
     def post_console(body: Dict[str, Any]) -> Dict[str, Any]:
-        """Cria tarefa a partir do console de missões e despacha em background."""
+        """Cria tarefa a partir do console de missões e despacha em background.
+
+        O console roda em YOLO por padrão (mesma política do standalone): a
+        missão nasce de uma ordem humana do operador e o worker não pode parar
+        num prompt de aprovação que ninguém vê na superfície web.
+        """
+        from hermes.platform.webui.standalone import CHAT_YOLO_DEFAULT  # noqa: PLC0415
+
         state = get_engine_state()
         message = str((body or {}).get("message") or "").strip()
         if not message:
@@ -841,6 +848,7 @@ if _HAS_FASTAPI and APIRouter is not None:
         created = state.create_task_from_message(
             message,
             priority=int((body or {}).get("priority") or 85),
+            yolo_mode=CHAT_YOLO_DEFAULT,
         )
         if state.settings.get("auto_dispatch", True):
             state.dispatch_in_background(max_spawn=10)

@@ -65,9 +65,9 @@ from hermes.platform.ui.dashboard import dashboard_payload  # noqa: E402
 from hermes.platform.ui.stats import DashboardStats  # noqa: E402
 
 __all__ = [
-    "action_approve_grant", "action_decide_evolution", "action_decide_review",
+    "action_approve_grant", "action_reject_grant", "action_decide_evolution", "action_decide_review",
     "action_dispatch_ready", "action_revoke_grant", "action_acp_plan",
-    "configure_acp", "configure_stats", "evolution_payload",
+    "configure_acp", "configure_bot_manager", "configure_knowledge_manager", "configure_stats", "evolution_payload",
     "grants_pending_payload", "router", "state_payload",
 ]
 
@@ -79,6 +79,42 @@ _stats_override: Optional[DashboardStats] = None
 # "/path/acp_server.py"]). Injetado na montagem por configure_acp — sem ele a
 # rota /acp/plan responde 409 (nunca spawna processo sem comando explícito).
 _acp_command: Optional[List[str]] = None
+_bot_manager: Any = None
+_knowledge_manager: Any = None
+
+
+def configure_knowledge_manager(manager: Any) -> None:
+    """Inject the canonical EventStore-backed knowledge manager."""
+    global _knowledge_manager
+    _knowledge_manager = manager
+
+
+def resolve_knowledge_manager() -> Any:
+    if _knowledge_manager is not None:
+        return _knowledge_manager
+    from hermes.platform.bots.knowledge import KnowledgePageManager
+    from hermes.platform.observability.event_store import get_event_store
+    return KnowledgePageManager(get_event_store())
+
+
+def configure_bot_manager(manager: Any) -> None:
+    """Inject the canonical BotSpecManager used by dashboard requests."""
+    global _bot_manager
+    _bot_manager = manager
+
+
+def resolve_bot_manager() -> Any:
+    if _bot_manager is not None:
+        return _bot_manager
+    from hermes.platform.bots.manager import BotSpecManager
+    from hermes.platform.observability.event_store import get_event_store
+    return BotSpecManager(get_event_store())
+
+
+def _bot_payload(spec: Any, manager: Any) -> Dict[str, Any]:
+    payload = spec.to_dict()
+    payload["paused"] = manager.is_paused(spec.id)
+    return payload
 
 
 def configure_stats(stats: Optional[DashboardStats]) -> None:
@@ -107,6 +143,17 @@ def resolve_stats() -> DashboardStats:
     if _stats_override is not None:
         return _stats_override
     return DashboardStats()  # fail-closed: sem store -> zero/vazio
+
+
+def resolve_kanban_adapter(stats: Optional[DashboardStats] = None) -> Any:
+    """Resolve the canonical Kanban adapter wired into dashboard stats.
+
+    Dashboard actions must never fall back to a private or implicit database:
+    without the configured adapter they fail closed at the HTTP boundary.
+    """
+    current = stats if stats is not None else resolve_stats()
+    adapter = getattr(current, "kanban", None)
+    return adapter if adapter is not None and hasattr(adapter, "save_task") else None
 
 
 # --------------------------------------------------------------------------- #
@@ -306,6 +353,15 @@ def action_approve_grant(
                                  rationale=rationale)
 
 
+def action_reject_grant(
+    scope: str, credential_ref: str, approver: str, rationale: Optional[str] = None
+) -> None:
+    """Reject a pending grant through the canonical SecretBroker."""
+    from hermes.platform.auth.vault import SecretBroker  # noqa: PLC0415
+
+    SecretBroker().reject_grant(scope, credential_ref, approver, rationale=rationale)
+
+
 def action_revoke_grant(scope: str, credential_ref: str) -> None:
     """Revoga um grant (delta 43 — ``SecretBroker`` real)."""
     from hermes.platform.auth.vault import SecretBroker  # noqa: PLC0415
@@ -372,6 +428,182 @@ router: Any = None
 if _HAS_FASTAPI and APIRouter is not None:
     router = APIRouter()
 
+    @router.get("/knowledge")  # type: ignore[union-attr]
+    def list_knowledge(bot_id: Optional[str] = None) -> Dict[str, Any]:
+        manager = resolve_knowledge_manager()
+        return {"pages": [page.to_dict() for page in manager.list(bot_id=bot_id)]}
+
+    @router.get("/knowledge/{page_id}")  # type: ignore[union-attr]
+    def get_knowledge(page_id: str) -> Dict[str, Any]:
+        page = resolve_knowledge_manager().get(page_id)
+        if page is None:
+            raise HTTPException(status_code=404, detail=f"knowledge page not found: {page_id}")
+        return page.to_dict()
+
+    @router.post("/knowledge")  # type: ignore[union-attr]
+    def upsert_knowledge(body: Dict[str, Any]) -> Dict[str, Any]:
+        from hermes.platform.bots.knowledge import KnowledgePage
+        try:
+            page = resolve_knowledge_manager().upsert(KnowledgePage.from_dict(body))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return page.to_dict()
+
+    @router.post("/knowledge/{page_id}/dispute")  # type: ignore[union-attr]
+    def dispute_knowledge(page_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            resolve_knowledge_manager().dispute(page_id, str(body.get("reason", "")))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"knowledge page not found: {page_id}") from exc
+        return get_knowledge(page_id)
+
+    @router.post("/knowledge/{page_id}/resolve")  # type: ignore[union-attr]
+    def resolve_knowledge(page_id: str) -> Dict[str, Any]:
+        try:
+            resolve_knowledge_manager().resolve_dispute(page_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"knowledge page not found: {page_id}") from exc
+        return get_knowledge(page_id)
+
+    @router.get("/bots")  # type: ignore[union-attr]
+    def get_bots() -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        return {"bots": [_bot_payload(spec, manager) for spec in manager.list()]}
+
+    @router.get("/bots/{bot_id}")  # type: ignore[union-attr]
+    def get_bot(bot_id: str) -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        spec = manager.get(bot_id)
+        if spec is None: raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}")
+        return _bot_payload(spec, manager)
+
+    @router.post("/bots")  # type: ignore[union-attr]
+    def create_bot(body: Dict[str, Any]) -> Dict[str, Any]:
+        from hermes.platform.bots.spec import BotSpec
+        try: spec = resolve_bot_manager().register(BotSpec.from_dict(body))
+        except (KeyError, TypeError, ValueError) as exc: raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _bot_payload(spec, resolve_bot_manager())
+
+    @router.patch("/bots/{bot_id}")  # type: ignore[union-attr]
+    def update_bot(bot_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace the editable BotSpec fields through the canonical manager."""
+        from hermes.platform.bots.spec import BotSpec
+        manager = resolve_bot_manager()
+        current = manager.get(bot_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}")
+        values = current.to_dict()
+        values.update(body)
+        values["id"] = bot_id
+        try:
+            spec = manager.update(BotSpec.from_dict(values))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _bot_payload(spec, manager)
+
+    @router.delete("/bots/{bot_id}")  # type: ignore[union-attr]
+    def delete_bot(bot_id: str) -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        try:
+            manager.delete(bot_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}") from exc
+        return {"id": bot_id, "status": "deleted"}
+
+    @router.post("/bots/{bot_id}/duplicate")  # type: ignore[union-attr]
+    def duplicate_bot(bot_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        new_id = body.get("new_id", body.get("id"))
+        if not isinstance(new_id, str) or not new_id.strip():
+            raise HTTPException(status_code=400, detail="new_id must be a non-empty string")
+        try:
+            spec = manager.duplicate(bot_id, new_id.strip())
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return _bot_payload(spec, manager)
+
+    @router.get("/bots/{bot_id}/triggers")  # type: ignore[union-attr]
+    def get_bot_triggers(bot_id: str) -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        try:
+            return {"triggers": manager.list_triggers(bot_id)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}") from exc
+
+    @router.post("/bots/{bot_id}/pause")  # type: ignore[union-attr]
+    def pause_bot(bot_id: str) -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        try: manager.pause(bot_id)
+        except KeyError as exc: raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}") from exc
+        return _bot_payload(manager.get(bot_id), manager)
+
+    @router.post("/bots/{bot_id}/resume")  # type: ignore[union-attr]
+    def resume_bot(bot_id: str) -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        try: manager.resume(bot_id)
+        except KeyError as exc: raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}") from exc
+        return _bot_payload(manager.get(bot_id), manager)
+
+    @router.post("/bots/{bot_id}/trigger")  # type: ignore[union-attr]
+    def trigger_bot(bot_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Trigger a configured manual routine through BotSpecManager."""
+        manager = resolve_bot_manager()
+        adapter = resolve_kanban_adapter()
+        if adapter is None:
+            raise HTTPException(status_code=409, detail="kanban store não configurado")
+        try:
+            task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **dict(body.get("overrides") or {}))
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=f"campo obrigatório ausente ou recurso inexistente: {exc}") from exc
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"task_id": task_id}
+
+    @router.post("/bots/{bot_id}/routines/{routine}/cron")  # type: ignore[union-attr]
+    def create_bot_routine_cron(bot_id: str, routine: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a cron job for a configured bot routine."""
+        schedule = body.get("schedule")
+        if not isinstance(schedule, str) or not schedule.strip():
+            raise HTTPException(status_code=400, detail="schedule must be a non-empty string")
+        manager = resolve_bot_manager()
+        overrides = dict(body)
+        overrides.pop("schedule", None)
+        prompt = overrides.pop("prompt", None)
+        try:
+            return manager.create_cron_job(
+                bot_id, routine, schedule.strip(), prompt=prompt, **overrides
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"bot or routine not found: {exc.args[0]}") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/bots/{bot_id}/submit")  # type: ignore[union-attr]
+    def submit_bot(bot_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Submit a routine through BotSpecManager, preserving the EventStore ledger."""
+        manager = resolve_bot_manager()
+        adapter = resolve_kanban_adapter()
+        if adapter is None:
+            raise HTTPException(status_code=409, detail="kanban store não configurado")
+        try:
+            task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **dict(body.get("overrides") or {}))
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=f"campo obrigatório ausente ou recurso inexistente: {exc}") from exc
+        except (RuntimeError, PermissionError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"task_id": task_id, "status": "submitted"}
+
+    @router.get("/bots/{bot_id}/runs")  # type: ignore[union-attr]
+    def get_bot_runs(bot_id: str, routine: Optional[str] = None) -> Dict[str, Any]:
+        manager = resolve_bot_manager()
+        if manager.get(bot_id) is None:
+            raise HTTPException(status_code=404, detail=f"bot not found: {bot_id}")
+        return {"runs": manager.run_history(bot_id, routine=routine)}
+
     @router.get("/state")  # type: ignore[union-attr]
     def get_state() -> Dict[str, Any]:  # noqa: N802 (rota, não função interna)
         return state_payload()
@@ -432,6 +664,25 @@ if _HAS_FASTAPI and APIRouter is not None:
         except Exception as exc:  # LedgerError e afins
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"proposal_id": proposal_id, "status": "decided"}
+
+    @router.get("/grants")  # type: ignore[union-attr]
+    def get_grants() -> Dict[str, Any]:
+        """List pending grants from the canonical SecretBroker."""
+        return grants_pending_payload()
+
+    @router.post("/grants")  # type: ignore[union-attr]
+    def post_grant(body: Dict[str, Any]) -> Dict[str, Any]:
+        """Reject a grant request (canonical lifecycle POST)."""
+        try:
+            action_reject_grant(
+                str(body["scope"]), str(body["credential_ref"]),
+                str(body["approver"]), rationale=body.get("rationale"),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=f"campo obrigatório ausente: {exc}") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"scope": body["scope"], "credential_ref": body["credential_ref"], "status": "rejected"}
 
     @router.post("/grants/approve")  # type: ignore[union-attr]
     def post_grant_approve(body: Dict[str, Any]) -> Dict[str, Any]:

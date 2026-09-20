@@ -115,6 +115,28 @@ class TestStandaloneServer(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
+    def test_knowledge_router_eventstore_contract_and_bot_isolation(self):
+        """Knowledge routes use the shared EventStore and never cross bot scopes."""
+        created = self._post("/bots/alpha/knowledge", {
+            "id": "page-1", "title": "Runbook", "content": "Use EventStore",
+            "citations": ["https://example.test/source"], "confidence": 0.9,
+        })
+        self.assertEqual(created["bot_id"], "alpha")
+        self.assertEqual(created["citations"], ["https://example.test/source"])
+        self.assertEqual(json.loads(self._get("/bots/beta/knowledge"))["pages"], [])
+        self.assertEqual(json.loads(self._get("/bots/alpha/knowledge"))["pages"][0]["id"], "page-1")
+        disputed = self._post("/bots/alpha/knowledge/page-1/dispute", {"reason": "stale citation"})
+        self.assertTrue(disputed["disputed"])
+        resolved = self._post("/bots/alpha/knowledge/page-1/resolve", {})
+        self.assertFalse(resolved["disputed"])
+        replay = HAOSStandaloneState(self.dir)
+        try:
+            page = replay.knowledge.get("page-1")
+            self.assertIsNotNone(page)
+            self.assertEqual(page.citations, ["https://example.test/source"])
+        finally:
+            replay.event_store.close()
+
     def test_index_and_state(self):
         html = self._get("/")
         self.assertIn("HAOS Standalone", html)
@@ -198,6 +220,29 @@ class TestStandaloneServer(unittest.TestCase):
         cards = [t for t in payload["taskboard"]["recent"] if t["id"] == resp["task_id"]]
         self.assertGreaterEqual(len(cards), 1)
         self.assertIn(str(cards[0].get("status")), ("done", "failed", "blocked", "running"))
+
+    def test_console_and_hub_chat_run_in_yolo_but_taskboard_does_not(self):
+        """Console/chat despacham em YOLO; o card manual do taskboard não.
+
+        Contrato de superfície: a autonomia pertence ao chat/console do
+        operador — o worker é headless e um prompt de aprovação ali trava a
+        missão para sempre. O mesmo default vale para o comando enviado a um
+        bot do hub. ``POST /api/tasks`` (card manual) mantém o portão do kernel.
+        """
+        console = self._post("/api/console", {"message": "Missão YOLO do console"})
+        self.assertTrue(self.state.kanban.get_task(console["task_id"])["spec"]["yolo_mode"])
+
+        taskboard = self._post("/api/tasks", {"goal": "Card manual do taskboard"})
+        self.assertFalse(self.state.kanban.get_task(taskboard["task_id"])["spec"]["yolo_mode"])
+
+    def test_hub_bot_command_runs_in_yolo(self):
+        self.state.agent_hierarchy.upsert_node(
+            {"id": "root-yolo", "name": "Root", "role": "master"})
+        resp = self._post("/api/agent-hierarchy/command",
+                          {"target_id": "root-yolo", "command": "Revisar o módulo X"})
+        self.assertTrue(resp["ok"])
+        spec = self.state.kanban.get_task(resp["task"]["task_id"])["spec"]
+        self.assertTrue(spec["yolo_mode"])
 
     def test_task_details_action_and_timeline(self):
         created = self._post("/api/tasks", {"goal": "Testar timeline e acao de tarefas", "priority": 70})

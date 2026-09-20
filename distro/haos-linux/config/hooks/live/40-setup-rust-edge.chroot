@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# Live Hook: Setup do Rust Toolchain e HAOS Edge Daemon
-# ==============================================================================
 set -euo pipefail
 
-echo "[HAOS Hook] Configurando componentes Rust do HAOS..."
+# Architecture-aware, staged installation. The builder places immutable artifacts
+# under /opt/haos/artifacts/hermes-exec/<dpkg-arch>/.
+arch="$(dpkg --print-architecture 2>/dev/null || true)"
+case "$arch" in
+  amd64) artifact_arch="amd64" ;;
+  arm64) artifact_arch="arm64" ;;
+  armhf) artifact_arch="armhf" ;;
+  *) echo "[HAOS] hermes-exec unsupported architecture: ${arch:-unknown}" >&2; exit 0 ;;
+esac
 
-# Se já houver binário haos-edge compilado localmente em assets/packages, copiar
-if [ -f /opt/haos/packages/haos-edge/target/release/haos-edge ]; then
-    cp /opt/haos/packages/haos-edge/target/release/haos-edge /usr/local/bin/haos-edge
-    chmod +x /usr/local/bin/haos-edge
+artifact="/opt/haos/artifacts/hermes-exec/${artifact_arch}/hermes-exec"
+if [ -f "$artifact" ]; then
+  install -D -m 0755 "$artifact" /usr/local/bin/hermes-exec
+else
+  echo "[HAOS] hermes-exec artifact not staged for ${artifact_arch}; keeping optional component disabled" >&2
+fi
+
+if [ -f /usr/local/libexec/hermes-exec-healthcheck ]; then
+  chmod 0755 /usr/local/libexec/hermes-exec-healthcheck
 fi

@@ -414,6 +414,12 @@ class HermesCliLaneWorker(LaneWorker):
         if self.profile:
             cmd += ["-p", self.profile]
         cmd += ["--cli", "--accept-hooks"]
+        # Console/chat do control plane: o spec carrega yolo_mode e o worker
+        # nasce sem portão de aprovação — o filho é headless, um prompt de
+        # aprovação ali trava a missão para sempre. A hardline blocklist do
+        # kernel continua valendo (não é bypassável nem sob --yolo).
+        if spec.get("yolo_mode"):
+            cmd += ["--yolo"]
         cmd += ["chat", "--source", "haos"]
         # Respeita o modelo configurado no spec quando especificado,
         # resolvendo via ExactModelFailoverRouter se disponível ou por postura

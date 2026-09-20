@@ -73,6 +73,7 @@ def main() -> int:
     os.environ.setdefault("HERMES_WEB_DIST", str(_REPO / "hermes_cli" / "web_dist"))
 
     from hermes.platform.auth.vault import SecretBroker
+    from hermes.platform.bots.manager import BotSpecManager
     from hermes.platform.evolution.ledger import EvolutionLedger
     from hermes.platform.observability.event_store import EventStore
     from hermes.platform.tasks.kanban_adapter import KanbanAdapter
@@ -110,6 +111,8 @@ def main() -> int:
         # passo de montagem final do shell (configure_stats).
         mounted.configure_stats(DashboardStats(kanban=adapter,
                                                event_store=store))
+        bot_manager = BotSpecManager(store)
+        mounted.configure_bot_manager(bot_manager)
         print(f"  mounted module OK; router={getattr(mounted, 'router', None) is not None}")
 
     from starlette.testclient import TestClient
@@ -158,6 +161,31 @@ def main() -> int:
         check("grants_pending == 1 (grant requires_approval seedado)",
               len(payload.get("grants_pending", [])) == 1,
               str(payload.get("grants_pending")))
+
+    _step("BotSpec oficial: create/list/trigger/submit/runs via HTTP")
+    bot = {
+        "id": "bot-live", "name": "Live bot",
+        "description": "real HTTP lifecycle",
+        "task_defaults": {"model_profile": "coding-primary", "workspace_type": "scratch"},
+        "capabilities": ["git"], "policy": {"tools": ["git"], "workspace": "scratch"},
+        "routines": {"manual": {"version": 1, "prompt": "run live"}},
+        "triggers": [{"id": "manual", "type": "manual", "name": "Run now"}],
+    }
+    created = client.post("/api/plugins/haos/bots", json=bot, headers=headers)
+    check("POST bots == 200", created.status_code == 200, f"{created.status_code} {created.text[:160]}")
+    listed = client.get("/api/plugins/haos/bots", headers=headers)
+    check("GET bots lists seeded bot", any(x.get("id") == "bot-live" for x in (listed.json().get("bots", []) if listed.status_code == 200 else [])))
+    triggered = client.post("/api/plugins/haos/bots/bot-live/trigger", json={"routine": "manual", "goal": "live trigger"}, headers=headers)
+    check("POST trigger == 200", triggered.status_code == 200, f"{triggered.status_code} {triggered.text[:160]}")
+    submitted = client.post("/api/plugins/haos/bots/bot-live/submit", json={"routine": "manual", "goal": "live submit"}, headers=headers)
+    check("POST submit == 200", submitted.status_code == 200, f"{submitted.status_code} {submitted.text[:160]}")
+    if submitted.status_code == 200:
+        check("submit lifecycle is submitted", submitted.json().get("status") == "submitted", str(submitted.json()))
+    runs = client.get("/api/plugins/haos/bots/bot-live/runs", headers=headers)
+    check("GET runs == 200", runs.status_code == 200, f"{runs.status_code} {runs.text[:160]}")
+    if runs.status_code == 200:
+        statuses = {r.get("status") for r in runs.json().get("runs", [])}
+        check("runs include submitted", "submitted" in statuses, str(statuses))
 
     _step("Action ao vivo: POST /api/plugins/haos/dispatch roda card READY")
     disp = client.post("/api/plugins/haos/dispatch", json={}, headers=headers)

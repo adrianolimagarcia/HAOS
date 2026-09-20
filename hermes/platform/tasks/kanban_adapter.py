@@ -260,6 +260,7 @@ class KanbanAdapter:
         run.run_id = claimed.current_run_id
         run.started_at = float(claimed.started_at or time.time())
         self._store_run(task_id, run)
+        self._emit_run_event(task_id, "claimed", run=run, worker_id=worker_id)
         return True
 
     def heartbeat(self, task_id_or_spec: str, worker_id: Optional[str] = None) -> bool:
@@ -286,6 +287,7 @@ class KanbanAdapter:
             started_at=float(time.time()),
         )
         self._store_run(task_id, run)
+        self._emit_run_event(task_id, "claimed", run=run, worker_id=worker_id)
         return run
 
     def release_stale_claims(self) -> int:
@@ -789,6 +791,26 @@ class KanbanAdapter:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def _emit_run_event(self, task_id: str, event_type: str, *, run: Optional[TaskRun] = None, worker_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Project lifecycle metadata to the canonical EventStore sink only."""
+        if self.event_sink is None or not getattr(self.event_sink, "available", lambda: True)():
+            return
+        run = run or self._load_run(task_id)
+        payload = dict(metadata or {})
+        if run is not None:
+            payload.update({
+                "run_id": run.run_id, "worker_id": worker_id or run.worker_id,
+                "status": event_type, "model": run.resolved_model or run.model_profile_id,
+                "provider_chain": run.provider_chain, "started_at": run.started_at,
+                "duration_seconds": max(0.0, time.time() - run.started_at) if run.started_at else None,
+                "cost": (run.snapshot or {}).get("cost"), "tokens": (run.snapshot or {}).get("tokens"),
+            })
+        try:
+            from hermes.platform.observability.events import Event
+            self.event_sink.append_from_sync(Event(name=f"task.run.{event_type}", payload=payload, correlation_id=task_id, causation_id=str(getattr(run, "run_id", "") or ""), trust_level="internal"))
+        except Exception:
+            pass
+
     def record_run_event(self, task_id_or_spec: str, event_type: str,
                          payload: Optional[Dict[str, Any]] = None,
                          run_uid: Optional[str] = None) -> None:
@@ -918,6 +940,9 @@ def _spec_dict(spec: TaskSpec) -> Dict[str, Any]:
         "allow_posture_switch": getattr(spec, "allow_posture_switch", True),
         "allow_delegation": getattr(spec, "allow_delegation", True),
         "allow_child_tasks": getattr(spec, "allow_child_tasks", True),
+        # YOLO do console/chat: o claim path reconstrói o spec e a lane lê daqui
+        # para decidir o --yolo do worker spawnado.
+        "yolo_mode": bool(getattr(spec, "yolo_mode", False)),
         "expected_artifacts": list(getattr(spec, "expected_artifacts", [])),
         "tags": list(getattr(spec, "tags", [])),
         "version": spec.version,

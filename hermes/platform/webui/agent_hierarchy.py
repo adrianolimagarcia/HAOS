@@ -134,9 +134,30 @@ class AgentHierarchyStore:
             if turns < 1 or turns > int(self._data["discussion_limits"]["max_turns"]):
                 raise HierarchyError("max_turns is outside the configured limit")
 
+    @staticmethod
+    def _validate_model_binding(provider: str, model: str, profile: str = "") -> None:
+        """Validate configured bindings before mutating durable hierarchy state."""
+        from hermes.platform.models.model_resolver import ModelResolver, UnknownModelProfileError
+        provider, model, profile = (str(provider or "").strip(), str(model or "").strip(), str(profile or "").strip())
+        if not provider and not model and not profile:
+            return
+        resolver = ModelResolver()
+        if profile and profile in resolver._profiles:
+            resolved = resolver.resolve(profile)
+            if provider and provider not in {route.provider_id for route in resolved.routes}:
+                raise HierarchyError(f"provider {provider!r} is not configured for profile {profile!r}")
+        if model:
+            # A model may be either a configured profile id or a concrete route model.
+            if resolver.get(model) is None and not any(
+                model == route.provider_model_id for p in resolver._profiles.values() for route in p.routes
+            ):
+                raise HierarchyError(f"unknown configured model/profile {model!r}")
+
     def set_bot_model(self, provider: str, model: str) -> dict[str, Any]:
         with self._lock:
-            self._data["bot_model"] = {"provider": str(provider).strip(), "model": str(model).strip()}
+            provider, model = str(provider).strip(), str(model).strip()
+            self._validate_model_binding(provider, model)
+            self._data["bot_model"] = {"provider": provider, "model": model}
             self._save()
             return dict(self._data["bot_model"])
 
@@ -146,10 +167,22 @@ class AgentHierarchyStore:
             toolsets_raw = payload.get("toolsets")
             toolsets = [str(t).strip() for t in toolsets_raw if str(t).strip()] if isinstance(toolsets_raw, list) else None
             yolo_mode = bool(payload.get("yolo_mode", False))
+            role = str(payload.get("role") or "bot").strip().lower()
+
+            # Se o nó for Master e ativou YOLO, propaga para todos os outros nós da frota
+            if role == "master" and yolo_mode:
+                for other_node in self._data["nodes"]:
+                    if other_node.get("id") != ident:
+                        other_node["yolo_mode"] = True
+
+            provider = str(payload.get("provider") or "").strip()
+            model = str(payload.get("model") or "").strip()
+            profile = str(payload.get("profile") or "").strip()
+            self._validate_model_binding(provider, model, profile)
             node = {
                 "id": ident,
                 "name": str(payload.get("name") or ident).strip(),
-                "role": str(payload.get("role") or "bot").strip().lower(),
+                "role": role,
                 "parent_id": payload.get("parent_id") or None,
                 "provider": str(payload.get("provider") or "").strip(),
                 "model": str(payload.get("model") or "").strip(),

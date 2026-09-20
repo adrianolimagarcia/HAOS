@@ -311,3 +311,10 @@ native/fts5_cjk/*.so
 .haos/
 # Credenciais locais dos MCPs direct (nunca versionar; ver README do WORK)
 /cookies/
+
+# Rust build artifacts (regenerable — never commit). Os sub-pacotes antigos
+# (haos-edge, haos-dns) ja tinham /target/ no proprio .gitignore; o workspace da
+# raiz e os pacotes novos (haos-health-agent, haos-protocol-client) nao tinham,
+# e um `git add -A` levaria 184 MB + 64 MB + 59 MB de binarios para sempre no
+# historico. Nenhum arquivo rastreado vive sob um target/.
+target/

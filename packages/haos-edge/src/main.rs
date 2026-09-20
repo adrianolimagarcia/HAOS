@@ -1,9 +1,16 @@
 mod auth;
+pub mod blast_analyzer;
+pub mod cancel_registry;
+pub mod context_hasher;
 mod db;
+pub mod event_hub;
+pub mod loop_detector;
 mod mcp;
 mod pty;
 mod server;
 mod supervisor;
+pub mod vector_search;
+pub mod worktree_engine;
 
 use clap::{Parser, Subcommand};
 use db::DbHelper;

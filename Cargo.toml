@@ -1,0 +1,3 @@
+[workspace]
+members = ["packages/haos-exec", "packages/haos-secret-broker", "packages/haos-event-bridge", "packages/haos-file-engine", "packages/haos-health-agent", "packages/haos-protocol-client"]
+resolver = "2"

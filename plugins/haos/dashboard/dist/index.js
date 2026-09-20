@@ -62,6 +62,7 @@
   const AGENT_CONFIG_URL = "/api/plugins/haos/agent-config";
   const TERMINAL_URL = "/api/plugins/haos/terminal";
   const EVENTS_URL = "/api/plugins/haos/events";
+  const BOTS_URL = "/api/plugins/haos/bots";
 
   // -------------------------------------------------------------------------
   // Small helpers
@@ -1981,6 +1982,22 @@
   }
 
 
+  function BotsSection(props) {
+    const bots = props.bots || [];
+    return h(Card, null, h(CardHeader, null, h(CardTitle, null, "🤖 Bots")), h(CardContent, null,
+      bots.length ? bots.map(function (bot) {
+        const id = bot.id; const paused = Boolean(bot.paused);
+        const runs = bot.runs || [];
+        return h("div", { key: id, style: { padding: "10px", borderBottom: "1px solid rgba(126,153,220,0.2)" } },
+          h("strong", null, bot.name || id), h("span", { style: { marginLeft: "8px", opacity: 0.75 } }, paused ? "paused" : (bot.status || "active")),
+          h("div", { style: { display: "flex", gap: "6px", marginTop: "6px", flexWrap: "wrap" } },
+            h("button", { className: "hermes-haos-btn", disabled: props.busy, onClick: function () { props.action(id, paused ? "resume" : "pause"); } }, paused ? "Resume" : "Pause"),
+            h("button", { className: "hermes-haos-btn", disabled: props.busy, onClick: function () { props.trigger(id); } }, "Trigger routine")),
+          h("div", { style: { fontSize: "0.8rem", opacity: 0.75, marginTop: "6px" } }, runs.length ? "Runs: " + runs.length : "No runs"),
+          runs.slice(0, 5).map(function (run, i) { return h("div", { key: i, style: { fontSize: "0.75rem", opacity: 0.7 } }, String(run.status || run.state || "run") + " · " + String(run.id || "")); }));
+      }) : h("p", null, "No bots registered.")));
+  }
+
   // -------------------------------------------------------------------------
   // Main page
   // -------------------------------------------------------------------------
@@ -2002,6 +2019,10 @@
     const [selectedTask, setSelectedTask] = useState(null);
     // Delta 56: sub-tabs de navegação dentro do HAOS Dataplane
     const [activeTab, setActiveTab] = useState("overview");
+    const [bots, setBots] = useState([]);
+    function loadBots() { return SDK.fetchJSON(BOTS_URL).then(function (d) { return Promise.all((d.bots || []).map(function (b) { return SDK.fetchJSON(BOTS_URL + "/" + encodeURIComponent(b.id) + "/runs").then(function (r) { b.runs = r.runs || []; return b; }); })).then(setBots); }); }
+    function botAction(id, action) { runAction("bot " + action, BOTS_URL + "/" + encodeURIComponent(id) + "/" + action); }
+    function triggerBot(id) { runAction("routine", BOTS_URL + "/" + encodeURIComponent(id) + "/trigger", { routine: "default", goal: "manual dashboard trigger" }); }
 
     // Esc fecha modais (Sistema & Config e Detalhes da Tarefa).
     useEffect(function () {
@@ -2028,6 +2049,7 @@
 
     useEffect(function () {
       loadState();
+      loadBots().catch(function () {});
       // Auto-refresh no browser: consulta o estado a cada 5 segundos para refletir
       // mudanças do Kanban, novos eventos e conclusões de tarefas sem precisar de reload.
       if (typeof window !== "undefined" && typeof window.setInterval === "function") {
@@ -2188,6 +2210,7 @@
           { id: "resilience", label: "⚡ Failover & Fabric" },
           { id: "console", label: "⌨ Console" },
           { id: "taskboard", label: "▤ Taskboard & Scheduler" },
+          { id: "bots", label: "🤖 Bots" },
           { id: "graph", label: "🕸️ Knowledge Graph" },
           { id: "terminal", label: "▮ Terminal" },
           { id: "events", label: "≡ Eventos" },
@@ -2227,6 +2250,10 @@
             h(NewTaskCard, { onCreated: loadState, onDispatch: onDispatch, dispatchDisabled: dispatchDisabled }),
             TaskboardSection(taskboard, setSelectedTask),
             SchedulerSection(payload.critical_path, payload.concurrency))
+        : (activeTab === "bots")
+        ? h("div", { className: "hermes-haos-grid" },
+            h(BotsSection, { bots: bots, busy: Boolean(busy), action: botAction, trigger: triggerBot }))
+
         : (activeTab === "graph")
         ? h("div", { className: "hermes-haos-grid" },
             h(KnowledgeGraphSection, null))

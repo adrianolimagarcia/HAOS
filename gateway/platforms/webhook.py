@@ -501,6 +501,43 @@ class WebhookAdapter(BasePlatformAdapter):
                        delivery["deliver"], result.error)
         return web.json_response(failed, status=502)
 
+    async def _handle_bot_trigger(self, prompt: str, payload: Any, route_config: dict, route_name: str,
+                                  event_type: str, delivery_id: str, profile: Optional[str] = None) -> "web.Response":
+        """Submit an authenticated webhook event through BotSpec into Kanban."""
+        try:
+            from hermes.platform.bots.manager import BotSpecManager
+            from hermes.platform.observability.event_store import get_event_store
+            manager = BotSpecManager(get_event_store())
+            bot_id = str(route_config.get("bot_id", ""))
+            routine = str(route_config.get("routine", ""))
+            if not bot_id:
+                return _json_error("Webhook bot_id is required", 400)
+            spec = manager.get(bot_id)
+            if spec is None:
+                return _json_error("BotSpec not found", 404)
+            if manager.is_paused(bot_id):
+                return _json_error("BotSpec is paused", 409)
+            if routine not in spec.routines:
+                return _json_error("BotSpec routine not found", 404)
+            goal = prompt or json.dumps(payload, sort_keys=True, default=str)
+            task = manager.submit_routine(
+                bot_id, routine, goal, webhook_event=event_type, idempotency_key=delivery_id,
+            )
+            adapter = getattr(self.gateway_runner, "kanban_adapter", None)
+            if adapter is None:
+                return _json_error("Kanban adapter unavailable", 503)
+            task_id = adapter.save_task(task)
+            manager.record_run(bot_id, routine, task_id, "submitted", delivery_id=delivery_id)
+            return web.json_response({"status": "accepted", "route": route_name, "bot_id": bot_id,
+                                      "routine": routine, "task_id": task_id, "delivery_id": delivery_id}, status=202)
+        except KeyError:
+            return _json_error("BotSpec routine not found", 404)
+        except RuntimeError:
+            return _json_error("BotSpec is paused", 409)
+        except Exception:
+            logger.exception("[webhook] BotSpec trigger failed route=%s", route_name)
+            return _json_error("BotSpec submission failed", 500)
+
     def _handle_cron_trigger(self, prompt: str, route_config: dict, route_name: str, event_type: str,
                              delivery_id: str, profile: Optional[str] = None) -> "web.Response":
         """cron_job: fire an EXISTING cron job on this event instead of starting a webhook agent session.
@@ -616,12 +653,18 @@ class WebhookAdapter(BasePlatformAdapter):
                 prompt = self._apply_skills(prompt, skills)
         delivery_id = headers.get("X-GitHub-Delivery", headers.get("svix-id", headers.get(
             "webhook-id", headers.get("X-Request-ID", str(int(time.time() * 1000))))))
+        # The delivery identifier becomes part of the session key and in-memory ledgers; bound it
+        # before any persistence/logging to prevent attacker-controlled memory growth and log abuse.
+        if len(delivery_id) > 256:
+            return _json_error("Delivery ID too long", 400)
         now = time.time()  # idempotency: skip duplicate deliveries (webhook retries)
         if not self._record_delivery_id(delivery_id, now):
             logger.info("[webhook] Skipping duplicate delivery %s", delivery_id)
             return web.json_response({"status": "duplicate", "delivery_id": delivery_id}, status=200)
         if route_config.get("cron_job"):
             return self._handle_cron_trigger(prompt, route_config, route_name, event_type, delivery_id, profile)
+        if route_config.get("bot_id") or route_config.get("routine"):
+            return await self._handle_bot_trigger(prompt, payload, route_config, route_name, event_type, delivery_id, profile)
         if route_config.get("deliver_only"):
             return await self._handle_deliver_only(prompt, payload, route_config, route_name, event_type, delivery_id,
                                                    profile)

@@ -67,18 +67,25 @@ export function webPresetFromShared(
 
 export const defaultTheme: DashboardTheme = {
   name: "default",
-  label: "HAOS Teal",
-  description: "Classic dark teal — the canonical HAOS look",
+  label: "Liquid Glass Light",
+  description: "Light monochrome acrylic glass with soft ambient depth",
   palette: {
-    background: { hex: "#041c1c", alpha: 1 },
-    midground: { hex: "#ffe6cb", alpha: 1 },
+    background: { hex: "#f1f4f9", alpha: 1 },
+    midground: { hex: "#0f172a", alpha: 1 },
     foreground: { hex: "#ffffff", alpha: 0 },
-    warmGlow: "rgba(255, 189, 56, 0.35)",
-    noiseOpacity: 1,
+    warmGlow: "rgba(148, 163, 184, 0.28)",
+    noiseOpacity: 0.45,
   },
-  typography: DEFAULT_TYPOGRAPHY,
-  layout: DEFAULT_LAYOUT,
-  terminalBackground: "#000000",
+  typography: {
+    ...DEFAULT_TYPOGRAPHY,
+    fontSans: '"Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif',
+    fontUrl:
+      "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap",
+    letterSpacing: "-0.01em",
+  },
+  layout: { ...DEFAULT_LAYOUT, radius: "0.85rem" },
+  terminalBackground: "#e8ecf4",
+  terminalForeground: "#0f172a",
 };
 
 export const midnightTheme: DashboardTheme = {

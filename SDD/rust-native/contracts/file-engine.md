@@ -1,0 +1,3 @@
+# File engine contract
+
+Operations are `stat`, `read`, `write`, `list`, and `delete`, each carrying a capability, canonical root ID, relative path, size limit, and deadline. Absolute paths, traversal, NUL bytes, and symlink escapes are rejected. Resolution and authorization occur together using directory handles or equivalent race-resistant APIs. Reads/writes are bounded (default 16 MiB per operation); directory listings return at most 1,000 entries. Writes are atomic where supported and never follow an untrusted symlink. Errors disclose logical root and operation, not host paths. Ownership: the engine owns file I/O and quota accounting; callers own transaction/retry policy.

@@ -183,6 +183,30 @@ class SQLiteVectorIndex:
         query = tuple(float(value) for value in query_vector)
         if not query:
             return []
+
+        # Tentativa de Aceleração Nativa em Rust via haos-edge
+        try:
+            import urllib.request
+            req_data = json.dumps({
+                "query_vector": list(query),
+                "model_version": self.model_version,
+                "limit": limit,
+                "db_path": str(self.path)
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "http://127.0.0.1:8788/api/memory/vector-search",
+                data=req_data,
+                headers={"Content-Type": "application/json"}
+            )
+            # Timeout curto para fail-fast se o daemon Rust não estiver no ar
+            with urllib.request.urlopen(req, timeout=0.15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok") and "results" in data:
+                    return [item["record_id"] for item in data["results"][:limit]]
+        except Exception:
+            pass  # Fallback gracioso para o cálculo local em Python
+
+        # Algoritmo Base Local (Fallback)
         qnorm = math.sqrt(sum(value * value for value in query))
         if not qnorm:
             return []
