@@ -200,8 +200,84 @@ class HAOSStandaloneState:
         threading.Thread(target=_spawn_pool, daemon=True).start()
         return True
 
+    def reap_stale_tasks(self) -> int:
+        """Auto-reparo de cards zumbis (status=running cujo processo/claim já expirou ou morreu)."""
+        now = time.time()
+        conn = self.kanban._connect()
+        # Busca tarefas running com claim expirado ou processo morto
+        rows = conn.execute(
+            "SELECT id, claim_lock, claim_expires, worker_pid, workspace_path FROM tasks WHERE status = 'running'"
+        ).fetchall()
+        reaped = 0
+        for r in rows:
+            tid = r["id"]
+            expires = r["claim_expires"]
+            pid = r["worker_pid"]
+            ws_path = r["workspace_path"]
+            is_dead = False
+
+            # 1. Se tem pid no disco/banco, testa se o processo do worker ainda vive
+            if not pid and ws_path:
+                pid_f = Path(ws_path) / ".haos" / "pid.txt"
+                if pid_f.is_file():
+                    try:
+                        pid = int(pid_f.read_text(encoding="utf-8").strip())
+                    except Exception:
+                        pass
+
+            if pid:
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    is_dead = True
+            elif expires and now > expires:
+                is_dead = True
+
+            if is_dead:
+                # Verifica se há resultado salvo no disco antes de marcar falha
+                has_res = False
+                summary = ""
+                if ws_path:
+                    res_f = Path(ws_path) / ".haos" / "result.json"
+                    if res_f.is_file():
+                        try:
+                            res_data = json.loads(res_f.read_text(encoding="utf-8"))
+                            summary = res_data.get("summary", "")
+                            has_res = bool(summary)
+                        except Exception:
+                            pass
+
+                if has_res:
+                    conn.execute(
+                        "UPDATE tasks SET status = 'done', claim_lock = NULL, claim_expires = NULL, completed_at = ? WHERE id = ?",
+                        (int(now), tid),
+                    )
+                    conn.execute(
+                        "UPDATE haos_task_runs SET status = 'ended', exit_reason = 'completed', ended_at = ? WHERE task_id = ? AND status = 'running'",
+                        (now, tid),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE tasks SET status = 'failed', claim_lock = NULL, claim_expires = NULL, last_failure_error = 'Worker process terminated unexpectedly (reaped by supervisor)', completed_at = ? WHERE id = ?",
+                        (int(now), tid),
+                    )
+                    conn.execute(
+                        "UPDATE haos_task_runs SET status = 'ended', exit_reason = 'worker_crash', ended_at = ? WHERE task_id = ? AND status = 'running'",
+                        (now, tid),
+                    )
+                reaped += 1
+        if reaped > 0:
+            conn.commit()
+            logger.info("Reaper: %d stale running tasks auto-repaired.", reaped)
+        return reaped
+
     # ------------------------------------------------------------------ #
     def state_payload(self) -> Dict[str, Any]:
+        # Drena e auto-repara tarefas zumbis antes de compor o payload de estado
+        try:
+            self.reap_stale_tasks()
+        except Exception:
+            pass
         payload = dashboard_payload(self.stats)
         payload["evolution_pending"] = self.ledger.pending()
         history = self.ledger.history()
@@ -338,9 +414,21 @@ class HAOSStandaloneState:
                     pass
 
         # Se não houver worker.log no disco (workspace já desalocado), injeta o summary como log
-        if not log_content and task.get("result"):
-            r = task["result"]
-            summary = getattr(r, "summary", "") or (r.get("summary", "") if isinstance(r, dict) else "")
+        # Busca no task["result"] ou faz fallback no event_store
+        if not log_content:
+            summary = ""
+            if task.get("result"):
+                r = task["result"]
+                summary = getattr(r, "summary", "") or (r.get("summary", "") if isinstance(r, dict) else "")
+            if not summary:
+                # Busca no EventStore pelo evento task.run.completed. O store só
+                # filtra por nome/limite, então o correlation_id é conferido aqui.
+                evs = self.event_store.get_all(name="task.run.completed", limit=200)
+                for ev in reversed(evs):
+                    if ev.correlation_id == task_id and isinstance(ev.payload, dict):
+                        summary = ev.payload.get("summary", "")
+                        if summary:
+                            break
             if summary:
                 log_content = f"=== [RELATÓRIO HISTÓRICO DA TAREFA: {task_id}] ===\n\n{summary}\n"
         return {
@@ -977,13 +1065,23 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
 
         body = self._read_json_body()
         ident = str(body.get('identifier') or body.get('name') or '').strip()
+        catalog_name = str(body.get('catalog_name') or '').strip()
         force = bool(body.get('force', False))
-        if not ident:
+        enable = bool(body.get('enable', True))
+        if not ident and not catalog_name:
             self._send_json(400, {'error': 'identifier_required'})
             return
 
+        # The hub grid only offers curated rows, so a bare name is a catalog
+        # entry — resolve it through catalog_name so the pinned SHA and the kill
+        # list apply instead of treating it as a (invalid) bare git source.
+        if not catalog_name and ident and '/' not in ident and not ident.startswith(
+                ('http://', 'https://', 'ssh://', 'git@', 'file://')):
+            catalog_name, ident = ident, ''
+
         try:
-            res = dashboard_install_plugin(ident, force=force)
+            res = dashboard_install_plugin(
+                ident, force=force, enable=enable, catalog_name=catalog_name or None)
             self._send_json(200, res)
         except Exception as exc:
             self._send_json(500, {'error': str(exc)})

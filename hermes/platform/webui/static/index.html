@@ -1497,24 +1497,6 @@
        </details>
      </div>
 
-     <!-- Dialogs Nativos macOS Glassmorphic (Substitui window.prompt, alert e confirm) -->
-     <div id="macModalOverlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.4);z-index:100000;align-items:center;justify-content:center;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);">
-       <div id="macModalWindow" style="background:rgba(255, 255, 255, 0.95);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(15,23,42,0.12);border-radius:16px;width:90%;max-width:460px;box-shadow:var(--glass-shadow-lg);display:flex;flex-direction:column;overflow:hidden;">
-         <div style="padding:18px 22px 12px 22px;display:flex;align-items:center;gap:12px;">
-           <span id="macModalIcon" style="font-size:1.8rem;filter:drop-shadow(0 2px 4px rgba(15,23,42,0.15));"></span>
-           <div style="flex:1;">
-             <h3 id="macModalTitle" style="font-size:0.98rem;color:var(--text-strong);font-weight:700;margin:0 0 4px 0;letter-spacing:-0.01em;">Confirmação</h3>
-             <div id="macModalMessage" style="font-size:0.82rem;color:var(--muted);line-height:1.45;">Mensagem do sistema</div>
-           </div>
-         </div>
-         <div id="macModalInputWrap" style="padding:0 22px 16px 22px;display:none;">
-           <input type="text" id="macModalInput" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.95);border:1px solid rgba(15,23,42,0.16);border-radius:8px;padding:8px 12px;color:var(--text-strong);font-size:0.86rem;outline:none;font-family:inherit;transition:border-color 0.2s;" onkeydown="if(event.key==='Enter') macModalSubmit(); if(event.key==='Escape') macModalCancel();" />
-         </div>
-         <div style="display:flex;justify-content:flex-end;gap:10px;padding:12px 22px;background:rgba(248,250,252,0.85);border-top:1px solid rgba(15,23,42,0.08);">
-           <button id="macModalCancelBtn" type="button" onclick="macModalCancel()" style="background:rgba(255,255,255,0.9);border:1px solid rgba(15,23,42,0.12);color:var(--muted);padding:6px 14px;border-radius:8px;font-size:0.82rem;cursor:pointer;font-weight:500;transition:all 0.15s;">Cancelar</button>
-           <button id="macModalConfirmBtn" type="button" onclick="macModalSubmit()" style="background:linear-gradient(135deg, #0d9488 0%, #0f766e 100%);border:none;color:#ffffff;padding:6px 18px;border-radius:8px;font-size:0.82rem;cursor:pointer;font-weight:600;box-shadow:0 2px 10px rgba(13,148,136,0.3);transition:all 0.15s;">Confirmar</button>
-         </div>
-       </div>
      </div>
 
      <!-- Modal macOS de Edição de Código HTML/JS do Microapp -->
@@ -2197,8 +2179,54 @@
     </div>
   </section>
 </main>
+
+     <!-- Dialogs Nativos macOS Glassmorphic (Substitui window.prompt, alert e confirm) -->
+     <div id="macModalOverlay" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.4);z-index:100000;align-items:center;justify-content:center;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);">
+       <div id="macModalWindow" style="background:rgba(255, 255, 255, 0.95);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(15,23,42,0.12);border-radius:16px;width:90%;max-width:460px;box-shadow:var(--glass-shadow-lg);display:flex;flex-direction:column;overflow:hidden;">
+         <div style="padding:18px 22px 12px 22px;display:flex;align-items:center;gap:12px;">
+           <span id="macModalIcon" style="font-size:1.8rem;filter:drop-shadow(0 2px 4px rgba(15,23,42,0.15));"></span>
+           <div style="flex:1;">
+             <h3 id="macModalTitle" style="font-size:0.98rem;color:var(--text-strong);font-weight:700;margin:0 0 4px 0;letter-spacing:-0.01em;">Confirmação</h3>
+             <div id="macModalMessage" style="font-size:0.82rem;color:var(--muted);line-height:1.45;">Mensagem do sistema</div>
+           </div>
+         </div>
+         <div id="macModalInputWrap" style="padding:0 22px 16px 22px;display:none;">
+           <input type="text" id="macModalInput" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.95);border:1px solid rgba(15,23,42,0.16);border-radius:8px;padding:8px 12px;color:var(--text-strong);font-size:0.86rem;outline:none;font-family:inherit;transition:border-color 0.2s;" onkeydown="if(event.key==='Enter') macModalSubmit(); if(event.key==='Escape') macModalCancel();" />
+         </div>
+         <div style="display:flex;justify-content:flex-end;gap:10px;padding:12px 22px;background:rgba(248,250,252,0.85);border-top:1px solid rgba(15,23,42,0.08);">
+           <button id="macModalCancelBtn" type="button" onclick="macModalCancel()" style="background:rgba(255,255,255,0.9);border:1px solid rgba(15,23,42,0.12);color:var(--muted);padding:6px 14px;border-radius:8px;font-size:0.82rem;cursor:pointer;font-weight:500;transition:all 0.15s;">Cancelar</button>
+           <button id="macModalConfirmBtn" type="button" onclick="macModalSubmit()" style="background:linear-gradient(135deg, #0d9488 0%, #0f766e 100%);border:none;color:#ffffff;padding:6px 18px;border-radius:8px;font-size:0.82rem;cursor:pointer;font-weight:600;box-shadow:0 2px 10px rgba(13,148,136,0.3);transition:all 0.15s;">Confirmar</button>
+         </div>
+       </div>
+
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<!-- ============ MODAL: RELATÓRIO DE ENTREGA DA TAREFA ============ -->
+<div id="taskReportModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.6);z-index:10005;align-items:center;justify-content:center;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);">
+  <div style="background:rgba(255,255,255,0.98);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(15,23,42,0.18);border-radius:16px;width:820px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:var(--glass-shadow-lg);overflow:hidden;">
+    <div style="padding:14px 18px;border-bottom:1px solid rgba(15,23,42,0.08);display:flex;justify-content:space-between;align-items:center;background:rgba(248,250,252,0.95);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:1.2rem;">📋</span>
+        <div>
+          <h3 id="taskReportTitle" style="margin:0;font-size:1rem;color:var(--text);font-weight:700;">Relatório de Entrega</h3>
+          <span id="taskReportMeta" style="font-size:0.75rem;color:var(--muted);font-family:var(--mono);">task_id: —</span>
+        </div>
+      </div>
+      <button class="act" style="padding:4px 10px;font-size:0.9rem;" onclick="closeTaskReportModal()">✕</button>
+    </div>
+    <div id="taskReportContent" style="padding:20px;overflow-y:auto;flex:1;font-size:0.88rem;line-height:1.6;color:#1e293b;background:#ffffff;">
+      <div style="text-align:center;padding:40px;color:var(--muted);">Carregando relatório...</div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid rgba(15,23,42,0.08);display:flex;justify-content:space-between;align-items:center;background:rgba(248,250,252,0.95);">
+      <span id="taskReportStatusBadge" style="font-size:0.75rem;"></span>
+      <div style="display:flex;gap:8px;">
+        <button class="act" onclick="copyTaskReportText()">📋 Copiar Texto</button>
+        <button class="act primary" onclick="closeTaskReportModal()" style="background:#00F0FF;color:#0a0d13;font-weight:700;">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL: NOVA MISSÃO (TASKBOARD) ============ -->
 <div id="newTaskModal" style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(15,23,42,0.4);z-index:10000;align-items:center;justify-content:center;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);">
   <div style="background:rgba(255,255,255,0.96);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(15,23,42,0.14);border-radius:16px;width:580px;max-width:92vw;display:flex;flex-direction:column;box-shadow:var(--glass-shadow-lg);overflow:hidden;">
@@ -2505,6 +2533,7 @@ function renderTaskboard(tb) {
           <div class="k-card-actions">
             <button class="act" onclick="attachConsoleToTask('${esc(t.id)}')">📡 Stream</button>
             <button class="act" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">▮ Term</button>
+            <button class="act primary" onclick="openTaskReportModal('${esc(t.id)}')">📄 Relatório</button>
             ${isRunning
               ? `<button class="act danger" onclick="triggerTaskAction('${esc(t.id)}', 'cancel')">⏹ Parar</button>`
               : `<button class="act" onclick="triggerTaskAction('${esc(t.id)}', 'requeue')">↺ Repetir</button>`
@@ -2550,6 +2579,7 @@ function renderTaskboard(tb) {
       <td>
         <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="attachConsoleToTask('${esc(t.id)}')">Stream</button>
         <button class="act" style="font-size:0.7rem;padding:2px 6px;" onclick="openTaskTerminal('${esc(t.id)}', '${esc(t.title || goal || '').replace(/'/g, "\\'")}')">Term</button>
+        <button class="act primary" style="font-size:0.7rem;padding:2px 6px;" onclick="openTaskReportModal('${esc(t.id)}')">Relatório</button>
         <button class="act danger" style="font-size:0.7rem;padding:2px 6px;" onclick="deleteTaskCard('${esc(t.id)}')">🗑️</button>
       </td>
     </tr>`;
@@ -2586,6 +2616,98 @@ async function resetAllKanban() {
   } catch (err) {
     alert("Erro ao resetar Kanban: " + err.message);
   }
+}
+
+// ---- Task Report Modal (Entrega da Missão) ----------------------------
+let currentTaskReportRaw = "";
+
+async function openTaskReportModal(taskId) {
+  try {
+    const modal = document.getElementById("taskReportModal");
+    if (!modal) {
+      console.error("Modal taskReportModal não encontrado no DOM!");
+      alert("Modal de relatório não encontrado na página.");
+      return;
+    }
+    modal.style.display = "flex";
+    const titleEl = document.getElementById("taskReportTitle");
+    const metaEl = document.getElementById("taskReportMeta");
+    const contentEl = document.getElementById("taskReportContent");
+    const badgeEl = document.getElementById("taskReportStatusBadge");
+
+    if (titleEl) titleEl.textContent = "Carregando relatório...";
+    if (metaEl) metaEl.textContent = `task_id: ${taskId}`;
+    if (contentEl) contentEl.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted);"><span class="spin">↻</span> Buscando evidências e relatório de entrega...</div>`;
+    if (badgeEl) badgeEl.innerHTML = "";
+    currentTaskReportRaw = "";
+
+    const res = await api(`/api/tasks/${taskId}`);
+    if (!res) throw new Error("Tarefa não encontrada.");
+
+    const title = res.title || res.goal || `Tarefa ${taskId}`;
+    const status = (res.status || "desconhecido").toUpperCase();
+    const worker = res.assignee || (res.run && res.run.worker_id) || "The Eye";
+    const elapsed = res.elapsed_seconds ? `${res.elapsed_seconds}s` : "—";
+    
+    if (titleEl) titleEl.textContent = title;
+    if (metaEl) metaEl.textContent = `ID: ${taskId} · Worker: ${worker} · Tempo: ${elapsed}`;
+    
+    const badgeClass = res.status === "done" ? "ok" : (res.status === "running" ? "info" : "err");
+    if (badgeEl) badgeEl.innerHTML = `<b class="${badgeClass}" style="padding:3px 8px;border-radius:6px;">STATUS: ${esc(status)}</b>`;
+
+    let reportText = "";
+    // 1. Tenta pegar do result.summary
+    if (res.result) {
+      if (typeof res.result === "string") {
+        try {
+          const parsed = JSON.parse(res.result);
+          reportText = parsed.summary || "";
+        } catch (_) {
+          reportText = res.result;
+        }
+      } else if (typeof res.result.summary === "string" && res.result.summary.trim()) {
+        reportText = res.result.summary.trim();
+      }
+    }
+    // 2. Se não, tenta pegar do log_tail
+    if (!reportText && res.log_tail && typeof res.log_tail === "string" && res.log_tail.trim()) {
+      reportText = res.log_tail.trim();
+    }
+    // 3. Se não, busca o goal
+    if (!reportText) {
+      reportText = `*Nenhum relatório textual detalhado foi registrado pela lane.*\n\n**Objetivo original:**\n${res.goal || "—"}`;
+    }
+
+    currentTaskReportRaw = reportText;
+    const formattedHtml = typeof formatChatMarkdown === "function" ? formatChatMarkdown(reportText) : esc(reportText);
+    if (contentEl) {
+      contentEl.innerHTML = `
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:12px;font-family:inherit;">
+          ${formattedHtml}
+        </div>
+      `;
+    }
+  } catch (err) {
+    console.error("Erro ao abrir relatório da tarefa:", err);
+    const titleEl = document.getElementById("taskReportTitle");
+    const contentEl = document.getElementById("taskReportContent");
+    if (titleEl) titleEl.textContent = "Erro ao carregar relatório";
+    if (contentEl) contentEl.innerHTML = `<div class="errline" style="padding:20px;">Falha ao carregar detalhes: ${esc(err.message)}</div>`;
+  }
+}
+
+function closeTaskReportModal() {
+  const modal = $("taskReportModal");
+  if (modal) modal.style.display = "none";
+}
+
+function copyTaskReportText() {
+  if (!currentTaskReportRaw) return;
+  navigator.clipboard.writeText(currentTaskReportRaw).then(() => {
+    alert("Relatório copiado para a área de transferência!");
+  }).catch(() => {
+    prompt("Copie o relatório:", currentTaskReportRaw);
+  });
 }
 
 // ---- team graph (phase 5) ---------------------------------------------
@@ -5232,7 +5354,10 @@ function followPendingTasks(tb) {
         "engine",
         `<div class="meta">HAOS · ${esc(tid)}</div>
          <b class="${badgeClass}">${esc(status.toUpperCase())}</b> — ${renderedOutcome}
-         <div class="ev">worker=${esc((t.run || {}).worker_id || "—")}</div>`,
+         <div class="ev" style="margin-top:6px;">
+           <span>worker=${esc((t.run || {}).worker_id || "—")}</span>
+           <button class="act primary" style="padding:2px 8px;font-size:0.75rem;margin-left:8px;" onclick="openTaskReportModal('${esc(tid)}')">📄 Ver Relatório Completo</button>
+         </div>`,
         botName,
         status === "done" ? "✅" : "⚠️",
         true
@@ -6327,58 +6452,91 @@ function renderPluginCard(p) {
 // Ações de Instalação e Desinstalação
 // ----------------------------------------------------------------------------
 async function installSkill(skillName) {
-  const confirmed = await showMacConfirm(`Deseja baixar, inspecionar e instalar a skill "${skillName}" no agent?`, "A operação fará download e executará a inspeção de segurança.");
+  const confirmed = await showMacConfirm(`Instalar a skill "${skillName}" no agent?`, "A operação fará download e executará a inspeção de segurança.");
   if (!confirmed) return;
   const summary = $('hubStatusSummary');
   if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando skill ${esc(skillName)}...</span>`;
   try {
     const res = await fetch('/api/skills/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: skillName, force: false })
     });
     const data = await res.json();
-    if (!res.ok || data.error) { await showMacAlert(`Falha ao instalar skill: ${data.error || 'Erro desconhecido'}`); return; }
-    await showMacAlert(`Skill "${skillName}" instalada com sucesso! Veredito de segurança: ${data.verdict || 'safe'}`);
+    if (!res.ok || data.error) {
+      await showMacAlert('Falha ao instalar skill', data.error || 'Erro desconhecido');
+      return;
+    }
+    await showMacAlert(`Skill "${skillName}" instalada`, `Veredito de segurança: ${data.verdict || 'safe'}`);
     await loadHubCatalog();
-  } catch (err) { await showMacAlert(`Erro na requisição: ${err.message || err}`); }
+  } catch (err) {
+    await showMacAlert('Falha ao instalar skill', String(err.message || err));
+  }
 }
 
 async function uninstallSkill(skillName) {
-  showMacConfirm(`Tem certeza que deseja remover a skill "${skillName}" do agent?`, async () => {
-    try {
-      const res = await fetch('/api/skills/uninstall', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: skillName })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        showMacAlert(`Falha ao desinstalar skill: ${data.error || 'Erro desconhecido'}`);
-        return;
-      }
-      showMacAlert(`Skill "${skillName}" removida.`);
-      await loadHubCatalog();
-    } catch (err) {
-      showMacAlert(`Erro: ${err.message || err}`);
+  const confirmed = await showMacConfirm(`Remover a skill "${skillName}" do agent?`, "Os arquivos da skill serão apagados.");
+  if (!confirmed) return;
+  try {
+    const res = await fetch('/api/skills/uninstall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: skillName })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      await showMacAlert('Falha ao desinstalar skill', data.error || 'Erro desconhecido');
+      return;
     }
-  });
+    await showMacAlert(`Skill "${skillName}" removida`, '');
+    await loadHubCatalog();
+  } catch (err) {
+    await showMacAlert('Falha ao desinstalar skill', String(err.message || err));
+  }
 }
 
 async function installPlugin(pluginName) {
-  const confirmed = await showMacConfirm(`Deseja clonar e instalar a extensão de plugin "${pluginName}" no agent?`, "A operação fará download do plugin.");
+  const confirmed = await showMacConfirm(`Instalar o plugin "${pluginName}" no agent?`, "A operação fará download do plugin e pode levar alguns segundos.");
   if (!confirmed) return;
   const summary = $('hubStatusSummary');
   if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando plugin ${esc(pluginName)}... Isso pode levar alguns segundos.</span>`;
   try {
     const res = await fetch('/api/plugins/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: pluginName, force: false })
     });
     const data = await res.json();
-    if (!res.ok || data.error || (data.ok === false)) { await showMacAlert(`Falha ao instalar plugin: ${data.error || data.message || 'Erro desconhecido'}`); return; }
-    await showMacAlert(`Plugin "${pluginName}" instalado com sucesso!`);
+    if (!res.ok || data.error || (data.ok === false)) {
+      await showMacAlert('Falha ao instalar plugin', data.error || data.message || 'Erro desconhecido');
+      return;
+    }
+    await showMacAlert(`Plugin "${pluginName}" instalado`, (data.warnings || []).join('\n') || '');
     await loadHubCatalog();
-  } catch (err) { await showMacAlert(`Erro na requisição: ${err.message || err}`); }
+  } catch (err) {
+    await showMacAlert('Falha ao instalar plugin', String(err.message || err));
+  }
+}
+
+async function uninstallPlugin(pluginName) {
+  const confirmed = await showMacConfirm(`Remover o plugin "${pluginName}"?`, "O plugin e seus arquivos locais serão apagados.");
+  if (!confirmed) return;
+  try {
+    const res = await fetch('/api/plugins/uninstall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: pluginName })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error || (data.ok === false)) {
+      await showMacAlert('Falha ao remover plugin', data.error || data.message || 'Erro desconhecido');
+      return;
+    }
+    await showMacAlert(`Plugin "${pluginName}" removido`, '');
+    await loadHubCatalog();
+  } catch (err) {
+    await showMacAlert('Falha ao remover plugin', String(err.message || err));
+  }
 }
 
 async function togglePlugin(pluginName, enable) {
@@ -6401,27 +6559,6 @@ async function togglePlugin(pluginName, enable) {
     showMacAlert(`Erro: ${err.message || err}`);
     await loadHubCatalog();
   }
-}
-
-async function uninstallPlugin(pluginName) {
-  showMacConfirm(`Tem certeza que deseja remover o plugin "${pluginName}" e seus arquivos locais?`, async () => {
-    try {
-      const res = await fetch('/api/plugins/uninstall', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: pluginName })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error || (data.ok === false)) {
-        showMacAlert(`Falha ao remover plugin: ${data.error || data.message || 'Erro desconhecido'}`);
-        return;
-      }
-      showMacAlert(`Plugin "${pluginName}" removido.`);
-      await loadHubCatalog();
-    } catch (err) {
-      showMacAlert(`Erro: ${err.message || err}`);
-    }
-  });
 }
 
 
