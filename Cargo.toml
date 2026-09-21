@@ -8,5 +8,6 @@ members = [
     "packages/haos-health-agent",
     "packages/haos-protocol-client",
     "packages/hermes-webui-edge",
+    "packages/haos-vector-engine",
 ]
 resolver = "2"

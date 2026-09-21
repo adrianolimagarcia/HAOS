@@ -184,7 +184,42 @@ class SQLiteVectorIndex:
         if not query:
             return []
 
-        # Tentativa de Aceleração Nativa em Rust via haos-edge
+        # 1. Tentativa de Aceleração Máxima via Extensão Nativa em Rust (In-Process C-ABI / SIMD)
+        try:
+            import ctypes
+            lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
+            if not hasattr(SQLiteVectorIndex, "_native_lib"):
+                if os.path.exists(lib_path):
+                    lib = ctypes.CDLL(lib_path)
+                    lib.vector_engine_search_buffered.argtypes = [
+                        ctypes.c_char_p, ctypes.c_char_p,
+                        ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.c_int,
+                        ctypes.c_char_p, ctypes.c_int
+                    ]
+                    lib.vector_engine_search_buffered.restype = ctypes.c_int
+                    SQLiteVectorIndex._native_lib = lib
+                else:
+                    SQLiteVectorIndex._native_lib = None
+
+            if SQLiteVectorIndex._native_lib is not None:
+                dim = len(query)
+                q_arr = (ctypes.c_float * dim)(*query)
+                buf = ctypes.create_string_buffer(65536)
+                written = SQLiteVectorIndex._native_lib.vector_engine_search_buffered(
+                    str(self.path).encode("utf-8"),
+                    self.model_version.encode("utf-8"),
+                    q_arr,
+                    dim,
+                    int(limit),
+                    buf,
+                    len(buf),
+                )
+                if written > 0:
+                    return json.loads(buf.value.decode("utf-8"))[:limit]
+        except Exception:
+            pass  # Fallback gracioso para IPC / cálculo local
+
+        # 2. Tentativa de Aceleração Secundária via haos-edge HTTP
         try:
             import urllib.request
             req_data = json.dumps({
@@ -193,7 +228,6 @@ class SQLiteVectorIndex:
                 "limit": limit,
                 "db_path": str(self.path)
             }).encode("utf-8")
-            # Tenta conectar via IP tailscale canônico ou fallback loopback
             for endpoint in ("http://100.77.31.78:8788/api/memory/vector-search", "http://127.0.0.1:8788/api/memory/vector-search"):
                 try:
                     req = urllib.request.Request(
@@ -208,9 +242,9 @@ class SQLiteVectorIndex:
                 except Exception:
                     continue
         except Exception:
-            pass  # Fallback gracioso para o cálculo local em Python
+            pass
 
-        # Algoritmo Base Local (Fallback Thread-Safe)
+        # 3. Algoritmo Base Local (Fallback Thread-Safe em Python)
         qnorm = math.sqrt(sum(value * value for value in query))
         if not qnorm:
             return []
