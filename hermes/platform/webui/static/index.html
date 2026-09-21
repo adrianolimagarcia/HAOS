@@ -1337,10 +1337,15 @@
            <div class="bot-graph-empty">Carregando estrutura…</div>
          </div>
 
-         <div class="bot-legend">
+         <div class="bot-legend" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:0.75rem;margin-top:14px;padding-top:10px;border-top:1px solid rgba(15,23,42,0.06);">
            <span class="master">👑 Master</span>
            <span class="manager">🧠 Gerente / Orquestrador</span>
            <span class="bot">🤖 Bot Executor</span>
+           <span style="margin-left:auto;display:flex;gap:10px;align-items:center;">
+             <span><span class="tg-badge running" style="font-size:0.65rem;">running</span> Ativo em missão</span>
+             <span><span class="tg-badge idle" style="font-size:0.65rem;">idle</span> Pronto / Esperando</span>
+             <span><span class="tg-badge blocked" style="font-size:0.65rem;">blocked</span> Bloqueado</span>
+           </span>
          </div>
        </div>
 
@@ -1938,6 +1943,30 @@
       <div id="blastResultBox" style="margin-top:12px;display:none;background:rgba(255,255,255,0.95);border:1px solid rgba(15,23,42,0.14);border-radius:8px;padding:10px;"></div>
     </div>
 
+        <!-- Ouroboros RSI Meta-Loop Card (arXiv:2609.11873) -->
+    <div class="card" style="margin-bottom:14px;background:rgba(255,255,255,0.92);border:1px solid rgba(15,23,42,0.1);box-shadow:var(--glass-shadow);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:1.4rem;">🧬</span>
+          <div>
+            <h3 style="margin:0;font-size:0.98rem;color:var(--text-strong);font-weight:700;">Recursive Self-Improvement (RSI Meta-Loop)</h3>
+            <div style="font-size:0.75rem;color:var(--muted);margin-top:1px;">
+              Auto-aprimoramento recursivo com síntese de Meta-Skills e validação cega independente via Gemini 2.5 Flash Lite.
+            </div>
+          </div>
+        </div>
+        <button class="act" type="button" onclick="loadOuroborosRSISkills()" style="font-size:0.75rem;padding:3px 8px;">🔄 Atualizar Skills</button>
+      </div>
+
+      <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;">
+        Quando um bot acumula 3 falhas repetidas na mesma classe de erro, o Meta-Loop gera uma <code>SKILL.md</code> corretiva com regras de mitigação e a valida independentemente antes de promovê-la.
+      </div>
+
+      <div id="rsiSkillsList" style="display:flex;flex-direction:column;gap:8px;max-height:160px;overflow-y:auto;background:rgba(248,250,252,0.85);padding:10px;border-radius:8px;border:1px solid rgba(15,23,42,0.06);">
+        <span style="color:var(--muted);font-size:0.78rem;">Carregando Meta-Skills cristalizadas...</span>
+      </div>
+    </div>
+
     <div class="card" style="margin-bottom:14px;">
       <h3><span class="n">◔</span> Propostas pendentes (human-in-the-loop)</h3>
       <div id="evPending"><span class="empty">Nenhuma proposta pendente.</span></div>
@@ -2325,6 +2354,7 @@ function initNavTabs() {
       if (b.dataset.tab === "events") loadUnifiedTimeline();
       if (b.dataset.tab === "hub") loadHubCatalog();
       if (b.dataset.tab === "config") loadSystemOneStats();
+      if (b.dataset.tab === "ouroboros") loadOuroborosRSISkills();
     });
   });
 
@@ -2868,10 +2898,48 @@ function renderAgentHierarchy(h) {
   const roleLabel = n => n.role === "master" ? "Master (Executivo)" : n.role === "manager" ? "Gerente / Orquestrador" : "Bot Executor";
   const roleClass = n => n.role === "master" ? "master" : n.role === "manager" ? "manager" : "bot";
 
+  const getBotLiveStatus = (botId, profile) => {
+    try {
+      const tg = window.__hLastTG && window.__hLastTG[0];
+      if (!tg) return "idle";
+      // Verifica no Team Graph se esse bot é o Mayor ou SubOrch ou Worker
+      if (tg.node_id === botId || (tg.current_task && tg.node_id.includes(botId))) {
+        return tg.status || "idle";
+      }
+      const findInTree = (node) => {
+        if (!node) return null;
+        if (node.node_id === botId || node.label.toLowerCase().includes(botId.toLowerCase()) || (profile && node.node_id === profile)) {
+          return node.status;
+        }
+        for (const child of (node.children || [])) {
+          const res = findInTree(child);
+          if (res) return res;
+        }
+        return null;
+      };
+      const found = findInTree(tg);
+      if (found) return found;
+
+      // Verifica no Taskboard tarefas ativas para esse bot
+      if (state.last && state.last.taskboard && state.last.taskboard.tasks) {
+        const activeTask = state.last.taskboard.tasks.find(t => 
+          (t.assignee === botId || t.assignee === profile || (t.tags && t.tags.includes(`agent:${botId}`))) &&
+          ["in_progress", "CLAIMED", "RUNNING"].includes(t.status)
+        );
+        if (activeTask) return "running";
+      }
+      return "idle";
+    } catch (_) {
+      return "idle";
+    }
+  };
+
   const card = n => {
     const isYoloActive = Boolean(n.yolo_mode || n.effective_yolo);
+    const liveStatus = getBotLiveStatus(n.id, n.profile);
+    const statusClass = liveStatus === "running" ? "running" : liveStatus === "blocked" ? "blocked" : liveStatus === "failed" ? "failed" : "idle";
     return `
-    <div class="bot-node ${roleClass(n)}" id="bnode_${esc(n.id)}">
+    <div class="bot-node ${roleClass(n)} status-${statusClass}" id="bnode_${esc(n.id)}">
       <div class="bot-node-header">
         <div class="bot-node-title" title="${esc(n.name || n.id)}">
           <span>${icon(n)}</span>
@@ -2879,7 +2947,8 @@ function renderAgentHierarchy(h) {
         </div>
         <div class="bot-node-header-right">
           ${isYoloActive ? '<span class="tg-badge" style="background:#23863622;border:1px solid #2ea04366;color:#3fb950;font-size:0.68rem;padding:2px 6px;" title="YOLO ativo (autônomo)">⚡ YOLO</span>' : ''}
-          <span class="tg-badge ${n.role === 'master' ? 'running' : 'idle'}">${esc(n.role)}</span>
+          <span class="tg-badge ${statusClass}">${esc(liveStatus)}</span>
+          <span class="tg-badge idle" style="opacity:0.75;">${esc(n.role)}</span>
           <button class="bot-del-btn" type="button" onclick="deleteHierarchyNode('${esc(n.id)}')" title="Excluir este agente e seus subordinados">🗑️</button>
         </div>
       </div>
@@ -5272,7 +5341,7 @@ async function refresh() {
 }
 
 function scheduleRefresh() {
-  const ms = state.settings && state.settings.poll_refresh_ms ? state.settings.poll_refresh_ms : 4000;
+  const ms = state.settings && state.settings.poll_refresh_ms ? state.settings.poll_refresh_ms : 1200;
   if (timer) clearInterval(timer);
   timer = setInterval(refresh, ms);
   refresh();
@@ -6258,26 +6327,20 @@ function renderPluginCard(p) {
 // Ações de Instalação e Desinstalação
 // ----------------------------------------------------------------------------
 async function installSkill(skillName) {
-  showMacConfirm(`Deseja baixar, inspecionar e instalar a skill "${skillName}" no agent?`, async () => {
-    const summary = $('hubStatusSummary');
-    if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando skill ${esc(skillName)}...</span>`;
-    try {
-      const res = await fetch('/api/skills/install', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: skillName, force: false })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        showMacAlert(`Falha ao instalar skill: ${data.error || 'Erro desconhecido'}`);
-        return;
-      }
-      showMacAlert(`Skill "${skillName}" instalada com sucesso! Veredito de segurança: ${data.verdict || 'safe'}`);
-      await loadHubCatalog();
-    } catch (err) {
-      showMacAlert(`Erro na requisição: ${err.message || err}`);
-    }
-  });
+  const confirmed = await showMacConfirm(`Deseja baixar, inspecionar e instalar a skill "${skillName}" no agent?`, "A operação fará download e executará a inspeção de segurança.");
+  if (!confirmed) return;
+  const summary = $('hubStatusSummary');
+  if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando skill ${esc(skillName)}...</span>`;
+  try {
+    const res = await fetch('/api/skills/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: skillName, force: false })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) { await showMacAlert(`Falha ao instalar skill: ${data.error || 'Erro desconhecido'}`); return; }
+    await showMacAlert(`Skill "${skillName}" instalada com sucesso! Veredito de segurança: ${data.verdict || 'safe'}`);
+    await loadHubCatalog();
+  } catch (err) { await showMacAlert(`Erro na requisição: ${err.message || err}`); }
 }
 
 async function uninstallSkill(skillName) {
@@ -6302,26 +6365,20 @@ async function uninstallSkill(skillName) {
 }
 
 async function installPlugin(pluginName) {
-  showMacConfirm(`Deseja clonar e instalar a extensão de plugin "${pluginName}" no agent?`, async () => {
-    const summary = $('hubStatusSummary');
-    if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando plugin ${esc(pluginName)}... Isso pode levar alguns segundos.</span>`;
-    try {
-      const res = await fetch('/api/plugins/install', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: pluginName, force: false })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error || (data.ok === false)) {
-        showMacAlert(`Falha ao instalar plugin: ${data.error || data.message || 'Erro desconhecido'}`);
-        return;
-      }
-      showMacAlert(`Plugin "${pluginName}" instalado com sucesso!`);
-      await loadHubCatalog();
-    } catch (err) {
-      showMacAlert(`Erro na requisição: ${err.message || err}`);
-    }
-  });
+  const confirmed = await showMacConfirm(`Deseja clonar e instalar a extensão de plugin "${pluginName}" no agent?`, "A operação fará download do plugin.");
+  if (!confirmed) return;
+  const summary = $('hubStatusSummary');
+  if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando plugin ${esc(pluginName)}... Isso pode levar alguns segundos.</span>`;
+  try {
+    const res = await fetch('/api/plugins/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier: pluginName, force: false })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error || (data.ok === false)) { await showMacAlert(`Falha ao instalar plugin: ${data.error || data.message || 'Erro desconhecido'}`); return; }
+    await showMacAlert(`Plugin "${pluginName}" instalado com sucesso!`);
+    await loadHubCatalog();
+  } catch (err) { await showMacAlert(`Erro na requisição: ${err.message || err}`); }
 }
 
 async function togglePlugin(pluginName, enable) {
@@ -6380,6 +6437,32 @@ async function loadSystemOneStats() {
     if ($('s1HitRate')) $('s1HitRate').textContent = (data.cache_hit_rate ?? '0') + '%';
   } catch (err) {
     console.warn('SystemOne stats fetch error:', err);
+  }
+}
+
+
+async function loadOuroborosRSISkills() {
+  try {
+    const res = await fetch('/api/evolution/rsi/skills');
+    if (!res.ok) return;
+    const data = await res.json();
+    const box = $('rsiSkillsList');
+    if (!box) return;
+    if (!data.skills || data.skills.length === 0) {
+      box.innerHTML = '<span style="color:var(--muted);font-size:0.78rem;">Nenhuma Meta-Skill cristalizada ainda. Falhas recorrentes serão agregadas automaticamente aqui.</span>';
+      return;
+    }
+    box.innerHTML = data.skills.map(s => `
+      <div style="background:rgba(255,255,255,0.95);border:1px solid rgba(15,23,42,0.08);border-radius:6px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700;font-size:0.82rem;color:var(--text-strong);">${s.skill_name}</div>
+          <div style="font-size:0.72rem;color:var(--muted);">Bot: <code>${s.bot_id}</code> • Tamanho: ${(s.size_bytes / 1024).toFixed(1)} KB</div>
+        </div>
+        <span style="font-size:0.72rem;background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:10px;font-weight:600;">✓ Validado Blind</span>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.warn('RSI skills fetch error:', err);
   }
 }
 
