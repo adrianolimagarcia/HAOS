@@ -252,6 +252,31 @@ class KanbanAdapter:
         """Atomically claim (ready -> running). Records the HAOS TaskRun
         snapshot for the canonical run on success."""
         task_id = self._require_resolved(task_id_or_spec)
+
+        # Fast-Path Rust Ingress (haos-edge /api/kanban/claim): lock-free atômico, sub-1ms
+        try:
+            import urllib.request, json
+            url = "http://100.77.31.78:8788/api/kanban/claim"
+            payload = json.dumps({
+                "task_id": task_id,
+                "worker_id": worker_id,
+                "ttl_seconds": lease_duration_sec or 300,
+                "db_path": str(self.db_path),
+            }).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=0.8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok"):
+                    if not data.get("claimed"):
+                        return False
+                    run = run or TaskRun(task_id=task_id, worker_id=worker_id)
+                    run.started_at = float(time.time())
+                    self._store_run(task_id, run)
+                    self._emit_run_event(task_id, "claimed", run=run, worker_id=worker_id)
+                    return True
+        except Exception:
+            pass
+
         conn = self._connect()
         claimed = kb.claim_task(conn, task_id, claimer=worker_id, ttl_seconds=lease_duration_sec)
         if claimed is None:

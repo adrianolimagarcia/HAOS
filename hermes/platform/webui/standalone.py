@@ -667,6 +667,87 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 logger.error("State generation failed: %s", exc, exc_info=True)
                 self._send_json(503, {"error": "storage_unavailable", "detail": str(exc)})
+        elif self.command == "POST" and path == "/api/tools/detect-loop":
+            # Fast-Path Anti-Loop: executa diretamente a heurística nativa em memória
+            try:
+                data = self._read_json_body()
+                sess_id = data.get("session_id", "default")
+                tool_name = data.get("tool_name", "")
+                args_str = data.get("arguments", "")
+                threshold = int(data.get("threshold", 3))
+
+                if not hasattr(self.state, "_tool_loop_trackers"):
+                    self.state._tool_loop_trackers = {}
+                tracker = self.state._tool_loop_trackers.setdefault(sess_id, [])
+                tracker.append((tool_name, args_str))
+                if len(tracker) > 20:
+                    tracker.pop(0)
+
+                # Verifica repetições consecutivas idênticas
+                consecutive = 0
+                for t_name, t_args in reversed(tracker):
+                    if t_name == tool_name and t_args == args_str:
+                        consecutive += 1
+                    else:
+                        break
+
+                if consecutive >= threshold:
+                    msg = f"Loop repetitivo detectado: {tool_name} executado {consecutive} vezes consecutivas com os mesmos argumentos."
+                    self._send_json(200, {
+                        "ok": True,
+                        "loop_detected": True,
+                        "alert": {"message": msg, "consecutive": consecutive, "tool": tool_name}
+                    })
+                else:
+                    self._send_json(200, {"ok": True, "loop_detected": False})
+            except Exception as e:
+                self._send_json(200, {"ok": True, "loop_detected": False, "error": str(e)})
+        elif self.command == "POST" and path == "/api/context/compact":
+            # Fast-Path Context Compactação Ultra SOTA
+            try:
+                data = self._read_json_body()
+                msgs = data.get("messages", [])
+                max_tool_chars = int(data.get("max_tool_chars", 2500))
+                keep_last = int(data.get("keep_last", 6))
+                
+                if len(msgs) <= keep_last + 2:
+                    self._send_json(200, {"ok": True, "messages": msgs, "compacted_count": len(msgs), "truncated_tools": 0})
+                    return
+
+                sys_count = 0
+                for m in msgs:
+                    if m.get("role") == "system":
+                        sys_count += 1
+                    else:
+                        break
+                
+                middle_start = sys_count
+                middle_end = max(middle_start, len(msgs) - keep_last)
+                truncated_count = 0
+                out = []
+
+                for i, m in enumerate(msgs):
+                    if i < middle_start or i >= middle_end:
+                        out.append(m)
+                    else:
+                        m_copy = dict(m)
+                        if m_copy.get("role") == "tool" and isinstance(m_copy.get("content"), str):
+                            c_str = m_copy["content"]
+                            if len(c_str) > max_tool_chars:
+                                head = c_str[:max_tool_chars // 2]
+                                tail = c_str[-(max_tool_chars // 2):]
+                                m_copy["content"] = f"{head}\n\n[... {len(c_str) - max_tool_chars} caracteres compactados pelo HAOS Core ...]\n\n{tail}"
+                                truncated_count += 1
+                        out.append(m_copy)
+
+                self._send_json(200, {
+                    "ok": True,
+                    "messages": out,
+                    "compacted_count": len(out),
+                    "truncated_tools": truncated_count
+                })
+            except Exception as e:
+                self._send_json(500, {"ok": False, "error": str(e)})
         elif self.command == "GET" and path in ("/v1/models", "/api/v1/models"):
             self._handle_v1_models()
         elif self.command == "GET" and path in ("/api/team-graph", "/api/controlplane/team_graph"):

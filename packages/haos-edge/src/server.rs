@@ -1,6 +1,7 @@
 use crate::auth;
 use crate::blast_analyzer::FastAstAnalyzer;
 use crate::cancel_registry::CancelRegistry;
+use crate::compactor::{CompactPayload, ContextCompactor};
 use crate::context_hasher::ContextHasher;
 use crate::cron_ledger::CronLedgerEngine;
 use crate::db::DbHelper;
@@ -166,6 +167,7 @@ pub async fn run_server(
         .route("/api/events/ingest", post(event_ingest_handler))
         .route("/api/events/stream", get(event_stream_handler))
         .route("/api/context/hash", post(context_hash_handler))
+        .route("/api/context/compact", post(context_compact_handler))
         .route("/api/worktree/spawn", post(worktree_spawn_handler))
         .route("/api/worktree/discard", post(worktree_discard_handler))
         .route("/api/analysis/blast-radius", post(blast_radius_handler))
@@ -606,6 +608,13 @@ async fn context_hash_handler(
     let segments = payload.segments.unwrap_or(4);
     let fp = ContextHasher::compute_fingerprint(&payload.text, segments);
     Json(serde_json::json!({ "ok": true, "fingerprint": fp }))
+}
+
+async fn context_compact_handler(
+    Json(payload): Json<CompactPayload>,
+) -> impl IntoResponse {
+    let res = ContextCompactor::compact(payload);
+    Json(res)
 }
 
 // -------------------------------------------------------------

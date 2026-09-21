@@ -266,6 +266,13 @@ def is_safe_url(url: str) -> bool:
         if not hostname:
             return False
 
+        # Validação estrita de Hostname canônico (harness layer 2):
+        # Impede evasões onde subdomínios ou truques de userInfo masqueradeiam o host
+        if "@" in (parsed.netloc or ""):
+            # Rejeita URLs com credenciais embutidas no host (ex: user:pass@evil.com)
+            logger.warning("Blocked request — userinfo in URL authority is not permitted: %s", url)
+            return False
+
         # Metadata hostnames are blocked BEFORE consulting the toggle.
         if hostname in _BLOCKED_HOSTNAMES:
             logger.warning("Blocked request to internal hostname: %s", hostname)

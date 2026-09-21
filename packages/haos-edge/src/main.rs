@@ -1,6 +1,7 @@
 mod auth;
 pub mod blast_analyzer;
 pub mod cancel_registry;
+pub mod compactor;
 pub mod context_hasher;
 pub mod cron_ledger;
 mod db;

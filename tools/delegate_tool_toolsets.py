@@ -20,6 +20,17 @@ DELEGATE_BLOCKED_TOOLS = frozenset(
         "cronjob_manage",  # no scheduling more work in the parent's name
     ]
 )
+
+# Mutating tools blocked for read_only / reviewer / auditor roles (Paolo Perrone harness layer 4)
+READONLY_MUTATING_TOOLS = frozenset(
+    [
+        "write_file",
+        "edit_file",
+        "patch",
+        "file_write",
+        "file_edit",
+    ]
+)
 DEFAULT_TOOLSETS = ["terminal", "file", "web"]
 
 def _is_mcp_toolset_name(name: str) -> bool:
@@ -64,18 +75,20 @@ def _strip_blocked_tools(toolsets: List[str]) -> List[str]:
     }
     return [t for t in toolsets if t not in blocked_toolset_names]
 
-def _blocked_toolsets_for_role(role: str) -> List[str]:
+def _blocked_toolsets_for_role(role: str, is_read_only: bool = False) -> List[str]:
     """One-tool deny toolsets for the role; passed as ``disabled_toolsets`` so
     blocked names inside mixed bundles are subtracted AFTER composite expansion."""
     blocked_names = set(DELEGATE_BLOCKED_TOOLS)
     if role == "orchestrator":
         blocked_names.discard("delegate_task")
+    if is_read_only or role in ("auditor", "reviewer", "inspector", "critic"):
+        blocked_names.update(READONLY_MUTATING_TOOLS)
     return sorted(
         name for name, defn in TOOLSETS.items() if defn.get("tools") and set(defn.get("tools", ())).issubset(blocked_names)
     )
 
 def _resolve_child_toolsets(
-    parent_agent, toolsets: Optional[List[str]], effective_role: str
+    parent_agent, toolsets: Optional[List[str]], effective_role: str, is_read_only: bool = False
 ) -> tuple[List[str], List[str]]:
     """``(enabled_toolsets, disabled_toolsets)`` for a child. Children never gain tools the parent lacks: explicit
     ``toolsets`` are intersected with the parent's (composite-expanded) set, else the parent's enabled set is
@@ -117,7 +130,14 @@ def _resolve_child_toolsets(
         inherited_disabled = [name for name in inherited_disabled if name != "delegation"]
         if "delegation" not in child_toolsets:
             child_toolsets.append("delegation")
+
+    extra_disabled = _blocked_toolsets_for_role(effective_role, is_read_only=is_read_only) + ["kanban"]
+    if is_read_only or effective_role in ("auditor", "reviewer", "inspector", "critic"):
+        # Se for read_only, remove 'file' e outros toolsets mutativos se estiverem em child_toolsets
+        child_toolsets = [t for t in child_toolsets if t not in ("file",)]
+        extra_disabled.extend(["file"])
+
     child_disabled_toolsets = list(
-        dict.fromkeys(inherited_disabled + _blocked_toolsets_for_role(effective_role) + ["kanban"])
+        dict.fromkeys(inherited_disabled + extra_disabled)
     )
     return child_toolsets, child_disabled_toolsets

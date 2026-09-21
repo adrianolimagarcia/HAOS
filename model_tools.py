@@ -788,7 +788,20 @@ def _pre_dispatch_guards(function_name: str, function_args: Dict[str, Any], skip
         from acp_adapter.edit_approval import maybe_require_edit_approval
         edit_block_message = maybe_require_edit_approval(function_name, function_args)
         if edit_block_message is not None:
-            return function_args, (edit_block_message, "edit_approval_denied", None)
+            # Integração com Execution Boundary Guard: registra recusa consecutiva
+            try:
+                from agent.execution_boundary import boundary_guard
+                sess = ids.session_id or ids.task_id or "default"
+                denied = boundary_guard.record_denial(
+                    session_id=sess,
+                    tool_name=function_name,
+                    args=function_args,
+                    rule_name="acp_edit_approval",
+                    reason=str(edit_block_message)
+                )
+                return function_args, (tool_error(str(denied)), "edit_approval_denied", str(denied))
+            except Exception:
+                return function_args, (edit_block_message, "edit_approval_denied", None)
     except Exception as _edit_approval_err:
         logger.debug("ACP edit approval guard error: %s", _edit_approval_err)
         if function_name in {"write_file", "patch"}:
@@ -957,17 +970,31 @@ def handle_function_call(
                 "iteration": 1,
                 "threshold": 3
             }).encode("utf-8")
+            edge_url = "http://100.77.31.78:8788/api/tools/detect-loop"
             req = urllib.request.Request(
-                "http://127.0.0.1:8788/api/tools/detect-loop",
+                edge_url,
                 data=loop_payload,
                 headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=0.1) as lresp:
-                ldata = json.loads(lresp.read().decode("utf-8"))
-                if ldata.get("loop_detected"):
-                    alert_msg = ldata.get("alert", {}).get("message", "Loop infinito detectado pelo HAOS Edge.")
-                    logger.warning("[ANTI-LOOP] %s para ferramenta %s", alert_msg, function_name)
-                    return _emit(tool_error(alert_msg), status="blocked", error_type="LoopDetected", error_message=alert_msg)
+            try:
+                with urllib.request.urlopen(req, timeout=0.1) as lresp:
+                    ldata = json.loads(lresp.read().decode("utf-8"))
+                    if ldata.get("loop_detected"):
+                        alert_msg = ldata.get("alert", {}).get("message", "Loop infinito detectado pelo HAOS Edge.")
+                        logger.warning("[ANTI-LOOP] %s para ferramenta %s", alert_msg, function_name)
+                        return _emit(tool_error(alert_msg), status="blocked", error_type="LoopDetected", error_message=alert_msg)
+            except Exception:
+                req_local = urllib.request.Request(
+                    "http://127.0.0.1:8788/api/tools/detect-loop",
+                    data=loop_payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req_local, timeout=0.08) as lresp:
+                    ldata = json.loads(lresp.read().decode("utf-8"))
+                    if ldata.get("loop_detected"):
+                        alert_msg = ldata.get("alert", {}).get("message", "Loop infinito detectado pelo HAOS Edge.")
+                        logger.warning("[ANTI-LOOP] %s para ferramenta %s", alert_msg, function_name)
+                        return _emit(tool_error(alert_msg), status="blocked", error_type="LoopDetected", error_message=alert_msg)
         except Exception:
             pass  # Fallback: executa normalmente se o edge não estiver acessível
 
@@ -977,6 +1004,15 @@ def handle_function_call(
                                enabled_tools=enabled_tools, skip_tool_execution_middleware=skip_tool_execution_middleware)
         duration_ms = _elapsed_ms(start)
         _emit(result, duration_ms=duration_ms)
+
+        # Reseta boundary guard em caso de execução sem erro fatal
+        try:
+            from agent.execution_boundary import boundary_guard
+            sess = session_id or task_id or "default"
+            boundary_guard.record_success(sess)
+        except Exception:
+            pass
+
         return _apply_transform_tool_result_hook(function_name, function_args, result, duration_ms, ids)
 
     except Exception as e:

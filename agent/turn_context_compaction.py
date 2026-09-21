@@ -135,30 +135,48 @@ def run_turn_start_compaction(
         messages=messages, active_system_prompt=active_system_prompt,
         conversation_history=conversation_history, current_turn_user_idx=current_turn_user_idx,
     )
-    # Fast-Path Rust Snip (Ultra SOTA 2026): colapso imediato de tool results obsoletos e duplicados
+    # Fast-Path Rust Snip (Ultra SOTA 2026): colapso imediato de tool results via haos-edge daemon
     if len(out.messages) > 6:
         try:
-            import json, subprocess, os
-            from pathlib import Path
-            rust_bin = "/usr/local/bin/hermes-exec"
-            if not Path(rust_bin).exists():
-                candidate = os.path.join(os.getcwd(), "target/release/hermes-exec")
-                if Path(candidate).exists():
-                    rust_bin = candidate
-            if Path(rust_bin).exists():
-                proc = subprocess.run(
-                    [rust_bin, "snip-messages"],
-                    input=json.dumps(out.messages),
-                    capture_output=True,
-                    text=True,
-                    timeout=2,
-                )
-                if proc.returncode == 0 and proc.stdout.strip():
-                    snip_res = json.loads(proc.stdout)
-                    if snip_res.get("ok") and snip_res.get("snipped_count", 0) > 0:
-                        out.messages = snip_res["messages"]
+            import json, urllib.request
+            compact_req = urllib.request.Request(
+                "http://100.77.31.78:8788/api/context/compact",
+                data=json.dumps({
+                    "messages": out.messages,
+                    "max_tool_chars": 2500,
+                    "keep_last": 6,
+                }).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(compact_req, timeout=0.15) as c_resp:
+                c_data = json.loads(c_resp.read().decode("utf-8"))
+                if c_data.get("ok") and "messages" in c_data:
+                    out.messages = c_data["messages"]
         except Exception:
-            pass
+            # Fallback local via subprocess hermes-exec se o daemon edge estiver em reboot
+            try:
+                import json, subprocess, os
+                from pathlib import Path
+                rust_bin = "/usr/local/bin/hermes-exec"
+                if not Path(rust_bin).exists():
+                    candidate = os.path.join(os.getcwd(), "target/release/hermes-exec")
+                    if Path(candidate).exists():
+                        rust_bin = candidate
+                if Path(rust_bin).exists():
+                    proc = subprocess.run(
+                        [rust_bin, "snip-messages"],
+                        input=json.dumps(out.messages),
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                    if proc.returncode == 0 and proc.stdout.strip():
+                        snip_res = json.loads(proc.stdout)
+                        if snip_res.get("ok") and snip_res.get("snipped_count", 0) > 0:
+                            out.messages = snip_res["messages"]
+            except Exception:
+                pass
 
     _idle_compaction(agent, out, system_message, user_message, effective_task_id)
     _preflight_compression(agent, out, system_message, user_message, effective_task_id)
