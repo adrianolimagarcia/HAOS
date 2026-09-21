@@ -341,13 +341,70 @@ fn check_command_fast(cmd: &str) -> serde_json::Value {
 
     for pattern in &destructive_patterns {
         if trimmed.contains(pattern) {
+            // Anti-Looping State Persistence: rastreia tentativas consecutivas no arquivo de lock/shm
+            let state_dir = std::env::var("HAOS_HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::path::PathBuf::from("/root/.haos"));
+            let anti_loop_file = state_dir.join("cache").join("haos_exec_last_denial.json");
+
+            let mut attempts = 1;
+            let mut current_hash = String::with_capacity(32);
+            for byte in md5_digest(trimmed.as_bytes()) {
+                use std::fmt::Write;
+                let _ = write!(&mut current_hash, "{:02x}", byte);
+            }
+
+            if let Ok(content) = std::fs::read_to_string(&anti_loop_file) {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if parsed.get("hash").and_then(|v| v.as_str()) == Some(&current_hash) {
+                        attempts = parsed.get("attempts").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+                    }
+                }
+            }
+
+            // Grava o estado atualizado
+            if let Some(parent) = anti_loop_file.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(
+                &anti_loop_file,
+                serde_json::json!({
+                    "hash": current_hash,
+                    "pattern": pattern,
+                    "attempts": attempts,
+                    "timestamp": std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                }).to_string(),
+            );
+
+            let is_terminal_loop = attempts >= 3;
+            let reason = if is_terminal_loop {
+                format!(
+                    "DENIED by haos-exec anti-loop boundary (attempt {}/3). Destructive pattern repeatedly detected: {}. Stop retrying; you must adopt an alternative plan.",
+                    attempts, pattern
+                )
+            } else {
+                format!("Destructive pattern detected by haos-exec: {pattern}")
+            };
+
             return serde_json::json!({
                 "allowed": false,
-                "reason": format!("Destructive pattern detected: {pattern}"),
-                "risk": "critical"
+                "reason": reason,
+                "risk": "critical",
+                "attempts": attempts,
+                "loop_blocked": is_terminal_loop
             });
         }
     }
+
+    // Se o comando for permitido, limpa o arquivo de recusa para resetar a contagem
+    let state_dir = std::env::var("HAOS_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("/root/.haos"));
+    let anti_loop_file = state_dir.join("cache").join("haos_exec_last_denial.json");
+    let _ = std::fs::remove_file(anti_loop_file);
 
     // 2. Detecção de scripts Python/Node/Bash embutidos
     let is_inline_eval = trimmed.starts_with("python") && trimmed.contains(" -c ")
@@ -361,6 +418,15 @@ fn check_command_fast(cmd: &str) -> serde_json::Value {
         "length": trimmed.len(),
         "risk": "low"
     })
+}
+
+fn md5_digest(data: &[u8]) -> [u8; 16] {
+    // Implementação ultra-rápida de hash determinístico de 128-bits para rastreamento sem dependências pesadas
+    let mut h: u128 = 0xcbf29ce484222325;
+    for &b in data {
+        h = (h ^ (b as u128)).wrapping_mul(0x100000001b3);
+    }
+    h.to_le_bytes()
 }
 
 fn handle(req: Request) -> Response {

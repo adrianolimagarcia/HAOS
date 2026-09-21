@@ -512,15 +512,19 @@ def check_command_security(command: str) -> dict:
         if res.returncode == 0 and res.stdout.strip():
             parsed = json.loads(res.stdout.strip())
             if not parsed.get("allowed", True):
+                is_loop = parsed.get("loop_blocked", False)
+                severity = "FATAL_LOOP" if is_loop else "CRITICAL"
+                title = "Anti-Loop Boundary Triggered (hermes-exec)" if is_loop else "Destructive Command Blocked by Rust hermes-exec"
                 return {
                     "action": "block",
                     "findings": [{
-                        "rule_id": "rust-hermes-exec-block",
-                        "severity": "CRITICAL",
-                        "title": "Destructive Command Blocked by Rust hermes-exec",
+                        "rule_id": "rust-hermes-exec-anti-loop" if is_loop else "rust-hermes-exec-block",
+                        "severity": severity,
+                        "title": title,
                         "description": parsed.get("reason", "Destructive pattern detected"),
                     }],
                     "summary": parsed.get("reason", "Blocked by hermes-exec"),
+                    "loop_blocked": is_loop,
                 }
     except Exception:
         pass

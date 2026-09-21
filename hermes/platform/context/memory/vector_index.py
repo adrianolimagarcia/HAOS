@@ -193,34 +193,42 @@ class SQLiteVectorIndex:
                 "limit": limit,
                 "db_path": str(self.path)
             }).encode("utf-8")
-            req = urllib.request.Request(
-                "http://127.0.0.1:8788/api/memory/vector-search",
-                data=req_data,
-                headers={"Content-Type": "application/json"}
-            )
-            # Timeout curto para fail-fast se o daemon Rust não estiver no ar
-            with urllib.request.urlopen(req, timeout=0.15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if data.get("ok") and "results" in data:
-                    return [item["record_id"] for item in data["results"][:limit]]
+            # Tenta conectar via IP tailscale canônico ou fallback loopback
+            for endpoint in ("http://100.77.31.78:8788/api/memory/vector-search", "http://127.0.0.1:8788/api/memory/vector-search"):
+                try:
+                    req = urllib.request.Request(
+                        endpoint,
+                        data=req_data,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=0.15) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if data.get("ok") and "results" in data:
+                            return [item["record_id"] for item in data["results"][:limit]]
+                except Exception:
+                    continue
         except Exception:
             pass  # Fallback gracioso para o cálculo local em Python
 
-        # Algoritmo Base Local (Fallback)
+        # Algoritmo Base Local (Fallback Thread-Safe)
         qnorm = math.sqrt(sum(value * value for value in query))
         if not qnorm:
             return []
         scored: List[Tuple[float, str]] = []
-        for record_id, dimensions, raw in self.db.execute(
-            "SELECT record_id, dimensions, vector_json FROM memory_vectors WHERE model_version=?",
-            (self.model_version,),
-        ):
-            vector = tuple(json.loads(raw))
-            if dimensions != len(query):
-                continue
-            norm = math.sqrt(sum(value * value for value in vector))
-            if norm:
-                scored.append((sum(a * b for a, b in zip(query, vector)) / (qnorm * norm), record_id))
+        try:
+            with sqlite3.connect(self.path, timeout=5.0) as conn:
+                for record_id, dimensions, raw in conn.execute(
+                    "SELECT record_id, dimensions, vector_json FROM memory_vectors WHERE model_version=?",
+                    (self.model_version,),
+                ):
+                    vector = tuple(json.loads(raw))
+                    if dimensions != len(query):
+                        continue
+                    norm = math.sqrt(sum(value * value for value in vector))
+                    if norm:
+                        scored.append((sum(a * b for a, b in zip(query, vector)) / (qnorm * norm), record_id))
+        except Exception:
+            return []
         return [record_id for _, record_id in sorted(scored, reverse=True)[:limit]]
 
     def count(self) -> int:
