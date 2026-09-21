@@ -54,7 +54,7 @@ class SQLiteVectorIndex:
         self.normalize = normalize
         self.reindex_policy = reindex_policy
         self.dimensions = dimensions
-        self.db = sqlite3.connect(str(self.path), timeout=30)
+        self.db = sqlite3.connect(str(self.path), timeout=30, check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA busy_timeout=30000")
         self.db.execute(
