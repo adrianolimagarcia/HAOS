@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -33,6 +34,8 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+logger = logging.getLogger("haos.standalone")
 
 class HAOSThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
@@ -202,12 +205,12 @@ class HAOSStandaloneState:
         return True
 
     def reap_stale_tasks(self) -> int:
-        """Auto-reparo de cards zumbis (status=running cujo processo/claim já expirou ou morreu)."""
+        """Auto-reparo de cards zumbis (status=running/in_progress cujo processo/claim já expirou, morreu ou orfanou)."""
         now = time.time()
         conn = self.kanban._connect()
-        # Busca tarefas running com claim expirado ou processo morto
+        # Busca tarefas ativas com claim expirado, processo morto ou órfãs há mais de 10 min
         rows = conn.execute(
-            "SELECT id, claim_lock, claim_expires, worker_pid, workspace_path FROM tasks WHERE status = 'running'"
+            "SELECT id, claim_lock, claim_expires, worker_pid, workspace_path, status, started_at, created_at FROM tasks WHERE status IN ('running', 'in_progress', 'claimed', 'dispatched')"
         ).fetchall()
         reaped = 0
         for r in rows:
@@ -215,6 +218,8 @@ class HAOSStandaloneState:
             expires = r["claim_expires"]
             pid = r["worker_pid"]
             ws_path = r["workspace_path"]
+            raw_st = str(r["status"] or "").lower()
+            started = r["started_at"] or r["created_at"] or now
             is_dead = False
 
             # 1. Se tem pid no disco/banco, testa se o processo do worker ainda vive
@@ -233,6 +238,10 @@ class HAOSStandaloneState:
                     is_dead = True
             elif expires and now > expires:
                 is_dead = True
+            elif not pid and not expires:
+                # Sem PID vivo e sem claim ativo: se passaram > 600s (~10min) desde o início
+                if (now - started) > 600:
+                    is_dead = True
 
             if is_dead:
                 # Verifica se há resultado salvo no disco antes de marcar falha
@@ -254,18 +263,32 @@ class HAOSStandaloneState:
                         (int(now), tid),
                     )
                     conn.execute(
-                        "UPDATE haos_task_runs SET status = 'ended', exit_reason = 'completed', ended_at = ? WHERE task_id = ? AND status = 'running'",
+                        "UPDATE haos_task_runs SET status = 'ended', exit_reason = 'completed', ended_at = ? WHERE task_id = ? AND status IN ('running', 'in_progress')",
                         (now, tid),
                     )
+                    try:
+                        conn.execute(
+                            "UPDATE haos_task_meta SET phase = 'done', updated_at = ? WHERE task_id = ?",
+                            (now, tid),
+                        )
+                    except Exception:
+                        pass
                 else:
                     conn.execute(
                         "UPDATE tasks SET status = 'failed', claim_lock = NULL, claim_expires = NULL, last_failure_error = 'Worker process terminated unexpectedly (reaped by supervisor)', completed_at = ? WHERE id = ?",
                         (int(now), tid),
                     )
                     conn.execute(
-                        "UPDATE haos_task_runs SET status = 'ended', exit_reason = 'worker_crash', ended_at = ? WHERE task_id = ? AND status = 'running'",
+                        "UPDATE haos_task_runs SET status = 'ended', exit_reason = 'worker_crash', ended_at = ? WHERE task_id = ? AND status IN ('running', 'in_progress')",
                         (now, tid),
                     )
+                    try:
+                        conn.execute(
+                            "UPDATE haos_task_meta SET phase = 'failed', updated_at = ? WHERE task_id = ?",
+                            (now, tid),
+                        )
+                    except Exception:
+                        pass
                 reaped += 1
         if reaped > 0:
             conn.commit()

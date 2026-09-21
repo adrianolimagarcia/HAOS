@@ -85,7 +85,10 @@ def _capture_origin() -> tuple[str, str, Any, Any, bool]:
         _origin_session_history_delivery = session_history_delivery_supported()
     return (_origin_wake_sid, _origin_ui_session_id, *_capture_gateway_steer_authority(_origin_ui_session_id), _origin_session_history_delivery)
 
-def _report_child_done(parent_agent, spinner_ref, entry, tag, task_labels, n_tasks, remaining) -> None:
+def _report_child_done(
+    parent_agent, spinner_ref, entry, tag, task_labels, n_tasks, remaining,
+    *, live_deleg_id: Optional[str] = None,
+) -> None:
     """Print one completion line for a finished child and refresh the spinner text. Failed/errored/timed-out children
     say WHY on the same line — a bare ✗ reads as "silently dropped"."""
     idx = entry["task_index"]
@@ -105,7 +108,7 @@ def _report_child_done(parent_agent, spinner_ref, entry, tag, task_labels, n_tas
     _print_completion_line(parent_agent, spinner_ref, completion_line)
     try:
         from hermes.platform.tasks.haos_delegation_bridge import haos_bridge_child_done
-        haos_bridge_child_done(tag or "", idx, entry)
+        haos_bridge_child_done(live_deleg_id or tag or "", idx, entry)
     except Exception:
         pass
     if spinner_ref and remaining > 0:
@@ -152,7 +155,10 @@ def _run_children_parallel(batch: _Batch, results: list, *, honor_parent_interru
                 if not honor_parent_interrupt and batch.unit_id:
                     # Detached unit: a crash before the join must not lose children that already finished.
                     record_unit_child(batch.unit_id, entry)
-                _report_child_done(parent_agent, spinner_ref, entry, _tag, task_labels, n_tasks, n_here - len(results))
+                _report_child_done(
+                    parent_agent, spinner_ref, entry, _tag, task_labels, n_tasks, n_here - len(results),
+                    live_deleg_id=batch.live_deleg_id,
+                )
                 if (not honor_parent_interrupt and batch.unit_id and entry.get("status") in SUBAGENT_FAILURE_STATUSES
                         and len(results) < n_here):
                     # Detached unit, a sibling is still running: tell the parent NOW, not when the last one finishes.
