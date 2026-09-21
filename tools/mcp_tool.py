@@ -230,7 +230,7 @@ _MCP_LOG_LEVEL_MAP = {
 
 # ---- Reconnect / keepalive tuning ----
 
-_DEFAULT_CONNECT_TIMEOUT = 60    # seconds for initial connection per server
+_DEFAULT_CONNECT_TIMEOUT = 10    # seconds for initial connection per server (fail-fast contra travamento de sessões)
 _MAX_RECONNECT_RETRIES = 5
 _MAX_INITIAL_CONNECT_RETRIES = 3 # retries for the very first connection attempt
 _MAX_BACKOFF_SECONDS = 60

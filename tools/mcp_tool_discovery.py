@@ -334,7 +334,7 @@ def _run_discovery_pass(new_servers: Dict[str, dict]) -> None:
     if _was_interrupted:
         _set_interrupt(False)
     try:
-        _loop._run_on_mcp_loop(lambda: _discover_all(new_servers), timeout=120)
+        _loop._run_on_mcp_loop(lambda: _discover_all(new_servers), timeout=15)
     except (TimeoutError, InterruptedError) as _e:
         # Stranded _server_connecting entries would block future reconnects.
         how = "timed out" if isinstance(_e, TimeoutError) else "interrupted"
