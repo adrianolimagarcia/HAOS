@@ -599,51 +599,65 @@ export default function App() {
               borderImage: "var(--component-sidebar-border-image)",
             }}
           >
-            <div
-              className={cn(
-                "flex h-14 shrink-0 items-center gap-2",
-                "border-b border-current/20",
-                collapsed ? "lg:justify-center lg:px-0" : "px-4 justify-between",
-              )}
-            >
-              <div
-                className={cn(
-                  "flex items-center gap-2",
-                  collapsed && "lg:hidden",
-                )}
-              >
-                <PluginSlot name="header-left" />
-
-                <Typography className="font-bold text-[1.125rem] leading-[0.95] tracking-[0.0525rem] text-midground uppercase">
-                  HAOS
-                </Typography>
+            {/* Traffic lights & Logo macOS Native Style */}
+            <div className="flex flex-col border-b border-black/5 px-4 pt-3 pb-2 shrink-0">
+              <div className="flex items-center gap-1.5 mb-3">
+                <span className="h-3 w-3 rounded-full bg-[#ff5f56] border border-[#e0443e] inline-block shadow-sm" />
+                <span className="h-3 w-3 rounded-full bg-[#ffbd2e] border border-[#dea123] inline-block shadow-sm" />
+                <span className="h-3 w-3 rounded-full bg-[#27c93f] border border-[#1aab29] inline-block shadow-sm" />
               </div>
+              <div className="flex items-center justify-between">
+                <div
+                  className={cn(
+                    "flex items-center gap-2",
+                    collapsed && "lg:hidden",
+                  )}
+                >
+                  <svg
+                    className="h-5 w-5 text-[#0a84ff]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polygon points="12 2 19 8.5 19 15.5 12 22 5 15.5 5 8.5 12 2" />
+                  </svg>
+                  <span className="font-bold text-[1.05rem] tracking-tight text-[#1c1c1e]">
+                    HAOS
+                  </span>
+                  <span className="text-xs text-[#8e8e93] font-normal pl-0.5">
+                    | Chat
+                  </span>
+                </div>
 
-              <Button
-                ghost
-                size="icon"
-                onClick={closeMobile}
-                aria-label={t.app.closeNavigation}
-                className="lg:hidden text-text-secondary hover:text-midground"
-              >
-                <X />
-              </Button>
+                <Button
+                  ghost
+                  size="icon"
+                  onClick={closeMobile}
+                  aria-label={t.app.closeNavigation}
+                  className="lg:hidden text-text-secondary hover:text-midground"
+                >
+                  <X />
+                </Button>
 
-              <Button
-                ghost
-                size="icon"
-                onClick={toggleCollapsed}
-                aria-label={
-                  collapsed ? t.common.expand : t.common.collapse
-                }
-                className="hidden lg:flex text-text-secondary hover:text-midground"
-              >
-                {collapsed ? (
-                  <PanelLeftOpen className="h-4 w-4" />
-                ) : (
-                  <PanelLeftClose className="h-4 w-4" />
-                )}
-              </Button>
+                <Button
+                  ghost
+                  size="icon"
+                  onClick={toggleCollapsed}
+                  aria-label={
+                    collapsed ? t.common.expand : t.common.collapse
+                  }
+                  className="hidden lg:flex text-text-secondary hover:text-midground"
+                >
+                  {collapsed ? (
+                    <PanelLeftOpen className="h-4 w-4" />
+                  ) : (
+                    <PanelLeftClose className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             </div>
 
             <ProfileSwitcher collapsed={isDesktopCollapsed} />

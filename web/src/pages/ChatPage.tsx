@@ -32,6 +32,7 @@ import { useNavigate, useSearchParams } from "react-router";
 
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
+import { InspectorPanel } from "@/components/InspectorPanel";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -2070,41 +2071,49 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         </div>
 
         {!narrow && !chatPanelCollapsed && (
-          <div
-            id="chat-side-panel"
-            role="complementary"
-            aria-label={modelToolsLabel}
-            className="flex min-h-0 shrink-0 flex-col gap-3 overflow-hidden lg:h-full lg:w-60"
-          >
-            <div className="flex h-8 shrink-0 items-center justify-end pr-1">
-              <Button
-                ghost
-                size="icon"
-                onClick={toggleChatPanel}
-                aria-label="Collapse chat side panel"
-                title="Collapse side panel"
-                className="text-text-secondary hover:text-midground"
-              >
-                <X />
-              </Button>
-            </div>
-            {/* Model picker — keeps the rail thin. */}
-            <div className="shrink-0">
-              <ChatSidebar
-                channel={channel}
-                profile={scopedProfile}
-                onDashboardNewSessionRequest={startFreshDashboardChat}
-                onSessionTitleChange={handleSessionTitleChange}
-              />
-            </div>
+          <div className="flex shrink-0 gap-3 items-start">
+            {/* Inspector Panel SOTA estilo macOS Liquid Glass Light */}
+            <InspectorPanel
+              sessionId={resumeParam || `chat_${channel.slice(0, 12)}`}
+              profile={scopedProfile}
+            />
 
-            {/* Session switcher fills the remaining height below the model box. */}
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <ChatSessionList
-                activeSessionId={resumeParam}
-                profile={scopedProfile}
-                onNewChat={startFreshDashboardChat}
-              />
+            <div
+              id="chat-side-panel"
+              role="complementary"
+              aria-label={modelToolsLabel}
+              className="flex min-h-0 shrink-0 flex-col gap-3 overflow-hidden lg:h-full lg:w-60"
+            >
+              <div className="flex h-8 shrink-0 items-center justify-end pr-1">
+                <Button
+                  ghost
+                  size="icon"
+                  onClick={toggleChatPanel}
+                  aria-label="Collapse chat side panel"
+                  title="Collapse side panel"
+                  className="text-text-secondary hover:text-midground"
+                >
+                  <X />
+                </Button>
+              </div>
+              {/* Model picker — keeps the rail thin. */}
+              <div className="shrink-0">
+                <ChatSidebar
+                  channel={channel}
+                  profile={scopedProfile}
+                  onDashboardNewSessionRequest={startFreshDashboardChat}
+                  onSessionTitleChange={handleSessionTitleChange}
+                />
+              </div>
+
+              {/* Session switcher fills the remaining height below the model box. */}
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ChatSessionList
+                  activeSessionId={resumeParam}
+                  profile={scopedProfile}
+                  onNewChat={startFreshDashboardChat}
+                />
+              </div>
             </div>
           </div>
         )}
