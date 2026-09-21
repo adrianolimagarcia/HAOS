@@ -11,7 +11,8 @@ data_dir temporário — o que se assere é o spec persistido no kanban canônic
 
 import pytest
 
-from hermes.platform.bots import BotSpec, BotSpecManager
+from hermes.platform.bots.manager import BotSpecManager
+from hermes.platform.bots.spec import BotSpec
 from hermes.platform.observability.event_store import EventStore
 from hermes.platform.tasks.kanban_adapter import KanbanAdapter
 from hermes.platform.ui.dashboard_plugin import plugin_api

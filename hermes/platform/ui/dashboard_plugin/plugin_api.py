@@ -562,7 +562,9 @@ if _HAS_FASTAPI and APIRouter is not None:
             task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **overrides)
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=f"campo obrigatório ausente ou recurso inexistente: {exc}") from exc
-        except (ValueError, RuntimeError) as exc:
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"parâmetro inválido de tarefa: {exc}") from exc
+        except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"task_id": task_id}
 
@@ -602,7 +604,9 @@ if _HAS_FASTAPI and APIRouter is not None:
             task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **overrides)
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=f"campo obrigatório ausente ou recurso inexistente: {exc}") from exc
-        except (RuntimeError, PermissionError, ValueError) as exc:
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"parâmetro inválido de tarefa: {exc}") from exc
+        except (RuntimeError, PermissionError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"task_id": task_id, "status": "submitted"}
 

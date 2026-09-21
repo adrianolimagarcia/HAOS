@@ -1,4 +1,5 @@
-from hermes.platform.bots import BotSpec, BotSpecManager
+from hermes.platform.bots.manager import BotSpecManager
+from hermes.platform.bots.spec import BotSpec
 from hermes.platform.observability.event_store import EventStore
 
 def test_bot_specs_replay_and_submit():
@@ -184,3 +185,111 @@ def test_submit_to_dispatcher_never_leaks_trigger_event_into_the_persisted_spec(
         assert "trigger_event" not in stored["spec"]
     finally:
         adapter.close()
+
+
+def _bot_com_rotina_manual(**kwargs):
+    """Bot com rotina e trigger manual: as três portas chegam ao mesmo sink."""
+    from hermes.platform.bots.spec import TriggerSpec
+
+    return BotSpec(id="worker", name="Worker", routines={"fix": {}},
+                   triggers=[TriggerSpec(id="t", type="manual")], **kwargs)
+
+
+def test_unknown_override_key_fails_as_valueerror_not_typeerror(tmp_path):
+    """Chave desconhecida em qualquer porta vira ValueError nomeando a chave.
+
+    ``TaskSpec`` é um dataclass fechado: ``TaskSpec(**values)`` estourava
+    ``TypeError`` cru, que nenhuma rota do dashboard captura — a submissão virava
+    HTTP 500. ``ValueError`` é o tipo que as rotas traduzem em 4xx.
+    """
+    from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+
+    adapter = KanbanAdapter(tmp_path / "kanban.db")
+    try:
+        mgr = BotSpecManager(EventStore())
+        mgr.register(_bot_com_rotina_manual())
+
+        for label, call in (
+            ("submit", lambda: mgr.submit("worker", "goal", nope=1)),
+            ("submit_routine", lambda: mgr.submit_routine("worker", "fix", "goal", trigger_event="x")),
+            ("trigger_manual", lambda: mgr.trigger_manual("worker", "fix", "goal", nope=1)),
+            ("submit_to_dispatcher",
+             lambda: mgr.submit_to_dispatcher("worker", "fix", "goal", adapter, nope=1)),
+        ):
+            try:
+                call()
+                assert False, f"{label} aceitou chave desconhecida"
+            except ValueError as exc:
+                assert "nope" in str(exc) or "trigger_event" in str(exc), f"{label}: {exc}"
+                assert "TaskSpec" in str(exc), f"{label}: {exc}"
+        # A recusa acontece antes do seam do dispatcher: nada foi persistido.
+        assert mgr.run_history("worker", "fix") == []
+    finally:
+        adapter.close()
+
+
+def test_register_rejects_invalid_task_defaults_without_registering():
+    """POST /bots precisa recusar na hora: default inválido envenenaria o bot.
+
+    Aceito com 200, o ``task_defaults`` ruim mataria TODO submit daquele bot
+    depois — negação persistente. A validação é no caminho de escrita, então o
+    bot não chega a existir no ledger.
+    """
+    mgr = BotSpecManager(EventStore())
+    try:
+        mgr.register(BotSpec(id="poison", name="Poison", task_defaults={"nope": 1}))
+        assert False
+    except ValueError as exc:
+        assert "nope" in str(exc) and "TaskSpec" in str(exc)
+    assert mgr.get("poison") is None
+
+    # update é a outra porta de escrita (PATCH /bots/{id}): também não grava o veneno.
+    mgr.register(BotSpec(id="poison", name="Poison", task_defaults={"priority": 30}))
+    try:
+        mgr.update(BotSpec(id="poison", name="Poison", task_defaults={"nope": 1}))
+        assert False
+    except ValueError as exc:
+        assert "nope" in str(exc)
+    assert mgr.get("poison").task_defaults == {"priority": 30}
+
+
+def test_valid_override_still_reaches_the_persisted_spec(tmp_path):
+    """A validação não pode quebrar o uso legítimo: campo real continua vencendo."""
+    from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+
+    adapter = KanbanAdapter(tmp_path / "kanban.db")
+    try:
+        mgr = BotSpecManager(EventStore())
+        mgr.register(BotSpec(id="worker", name="Worker",
+                             task_defaults={"priority": 10}, routines={"fix": {}}))
+
+        task_id = mgr.submit_to_dispatcher("worker", "fix", "Repair it", adapter, priority=7)
+
+        assert adapter.get_task(task_id)["spec"]["priority"] == 7
+    finally:
+        adapter.close()
+
+
+def test_legacy_persisted_spec_with_bad_defaults_still_loads():
+    """Spec já gravado com chave inválida não pode derrubar o carregamento.
+
+    É por isso que a validação vive no caminho de ESCRITA e no sink, e não em
+    ``BotSpec.__post_init__``: o ``__post_init__`` também roda ao recarregar o
+    event store, e um bot antigo envenenado tornaria o store inteiro ilegível.
+    """
+    from hermes.platform.observability.events import Event
+
+    store = EventStore()
+    mgr = BotSpecManager(store)
+    # Evento cru no formato do ledger, como se tivesse sido gravado por uma versão
+    # anterior à validação — o caminho de escrita atual recusaria registrá-lo.
+    store.append(Event(name="bot.spec.registered", payload={
+        "bot_id": "legacy", "spec": {"id": "legacy", "name": "Legacy", "task_defaults": {"nope": 1}},
+    }))
+
+    assert mgr.get("legacy").name == "Legacy"
+    try:
+        mgr.submit("legacy", "goal")
+        assert False
+    except ValueError as exc:
+        assert "nope" in str(exc) and "TaskSpec" in str(exc)

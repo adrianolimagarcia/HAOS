@@ -16,7 +16,8 @@ import pytest
 
 from gateway.config import PlatformConfig
 from gateway.platforms.webhook import WebhookAdapter
-from hermes.platform.bots import BotSpec, BotSpecManager
+from hermes.platform.bots.manager import BotSpecManager
+from hermes.platform.bots.spec import BotSpec
 from hermes.platform.observability.event_store import EventStore
 from hermes.platform.tasks.kanban_adapter import KanbanAdapter
 

@@ -17,24 +17,77 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+def _kanban_db_is_real(candidate: Path) -> bool:
+    """Um ``kanban.db`` de 0 bytes NÃO é board: SQLite vazio não tem schema nenhum.
+
+    Aceitar o stub vazio é justamente o que permitia o store descartável de /tmp
+    vencer o board real e desviar as delegações para um banco que ninguém lê.
+    """
+    db = candidate / "kanban.db"
+    try:
+        return db.is_file() and db.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def _get_haos_data_dir() -> Optional[Path]:
-    """Find the active HAOS data dir where kanban.db and events.db live."""
-    env_dir = os.environ.get("HAOS_DATA_DIR")
-    candidates = []
+    """Find the active HAOS data dir where kanban.db and events.db live.
+
+    Home DECLARADO confina a busca. Com ``HAOS_DATA_DIR``/``HAOS_HOME``/
+    ``HERMES_HOME`` no ambiente, os candidatos saem só desse home — a função não
+    sai adivinhando em ``~/.haos``, ``~/.hermes`` ou ``/tmp``.
+
+    Isso não é preciosismo: ``Path.home()`` é o HOME do processo, e um processo
+    com ``HERMES_HOME`` temporário (a suíte de testes) caía no ``~/.haos`` da
+    máquina. Nesta VM esse caminho É o board de produção do control plane, então
+    a adivinhação fazia os testes gravarem tarefas e eventos REAIS no board real.
+
+    A ordem dentro do home declarado põe o engine dir canônico
+    (``<hermes home>/haos``, o MESMO que o plugin do dashboard usa em
+    ``_haos_engine_dir``) antes dos próprios homes — é ele que aponta para o
+    board que o control plane despacha.
+
+    Os candidatos especulativos (``~/.haos``, ``~/.hermes``, ``/tmp``) só entram
+    quando NADA foi declarado.
+    """
+    candidates: List[Path] = []
+
+    env_dir = (os.environ.get("HAOS_DATA_DIR") or "").strip()
     if env_dir:
-        candidates.append(Path(env_dir))
-    candidates.extend([
-        Path("/tmp/haos_shared_data"),
-        Path.home() / ".haos",
-        Path.home() / ".hermes",  # haos-legacy-path: cadeia de candidatos: le o store legado de proposito
-    ])
+        candidates.append(Path(env_dir).expanduser())
+
+    declared_homes = [
+        raw for raw in ((os.environ.get(n) or "").strip() for n in ("HAOS_HOME", "HERMES_HOME")) if raw
+    ]
+
+    from hermes_constants import get_hermes_home  # function-level: lint A6
+
+    candidates.append(Path(get_hermes_home()) / "haos")
+    candidates.extend(Path(raw).expanduser() for raw in declared_homes)
+
+    if not env_dir and not declared_homes:
+        candidates.extend([
+            Path.home() / ".haos",
+            Path.home() / ".hermes",  # haos-legacy-path: cadeia de candidatos: le o store legado de proposito
+            Path("/tmp/haos_shared_data"),
+        ])
+
+    seen: set[Path] = set()
     for p in candidates:
-        if (p / "kanban.db").exists():
+        if p in seen:
+            continue
+        seen.add(p)
+        if _kanban_db_is_real(p):
             return p
-    # Fallback to /tmp/haos_shared_data if writable
-    tmp_haos = Path("/tmp/haos_shared_data")
-    if tmp_haos.exists() and os.access(tmp_haos, os.W_OK):
-        return tmp_haos
+
+    if not env_dir and not declared_homes:
+        # Último recurso, e só sem home declarado: o store descartável de /tmp
+        # serve se for gravável e, quando já houver kanban.db ali, ele não for o
+        # stub vazio (um SQLite de 0 bytes não tem schema nenhum).
+        tmp_haos = Path("/tmp/haos_shared_data")
+        if tmp_haos.exists() and os.access(tmp_haos, os.W_OK):
+            if not (tmp_haos / "kanban.db").exists() or _kanban_db_is_real(tmp_haos):
+                return tmp_haos
     return None
 
 

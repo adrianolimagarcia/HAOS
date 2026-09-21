@@ -19,6 +19,31 @@ _RUN_RECORDED = "bot.routine.run_recorded"
 # Canonical terminal lifecycle states emitted at the dispatcher seam.
 RUN_STATES = frozenset({"submitted", "claimed", "running", "completed", "failed", "cancelled", "blocked"})
 
+def _validate_task_fields(values: Dict[str, Any]) -> None:
+    """Recusa chave que o TaskSpec (dataclass FECHADO) não conhece.
+
+    Os campos vêm de ``TaskSpec.__dataclass_fields__``, não de uma lista escrita à
+    mão: uma lista à mão desatualiza em silêncio quando o TaskSpec ganha campo, e
+    aí a validação passa a recusar uso legítimo.
+
+    Vive aqui, no sink e no caminho de ESCRITA do BotSpec, e não no
+    ``BotSpec.__post_init__``: o ``__post_init__`` roda também ao RECARREGAR os
+    specs já persistidos no event store, então um bot antigo com chave inválida
+    impediria o carregamento do store inteiro — um dado ruim viraria indisponível
+    em vez de recusado na porta.
+
+    ``ValueError`` e não ``TypeError``: é o tipo que as rotas do dashboard já
+    capturam (``except (KeyError, TypeError, ValueError)`` no POST /bots, e
+    ``except (ValueError, RuntimeError)`` no trigger/submit). O ``TypeError`` cru
+    do ``TaskSpec(**values)`` escapava de todas elas e virava HTTP 500.
+    """
+    unknown = sorted((k for k in values if k not in TaskSpec.__dataclass_fields__), key=str)
+    if unknown:
+        raise ValueError(
+            f"unknown TaskSpec field(s): {', '.join(str(k) for k in unknown)}; "
+            "these are not fields of TaskSpec"
+        )
+
 class BotSpecManager:
     def __init__(self, event_store: EventStore):
         self.event_store = event_store
@@ -41,10 +66,16 @@ class BotSpecManager:
         return paused
 
     def register(self, spec: BotSpec) -> BotSpec:
+        # Só os task_defaults do BOT são validados aqui: os da ROTINA alimentam
+        # também create_cron_job, cujos kwargs são de cron (deliver, skills,
+        # model, paused...), família SEM interseção com os campos do TaskSpec —
+        # validá-los contra o TaskSpec recusaria uso legítimo do caminho de cron.
+        _validate_task_fields(spec.task_defaults)
         if spec.id in self._state(): raise ValueError(f"BotSpec already exists: {spec.id}")
         self._append(_REGISTERED, spec); return spec
 
     def update(self, spec: BotSpec) -> BotSpec:
+        _validate_task_fields(spec.task_defaults)
         if spec.id not in self._state(): raise KeyError(spec.id)
         self._append(_UPDATED, spec); return spec
 
@@ -97,6 +128,11 @@ class BotSpecManager:
                 if not sep or not SecretBroker().check_grant(scope, ref):
                     raise PermissionError("BotSpec grant policy denied submission")
         values.update(id=values.get("id", f"bot-{uuid.uuid4().hex[:10]}"), title=values.get("title", spec.name), goal=goal)
+        # Sink único de todo override (submit/submit_routine/trigger_manual/
+        # submit_to_dispatcher e o corpo HTTP do dashboard): chave desconhecida
+        # aqui é erro do caller, não bug interno — ValueError para as rotas
+        # devolverem 4xx com a mensagem, em vez do TypeError cru virar 500.
+        _validate_task_fields(values)
         return TaskSpec(**values)
 
     def submit_to_dispatcher(
@@ -193,6 +229,10 @@ class BotSpecManager:
         from cron.scheduler import create_job_with_scheduler_registration
         values = dict(definition.get("task_defaults", {}))
         values.update(overrides)
+        # NÃO validar aqui contra campos do TaskSpec: create_job recebe kwargs de
+        # CRON (deliver, skills, model, paused, repeat, workdir...), família cuja
+        # interseção com os campos do TaskSpec é vazia. Validar recusaria todo
+        # parâmetro legítimo de cron.
         values.setdefault("prompt", prompt or definition.get("prompt") or routine)
         values.update(schedule=schedule, name=values.get("name", f"{spec.name}: {routine}"), bot_id=bot_id, routine=routine)
         return create_job_with_scheduler_registration(**values)

@@ -77,19 +77,23 @@ credenciais ficam em `/root/.haos/haos/dashboard-access.txt` (600).
 
 ## 5. Requisito de board (pré-requisito para a superfície fazer sentido)
 
-O plugin monta o estado do engine a partir de `$HERMES_HOME/haos`
-(`_haos_engine_dir()`), enquanto o control plane HAOS usa `HAOS_DATA_DIR`.
+O plugin monta o estado do engine a partir de `_haos_engine_dir()`, enquanto o
+control plane HAOS usa `HAOS_DATA_DIR`.
 
 Se os dois não apontarem para o **mesmo arquivo**, o console do plugin cria
 missões num board que o control plane não lê: a superfície parece funcionar e
 nada é despachado por ele. A divergência de caminhos é fato verificado; a
 consequência é a leitura direta dela, não um experimento executado.
 
-Atenção: `_haos_engine_dir()` **não consulta `HAOS_DATA_DIR`** em momento algum.
-O alinhamento nesta máquina existe porque `$HERMES_HOME/haos/kanban.db` foi
-apontado à mão para o board do control plane — e ele **não se auto-repara**: se
-o symlink sumir (restore, host novo, limpeza do engine dir), o código volta a
-escolher o board obsoleto em silêncio, sem erro.
+**O caminho recomendado é subir o dashboard com `HAOS_DATA_DIR` no ambiente.**
+`_haos_engine_dir()` honra essa variável quando ela traz um `kanban.db` real, e
+devolve esse diretório direto — o mesmo store do control plane, sem symlink
+nenhum no meio.
+
+Sem `HAOS_DATA_DIR`, ela usa `$HERMES_HOME/haos` com um symlink para o kanban
+canônico do Hermes, e **repara symlink quebrado** (volume desmontado, alvo
+removido) em vez de deixar o link pendurado — antes o `FileExistsError` era
+engolido e o plugin lia um board inexistente em silêncio.
 
 Verificação:
 

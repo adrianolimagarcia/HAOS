@@ -476,18 +476,49 @@ def _hermes_home_path() -> Path:
 
 
 def _haos_engine_dir() -> Path:
-    """data_dir do engine HAOS: <home>/haos unificado com o kanban canônico do Hermes."""
+    """data_dir do engine HAOS: <home>/haos unificado com o kanban canônico do Hermes.
+
+    ``HAOS_DATA_DIR`` tem PRECEDÊNCIA quando traz um ``kanban.db`` real: é a
+    escolha explícita do operador e o MESMO store que o control plane HAOS usa.
+    Sem isso plugin e control plane acabam em boards diferentes — split-brain
+    silencioso, onde a superfície parece funcionar e nada é despachado por ela.
+    """
+    # Um kanban.db de verdade em HAOS_DATA_DIR É o store canônico; symlinkar
+    # para o board do Hermes ali seria justamente o split-brain que este
+    # check evita.
+    haos_data_dir = os.environ.get("HAOS_DATA_DIR", "").strip()
+    if haos_data_dir:
+        data_dir = Path(haos_data_dir).expanduser()
+        k_file = data_dir / "kanban.db"
+        if k_file.is_file() and k_file.stat().st_size > 0:
+            return data_dir
     home = _hermes_home_path()
     engine = home / "haos"
     engine.mkdir(parents=True, exist_ok=True)
     haos_db = engine / "kanban.db"
+    # Symlink QUEBRADO (volume desmontado, alvo removido) não conta em
+    # exists(), mas sobrevive: o symlink() seguinte batia em FileExistsError e
+    # o except silencioso deixava o link morto no lugar, com o plugin lendo um
+    # board inexistente. Remover o pendurado é o que torna o reparo possível.
+    if haos_db.is_symlink() and not haos_db.exists():
+        try:
+            haos_db.unlink()
+        except OSError:
+            pass
+    # Se o symlink aponta para arquivo vazio de 0 bytes enquanto existe board
+    # canônico com dados, também desfaz para auto-reparar
+    if haos_db.is_symlink() and haos_db.exists():
+        try:
+            if haos_db.stat().st_size == 0:
+                haos_db.unlink()
+        except OSError:
+            pass
     if not haos_db.exists():
         canonical_db = home / "kanban" / "boards" / "1" / "kanban.db"
-        if not canonical_db.is_file():
+        if not canonical_db.is_file() or canonical_db.stat().st_size == 0:
             canonical_db = home / "kanban.db"
-        if canonical_db.is_file():
+        if canonical_db.is_file() and canonical_db.stat().st_size > 0:
             try:
-                import os  # noqa: PLC0415
                 os.symlink(canonical_db, haos_db)
             except Exception:
                 pass
