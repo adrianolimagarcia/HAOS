@@ -116,3 +116,71 @@ def test_submit_to_dispatcher_carries_yolo_override_onto_the_spec(tmp_path):
         assert adapter.get_task(gated_id)["spec"]["yolo_mode"] is False
     finally:
         adapter.close()
+
+
+def test_submit_to_dispatcher_ledger_records_trigger_event_only_when_truthy(tmp_path):
+    """Proveniência do disparo: chave no ledger de runs, e só quando informada.
+
+    ``trigger_event`` é parâmetro explícito (não ``**overrides``): com valor
+    truthy ele vira a chave ``trigger_event`` do run_history; sem o parâmetro o
+    registro mantém exatamente o shape canônico de 4 chaves, para que os callers
+    existentes não vejam o ledger mudar de forma. O valor é sempre gravado como
+    string: o ledger é serializado em JSON e o dado vem de fora, sem validação
+    de tipo na origem.
+    """
+    from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+
+    adapter = KanbanAdapter(tmp_path / "kanban.db")
+    try:
+        mgr = BotSpecManager(EventStore())
+        mgr.register(BotSpec(id="worker", name="Worker", routines={"fix": {}}))
+
+        push_id = mgr.submit_to_dispatcher("worker", "fix", "Repair it", adapter, trigger_event="push")
+        assert mgr.run_history("worker", "fix")[-1] == {
+            "bot_id": "worker", "routine": "fix", "run_id": push_id, "status": "submitted",
+            "trigger_event": "push",
+        }
+
+        # O valor chega de fora sem validação de tipo (o webhook o tira do corpo da
+        # requisição): o ledger é JSON e o resto do sistema lê a chave como nome de
+        # evento, então o contrato é gravar sempre string.
+        for hostile in ({"a": 1}, {1, 2}):
+            mgr.submit_to_dispatcher("worker", "fix", "Repair it", adapter, trigger_event=hostile)
+            assert isinstance(mgr.run_history("worker", "fix")[-1]["trigger_event"], str)
+
+        plain_id = mgr.submit_to_dispatcher("worker", "fix", "Repair it", adapter)
+        record = mgr.run_history("worker", "fix")[-1]
+        assert record == {
+            "bot_id": "worker", "routine": "fix", "run_id": plain_id, "status": "submitted",
+        }
+        assert "trigger_event" not in record
+    finally:
+        adapter.close()
+
+
+def test_submit_to_dispatcher_never_leaks_trigger_event_into_the_persisted_spec(tmp_path):
+    """Proveniência do disparo não é campo do TaskSpec — e não pode virar um.
+
+    Se ``trigger_event`` chegasse por ``**overrides`` ele entraria em
+    ``TaskSpec(**values)``, que é um dataclass fechado — chave desconhecida ali é
+    ``TypeError`` e a submissão morreria antes de persistir. Como parâmetro
+    explícito ele fica só no ledger; o spec no kanban continua limpo.
+
+    Isto cobre ESTA chave nesta porta, não a classe inteira: qualquer outra chave
+    arbitrária em ``**overrides`` de ``submit_to_dispatcher``/``submit_routine``/
+    ``trigger_manual``/``submit`` continua chegando em ``TaskSpec(**values)``.
+    """
+    from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+
+    adapter = KanbanAdapter(tmp_path / "kanban.db")
+    try:
+        mgr = BotSpecManager(EventStore())
+        mgr.register(BotSpec(id="worker", name="Worker", routines={"fix": {}}))
+
+        task_id = mgr.submit_to_dispatcher("worker", "fix", "Repair it", adapter, trigger_event="push")
+
+        stored = adapter.get_task(task_id)
+        assert stored["spec"]["goal"] == "Repair it"
+        assert "trigger_event" not in stored["spec"]
+    finally:
+        adapter.close()

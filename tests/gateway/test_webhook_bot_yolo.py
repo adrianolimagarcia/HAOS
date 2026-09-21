@@ -24,7 +24,8 @@ from hermes.platform.tasks.kanban_adapter import KanbanAdapter
 @pytest.fixture
 def wired(tmp_path, monkeypatch):
     store = EventStore()
-    BotSpecManager(store).register(BotSpec(id="worker", name="Worker", routines={"fix": {}}))
+    manager = BotSpecManager(store)
+    manager.register(BotSpec(id="worker", name="Worker", routines={"fix": {}}))
     # `_handle_bot_trigger` faz `from ...event_store import get_event_store` dentro
     # da função, então patchar o módulo de origem é o seam real do processo.
     import hermes.platform.observability.event_store as event_store_module
@@ -35,13 +36,15 @@ def wired(tmp_path, monkeypatch):
     config = PlatformConfig(enabled=True, extra={"host": "127.0.0.1", "port": 0, "routes": {}})
     adapter = WebhookAdapter(config)
     adapter.gateway_runner = type("Runner", (), {"kanban_adapter": kanban})()
-    yield adapter, kanban
+    # O manager é stateless (o ledger vive no EventStore), então este handle lê
+    # exatamente os mesmos eventos que o manager criado dentro do handler gravou.
+    yield adapter, kanban, manager
     kanban.close()
 
 
 @pytest.mark.asyncio
 async def test_webhook_bot_trigger_dispatches_a_yolo_mission(wired):
-    adapter, kanban = wired
+    adapter, kanban, manager = wired
 
     response = await adapter._handle_bot_trigger(
         prompt="Repair it",
@@ -55,3 +58,6 @@ async def test_webhook_bot_trigger_dispatches_a_yolo_mission(wired):
     assert response.status == 202
     task_id = json.loads(response.text)["task_id"]
     assert kanban.get_task(task_id)["spec"]["yolo_mode"] is True
+    # O evento externo que disparou a missão fica registrado como proveniência
+    # no ledger de runs do bot, não só no spec.
+    assert manager.run_history("worker", "fix")[-1]["trigger_event"] == "push"

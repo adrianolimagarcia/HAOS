@@ -526,6 +526,7 @@ class WebhookAdapter(BasePlatformAdapter):
                 return _json_error("Kanban adapter unavailable", 503)
             task_id = manager.submit_to_dispatcher(
                 bot_id, routine, goal, adapter, idempotency_key=delivery_id,
+                trigger_event=event_type,
                 # Superfície de operador do control plane: a rota só chega aqui com
                 # assinatura HMAC válida, e o worker é headless — sem YOLO a missão
                 # para num prompt de aprovação que ninguém está vendo. A blocklist

@@ -101,12 +101,14 @@ class BotSpecManager:
 
     def submit_to_dispatcher(
         self, bot_id: str, routine: str, goal: str, adapter: Any, *,
-        idempotency_key: Optional[str] = None, **overrides: Any
+        idempotency_key: Optional[str] = None, trigger_event: Optional[str] = None, **overrides: Any
     ) -> str:
         """Persist a routine once and return the stable canonical task id.
 
         The key is recorded in the canonical EventStore event; retries therefore
         reuse the original Kanban task without creating a second ledger entry.
+        O ``trigger_event`` (quando informado) também é registrado no ledger de
+        runs, como proveniência do disparo.
         """
         if idempotency_key is not None:
             for event in self.event_store.get_all(name=_ROUTINE_SUBMITTED):
@@ -124,7 +126,14 @@ class BotSpecManager:
         except Exception as exc:
             self._record_routine_run(bot_id, routine, task.id, "dispatch_failed", error=str(exc))
             raise
-        self._record_routine_run(bot_id, routine, task_id, "submitted")
+        # trigger_event é parâmetro explícito, não **overrides: assim a chave nunca
+        # pode chegar ao TaskSpec (chave desconhecida lá é TypeError) e fica só no
+        # ledger de runs, que é onde a proveniência do disparo pertence.
+        # str(): o valor vem de fora sem validação de tipo — o webhook o tira do
+        # corpo da requisição, então um corpo com objeto/lista gravaria o tipo
+        # errado numa chave JSON que o resto do sistema lê como nome de evento.
+        details = {"trigger_event": str(trigger_event)} if trigger_event else {}
+        self._record_routine_run(bot_id, routine, task_id, "submitted", **details)
         return task_id
 
     def _record_routine_run(self, bot_id: str, routine: str, run_id: str, status: str, **details: Any) -> None:

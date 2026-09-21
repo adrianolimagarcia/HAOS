@@ -38,6 +38,8 @@ skins, troca de modelos, etc.). O editor da aba Config Agente opera sobre o
 `config.yaml` real do agente; a conversa agent-level em si permanece nas
 superfícies agent-level (dashboard oficial / hermes-webui).
 
+> Superfície do dashboard oficial (plugin HAOS): ver `docs/haos/DASHBOARD_PLUGIN.md` — o backend do plugin é montado pelo servidor do dashboard oficial (`hermes dashboard` e o headless `hermes serve`, mesmo servidor); o hermes-webui não monta backend de plugin.
+
 ## 2. Arquitetura
 
 ```
