@@ -143,8 +143,10 @@ class HAOSStandaloneState:
             except Exception:
                 pass
 
-        # Serializa despachos (console/taskboard) em background thread.
-        self._dispatch_lock = threading.Lock()
+        # Pool concorrente para despachos paralelos (Master -> Bots -> Leafs).
+        # Permite que até 6 tarefas/lanes rodem verdadeiramente em paralelo sem lock serializado.
+        from concurrent.futures import ThreadPoolExecutor
+        self._dispatch_pool = ThreadPoolExecutor(max_workers=6, thread_name_prefix="haos-lane-worker")
 
     # ------------------------------------------------------------------ #
     def create_task_from_message(
@@ -179,22 +181,23 @@ class HAOSStandaloneState:
         return {"task_id": task_id, "spec_id": spec.id, "goal": message}
 
     def dispatch_in_background(self, *, max_spawn: int = 10) -> bool:
-        """Dispara claim_tick canônico em cascata em thread daemon (nunca bloqueia o HTTP)."""
-        def _run() -> None:
+        """Dispara claim_tick canônico concorrente em ThreadPool (permite execução paralela real de bots/leafs)."""
+        def _worker_drain(slot_id: int) -> None:
             try:
-                with self._dispatch_lock:
-                    remaining = int(max_spawn)
-                    while remaining > 0:
-                        executed = self.dispatcher.claim_tick(
-                            worker_id="haos-webui",
-                            max_spawn=1,
-                        )
-                        if not executed:
-                            break
-                        remaining -= 1
-            except Exception:  # noqa: BLE001 - falha registrada no card pela lane
-                pass
-        threading.Thread(target=_run, daemon=True).start()
+                # Cada slot worker drena uma tarefa disponível e executa a lane
+                self.dispatcher.claim_tick(
+                    worker_id=f"haos-webui-{slot_id}",
+                    max_spawn=1,
+                )
+            except Exception as exc:  # noqa: BLE001 - falha registrada no card pela lane
+                logger.warning("Worker drain error: %s", exc)
+
+        def _spawn_pool() -> None:
+            spawns = max(1, min(int(max_spawn), 6))
+            for i in range(spawns):
+                self._dispatch_pool.submit(_worker_drain, i + 1)
+
+        threading.Thread(target=_spawn_pool, daemon=True).start()
         return True
 
     # ------------------------------------------------------------------ #
@@ -548,9 +551,26 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         elif self.command in ("GET", "HEAD") and (path in ("/", "/index.html", "/chat", "/console", "/terminal", "/taskboard", "/scheduler", "/ouroboros", "/agent", "/system", "/events", "/config") or not path.startswith(("/api/", "/health", "/v1/"))):
             self._serve_index()
         elif self.command == "GET" and path in ("/health", "/api/health"):
-            self._send_json(200, {"status": "healthy", "service": "haos-controlplane"})
+            # Diagnóstico honesto de integridade e liveness do storage
+            k_db = self.state.kanban_db
+            k_ok = k_db.is_file() and k_db.stat().st_size > 0
+            e_db = self.state.events_db
+            e_ok = e_db.is_file()
+            storage_healthy = bool(k_ok and e_ok)
+            status_code = 200 if storage_healthy else 503
+            self._send_json(status_code, {
+                "status": "healthy" if storage_healthy else "degraded",
+                "service": "haos-controlplane",
+                "storage_accessible": storage_healthy,
+                "kanban_db": str(k_db),
+                "events_db": str(e_db),
+            })
         elif self.command == "GET" and path == "/api/state":
-            self._send_json(200, self.state.state_payload())
+            try:
+                self._send_json(200, self.state.state_payload())
+            except Exception as exc:
+                logger.error("State generation failed: %s", exc, exc_info=True)
+                self._send_json(503, {"error": "storage_unavailable", "detail": str(exc)})
         elif self.command == "GET" and path in ("/v1/models", "/api/v1/models"):
             self._handle_v1_models()
         elif self.command == "GET" and path in ("/api/team-graph", "/api/controlplane/team_graph"):
@@ -637,6 +657,11 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._evolution_blast_radius()
         elif self.command == "POST" and path == "/api/evolution/automerge":
             self._evolution_automerge()
+        elif self.command == "GET" and path == "/api/evolution/rsi/skills":
+            self._evolution_rsi_skills()
+        elif self.command == "POST" and path == "/api/evolution/rsi/trigger":
+            self._evolution_rsi_trigger()
+
         elif self.command == "GET" and path == "/api/settings":
             self._send_json(200, self.state.settings)
         elif self.command == "POST" and path == "/api/settings":
@@ -676,14 +701,16 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         elif self.command == "GET" and path == "/api/timeline":
             cat = parse_qs(urlparse(self.path).query).get("category", [None])[0]
             self._send_json(200, {"timeline": self.state.get_unified_timeline(category=cat)})
-        elif self.command == "GET" and path == "/api/skills/catalog":
+        elif self.command == "GET" and path in ("/api/skills/catalog", "/api/skills/hub/official"):
             self._skills_catalog()
-        elif self.command == "GET" and path == "/api/skills/installed":
+        elif self.command == "GET" and path in ("/api/skills/installed", "/api/skills/hub/sources"):
             self._skills_installed()
-        elif self.command == "POST" and path == "/api/skills/install":
+        elif self.command == "POST" and path in ("/api/skills/install", "/api/skills/hub/install"):
             self._skills_install()
-        elif self.command == "POST" and path == "/api/skills/uninstall":
+        elif self.command == "POST" and path in ("/api/skills/uninstall", "/api/skills/hub/uninstall"):
             self._skills_uninstall()
+        elif self.command == "GET" and path == "/api/skills/hub/search":
+            self._skills_catalog()
         elif self.command == "GET" and path == "/api/plugins/catalog":
             self._plugins_catalog()
         elif self.command == "GET" and path == "/api/plugins/installed":
@@ -813,7 +840,7 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         import tempfile
 
         body = self._read_json_body()
-        skill_name = str(body.get('name') or '').strip()
+        skill_name = str(body.get('name') or body.get('identifier') or '').strip()
         force = bool(body.get('force', False))
         if not skill_name:
             self._send_json(400, {'error': 'name_required'})
@@ -2236,6 +2263,24 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             })
         except Exception as exc:
             self._send_json(500, {"error": str(exc)})
+
+    def _evolution_rsi_skills(self) -> None:
+        from hermes.platform.evolution.rsi_loop import get_ouroboros_rsi
+        rsi = get_ouroboros_rsi()
+        skills = rsi.list_crystallized_skills()
+        self._send_json(200, {"skills": skills, "count": len(skills)})
+
+    def _evolution_rsi_trigger(self) -> None:
+        from hermes.platform.evolution.rsi_loop import get_ouroboros_rsi
+        body = self._read_json_body()
+        bot_id = str(body.get("bot_id") or "operator-bot").strip()
+        category = str(body.get("category") or "syntax_regression").strip()
+        errors = list(body.get("errors") or ["SyntaxError: invalid syntax in pipeline", "SyntaxError: unterminated string", "SyntaxError: unexpected token"])
+
+        rsi = get_ouroboros_rsi()
+        cluster = [{"task_id": f"sim_{i}", "task_name": f"Simulação {i}", "error_message": err, "category": category} for i, err in enumerate(errors)]
+        res = rsi.synthesize_meta_skill(bot_id, cluster)
+        self._send_json(200, res)
 
     def _evolution_automerge(self) -> None:
         body = self._read_json_body()
