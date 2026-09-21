@@ -1061,14 +1061,28 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
 </head>
 <body>
-<header>
-  <div class="logo">⚡ HAOS<span>·ENGINE</span></div>
-  <span class="chip ok" id="chipMode">STANDALONE</span>
+<!-- macOS Traffic Lights, Logo HAOS | Chat & Topbar -->
+<header style="padding:10px 20px;display:flex;align-items:center;gap:16px;background:rgba(255,255,255,0.85);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid rgba(15,23,42,0.08);position:sticky;top:0;z-index:100;box-shadow:0 1px 12px rgba(15,23,42,0.03);">
+  <div style="display:flex;align-items:center;gap:7px;margin-right:8px;">
+    <span style="width:12px;height:12px;border-radius:50%;background:#ff5f56;border:1px solid #e0443e;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,0.12);" title="Fechar"></span>
+    <span style="width:12px;height:12px;border-radius:50%;background:#ffbd2e;border:1px solid #dea123;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,0.12);" title="Minimizar"></span>
+    <span style="width:12px;height:12px;border-radius:50%;background:#27c93f;border:1px solid #1aab29;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,0.12);" title="Expandir"></span>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;">
+    <svg style="width:20px;height:20px;color:#0a84ff;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 19 8.5 19 15.5 12 22 5 15.5 5 8.5 12 2"></polygon>
+    </svg>
+    <div style="font-weight:800;font-size:1.05rem;letter-spacing:-0.02em;color:#1c1c1e;">HAOS</div>
+    <span style="color:#8e8e93;font-size:0.85rem;font-weight:400;margin-left:2px;">| Chat</span>
+  </div>
+
+  <span class="chip ok" id="chipMode" style="border-radius:12px;padding:2px 8px;font-size:0.7rem;font-weight:700;">STANDALONE</span>
 
   <!-- DSH Style Workspace Dropdown & Picker Trigger -->
-  <div style="position:relative;display:inline-flex;align-items:center;margin-left:8px;">
-    <div id="wsDropdownTrigger" onclick="toggleWorkspaceMenu()" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.9);border:1px solid rgba(15,23,42,0.12);border-radius:8px;padding:5px 12px;cursor:pointer;user-select:none;font-size:0.8rem;transition:all 0.15s;box-shadow:0 1px 3px rgba(15,23,42,0.05);" title="Alternar ou Criar Workspace">
-      <span style="color:var(--accent);font-weight:700;">📁</span>
+  <div style="position:relative;display:inline-flex;align-items:center;margin-left:6px;">
+    <div id="wsDropdownTrigger" onclick="toggleWorkspaceMenu()" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.9);border:1px solid rgba(15,23,42,0.12);border-radius:8px;padding:4px 10px;cursor:pointer;user-select:none;font-size:0.78rem;transition:all 0.15s;box-shadow:0 1px 3px rgba(15,23,42,0.05);" title="Alternar ou Criar Workspace">
+      <span style="color:#0a84ff;font-weight:700;">📁</span>
       <span id="currentWsName" style="font-weight:600;color:var(--text-strong);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Default (HERMES-TURBO)</span>
       <span style="font-size:0.65rem;color:var(--muted);margin-left:2px;">▼</span>
     </div>
@@ -1080,7 +1094,7 @@
         <!-- Injected dynamically -->
       </div>
       <div style="border-top:1px solid rgba(15,23,42,0.08);margin-top:6px;padding-top:6px;">
-        <button class="act" style="width:100%;font-size:0.75rem;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 10px;background:rgba(13,148,136,0.08);color:var(--accent);border-color:rgba(13,148,136,0.25);font-weight:600;" onclick="openWorkspaceDialog()">
+        <button class="act" style="width:100%;font-size:0.75rem;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 10px;background:rgba(10,132,255,0.08);color:#0a84ff;border-color:rgba(10,132,255,0.25);font-weight:600;" onclick="openWorkspaceDialog()">
           ＋ Novo Workspace…
         </button>
       </div>
@@ -1089,14 +1103,14 @@
 
   <span class="chip mono" id="chipDir" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;" title="Diretório de Trabalho Atual">…</span>
   <div class="spacer"></div>
-  <a href="#" id="hermesConfigBtn" target="_blank" class="chip" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.9);color:var(--accent);border:1px solid rgba(13,148,136,0.25);cursor:pointer;font-weight:600;padding:5px 12px;border-radius:8px;transition:all 0.2s;box-shadow:0 1px 3px rgba(15,23,42,0.05);" title="Abrir Dashboard Oficial de Configuração do Hermes (Porta 9191)">
+  <a href="#" id="hermesConfigBtn" target="_blank" class="chip" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.9);color:#0a84ff;border:1px solid rgba(10,132,255,0.25);cursor:pointer;font-weight:600;padding:4px 10px;border-radius:8px;transition:all 0.2s;box-shadow:0 1px 3px rgba(15,23,42,0.05);" title="Abrir Dashboard Oficial de Configuração do Hermes (Porta 9191)">
     ⚙️ Hermes Config (9191)
   </a>
   <span class="chip" id="chipState">—</span>
 </header>
 <nav id="nav">
-  <button data-tab="terminal" class="active"><span class="dot"></span>Terminal</button>
-  <button data-tab="console"><span class="dot"></span>💬 Chat / Console</button>
+  <button data-tab="console" class="active"><span class="dot"></span>💬 Chat</button>
+  <button data-tab="terminal"><span class="dot"></span>Terminal</button>
   <button data-tab="taskboard"><span class="dot"></span>Taskboard</button>
   <button data-tab="teamgraph"><span class="dot"></span>🌲 Team Graph</button>
   <button data-tab="bots"><span class="dot"></span>🤖 Bots / Hierarquia</button>
@@ -1110,7 +1124,7 @@
 </nav>
 <main>
   <!-- ============ TERMINAL ============ -->
-  <section class="tab active" id="tab-terminal">
+  <section class="tab" id="tab-terminal">
     <!-- Terminal Top Controls Bar -->
     <div class="card" style="margin-bottom:8px;padding:8px 12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -1138,85 +1152,142 @@
     </div>
   </section>
 
-  <!-- ============ CHAT & CONSOLE (MAC GLASSMORPHIC) ============ -->
-  <section class="tab" id="tab-console">
-    <!-- Top Glassmorphic Stream & Identity Bar -->
-    <div class="card" style="margin-bottom:10px;padding:10px 16px;background:rgba(22,27,34,0.85);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.1);border-radius:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-        <div style="display:flex;align-items:center;gap:12px;">
-          <div style="position:relative;display:flex;align-items:center;">
-            <span id="consoleLiveDot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#3fb950;box-shadow:0 0 10px #3fb950;"></span>
-          </div>
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-weight:700;font-size:0.95rem;color:var(--text-strong);" id="consoleMissionTitle">HAOS Agent Intelligence Chat</span>
-              <span class="tg-badge idle" id="consoleMissionStatus" style="font-size:0.68rem;padding:2px 8px;border-radius:12px;">ONLINE</span>
-              <span class="tg-badge" id="consoleYoloBadge" style="font-size:0.68rem;padding:2px 8px;border-radius:12px;background:#2d1b04;border:1px solid #d29922;color:#f0b72f;" title="Missões despachadas por este console/chat rodam em YOLO por padrão: o worker é headless e não pode parar num prompt de aprovação que ninguém vê aqui. A blocklist hardline do kernel continua valendo (não é bypassável nem sob --yolo).">⚡ YOLO</span>
-            </div>
-            <div style="font-size:0.72rem;color:var(--muted);margin-top:1px;">Stream interativo de alta fidelidade &bull; Telemetria e raciocínio profundo</div>
-          </div>
-        </div>
+  <!-- ============ CHAT & CONSOLE (MAC LIQUID GLASS LIGHT 3-COLUMN) ============ -->
+  <section class="tab active" id="tab-console">
+    <div style="display:flex;gap:20px;align-items:flex-start;min-height:calc(100vh - 160px);">
 
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <span class="chip mono" id="consoleLiveMetrics" style="font-size:0.75rem;padding:4px 10px;background:rgba(0,240,255,0.08);color:#00F0FF;border:1px solid rgba(0,240,255,0.25);border-radius:20px;">⏱ 0s · 🪙 0 tokens · 💵 $0.0000</span>
-          <button class="act" style="font-size:0.76rem;padding:5px 12px;border-radius:8px;" onclick="switchConsoleToActiveTerminal()" id="btnConsoleTerminal" title="Abrir terminal interativo vinculado">↗ Terminal PTY</button>
-          <button class="act" style="font-size:0.76rem;padding:5px 12px;border-radius:8px;background:rgba(248,81,73,0.15);color:#f85149;border-color:rgba(248,81,73,0.3);" onclick="cancelActiveConsoleMission()" id="btnConsoleCancel" title="Interromper execução ativa">⏹ Parar</button>
-          <button class="act" style="font-size:0.76rem;padding:5px 12px;border-radius:8px;" onclick="clearConsoleFeed()" title="Limpar histórico da tela">Limpar</button>
-        </div>
-      </div>
-    </div>
+      <!-- CENTRAL COLUMN: NATIVE BUBBLE CHAT & TOOL PILLS -->
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;height:calc(100vh - 160px);background:rgba(255,255,255,0.75);backdrop-filter:blur(28px) saturate(180%);-webkit-backdrop-filter:blur(28px) saturate(180%);border:1px solid rgba(255,255,255,0.9);border-radius:20px;box-shadow:0 20px 40px -15px rgba(15,23,42,0.08);overflow:hidden;position:relative;">
 
-    <!-- Live Glassmorphic Chat Shell -->
-    <div class="console">
-      <div class="msgs" id="consoleMsgs">
-        <div class="msg-row engine">
-          <div class="msg-avatar bot-av">👁️</div>
-          <div class="msg-bubble">
-            <div class="msg-meta-header">
-              <b>The Eye</b> <span>(Arquiteto Mestre)</span> &bull; <span class="msg-time">Agora</span>
-            </div>
-            <div class="msg-content">
-              Olá, Operador. O ecossistema <b>HAOS</b> está totalmente operacional. Você pode enviar instruções táticas, pedir revisões de código, despachar missões para qualquer bot especialista da frota ou planejar execuções com <b>Sombras isoladas</b>.
+        <!-- Chat Stream Transcript -->
+        <div class="msgs" id="consoleMsgs" style="flex:1;overflow-y:auto;padding:24px 30px 100px;display:flex;flex-direction:column;gap:20px;background:transparent;">
+          
+          <!-- Sample User Bubble Match Mockup -->
+          <div class="msg-row user" style="max-width:85%;align-self:flex-start;">
+            <div class="msg-bubble">
+              <div style="font-size:0.75rem;color:#8e8e93;margin-bottom:4px;font-weight:500;">
+                10:42 AM · You
+              </div>
+              <div style="font-size:0.95rem;line-height:1.5;color:#1c1c1e;padding:12px 18px;background:rgba(255,255,255,0.9);border:1px solid rgba(15,23,42,0.06);border-radius:18px;box-shadow:0 4px 14px rgba(15,23,42,0.04);">
+                Summarize the contents of /etc/hosts and list any custom local domains.
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Modern Composer Bar -->
-      <div class="chat-composer-wrap">
-        <div class="chat-composer-tools">
-          <div class="chat-bot-selector">
-            <span style="font-size:0.8rem;color:var(--muted);">Falar com:</span>
-            <select id="chatTargetBot" onchange="updateChatBotTarget()">
-              <option value="the_eye">👑 The Eye (Arquiteto)</option>
-              <option value="orquestrador">🧠 Orquestrador (Gerente DAG)</option>
-              <option value="forge_coder">⚡ Forge Coder (Engenheiro Coder)</option>
-              <option value="sentinel_sre">🛡️ Sentinel SRE (DevOps / Infra)</option>
-              <option value="cerberus_sec">🔒 Cerberus SEC (Segurança / Audit)</option>
-              <option value="pixel_front">🎨 Pixel Front (UI / UX / Web)</option>
-              <option value="verifier_qa">🧪 Verifier QA (Testes E2E / Mutação)</option>
-              <option value="scythe_scraper">🕸️ Scythe Scraper (OSINT / Web)</option>
-              <option value="scribe_doc">📚 Scribe DOC (Documentação)</option>
-              <option value="chronos_cron">⏰ Chronos Cron (Tarefas / Agendador)</option>
-              <option value="athena_data">📊 Athena Data (Engenharia de Dados)</option>
-              <option value="vulcan_release">🚀 Vulcan Release (Build / ISO)</option>
-            </select>
+          <!-- Sample Tool Call Bubble Match Mockup -->
+          <div class="msg-row engine" style="max-width:85%;align-self:flex-start;">
+            <div class="msg-bubble" style="width:100%;">
+              <div style="font-size:0.75rem;color:#8e8e93;margin-bottom:4px;font-weight:500;">
+                10:42 AM · HAOS · <span style="color:#0a84ff;">tool call</span>
+              </div>
+              <!-- Tool Call Pill Card -->
+              <div style="display:inline-flex;align-items:center;gap:10px;padding:8px 16px;background:#ffffff;border:1px solid rgba(15,23,42,0.08);border-radius:12px;box-shadow:0 2px 8px rgba(15,23,42,0.04);cursor:pointer;" title="Chamada de ferramenta executada">
+                <svg style="width:16px;height:16px;color:#0a84ff;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span style="font-family:var(--mono);font-size:0.84rem;font-weight:600;color:#1c1c1e;">read_file</span>
+                <span style="font-family:var(--mono);font-size:0.84rem;color:#64748b;">/etc/hosts</span>
+              </div>
+            </div>
           </div>
-          <div style="font-size:0.72rem;color:var(--muted);display:flex;align-items:center;gap:6px;">
-            <span>Shift + Enter pula linha &bull; Enter envia</span>
-          </div>
+
         </div>
 
-        <div class="chat-input-row">
-          <textarea id="consoleInput" placeholder="Mensagem para o agente ou instrução de missão…"
-            rows="1"
-            oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"
-            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendConsole();}"></textarea>
-          <button class="act primary" onclick="sendConsole()" style="padding:8px 18px;border-radius:10px;font-weight:700;display:flex;align-items:center;gap:6px;height:40px;">
-            <span>Enviar</span> <span style="font-size:1.1rem;line-height:1;">↑</span>
+        <!-- Floating Rounded Capsule Composer Bar -->
+        <div style="position:absolute;bottom:18px;left:24px;right:24px;display:flex;align-items:center;background:rgba(255,255,255,0.92);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.95);border-radius:9999px;box-shadow:0 12px 32px rgba(15,23,42,0.1);padding:6px 8px 6px 20px;gap:10px;">
+          <input type="text" id="consoleInput" placeholder="Message HAOS..." 
+            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;font-size:0.95rem;color:#1c1c1e;padding:6px 0;"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendConsole();}" />
+
+          <button onclick="sendConsole()" 
+            style="width:36px;height:36px;border-radius:50%;background:#0a84ff;color:#ffffff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.1rem;font-weight:700;box-shadow:0 2px 8px rgba(10,132,255,0.35);transition:all 0.15s ease;"
+            title="Enviar mensagem">
+            ↑
           </button>
         </div>
+
       </div>
+
+      <!-- RIGHT COLUMN: INSPECTOR PANEL (CPU CHIP & LIVE LOGS) -->
+      <aside style="width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:18px;padding:20px;background:rgba(255,255,255,0.8);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);border:1px solid rgba(255,255,255,0.9);border-radius:20px;box-shadow:0 20px 40px -15px rgba(15,23,42,0.08);color:#1c1c1e;">
+        
+        <div style="font-weight:700;font-size:1.05rem;letter-spacing:-0.02em;color:#1c1c1e;">
+          Inspector
+        </div>
+
+        <!-- MODEL SECTION WITH CPU CHIP -->
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:0.7rem;font-weight:700;color:#8e8e93;letter-spacing:0.06em;text-transform:uppercase;">
+            <svg style="width:14px;height:14px;color:#0a84ff;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+              <rect x="9" y="9" width="6" height="6"></rect>
+              <path d="M15 2v2"></path><path d="M15 20v2"></path>
+              <path d="M2 15h2"></path><path d="M2 9h2"></path>
+              <path d="M20 15h2"></path><path d="M20 9h2"></path>
+              <path d="M9 2v2"></path><path d="M9 20v2"></path>
+            </svg>
+            <span>MODEL</span>
+          </div>
+          <div style="font-size:0.88rem;font-weight:600;color:#1c1c1e;padding-left:2px;" id="inspectorModelLabel">
+            local · deepseek-v4-flash
+          </div>
+        </div>
+
+        <!-- SESSION ID SECTION -->
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="font-size:0.7rem;font-weight:700;color:#8e8e93;letter-spacing:0.06em;text-transform:uppercase;">
+            SESSION ID
+          </div>
+          <div onclick="copyInspectorSessionId()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:4px 8px;border-radius:8px;background:rgba(15,23,42,0.03);transition:background 0.15s;" title="Clique para copiar">
+            <span style="font-family:var(--mono);font-size:0.82rem;color:#1c1c1e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="inspectorSessionId">
+              chat_9f3c7a2d9b1e
+            </span>
+            <span style="font-size:0.8rem;color:#8e8e93;" id="inspectorCopyFeedback">📋</span>
+          </div>
+        </div>
+
+        <!-- COST SECTION -->
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="font-size:0.7rem;font-weight:700;color:#8e8e93;letter-spacing:0.06em;text-transform:uppercase;">
+            COST
+          </div>
+          <div style="font-size:0.95rem;font-weight:700;color:#16a34a;" id="inspectorCostLabel">
+            $0.00
+          </div>
+        </div>
+
+        <!-- SKILLS SECTION -->
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div style="font-size:0.7rem;font-weight:700;color:#8e8e93;letter-spacing:0.06em;text-transform:uppercase;">
+            SKILLS
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;padding:2px 10px;background:rgba(15,23,42,0.06);border-radius:9999px;font-size:0.75rem;font-weight:700;color:#1c1c1e;" id="inspectorSkillsBadge1">12</span>
+            <span style="display:inline-flex;align-items:center;justify-content:center;padding:2px 10px;background:rgba(15,23,42,0.06);border-radius:9999px;font-size:0.75rem;font-weight:700;color:#1c1c1e;" id="inspectorSkillsBadge2">12</span>
+          </div>
+        </div>
+
+        <!-- LIVE LOG SECTION -->
+        <div style="display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;padding-top:8px;border-top:1px solid rgba(15,23,42,0.06);">
+          <div style="font-size:0.7rem;font-weight:700;color:#8e8e93;letter-spacing:0.06em;text-transform:uppercase;">
+            LIVE LOG
+          </div>
+          <div id="inspectorLiveLogBox" style="display:flex;flex-direction:column;gap:6px;font-family:var(--mono);font-size:0.76rem;color:#3a3a3c;overflow-y:auto;max-height:220px;padding-right:4px;">
+            <div style="line-height:1.35;">
+              <span style="color:#8e8e93;font-size:0.7rem;">10:42:11</span> <span style="color:#0a84ff;">[llama3.1]</span> Loading model...
+            </div>
+            <div style="line-height:1.35;">
+              <span style="color:#8e8e93;font-size:0.7rem;">10:42:13</span> <span style="color:#0a84ff;">[llama3.1]</span> Model loaded successfully
+            </div>
+            <div style="line-height:1.35;">
+              <span style="color:#8e8e93;font-size:0.7rem;">10:42:14</span> <span style="color:#0a84ff;">[tool]</span> read_file(/etc/hosts)
+            </div>
+          </div>
+        </div>
+
+      </aside>
+
     </div>
   </section>
 
@@ -2458,6 +2529,20 @@ function render(stateData) {
   renderSettingsForm(st.settings);
   renderAgentSummary(st);
   followPendingTasks(st.taskboard);
+
+  // Update Inspector Panel with live model, cost, and skills
+  try {
+    const activeM = (st.control_overview && st.control_overview.mayor_route) ||
+                    (st.settings && st.settings.model) ||
+                    "local · deepseek-v4-flash";
+    const mLabel = $("inspectorModelLabel");
+    if (mLabel) mLabel.textContent = activeM.replace("custom:wrapper:", "local · ");
+
+    if (st.control_overview && st.control_overview.cost_usd != null) {
+      const cLabel = $("inspectorCostLabel");
+      if (cLabel) cLabel.textContent = "$" + Number(st.control_overview.cost_usd).toFixed(2);
+    }
+  } catch (err) {}
 }
 
 // ---- taskboard --------------------------------------------------------
@@ -5352,6 +5437,19 @@ async function cancelActiveConsoleMission() {
   $("consoleMissionStatus").className = "tg-badge failed";
   $("consoleMissionStatus").textContent = "CANCELADO";
   $("consoleLiveDot").style.background = "#f85149";
+}
+
+function copyInspectorSessionId() {
+  const el = $("inspectorSessionId");
+  if (!el) return;
+  const sid = el.textContent.trim();
+  navigator.clipboard.writeText(sid).then(() => {
+    const fb = $("inspectorCopyFeedback");
+    if (fb) {
+      fb.textContent = "✓";
+      setTimeout(() => { fb.textContent = "📋"; }, 1500);
+    }
+  }).catch(() => {});
 }
 
 async function sendConsole() {
