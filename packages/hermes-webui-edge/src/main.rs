@@ -1,14 +1,20 @@
-mod proxy;
-mod sessions;
+pub mod proxy;
+pub mod redact;
+pub mod session_detail;
+pub mod sessions;
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::{header, StatusCode},
-    response::{Html, IntoResponse, Json},
+    response::{Html, IntoResponse, Json, Response},
     routing::get,
     Router,
 };
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use session_detail::SessionQuery;
 use sessions::{SessionCache, SessionManager};
+use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower_http::cors::CorsLayer;
@@ -53,11 +59,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("============================================================");
-    println!("🦀 Hermes WebUI Edge (Rust Proxy & Accelerator) online!");
+    println!("🦀 Hermes WebUI Edge (Rust Accelerator & Proxy) online!");
     println!("   • Public Bind:    http://{host}:{port}/");
     println!("   • Python Backend: {backend_url}");
     println!("   • Static Dir:     {}", static_dir.display());
-    println!("   • Features:       Native Hybrid Sessions (SQLite + JSON), SSE Proxy, mmap Static Cache");
+    println!("   • Features:       Native Accelerated /api/session & /api/sessions, SIMD Redaction, GZIP streaming");
     println!("============================================================");
 
     // Serviço nativo de arquivos estáticos em Rust com caching
@@ -65,13 +71,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .append_index_html_on_directories(true);
 
     let app = Router::new()
-        // 1. Endpoints de leitura acelerados em Rust Nativo (< 1ms)
+        // 1. Endpoints de leitura acelerados em Rust Nativo (< 5ms)
         .route("/api/sessions", get(sessions_fast_handler))
+        .route("/api/session", get(session_detail_handler))
         .route("/health", get(health_handler))
         // 2. Arquivos estáticos servidos diretamente por Rust sem tocar no Python (Zero-Copy)
         .nest_service("/static", serve_static)
         .route("/", get(index_handler))
-        // 3. Encaminhamento inteligente para o backend Python (SSE Streaming, Execução do AIAgent)
+        // 3. Encaminhamento inteligente para o backend Python (SSE Streaming, Execução do AIAgent, POSTs)
         .fallback(proxy::proxy_handler)
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -88,7 +95,7 @@ async fn health_handler() -> Json<serde_json::Value> {
         "status": "healthy",
         "service": "hermes-webui-edge",
         "engine": "rust-axum-tokio",
-        "version": "0.1.0"
+        "version": "0.2.0"
     }))
 }
 
@@ -105,4 +112,47 @@ async fn index_handler(State(state): State<AppState>) -> impl IntoResponse {
 async fn sessions_fast_handler(State(state): State<AppState>) -> impl IntoResponse {
     let sessions = state.session_cache.get_or_refresh(&state.haos_home);
     Json(serde_json::json!({ "sessions": sessions }))
+}
+
+async fn session_detail_handler(
+    State(state): State<AppState>,
+    Query(query): Query<SessionQuery>,
+) -> Response {
+    match session_detail::load_and_prepare_session(&state.haos_home, &query) {
+        Some(mut val) => {
+            // Aplicar sanitização rápida de segredos em Rust
+            redact::redact_value(&mut val);
+
+            let json_bytes = serde_json::to_vec(&serde_json::json!({ "session": val }))
+                .unwrap_or_default();
+
+            // Compressão GZIP sob demanda para respostas grandes (> 1KB)
+            if json_bytes.len() > 1024 {
+                let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+                if encoder.write_all(&json_bytes).is_ok() {
+                    if let Ok(compressed) = encoder.finish() {
+                        return (
+                            [
+                                (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+                                (header::CONTENT_ENCODING, "gzip"),
+                            ],
+                            compressed,
+                        )
+                            .into_response();
+                    }
+                }
+            }
+
+            (
+                [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+                json_bytes,
+            )
+                .into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "session not found" })),
+        )
+            .into_response(),
+    }
 }
