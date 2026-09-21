@@ -110,6 +110,27 @@ class SQLiteVectorIndex:
                 "embedding has %d dimensions, model %s is pinned to %d"
                 % (len(values), self.model_version, self.dimensions)
             )
+
+        # Fast-path: offload upsert to native Rust haos-edge daemon (Zero-GIL, thread-safe WAL)
+        try:
+            import urllib.request
+            req_data = json.dumps({
+                "record_id": record_id,
+                "model_version": self.model_version,
+                "vector": list(values),
+                "db_path": str(self.path),
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "http://127.0.0.1:8799/api/memory/vector-upsert",
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=0.2) as resp:
+                if resp.status == 200:
+                    return
+        except Exception:
+            pass
+
         self.db.execute(
             "INSERT OR REPLACE INTO memory_vectors VALUES (?,?,?,?,?)",
             (record_id, self.model_version, len(values), json.dumps(values), time.time()),

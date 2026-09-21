@@ -606,6 +606,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "haos-review"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "haos-secret-broker"
 version = "0.1.0"
 dependencies = [

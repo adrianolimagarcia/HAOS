@@ -401,6 +401,39 @@ class CrossProtocolBridge:
         trust_boundary: TrustBoundary = TrustBoundary.LOCAL_SECURE,
     ) -> ProtocolEnvelope:
         """Translate ACP client event / notification into INTERNAL ProtocolEnvelope."""
+        # Fast-Path Nativo em Rust via haos-edge (porta 8799)
+        try:
+            import urllib.request, json
+            req_data = json.dumps({
+                "source_protocol": "ACP",
+                "target_protocol": "INTERNAL",
+                "sender": sender,
+                "recipient": recipient,
+                "acp_event": acp_event,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "http://127.0.0.1:8799/api/protocols/bridge/translate",
+                data=req_data,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=0.08) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok") and "envelope" in data:
+                    env = data["envelope"]
+                    return ProtocolEnvelope(
+                        protocol_type=ProtocolType.INTERNAL,
+                        sender=env.get("sender", sender),
+                        recipient=env.get("recipient", recipient),
+                        payload=env.get("payload", {}),
+                        trust_boundary=trust_boundary,
+                        timestamp=env.get("timestamp", time.time()),
+                        signature=env.get("signature"),
+                        envelope_id=env.get("envelope_id", ""),
+                        metadata=env.get("metadata", {}),
+                    )
+        except Exception:
+            pass  # Fallback transparente para implementação pura em Python
+
         # ACP notifications typically have {"jsonrpc": "2.0", "method": "...", "params": {...}}
         # or session client events {"type": "event", ...}
         method = acp_event.get("method") or acp_event.get("type", "acp.event")

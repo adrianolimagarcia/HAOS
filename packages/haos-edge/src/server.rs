@@ -36,6 +36,7 @@ pub struct AppState {
     pub system_one: Arc<SystemOneEngine>,
     pub idempotency: Arc<IdempotencyEngine>,
     pub cron_ledger: Arc<CronLedgerEngine>,
+    pub transport_ingress: Arc<crate::transport_ingress::TransportIngress>,
     pub static_dir: PathBuf,
     pub data_dir: PathBuf,
     pub upstream_url: Option<String>,
@@ -123,6 +124,7 @@ pub async fn run_server(
     let system_one = Arc::new(SystemOneEngine::new(&data_dir));
     let idempotency = Arc::new(IdempotencyEngine::new(&data_dir));
     let cron_ledger = Arc::new(CronLedgerEngine::new(&data_dir));
+    let transport_ingress = Arc::new(crate::transport_ingress::TransportIngress::new((*event_hub).clone()));
     let state = AppState {
         pty_manager,
         event_hub,
@@ -131,6 +133,7 @@ pub async fn run_server(
         system_one,
         idempotency,
         cron_ledger,
+        transport_ingress,
         static_dir: static_dir.clone(),
         data_dir: data_dir.clone(),
         upstream_url: upstream_url.clone(),
@@ -164,6 +167,8 @@ pub async fn run_server(
         .route("/api/doc/search", get(doc_search_handler))
         .route("/api/rag/search", get(doc_search_handler))
         .route("/api/memory/vector-search", post(vector_search_handler))
+        .route("/api/memory/vector-upsert", post(vector_upsert_handler))
+        .route("/api/transport/inbound", post(transport_inbound_handler))
         .route("/api/events/ingest", post(event_ingest_handler))
         .route("/api/events/stream", get(event_stream_handler))
         .route("/api/context/hash", post(context_hash_handler))
@@ -172,6 +177,8 @@ pub async fn run_server(
         .route("/api/worktree/discard", post(worktree_discard_handler))
         .route("/api/analysis/blast-radius", post(blast_radius_handler))
         .route("/api/tools/detect-loop", post(detect_loop_handler))
+        .route("/api/protocols/envelope/verify", post(protocol_envelope_verify_handler))
+        .route("/api/protocols/bridge/translate", post(protocol_bridge_translate_handler))
         .route("/api/kanban/claim", post(kanban_claim_handler))
         .route("/api/kanban/heartbeat", post(kanban_heartbeat_handler))
         .route("/api/code/symbols", post(code_symbols_handler))
@@ -558,6 +565,60 @@ async fn vector_search_handler(
     }
 }
 
+#[derive(Deserialize)]
+pub struct VectorUpsertPayload {
+    pub record_id: String,
+    pub model_version: String,
+    pub vector: Vec<f32>,
+    pub db_path: Option<String>,
+}
+
+async fn vector_upsert_handler(
+    State(state): State<AppState>,
+    _headers: HeaderMap,
+    Json(payload): Json<VectorUpsertPayload>,
+) -> impl IntoResponse {
+    let db_path = if let Some(p) = payload.db_path {
+        PathBuf::from(p)
+    } else {
+        state.data_dir.join("memory").join("vectors.db")
+    };
+
+    match crate::vector_search::NativeVectorEngine::upsert_vector(
+        &db_path,
+        &payload.record_id,
+        &payload.model_version,
+        &payload.vector,
+    ) {
+        Ok(_) => Json(serde_json::json!({
+            "ok": true,
+            "record_id": payload.record_id,
+            "dimensions": payload.vector.len(),
+            "engine": "rust_native_sqlite_wal"
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+async fn transport_inbound_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<crate::transport_ingress::InboundMessagePayload>,
+) -> impl IntoResponse {
+    match state.transport_ingress.ingest_inbound_message(payload) {
+        Ok(_) => Json(serde_json::json!({ "ok": true, "transport": "rust_native_ingress" })).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        )
+            .into_response(),
+    }
+}
+
 // 1. Ingestão de Eventos via Rust Hub (Zero GIL / Batching Assíncrono)
 async fn event_ingest_handler(
     State(state): State<AppState>,
@@ -862,6 +923,68 @@ async fn detect_loop_handler(
     match detector.record_and_evaluate(&payload.tool_name, &payload.arguments, payload.iteration) {
         Some(alert) => Json(serde_json::json!({ "ok": true, "loop_detected": true, "alert": alert })),
         None => Json(serde_json::json!({ "ok": true, "loop_detected": false })),
+    }
+}
+
+// 6.1 Native Protocol Fabric Endpoints (A2A, ACP, ANP, E2E)
+async fn protocol_envelope_verify_handler(
+    Json(envelope): Json<crate::protocols::ProtocolEnvelope>,
+) -> impl IntoResponse {
+    let valid = envelope.verify_signature();
+    let canonical_hash = envelope.compute_canonical_hash();
+    Json(serde_json::json!({
+        "ok": true,
+        "valid": valid,
+        "envelope_id": envelope.envelope_id,
+        "canonical_hash": canonical_hash,
+        "trust_boundary": envelope.trust_boundary
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct BridgeTranslatePayload {
+    pub source_protocol: String,
+    pub target_protocol: String,
+    pub envelope: Option<crate::protocols::ProtocolEnvelope>,
+    pub acp_event: Option<serde_json::Value>,
+    pub sender: Option<String>,
+    pub recipient: Option<String>,
+}
+
+async fn protocol_bridge_translate_handler(
+    Json(payload): Json<BridgeTranslatePayload>,
+) -> impl IntoResponse {
+    let src = payload.source_protocol.to_uppercase();
+    let tgt = payload.target_protocol.to_uppercase();
+    let sender = payload.sender.as_deref().unwrap_or("haos_edge");
+    let recipient = payload.recipient.as_deref().unwrap_or("haos_target");
+
+    match (src.as_str(), tgt.as_str()) {
+        ("ACP", "INTERNAL") => {
+            let event = payload.acp_event.unwrap_or_else(|| serde_json::json!({}));
+            let bridged = crate::protocols::FastCrossProtocolBridge::acp_to_internal(event, sender, recipient);
+            (StatusCode::OK, Json(serde_json::json!({ "ok": true, "envelope": bridged })))
+        }
+        ("INTERNAL", "A2A") => {
+            if let Some(env) = payload.envelope {
+                let bridged = crate::protocols::FastCrossProtocolBridge::internal_to_a2a(&env);
+                (StatusCode::OK, Json(serde_json::json!({ "ok": true, "envelope": bridged })))
+            } else {
+                (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": "Missing envelope" })))
+            }
+        }
+        ("A2A", "ANP") => {
+            if let Some(env) = payload.envelope {
+                let bridged = crate::protocols::FastCrossProtocolBridge::a2a_to_anp(&env, sender, recipient);
+                (StatusCode::OK, Json(serde_json::json!({ "ok": true, "envelope": bridged })))
+            } else {
+                (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": "Missing envelope" })))
+            }
+        }
+        _ => (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(serde_json::json!({ "ok": false, "error": format!("Bridge translation from {} to {} not supported in fast path", src, tgt) }))
+        )
     }
 }
 

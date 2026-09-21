@@ -15,6 +15,8 @@ mod supervisor;
 pub mod system_one;
 pub mod vector_search;
 pub mod worktree_engine;
+pub mod protocols;
+pub mod transport_ingress;
 
 use clap::{Parser, Subcommand};
 use db::DbHelper;

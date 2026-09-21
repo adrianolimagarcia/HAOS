@@ -167,6 +167,66 @@ impl NativeVectorEngine {
         results.reverse();
         Ok(results)
     }
+
+    /// Upsert direto e thread-safe de vetor no SQLite com WAL e busy_timeout (Zero-GIL)
+    pub fn upsert_vector(
+        db_path: &Path,
+        record_id: &str,
+        model_version: &str,
+        vector: &[f32],
+    ) -> Result<(), String> {
+        if record_id.is_empty() {
+            return Err("record_id must not be empty".to_string());
+        }
+        if vector.is_empty() {
+            return Err("vector must not be empty".to_string());
+        }
+
+        if let Some(parent) = db_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        let conn = Connection::open(db_path)
+            .map_err(|e| format!("Failed to open/create vectors DB: {e}"))?;
+
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA busy_timeout=30000;
+             CREATE TABLE IF NOT EXISTS memory_vectors (
+                 record_id TEXT NOT NULL,
+                 model_version TEXT NOT NULL,
+                 dimensions INTEGER NOT NULL,
+                 vector_json TEXT NOT NULL,
+                 updated_at REAL NOT NULL DEFAULT 0,
+                 PRIMARY KEY(record_id, model_version)
+             );
+             CREATE TABLE IF NOT EXISTS memory_vector_models (
+                 model_version TEXT PRIMARY KEY,
+                 dimensions INTEGER NOT NULL,
+                 normalize INTEGER NOT NULL,
+                 reindex_policy TEXT NOT NULL,
+                 updated_at REAL NOT NULL
+             );"
+        )
+        .map_err(|e| format!("Failed to init vector schema: {e}"))?;
+
+        let raw_json = serde_json::to_string(vector)
+            .map_err(|e| format!("Failed to serialize vector to json: {e}"))?;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO memory_vectors (record_id, model_version, dimensions, vector_json, updated_at)
+             VALUES (?, ?, ?, ?, ?);",
+            rusqlite::params![record_id, model_version, vector.len(), raw_json, now],
+        )
+        .map_err(|e| format!("Upsert failed: {e}"))?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
