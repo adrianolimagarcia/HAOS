@@ -4,7 +4,7 @@ pub mod session_detail;
 pub mod sessions;
 
 use axum::{
-    extract::{Query, State},
+    extract::{Query, Request, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Json, Response},
     routing::get,
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   • Public Bind:    http://{host}:{port}/");
     println!("   • Python Backend: {backend_url}");
     println!("   • Static Dir:     {}", static_dir.display());
-    println!("   • Features:       Native Accelerated /api/session & /api/sessions, SIMD Redaction, GZIP streaming");
+    println!("   • Features:       Native Accelerated /api/session & /api/sessions, SIMD Redaction, Content-Negotiated GZIP");
     println!("============================================================");
 
     // Serviço nativo de arquivos estáticos em Rust com caching
@@ -117,7 +117,15 @@ async fn sessions_fast_handler(State(state): State<AppState>) -> impl IntoRespon
 async fn session_detail_handler(
     State(state): State<AppState>,
     Query(query): Query<SessionQuery>,
+    req: Request,
 ) -> Response {
+    let accepts_gzip = req
+        .headers()
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .map(|enc| enc.contains("gzip"))
+        .unwrap_or(false);
+
     match session_detail::load_and_prepare_session(&state.haos_home, &query) {
         Some(mut val) => {
             // Aplicar sanitização rápida de segredos em Rust
@@ -126,8 +134,8 @@ async fn session_detail_handler(
             let json_bytes = serde_json::to_vec(&serde_json::json!({ "session": val }))
                 .unwrap_or_default();
 
-            // Compressão GZIP sob demanda para respostas grandes (> 1KB)
-            if json_bytes.len() > 1024 {
+            // Compressão GZIP SOMENTE se o cliente suportar explicitamente Accept-Encoding: gzip
+            if accepts_gzip && json_bytes.len() > 1024 {
                 let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
                 if encoder.write_all(&json_bytes).is_ok() {
                     if let Ok(compressed) = encoder.finish() {
@@ -135,6 +143,7 @@ async fn session_detail_handler(
                             [
                                 (header::CONTENT_TYPE, "application/json; charset=utf-8"),
                                 (header::CONTENT_ENCODING, "gzip"),
+                                (header::VARY, "Accept-Encoding"),
                             ],
                             compressed,
                         )
@@ -144,7 +153,10 @@ async fn session_detail_handler(
             }
 
             (
-                [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+                [
+                    (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+                    (header::VARY, "Accept-Encoding"),
+                ],
                 json_bytes,
             )
                 .into_response()
