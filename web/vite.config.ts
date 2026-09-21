@@ -8,7 +8,10 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
  *  module — which made the babel pass parse the whole codebase. */
 function compilerPreset() {
   const preset = reactCompilerPreset();
-  preset.rolldown.filter.code = /\/>|<\/|from\s*['"][^'"]*react/;
+  const rolldown = preset.rolldown as { filter?: { code?: RegExp } } | undefined;
+  if (rolldown?.filter) {
+    rolldown.filter.code = /\/>|<\/|from\s*['"][^'"]*react/;
+  }
   return preset;
 }
 import tailwindcss from "@tailwindcss/vite";
