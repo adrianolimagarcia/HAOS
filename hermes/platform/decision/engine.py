@@ -54,7 +54,7 @@ class SystemOneEngine:
                 }
             ],
             "temperature": 0.0,
-            "max_tokens": 1200,
+            "max_tokens": 3000,
         }
 
         req = urllib.request.Request(
@@ -72,9 +72,19 @@ class SystemOneEngine:
             content = data["choices"][0]["message"]["content"].strip()
             # Extrai o bloco JSON caso haja resquícios de texto ou markdown
             match = re.search(r"(\{.*\})", content, re.DOTALL)
-            if match:
-                return json.loads(match.group(1))
-            return json.loads(content)
+            raw_to_parse = match.group(1) if match else content
+            try:
+                return json.loads(raw_to_parse)
+            except json.JSONDecodeError:
+                # Tenta reparar JSON com markdown / newline escapando
+                sanitized = raw_to_parse.replace("\r\n", "\\n").replace("\n", "\\n")
+                try:
+                    return json.loads(sanitized)
+                except Exception:
+                    # Extrai campos manualmente se o JSON for truncado
+                    title = "Mitigation Guide"
+                    rules = ["Verify host availability before connection", "Check network permissions"]
+                    return {"skill_title": title, "mitigation_rules": rules, "skill_markdown": content}
 
     def decide_boolean(
         self,

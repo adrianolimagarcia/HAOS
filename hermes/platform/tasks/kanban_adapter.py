@@ -265,6 +265,24 @@ class KanbanAdapter:
 
     def heartbeat(self, task_id_or_spec: str, worker_id: Optional[str] = None) -> bool:
         task_id = self._require_resolved(task_id_or_spec)
+        # Fast-Path Rust Ingress (haos-edge /api/kanban/heartbeat): sub-milissegundo, zero lock Python
+        try:
+            import urllib.request, json
+            url = "http://100.77.31.78:8788/api/kanban/heartbeat"
+            payload = json.dumps({
+                "task_id": task_id,
+                "worker_id": worker_id,
+                "db_path": str(self.db_path),
+            }).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok") and data.get("renewed"):
+                    self._touch_run(task_id)
+                    return True
+        except Exception:
+            pass
+
         conn = self._connect()
         result = kb.heartbeat_claim(conn, task_id, claimer=worker_id)
         ok = bool(result)
@@ -485,6 +503,22 @@ class KanbanAdapter:
                     correlation_id=task_id,
                     trust_level="internal",
                 ))
+
+                # Dispara Ouroboros RSI Loop (arXiv:2609.11873 Meta-Loop)
+                try:
+                    from hermes.platform.evolution.rsi_loop import get_ouroboros_rsi
+                    bot_id = run.model_profile_id if run and run.model_profile_id else "default_bot"
+                    task_info = self.get_task(task_id) or {}
+                    task_name = task_info.get("name") or task_id
+                    get_ouroboros_rsi().record_task_failure(
+                        bot_id=bot_id,
+                        task_id=task_id,
+                        task_name=task_name,
+                        error_message=str(error)[:400],
+                        failure_category=failure_cat,
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -852,9 +886,17 @@ class KanbanAdapter:
 
     def _store_result(self, task_id: str, result: TaskResult) -> None:
         conn = self._connect()
+        r_dict = result.to_dict()
+        r_json = json.dumps(r_dict)
+        now = time.time()
         conn.execute(
             "UPDATE haos_task_meta SET result_json = ?, updated_at = ? WHERE task_id = ?",
-            (json.dumps(result.to_dict()), time.time(), task_id),
+            (r_json, now, task_id),
+        )
+        # Sincroniza também na coluna result da tabela tasks para consumo direto da UI/API
+        conn.execute(
+            "UPDATE tasks SET result = ? WHERE id = ?",
+            (r_json, task_id),
         )
         conn.commit()
 

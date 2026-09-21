@@ -191,10 +191,12 @@ class TerminalSession:
 
     @property
     def stale(self) -> bool:
-        # Keep running terminal alive for at least 30 minutes across browser refreshes
+        # Reap de terminais inativos:
+        # Se o terminal não tiver atividade de I/O / drain por mais de 5 minutos,
+        # considera stale e encerra a sessão e seus subprocessos para não reter memória.
         if self.proc.poll() is None:
-            return time.time() - self._last_drain > 1800.0
-        return time.time() - self._last_drain > 300.0
+            return time.time() - self._last_drain > 300.0
+        return time.time() - self._last_drain > 60.0
 
 
 class TerminalManager:

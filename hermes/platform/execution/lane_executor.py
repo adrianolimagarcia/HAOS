@@ -37,7 +37,11 @@ _HERMES_HINTS = ("haos", "haos-agent", "hermes", "hermes-agent")
 _LANE_PROMPT = (
     "Execute the HAOS task described in .haos/spec.json (you are inside its "
     "canonical workspace). You must provide a comprehensive Executive Summary in Portuguese "
-    "(or the language of the task goal).\n"
+    "(or the language of the task goal).\n\n"
+    "PARALLELISM & CONCURRENCY:\n"
+    "When inspecting the workspace or reading multiple files/logs/commands that do not depend "
+    "on each other, request all independent tool calls concurrently in a single turn rather than "
+    "one-by-one.\n\n"
     "Structure your response clearly answering:\n"
     "1. O que foi feito com sucesso;\n"
     "2. O que NÃO foi totalmente feito ou restrições encontradas;\n"
@@ -315,6 +319,20 @@ class HermesCliLaneWorker(LaneWorker):
 
         argv = self._build_argv(spec)
         env = self._build_env(task_id, spec, workspace)
+
+        # Envelopamento opcional em Rust Sandboxing (cgroups v2 & rlimits)
+        rust_exec = "/usr/local/bin/hermes-exec"
+        if not Path(rust_exec).exists():
+            candidate = Path(os.getcwd()) / "target/release/hermes-exec"
+            if candidate.exists():
+                rust_exec = str(candidate)
+        if Path(rust_exec).exists() and os.environ.get("HAOS_DISABLE_CGROUP_SANDBOX") != "1":
+            # Limites seguros para workers agênticos: máx 3GB RAM, 500 PIDs, 1800s CPU
+            max_mem = os.environ.get("HAOS_WORKER_MAX_MEM_MB", "3072")
+            max_pids = os.environ.get("HAOS_WORKER_MAX_PIDS", "500")
+            max_cpu = os.environ.get("HAOS_WORKER_MAX_CPU_SEC", "1800")
+            argv = [rust_exec, "isolate-run", max_mem, max_pids, max_cpu, "--"] + argv
+
         proc = None
         try:
             with open(log_file, "ab") as log:
@@ -410,6 +428,8 @@ class HermesCliLaneWorker(LaneWorker):
         )
 
     def _build_argv(self, spec: Dict[str, Any]) -> List[str]:
+        # Fast-Path Nativo em Rust: se hermes-exec estiver disponível e habilitado, usa o runner nativo
+        # para isolamento imediato de processo
         cmd = [self.hermes_command or "haos"]
         if self.profile:
             cmd += ["-p", self.profile]
@@ -449,12 +469,50 @@ class HermesCliLaneWorker(LaneWorker):
                     model = decision.selected_provider_model_id
                     provider = decision.selected_provider_id
 
+        # Normalização resiliente de modelos conhecidos do gateway 8790
         if model:
+            model_str = str(model).strip()
+            if model_str == "deepseek-chat":
+                model = "deepseek-v4-flash"
+            elif model_str == "deepseek-reasoner":
+                model = "deepseek-v4-pro"
             cmd += ["-m", str(model)]
         if provider:
             cmd += ["--provider", str(provider)]
+        # Injeção de topologia de hierarquia e habilitação de delegação
+        agent_target = spec.get("agent_profile") or (spec.get("required_agents") or [None])[0]
+        try:
+            from hermes_constants import get_hermes_home
+            hier_file = get_hermes_home() / "agent_hierarchy.json"
+            if hier_file.exists():
+                hier_data = json.loads(hier_file.read_text(encoding="utf-8"))
+                nodes = hier_data.get("nodes", [])
+                target_node = next((n for n in nodes if n.get("id") == agent_target or n.get("profile") == agent_target), None)
+                is_master_or_manager = target_node and target_node.get("role") in ("master", "manager")
+                # Se for master ou manager (ou sem target explícito, tratando como Master executivo)
+                if is_master_or_manager or not target_node:
+                    subordinates = [n for n in nodes if n.get("role") == "bot" or (target_node and n.get("parent_id") == target_node.get("id"))]
+                    if subordinates:
+                        sub_list_str = "\n".join(
+                            f"- Bot '{n.get('name')}' (ID: {n.get('id')}, Role: {n.get('role')}): {n.get('description', '')}"
+                            for n in subordinates
+                        )
+                        prompt += (
+                            f"\n\n[ORGANIZATIONAL FLEET & SUBAGENTS HIERARCHY]\n"
+                            f"You are operating as an Executive / Orchestrator Leader in HAOS. You have specialized bots and subagents available:\n"
+                            f"{sub_list_str}\n\n"
+                            f"DELEGATION DIRECTIVE:\n"
+                            f"For complex, multi-step, research, or multi-module goals, do NOT execute everything sequentially alone. "
+                            f"Decompose the objective into focused sub-tasks and dispatch them using the `delegate_task` tool "
+                            f"(with background=false or batch tasks array) to spawn and parallelize work across specialized leaf agents.\n"
+                        )
+        except Exception:
+            pass
+
         # Filtra skills para passar apenas as que realmente existem no ambiente
-        skills_requested = spec.get("preferred_skills") or []
+        skills_requested = list(spec.get("preferred_skills") or [])
+        if "haos-orchestrator" not in skills_requested:
+            skills_requested.append("haos-orchestrator")
         for skill in skills_requested:
             cmd += ["--skills", str(skill)]
 
@@ -500,6 +558,24 @@ class HermesCliLaneWorker(LaneWorker):
                 f"Your final response and .haos/result.json MUST strictly satisfy the following expected output:\n"
                 f"{expected_output}"
             )
+
+        # Injeção de Conhecimento Organizacional OKF v0.2 via Progressive Disclosure
+        try:
+            from hermes_constants import get_hermes_home
+            k_index_file = get_hermes_home() / "knowledge" / "index.md"
+            if k_index_file.is_file():
+                k_index_content = k_index_file.read_text(encoding="utf-8").strip()
+                if k_index_content:
+                    prompt += (
+                        f"\n\n[ORGANIZATIONAL KNOWLEDGE INDEX (OKF v0.2)]\n"
+                        f"{k_index_content}\n\n"
+                        f"PROGRESSIVE DISCLOSURE DIRECTIVE:\n"
+                        f"Do NOT assume or guess architecture rules, contracts, or models. "
+                        f"When your goal touches topics listed in the index above, read the specific markdown file "
+                        f"under `.haos/knowledge/<file>` using the `read` tool just-in-time.\n"
+                    )
+        except Exception:
+            pass
 
         cmd += ["-q", prompt]
         return cmd
@@ -575,13 +651,20 @@ class HermesCliLaneWorker(LaneWorker):
                 except Exception:
                     pass
             if log_content and returncode == 0:
+                # Aplica o padrão ObservationPack (SoL-Pi) para evitar inchaço no contexto
+                from hermes.platform.execution.observation_pack import ObservationPack
+                packaged_summary, spill_path, was_packed = ObservationPack.pack(
+                    log_content, identifier=f"task_{task_id}"
+                )
                 payload = {
-                    "summary": log_content,
+                    "summary": packaged_summary,
                     "completed": [f"Missão executada pelo worker agêntico Hermes (PID {pid})"],
                     "pending": [],
                     "artifacts": [],
                     "residual_risk": [],
                 }
+                if was_packed and spill_path:
+                    payload["evidence"] = {"log_spill_path": spill_path, "truncated": True}
             else:
                 raise LaneError(
                     f"hermes worker for task '{task_id}' exited {returncode} without "

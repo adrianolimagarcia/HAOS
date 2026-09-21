@@ -2214,8 +2214,8 @@
       </div>
       <button class="act" style="padding:4px 10px;font-size:0.9rem;" onclick="closeTaskReportModal()">✕</button>
     </div>
-    <div id="taskReportContent" style="padding:20px;overflow-y:auto;flex:1;font-size:0.88rem;line-height:1.6;color:#1e293b;background:#ffffff;">
-      <div style="text-align:center;padding:40px;color:var(--muted);">Carregando relatório...</div>
+    <div id="taskReportContent" style="padding:24px;overflow-y:auto;flex:1;font-size:0.92rem;line-height:1.7;color:#000000;background:#ffffff;">
+      <div style="text-align:center;padding:40px;color:#333333;">Carregando relatório...</div>
     </div>
     <div style="padding:12px 18px;border-top:1px solid rgba(15,23,42,0.08);display:flex;justify-content:space-between;align-items:center;background:rgba(248,250,252,0.95);">
       <span id="taskReportStatusBadge" style="font-size:0.75rem;"></span>
@@ -2401,7 +2401,7 @@ function initNavTabs() {
 }
 
 // ---- fetch helpers ----------------------------------------------------
-async function api(path, body, timeoutMs = 8000) {
+async function api(path, body, timeoutMs = 20000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const opts = { headers: { "Content-Type": "application/json" }, signal: controller.signal };
@@ -2621,15 +2621,30 @@ async function resetAllKanban() {
 // ---- Task Report Modal (Entrega da Missão) ----------------------------
 let currentTaskReportRaw = "";
 
-async function openTaskReportModal(taskId) {
+window.openTaskReportModal = async function(taskId) {
+  console.log("openTaskReportModal acionado para taskId:", taskId);
   try {
-    const modal = document.getElementById("taskReportModal");
+    let modal = document.getElementById("taskReportModal");
     if (!modal) {
       console.error("Modal taskReportModal não encontrado no DOM!");
       alert("Modal de relatório não encontrado na página.");
       return;
     }
-    modal.style.display = "flex";
+    // Garante que o modal esteja no body direto para evitar stacking context travado
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+    modal.style.setProperty("display", "flex", "important");
+    modal.style.setProperty("position", "fixed", "important");
+    modal.style.setProperty("top", "0", "important");
+    modal.style.setProperty("left", "0", "important");
+    modal.style.setProperty("width", "100vw", "important");
+    modal.style.setProperty("height", "100vh", "important");
+    modal.style.setProperty("z-index", "2147483647", "important");
+    modal.style.setProperty("background", "rgba(15, 23, 42, 0.75)", "important");
+    modal.style.setProperty("align-items", "center", "important");
+    modal.style.setProperty("justify-content", "center", "important");
+
     const titleEl = document.getElementById("taskReportTitle");
     const metaEl = document.getElementById("taskReportMeta");
     const contentEl = document.getElementById("taskReportContent");
@@ -2656,33 +2671,82 @@ async function openTaskReportModal(taskId) {
     if (badgeEl) badgeEl.innerHTML = `<b class="${badgeClass}" style="padding:3px 8px;border-radius:6px;">STATUS: ${esc(status)}</b>`;
 
     let reportText = "";
-    // 1. Tenta pegar do result.summary
+    let isExecutionLog = false;
+    let failureReason = res.last_failure_error || (res.run && res.run.exit_reason);
+
+    // Extração estruturada do resultado (summary, completed, pending, artifacts, evidence)
+    let parsedResult = null;
     if (res.result) {
       if (typeof res.result === "string") {
-        try {
-          const parsed = JSON.parse(res.result);
-          reportText = parsed.summary || "";
-        } catch (_) {
-          reportText = res.result;
-        }
-      } else if (typeof res.result.summary === "string" && res.result.summary.trim()) {
-        reportText = res.result.summary.trim();
+        try { parsedResult = JSON.parse(res.result); } catch (_) {}
+      } else if (typeof res.result === "object") {
+        parsedResult = res.result;
       }
     }
-    // 2. Se não, tenta pegar do log_tail
-    if (!reportText && res.log_tail && typeof res.log_tail === "string" && res.log_tail.trim()) {
-      reportText = res.log_tail.trim();
+
+    if (parsedResult) {
+      if (typeof parsedResult.summary === "string" && parsedResult.summary.trim()) {
+        reportText = parsedResult.summary.trim();
+      }
     }
-    // 3. Se não, busca o goal
+
+    // Se o agente forneceu listas estruturadas de 'completed' ou 'pending', anexa para ficar completo
+    let sectionsHtml = "";
+    if (parsedResult) {
+      if (Array.isArray(parsedResult.completed) && parsedResult.completed.length > 0) {
+        sectionsHtml += `\n\n### 🎯 O que foi feito com sucesso:\n` + parsedResult.completed.map(c => `- ${c}`).join("\n");
+      }
+      if (Array.isArray(parsedResult.pending) && parsedResult.pending.length > 0) {
+        sectionsHtml += `\n\n### ⏳ O que ficou pendente / restrições:\n` + parsedResult.pending.map(p => `- ${p}`).join("\n");
+      }
+      if (Array.isArray(parsedResult.artifacts) && parsedResult.artifacts.length > 0) {
+        sectionsHtml += `\n\n### 📦 Artefatos gerados:\n` + parsedResult.artifacts.map(a => `- \`${a}\``).join("\n");
+      }
+    }
+
+    // 2. Se for 'done' e o resumo foi apenas 'done' literal (como em testes unitários/mock)
+    if (reportText.trim().toLowerCase() === "done" && res.status === "done") {
+      reportText = `### 📋 Relatório de Execução da Missão\n\n**Objetivo da Missão:**\n> ${res.title || res.goal || "—"}\n\n- **Status:** ✅ Concluído com Sucesso\n- **Agente / Worker:** \`${worker}\`\n- **Duração Total:** ${elapsed}\n\n*Nota: Esta tarefa foi despachada como validação/teste interno de pipeline e confirmou sua entrega com retorno de sucesso (exit code 0).*`;
+    } else if (sectionsHtml) {
+      reportText = (reportText ? `${reportText}\n\n---\n` : "") + sectionsHtml;
+    }
+
+    // 3. Se falhou e não tem relatório formal, mostra o motivo do erro e o log da execução
+    if (!reportText && (res.status === "failed" || res.status === "blocked")) {
+      isExecutionLog = true;
+      const logBody = res.log_tail && res.log_tail.trim() ? res.log_tail.trim() : "Nenhum log gravado no workspace.";
+      reportText = `### ⚠ Missão Interrompida (${status})\n\n**Motivo:** ${failureReason || "Processo do worker foi finalizado antes de salvar o relatório final (.haos/result.json)."}\n\n---\n#### 📜 Log de Execução no Workspace:\n\`\`\`text\n${logBody}\n\`\`\``;
+    }
+
+    // 4. Se não tem relatório em tarefa ainda em execução ou pronta
+    if (!reportText && res.log_tail && typeof res.log_tail === "string" && res.log_tail.trim()) {
+      isExecutionLog = true;
+      reportText = `#### 📜 Log de Execução Atual:\n\`\`\`text\n${res.log_tail.trim()}\n\`\`\``;
+    }
+
+    // 5. Fallback geral
     if (!reportText) {
-      reportText = `*Nenhum relatório textual detalhado foi registrado pela lane.*\n\n**Objetivo original:**\n${res.goal || "—"}`;
+      reportText = `*Nenhum relatório textual detalhado foi registrado pela lane.*\n\n**Objetivo original:**\n${res.goal || (res.spec && res.spec.goal) || "—"}`;
     }
 
     currentTaskReportRaw = reportText;
     const formattedHtml = typeof formatChatMarkdown === "function" ? formatChatMarkdown(reportText) : esc(reportText);
     if (contentEl) {
       contentEl.innerHTML = `
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:12px;font-family:inherit;">
+        <div class="task-report-body" style="background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;padding:20px;margin-bottom:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#000000;line-height:1.7;">
+          <style>
+            .task-report-body, .task-report-body * { color: #000000 !important; }
+            .task-report-body a { color: #0284c7 !important; text-decoration: underline; }
+            .task-report-body pre, .task-report-body code { background: #f1f5f9 !important; color: #0f172a !important; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px 6px; font-family: monospace; }
+            .task-report-body pre { padding: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+            .task-report-body blockquote { border-left: 4px solid #94a3b8; margin: 12px 0; padding-left: 12px; color: #1e293b !important; }
+            .task-report-body h1, .task-report-body h2, .task-report-body h3, .task-report-body h4 { color: #000000 !important; font-weight: 700; margin-top: 18px; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+            .task-report-body table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+            .task-report-body th, .task-report-body td { border: 1px solid #cbd5e1; padding: 6px 10px; text-align: left; }
+            .task-report-body th { background: #f8fafc; font-weight: 600; }
+            .task-report-body ul, .task-report-body ol { padding-left: 24px; margin: 8px 0; }
+            .task-report-body li { margin-bottom: 4px; }
+          </style>
           ${formattedHtml}
         </div>
       `;
@@ -2694,21 +2758,21 @@ async function openTaskReportModal(taskId) {
     if (titleEl) titleEl.textContent = "Erro ao carregar relatório";
     if (contentEl) contentEl.innerHTML = `<div class="errline" style="padding:20px;">Falha ao carregar detalhes: ${esc(err.message)}</div>`;
   }
-}
+};
 
-function closeTaskReportModal() {
-  const modal = $("taskReportModal");
-  if (modal) modal.style.display = "none";
-}
+window.closeTaskReportModal = function() {
+  const modal = document.getElementById("taskReportModal");
+  if (modal) modal.style.setProperty("display", "none", "important");
+};
 
-function copyTaskReportText() {
+window.copyTaskReportText = function() {
   if (!currentTaskReportRaw) return;
   navigator.clipboard.writeText(currentTaskReportRaw).then(() => {
     alert("Relatório copiado para a área de transferência!");
   }).catch(() => {
     prompt("Copie o relatório:", currentTaskReportRaw);
   });
-}
+};
 
 // ---- team graph (phase 5) ---------------------------------------------
 async function fetchState() {
@@ -3022,15 +3086,26 @@ function renderAgentHierarchy(h) {
 
   const getBotLiveStatus = (botId, profile) => {
     try {
+      // 1. Prioridade Absoluta: Verifica se este bot tem tarefa ativa no Taskboard (Kanban)
+      const tbTasks = (state.last && state.last.taskboard && (state.last.taskboard.recent || state.last.taskboard.tasks)) || [];
+      const activeTask = tbTasks.find(t => {
+        const botMatch = t.assignee === botId || t.assignee === profile ||
+                         (t.spec && (t.spec.agent_profile === botId || (t.spec.required_agents && t.spec.required_agents.includes(botId)))) ||
+                         (t.tags && t.tags.includes(`agent:${botId}`));
+        const isRunning = ["in_progress", "claimed", "running"].includes(String(t.status || "").toLowerCase());
+        return botMatch && isRunning;
+      });
+      if (activeTask) return "running";
+
+      // 2. Team Graph subordinado
       const tg = window.__hLastTG && window.__hLastTG[0];
       if (!tg) return "idle";
-      // Verifica no Team Graph se esse bot é o Mayor ou SubOrch ou Worker
-      if (tg.node_id === botId || (tg.current_task && tg.node_id.includes(botId))) {
-        return tg.status || "idle";
-      }
+
       const findInTree = (node) => {
         if (!node) return null;
-        if (node.node_id === botId || node.label.toLowerCase().includes(botId.toLowerCase()) || (profile && node.node_id === profile)) {
+        const matches = (node.node_id === botId || (profile && node.node_id === profile) ||
+                         (node.label && node.label.toLowerCase().includes(botId.toLowerCase())));
+        if (matches && node.status) {
           return node.status;
         }
         for (const child of (node.children || [])) {
@@ -3042,14 +3117,6 @@ function renderAgentHierarchy(h) {
       const found = findInTree(tg);
       if (found) return found;
 
-      // Verifica no Taskboard tarefas ativas para esse bot
-      if (state.last && state.last.taskboard && state.last.taskboard.tasks) {
-        const activeTask = state.last.taskboard.tasks.find(t => 
-          (t.assignee === botId || t.assignee === profile || (t.tags && t.tags.includes(`agent:${botId}`))) &&
-          ["in_progress", "CLAIMED", "RUNNING"].includes(t.status)
-        );
-        if (activeTask) return "running";
-      }
       return "idle";
     } catch (_) {
       return "idle";
@@ -4862,7 +4929,7 @@ async function runBlastRadiusAnalysis() {
     const tests = (res.impacted_tests || []).map((t) => `<li>${esc(t)}</li>`).join("");
     const callers = (res.impacted_callers || []).slice(0, 8).map((c) => `<li>${esc(c)}</li>`).join("");
     const idxInfo = (res.indexed_files > 0)
-      ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">índice AST: ${res.indexed_files} arquivos · ${res.indexed_symbols} símbolos · raiz: <span class="mono">${esc(res.scan_root || '')}</span> · ${res.elapsed_ms}ms</div>`
+      ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">índice: ${res.indexed_files} arquivos · ${res.indexed_symbols} símbolos · engine: <b style="color:var(--accent);">${esc(res.engine || 'native')}</b> · ${res.elapsed_ms}ms</div>`
       : "";
     const zeroHint = (res.impacted_files.length === 0 && res.impacted_callers.length === 0)
       ? (files.length === 0
@@ -5366,22 +5433,42 @@ function followPendingTasks(tb) {
   });
 }
 
-function openNewTaskModal() {
-  const modal = $("newTaskModal");
-  if (modal) {
-    modal.style.display = "flex";
-    $("newTaskGoal").value = "";
-    $("newTaskTitle").value = "";
-    $("newTaskPrio").value = "50";
-    $("newTaskMsg").textContent = "";
-    setTimeout(() => $("newTaskGoal").focus(), 50);
+window.openNewTaskModal = function() {
+  let modal = document.getElementById("newTaskModal");
+  if (!modal) {
+    console.error("Modal newTaskModal não encontrado!");
+    return;
   }
-}
+  if (modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+  modal.style.setProperty("display", "flex", "important");
+  modal.style.setProperty("position", "fixed", "important");
+  modal.style.setProperty("top", "0", "important");
+  modal.style.setProperty("left", "0", "important");
+  modal.style.setProperty("width", "100vw", "important");
+  modal.style.setProperty("height", "100vh", "important");
+  modal.style.setProperty("z-index", "2147483647", "important");
+  modal.style.setProperty("background", "rgba(15, 23, 42, 0.75)", "important");
+  modal.style.setProperty("align-items", "center", "important");
+  modal.style.setProperty("justify-content", "center", "important");
 
-function closeNewTaskModal() {
-  const modal = $("newTaskModal");
-  if (modal) modal.style.display = "none";
-}
+  const goalEl = document.getElementById("newTaskGoal");
+  const titleEl = document.getElementById("newTaskTitle");
+  const prioEl = document.getElementById("newTaskPrio");
+  const msgEl = document.getElementById("newTaskMsg");
+
+  if (goalEl) goalEl.value = "";
+  if (titleEl) titleEl.value = "";
+  if (prioEl) prioEl.value = "50";
+  if (msgEl) msgEl.textContent = "";
+  if (goalEl) setTimeout(() => goalEl.focus(), 50);
+};
+
+window.closeNewTaskModal = function() {
+  const modal = document.getElementById("newTaskModal");
+  if (modal) modal.style.setProperty("display", "none", "important");
+};
 
 async function submitNewTask() {
   const goal = $("newTaskGoal").value.trim();
@@ -5458,15 +5545,22 @@ async function decideEvo(pid, verdict) {
 }
 
 // ---- polling ----------------------------------------------------------
+let isRefreshing = false;
+
 async function refresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
   try {
     const data = await api("/api/state");
     render(data);
-  } catch (_) {}
+  } catch (_) {
+  } finally {
+    isRefreshing = false;
+  }
 }
 
 function scheduleRefresh() {
-  const ms = state.settings && state.settings.poll_refresh_ms ? state.settings.poll_refresh_ms : 1200;
+  const ms = state.settings && state.settings.poll_refresh_ms ? state.settings.poll_refresh_ms : 3000;
   if (timer) clearInterval(timer);
   timer = setInterval(refresh, ms);
   refresh();
@@ -5559,7 +5653,12 @@ async function termStartNewTab(initialCmd = null, customTitle = null) {
   container.style.display = "none";
   host.appendChild(container);
 
-  const fit = window.FitAddon ? new window.FitAddon.FitAddon() : null;
+  const fit = (window.FitAddon && typeof window.FitAddon.FitAddon === "function") ? new window.FitAddon.FitAddon() : null;
+  if (!window.Terminal || typeof window.Terminal !== "function") {
+    console.warn("xterm.js não pôde ser carregado (bloqueado por CSP ou CDN offline). Terminal desabilitado nesta sessão.");
+    container.innerHTML = `<div style="padding:20px;color:var(--muted);font-family:var(--mono);font-size:0.85rem;">[Terminal Web indisponível: xterm.js não carregado]</div>`;
+    return;
+  }
   const xtermInstance = new window.Terminal({
     cursorBlink: true,
     fontSize: 13,

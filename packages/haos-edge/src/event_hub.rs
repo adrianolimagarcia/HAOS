@@ -10,10 +10,20 @@ use tokio::sync::broadcast;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlatformEvent {
+    #[serde(default)]
+    pub event_id: Option<String>,
     pub name: String,
     pub payload: serde_json::Value,
     #[serde(default)]
     pub trace_id: Option<String>,
+    #[serde(default)]
+    pub correlation_id: Option<String>,
+    #[serde(default)]
+    pub causation_id: Option<String>,
+    #[serde(default)]
+    pub trust_level: Option<String>,
+    #[serde(default)]
+    pub schema_version: Option<i64>,
     #[serde(default)]
     pub timestamp: Option<f64>,
 }
@@ -59,7 +69,7 @@ impl EventHub {
         });
     }
 
-    fn flush_batch(db_path: &Path, batch: &mut Vec<PlatformEvent>) {
+    pub fn flush_batch(db_path: &Path, batch: &mut Vec<PlatformEvent>) {
         if !db_path.exists() {
             if let Some(parent) = db_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
@@ -70,29 +80,63 @@ impl EventHub {
             db_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         ) {
+            let _ = conn.execute("PRAGMA journal_mode=WAL;", []);
+            let _ = conn.execute("PRAGMA synchronous=NORMAL;", []);
             let _ = conn.execute(
                 "CREATE TABLE IF NOT EXISTS events (
-                    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT PRIMARY KEY,
+                    seq INTEGER NOT NULL,
                     name TEXT NOT NULL,
+                    trace_id TEXT NOT NULL,
+                    correlation_id TEXT,
+                    causation_id TEXT,
+                    trust_level TEXT NOT NULL,
+                    schema_version INTEGER NOT NULL,
                     timestamp REAL NOT NULL,
-                    trace_id TEXT,
                     payload TEXT NOT NULL
                 );",
                 [],
             );
+            let _ = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_seq_unique ON events(seq);", []);
+
+            // Descobre o próximo seq de forma atômica
+            let current_seq: i64 = conn
+                .query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| r.get(0))
+                .unwrap_or(0);
+            let mut next_seq = current_seq;
 
             if let Ok(tx) = conn.transaction() {
                 for evt in batch.drain(..) {
+                    next_seq += 1;
                     let ts = evt.timestamp.unwrap_or_else(|| {
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs_f64()
                     });
+                    let evt_id = evt.event_id.unwrap_or_else(|| {
+                        format!("evt_{}_{}", next_seq, (ts * 1000.0) as u64)
+                    });
+                    let trace = evt.trace_id.unwrap_or_else(|| "trace_auto".to_string());
+                    let trust = evt.trust_level.unwrap_or_else(|| "system".to_string());
+                    let schema_ver = evt.schema_version.unwrap_or(1);
                     let payload_str = evt.payload.to_string();
+
                     let _ = tx.execute(
-                        "INSERT INTO events (name, timestamp, trace_id, payload) VALUES (?1, ?2, ?3, ?4);",
-                        rusqlite::params![evt.name, ts, evt.trace_id, payload_str],
+                        "INSERT OR IGNORE INTO events (event_id, seq, name, trace_id, correlation_id, causation_id, trust_level, schema_version, timestamp, payload) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);",
+                        rusqlite::params![
+                            evt_id,
+                            next_seq,
+                            evt.name,
+                            trace,
+                            evt.correlation_id,
+                            evt.causation_id,
+                            trust,
+                            schema_ver,
+                            ts,
+                            payload_str
+                        ],
                     );
                 }
                 let _ = tx.commit();

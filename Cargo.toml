@@ -1,3 +1,12 @@
 [workspace]
-members = ["packages/haos-exec", "packages/haos-secret-broker", "packages/haos-event-bridge", "packages/haos-file-engine", "packages/haos-health-agent", "packages/haos-protocol-client"]
+members = [
+    "packages/haos-exec",
+    "packages/haos-edge",
+    "packages/haos-secret-broker",
+    "packages/haos-event-bridge",
+    "packages/haos-file-engine",
+    "packages/haos-health-agent",
+    "packages/haos-protocol-client",
+    "packages/hermes-webui-edge",
+]
 resolver = "2"

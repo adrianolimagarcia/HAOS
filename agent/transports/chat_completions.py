@@ -399,6 +399,8 @@ class ChatCompletionsTransport(ProviderTransport):
 
         sanitized = _swap_developer_role(sanitized, params.get("model_lower", (model or "").lower()))
         api_kwargs = _base_kwargs(model, sanitized, tools, params)
+        if tools:
+            api_kwargs["parallel_tool_calls"] = True
 
         is_kimi = params.get("is_kimi", False)
         is_lmstudio = params.get("is_lmstudio", False)

@@ -6,6 +6,24 @@ from typing import Optional
 
 def validate_within_dir(path: Path, root: Path) -> Optional[str]:
     """Error message if *path* does not resolve inside *root* (symlinks and ``..`` followed)."""
+    # Fast-Path Nativo via Rust hermes-exec sanitize-path (sub-milissegundo, zero GIL)
+    try:
+        import subprocess
+        import json
+        res = subprocess.run(
+            ["/usr/local/bin/hermes-exec", "sanitize-path", str(root), str(path)],
+            capture_output=True,
+            text=True,
+            timeout=0.1
+        )
+        if res.returncode == 0:
+            parsed = json.loads(res.stdout.strip())
+            if parsed.get("ok"):
+                return None
+            return parsed.get("error") or "Path escapes allowed directory"
+    except Exception:
+        pass
+
     try:
         path.resolve().relative_to(root.resolve())
     except (ValueError, OSError) as exc:

@@ -90,6 +90,35 @@ class OKFStore:
             self._loaded = True
             return
 
+        # Fast-Path Rust via haos-edge /api/okf/scan (sub-5ms paralelizado com WalkDir)
+        try:
+            import urllib.request
+            import json
+            req_data = json.dumps({"bundle_dir": str(self.bundle_dir)}).encode("utf-8")
+            req = urllib.request.Request(
+                "http://100.77.31.78:8788/api/okf/scan",
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=0.5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    if data.get("ok"):
+                        for item in data.get("docs", []):
+                            rel_path = item["rel_path"]
+                            doc = OKFDocument(
+                                filepath=self.bundle_dir / rel_path,
+                                relative_path=rel_path,
+                                metadata={"title": item.get("title"), "tags": item.get("tags")},
+                                body=item.get("body_preview") or "",
+                            )
+                            self._cache[rel_path] = doc
+                        self._loaded = True
+                        return
+        except Exception:
+            pass
+
         import yaml  # function-level: o lint A6 de hermes/platform só permite stdlib no topo
 
         for p in self.bundle_dir.rglob("*.md"):

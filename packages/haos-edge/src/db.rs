@@ -182,6 +182,89 @@ impl DbHelper {
         })
     }
 
+    pub fn get_task_details(task_id: &str) -> Result<serde_json::Value, String> {
+        let haos_home = Self::get_haos_home();
+        let kanban_path = haos_home.join("kanban.db");
+        if !kanban_path.exists() {
+            return Err("kanban.db not found".into());
+        }
+
+        let conn = Connection::open_with_flags(
+            &kanban_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("Failed to open kanban.db: {e}"))?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, status, priority, assignee, created_at, started_at, completed_at,
+                        result, workspace_path, last_failure_error
+                 FROM tasks WHERE id = ? LIMIT 1;",
+            )
+            .map_err(|e| format!("Query prepare failed: {e}"))?;
+
+        let row = stmt.query_row([task_id], |r| {
+            let id: String = r.get(0)?;
+            let title: String = r.get(1)?;
+            let status: String = r.get(2)?;
+            let priority: i32 = r.get(3)?;
+            let assignee: Option<String> = r.get(4)?;
+            let created_at: Option<i64> = r.get(5)?;
+            let started_at: Option<i64> = r.get(6)?;
+            let completed_at: Option<i64> = r.get(7)?;
+            let result_raw: Option<String> = r.get(8)?;
+            let ws_path: Option<String> = r.get(9)?;
+            let last_failure_error: Option<String> = r.get(10)?;
+
+            let elapsed_seconds = match (started_at, completed_at) {
+                (Some(s), Some(c)) if c >= s => c - s,
+                (Some(s), None) => {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(s);
+                    now.saturating_sub(s)
+                }
+                _ => 0,
+            };
+
+            let mut log_tail = String::new();
+            if let Some(ref wp) = ws_path {
+                let log_file = std::path::Path::new(wp).join(".haos").join("worker.log");
+                if log_file.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&log_file) {
+                        let lines: Vec<&str> = content.lines().collect();
+                        let start = lines.len().saturating_sub(60);
+                        log_tail = lines[start..].join("\n");
+                    }
+                }
+            }
+
+            let result_val = result_raw.and_then(|raw| {
+                serde_json::from_str::<serde_json::Value>(&raw).ok()
+            });
+
+            Ok(serde_json::json!({
+                "id": id,
+                "title": title,
+                "status": status,
+                "priority": priority,
+                "assignee": assignee,
+                "created_at": created_at,
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "elapsed_seconds": elapsed_seconds,
+                "result": result_val,
+                "workspace_path": ws_path,
+                "last_failure_error": last_failure_error,
+                "log_tail": log_tail,
+            }))
+        })
+        .map_err(|e| format!("Task not found: {e}"))?;
+
+        Ok(row)
+    }
+
     pub fn get_tasks() -> Result<Vec<TaskCard>, String> {
         let haos_home = Self::get_haos_home();
         let kanban_path = haos_home.join("kanban.db");

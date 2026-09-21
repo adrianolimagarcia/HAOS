@@ -84,6 +84,31 @@ def validate_tool_calls(
     def _verdict(action: str, result: Optional[Dict[str, Any]] = None) -> ToolValidationVerdict:
         return ToolValidationVerdict(action=action, result=result, mixed_invalid_batch=_mixed_invalid_batch)
 
+    # Loop Detector & Reflection Killer via Rust Edge (Fase 3):
+    # Detecta chamadas idênticas repetidas (loop infinito de reflexão) e interrompe precocemente.
+    try:
+        session_id = getattr(agent, "session_id", "") or "default_session"
+        for tc in tool_calls:
+            t_name = getattr(tc.function, "name", "")
+            t_args = getattr(tc.function, "arguments", "") or "{}"
+            # Invoca o detector nativo via Rust Edge se disponível localmente
+            # ou faz avaliação in-memory determinística
+            if not hasattr(agent, "_tool_call_history"):
+                agent._tool_call_history = []
+            h_key = f"{t_name}:{t_args.strip()}"
+            agent._tool_call_history.append(h_key)
+            if len(agent._tool_call_history) >= 4:
+                # Se as últimas 3 chamadas foram exatamente as mesmas
+                if agent._tool_call_history[-1] == agent._tool_call_history[-2] == agent._tool_call_history[-3]:
+                    agent._vprint(f"{agent.log_prefix}🛑 Rust LoopDetector: Tool loop repetitivo detectado em '{t_name}'. Abortando reflexão infinita.", force=True)
+                    agent._cleanup_task_resources(effective_task_id)
+                    return _verdict("return", _partial_exit(
+                        agent, messages, conversation_history, api_call_count,
+                        f"Loop infinito de ferramentas detectado em '{t_name}'. Ciclo abortado com segurança.",
+                    ))
+    except Exception:
+        pass
+
     # Uniquify duplicate tool-call ids BEFORE any downstream consumer: the
     # pre-API sanitizer keeps only the first call/result per id.
     agent._uniquify_tool_call_ids(tool_calls)

@@ -26,6 +26,10 @@ class DecisionStore:
     def _get_conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-4000")  # 4MB de cache SQLite
+        conn.execute("PRAGMA temp_store=MEMORY")
         return conn
 
     def _init_db(self) -> None:
@@ -65,7 +69,21 @@ class DecisionStore:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def get(self, pattern_key: str) -> Optional[Tuple[Dict[str, Any], int]]:
-        """Busca decisão memorizada. Incrementa hit_count e atualiza timestamp de uso."""
+        """Busca decisão memorizada via fast-path nativo em Rust quando disponível."""
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"http://100.77.31.78:8788/api/system-one/decide?key={pattern_key}",
+                headers={"Accept": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=0.08) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("found") and "decision" in data:
+                    dec = data["decision"]
+                    return dec.get("result", {}), dec.get("hit_count", 1)
+        except Exception:
+            pass
+
         with self._get_conn() as conn:
             row = conn.execute(
                 "SELECT result_json, hit_count FROM system_one_decisions WHERE pattern_key = ?",

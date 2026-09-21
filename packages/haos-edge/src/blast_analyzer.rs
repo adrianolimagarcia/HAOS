@@ -67,11 +67,16 @@ impl FastAstAnalyzer {
         }
         .to_string();
 
+        let mut sorted_files: Vec<String> = affected_files_set.into_iter().collect();
+        sorted_files.sort();
+        let mut sorted_callers: Vec<String> = affected_callers_set.into_iter().collect();
+        sorted_callers.sort();
+
         FastBlastRadius {
             target_symbols: target_symbols.to_vec(),
             directly_modified_files: modified_files.to_vec(),
-            affected_files: affected_files_set.into_iter().collect(),
-            affected_callers: affected_callers_set.into_iter().collect(),
+            affected_files: sorted_files,
+            affected_callers: sorted_callers,
             depth_reached: depth,
             severity,
         }
@@ -82,29 +87,38 @@ impl FastAstAnalyzer {
         targets: &HashSet<String>,
         affected_files: &mut HashSet<String>,
         affected_callers: &mut HashSet<String>,
-        next_targets: &mut HashSet<String>,
+        _next_targets: &mut HashSet<String>,
     ) {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if !name.starts_with('.') && name != "target" && name != "node_modules" && name != "venv" && name != ".venv" {
-                        Self::walk_and_scan(&path, targets, affected_files, affected_callers, next_targets);
-                    }
-                } else if path.extension().map_or(false, |ext| ext == "py") {
-                    if let Ok(content) = std::fs::read_to_string(&path) {
-                        for target in targets {
-                            if content.contains(target) {
-                                let rel = path.display().to_string();
-                                affected_files.insert(rel.clone());
-                                affected_callers.insert(format!("{} -> {}", rel, target));
-                                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                                    if !targets.contains(stem) {
-                                        next_targets.insert(stem.to_string());
-                                    }
-                                }
-                            }
+        let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        for entry in entries.flatten() {
+            let Ok(ft) = entry.file_type() else { continue; };
+            if ft.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if ft.is_dir() {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !name.starts_with('.')
+                    && name != "target"
+                    && name != "node_modules"
+                    && name != "venv"
+                    && name != ".venv"
+                    && name != "dist"
+                    && name != "build"
+                    && name != "__pycache__"
+                    && name != "evals"
+                    && name != "docs"
+                    && name != "website"
+                {
+                    Self::walk_and_scan(&path, targets, affected_files, affected_callers, _next_targets);
+                }
+            } else if path.extension().map_or(false, |ext| ext == "py") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    for target in targets {
+                        if !target.is_empty() && content.contains(target.as_str()) {
+                            let rel = path.display().to_string();
+                            affected_files.insert(rel.clone());
+                            affected_callers.insert(format!("{} -> {}", rel, target));
                         }
                     }
                 }

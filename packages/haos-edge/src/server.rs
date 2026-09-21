@@ -2,13 +2,16 @@ use crate::auth;
 use crate::blast_analyzer::FastAstAnalyzer;
 use crate::cancel_registry::CancelRegistry;
 use crate::context_hasher::ContextHasher;
+use crate::cron_ledger::CronLedgerEngine;
 use crate::db::DbHelper;
 use crate::event_hub::{EventHub, PlatformEvent};
+use crate::idempotency::IdempotencyEngine;
 use crate::loop_detector::LoopDetector;
 use crate::pty::PtyManager;
+use crate::system_one::{DecisionRecord, SystemOneEngine};
 use crate::worktree_engine::NativeWorktreeEngine;
 use tokio::sync::Mutex as TokioMutex;
-use axum::extract::{Path as AxPath, State};
+use axum::extract::{Path as AxPath, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Json};
 use axum::routing::{get, post};
@@ -29,6 +32,9 @@ pub struct AppState {
     pub event_hub: Arc<EventHub>,
     pub cancel_registry: Arc<CancelRegistry>,
     pub loop_detectors: Arc<TokioMutex<HashMap<String, LoopDetector>>>,
+    pub system_one: Arc<SystemOneEngine>,
+    pub idempotency: Arc<IdempotencyEngine>,
+    pub cron_ledger: Arc<CronLedgerEngine>,
     pub static_dir: PathBuf,
     pub data_dir: PathBuf,
     pub upstream_url: Option<String>,
@@ -113,11 +119,17 @@ pub async fn run_server(
     let event_hub = Arc::new(EventHub::new(data_dir.join("events.db")));
     let cancel_registry = Arc::new(CancelRegistry::new());
     let loop_detectors = Arc::new(TokioMutex::new(HashMap::new()));
+    let system_one = Arc::new(SystemOneEngine::new(&data_dir));
+    let idempotency = Arc::new(IdempotencyEngine::new(&data_dir));
+    let cron_ledger = Arc::new(CronLedgerEngine::new(&data_dir));
     let state = AppState {
         pty_manager,
         event_hub,
         cancel_registry,
         loop_detectors,
+        system_one,
+        idempotency,
+        cron_ledger,
         static_dir: static_dir.clone(),
         data_dir: data_dir.clone(),
         upstream_url: upstream_url.clone(),
@@ -142,9 +154,11 @@ pub async fn run_server(
         .route("/api/terminal/start", post(start_terminal))
         .route("/api/terminal/{sid}/input", post(input_terminal))
         .route("/api/terminal/{sid}/drain", get(drain_terminal))
+        .route("/api/terminal/{sid}/replay", get(replay_terminal))
         .route("/api/terminal/{sid}/resize", post(resize_terminal))
         .route("/api/terminal/{sid}/kill", post(kill_terminal))
         .route("/api/tasks", get(get_tasks_handler))
+        .route("/api/tasks/{id}", get(get_task_by_id_handler))
         .route("/api/state", get(state_handler))
         .route("/api/doc/search", get(doc_search_handler))
         .route("/api/rag/search", get(doc_search_handler))
@@ -156,10 +170,25 @@ pub async fn run_server(
         .route("/api/worktree/discard", post(worktree_discard_handler))
         .route("/api/analysis/blast-radius", post(blast_radius_handler))
         .route("/api/tools/detect-loop", post(detect_loop_handler))
+        .route("/api/kanban/claim", post(kanban_claim_handler))
+        .route("/api/kanban/heartbeat", post(kanban_heartbeat_handler))
+        .route("/api/code/symbols", post(code_symbols_handler))
+        .route("/api/okf/scan", post(okf_scan_handler))
+        .route("/api/sessions/fast", get(sessions_fast_handler))
+        .route("/api/sessions/search", post(sessions_search_handler))
+        .route("/api/fs/browse-fast", get(fs_browse_fast_handler))
+        .route("/api/timeline/fast", get(timeline_fast_handler))
         .route("/api/cancel/register", post(cancel_register_handler))
         .route("/api/cancel/trigger", post(cancel_trigger_handler))
         .route("/api/cancel/status", get(cancel_status_handler))
         .route("/api/settings", get(get_settings_handler).post(post_settings_handler))
+        .route("/api/system-one/decide", get(system_one_get_handler).post(system_one_post_handler))
+        .route("/api/system-one/list", get(system_one_list_handler))
+        .route("/api/idempotency/check", post(idempotency_check_handler))
+        .route("/api/idempotency/record", post(idempotency_record_handler))
+        .route("/api/response-store/{id}", get(response_store_get_handler).post(response_store_post_handler))
+        .route("/api/cron/executions", get(cron_executions_handler))
+        .route("/api/cron/deliveries/pending", get(cron_deliveries_pending_handler))
         .route("/api/system-facts", get(system_facts_handler))
         .route("/api/agent-config", get(agent_config_handler))
         .route("/api/v1/models", get(models_handler))
@@ -192,6 +221,32 @@ pub async fn run_server(
     }
     println!("   • Endpoints:    /health, /chat, /terminal, /api/terminal/*");
     println!("============================================================");
+
+    // Watchdog em background para reabertura de locks de workers órfãos/mortos (Frente 3)
+    let watchdog_data_dir = data_dir.clone();
+    tokio::spawn(async move {
+        let kanban_db = watchdog_data_dir.join("kanban.db");
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            if kanban_db.exists() {
+                if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                    &kanban_db,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                ) {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    // Reseta tarefas em RUNNING cujo lease expirou há mais de 30s
+                    let _ = conn.execute(
+                        "UPDATE tasks SET status = 'ready', claim_lock = NULL WHERE status = 'running' AND claim_expires IS NOT NULL AND claim_expires < ?1",
+                        rusqlite::params![now - 30],
+                    );
+                }
+            }
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -328,6 +383,28 @@ async fn drain_terminal(
     Json(DrainResponse { data, running, exit_code: if running { 0 } else { 1 } }).into_response()
 }
 
+async fn replay_terminal(
+    AxPath(sid): AxPath<String>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let session = match state.pty_manager.get(&sid) {
+        Some(s) => s,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let (data, running) = session.get_replay();
+    Json(serde_json::json!({
+        "session_id": sid,
+        "data": data,
+        "buffer": data,
+        "running": running,
+        "exit_code": if running { 0 } else { 1 }
+    })).into_response()
+}
+
 async fn resize_terminal(
     AxPath(sid): AxPath<String>,
     State(state): State<AppState>,
@@ -357,6 +434,20 @@ async fn kill_terminal(
     }
     let ok = state.pty_manager.remove(&sid);
     Json(serde_json::json!({ "ok": ok })).into_response()
+}
+
+async fn get_task_by_id_handler(
+    AxPath(task_id): AxPath<String>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    match DbHelper::get_task_details(&task_id) {
+        Ok(details) => Json(details).into_response(),
+        Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response(),
+    }
 }
 
 async fn get_tasks_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
@@ -517,6 +608,151 @@ async fn context_hash_handler(
     Json(serde_json::json!({ "ok": true, "fingerprint": fp }))
 }
 
+// -------------------------------------------------------------
+// System-One Fast-Path Endpoints (<0.1ms)
+// -------------------------------------------------------------
+#[derive(Deserialize)]
+pub struct SystemOneGetQuery {
+    pub key: String,
+}
+
+async fn system_one_get_handler(
+    State(state): State<AppState>,
+    Query(query): Query<SystemOneGetQuery>,
+) -> impl IntoResponse {
+    match state.system_one.get_decision(&query.key) {
+        Some(rec) => Json(serde_json::json!({ "found": true, "decision": rec })).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "found": false }))).into_response(),
+    }
+}
+
+async fn system_one_post_handler(
+    State(state): State<AppState>,
+    Json(record): Json<DecisionRecord>,
+) -> impl IntoResponse {
+    match state.system_one.save_decision(&record) {
+        Ok(_) => Json(serde_json::json!({ "ok": true, "saved": true })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": e }))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct SystemOneListQuery {
+    pub domain: Option<String>,
+    pub limit: Option<usize>,
+}
+
+async fn system_one_list_handler(
+    State(state): State<AppState>,
+    Query(query): Query<SystemOneListQuery>,
+) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(50);
+    let list = state.system_one.list_decisions(query.domain.as_deref(), limit);
+    Json(serde_json::json!({ "decisions": list, "count": list.len() }))
+}
+
+// -------------------------------------------------------------
+// Idempotency & Response Store (<0.2ms)
+// -------------------------------------------------------------
+#[derive(Deserialize)]
+pub struct IdempotencyCheckPayload {
+    pub scope: String,
+    pub key: String,
+}
+
+async fn idempotency_check_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<IdempotencyCheckPayload>,
+) -> impl IntoResponse {
+    match state.idempotency.check_idempotency(&payload.scope, &payload.key) {
+        Some(rec) => Json(serde_json::json!({ "exists": true, "record": rec })).into_response(),
+        None => Json(serde_json::json!({ "exists": false })).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct IdempotencyRecordPayload {
+    pub scope: String,
+    pub key: String,
+    pub fingerprint: String,
+    pub run_id: String,
+    pub status: serde_json::Value,
+}
+
+async fn idempotency_record_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<IdempotencyRecordPayload>,
+) -> impl IntoResponse {
+    match state.idempotency.record_idempotency(
+        &payload.scope,
+        &payload.key,
+        &payload.fingerprint,
+        &payload.run_id,
+        &payload.status,
+    ) {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": e }))).into_response(),
+    }
+}
+
+async fn response_store_get_handler(
+    State(state): State<AppState>,
+    AxPath(id): AxPath<String>,
+) -> impl IntoResponse {
+    match state.idempotency.get_response(&id) {
+        Some(data) => Json(serde_json::json!({ "found": true, "data": data })).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "found": false }))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ResponseStorePostPayload {
+    pub data: String,
+}
+
+async fn response_store_post_handler(
+    State(state): State<AppState>,
+    AxPath(id): AxPath<String>,
+    Json(payload): Json<ResponseStorePostPayload>,
+) -> impl IntoResponse {
+    match state.idempotency.save_response(&id, &payload.data) {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": e }))).into_response(),
+    }
+}
+
+// -------------------------------------------------------------
+// Cron Executions & Delivery Ledger (<1ms)
+// -------------------------------------------------------------
+#[derive(Deserialize)]
+pub struct CronExecutionsQuery {
+    pub job_id: Option<String>,
+    pub limit: Option<usize>,
+}
+
+async fn cron_executions_handler(
+    State(state): State<AppState>,
+    Query(query): Query<CronExecutionsQuery>,
+) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(50);
+    let list = state.cron_ledger.list_executions(query.job_id.as_deref(), limit);
+    Json(serde_json::json!({ "executions": list, "count": list.len() }))
+}
+
+#[derive(Deserialize)]
+pub struct CronDeliveriesQuery {
+    pub limit: Option<usize>,
+}
+
+async fn cron_deliveries_pending_handler(
+    State(state): State<AppState>,
+    Query(query): Query<CronDeliveriesQuery>,
+) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(50);
+    let list = state.cron_ledger.list_pending_deliveries(limit);
+    Json(serde_json::json!({ "pending_deliveries": list, "count": list.len() }))
+}
+
 // 4. Git Worktree Spawn & Discard em Rust Nativo
 #[derive(Deserialize)]
 pub struct WorktreeSpawnPayload {
@@ -618,6 +854,588 @@ async fn detect_loop_handler(
         Some(alert) => Json(serde_json::json!({ "ok": true, "loop_detected": true, "alert": alert })),
         None => Json(serde_json::json!({ "ok": true, "loop_detected": false })),
     }
+}
+
+// 7. Atomic Kanban Claim & Heartbeat Handlers (Frente 3 Ultra SOTA)
+#[derive(Deserialize)]
+pub struct KanbanClaimPayload {
+    pub task_id: String,
+    pub worker_id: Option<String>,
+    pub ttl_seconds: Option<i64>,
+    pub db_path: Option<String>,
+}
+
+async fn kanban_claim_handler(
+    Json(payload): Json<KanbanClaimPayload>,
+) -> impl IntoResponse {
+    let db_path = payload.db_path.map(PathBuf::from).unwrap_or_else(|| {
+        let home = std::env::var("HAOS_DATA_DIR")
+            .or_else(|_| std::env::var("HERMES_HOME"))
+            .unwrap_or_else(|_| "/root/.haos".to_string());
+        PathBuf::from(home).join("kanban.db")
+    });
+
+    let Ok(conn) = rusqlite::Connection::open(&db_path) else {
+        return Json(serde_json::json!({ "ok": false, "error": "db_open_failed" }));
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let ttl = payload.ttl_seconds.unwrap_or(300);
+    let lease_expires = now + ttl;
+    let claimer = payload.worker_id.unwrap_or_else(|| "haos-worker".to_string());
+
+    // Update atômico: claim somente se READY, ou claim expirado
+    let res = conn.execute(
+        "UPDATE tasks SET status = 'RUNNING', claimer = ?1, claim_expires_at = ?2, started_at = coalesce(started_at, ?3) \
+         WHERE (id = ?4 OR spec_id = ?4) AND (status = 'READY' OR (status = 'RUNNING' AND claim_expires_at < ?3))",
+        rusqlite::params![claimer, lease_expires, now, payload.task_id],
+    );
+
+    match res {
+        Ok(rows) if rows > 0 => Json(serde_json::json!({
+            "ok": true,
+            "claimed": true,
+            "task_id": payload.task_id,
+            "claimer": claimer,
+            "lease_expires_at": lease_expires
+        })),
+        Ok(_) => Json(serde_json::json!({
+            "ok": true,
+            "claimed": false,
+            "reason": "already_claimed_or_not_ready"
+        })),
+        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct KanbanHeartbeatPayload {
+    pub task_id: String,
+    pub worker_id: Option<String>,
+    pub ttl_seconds: Option<i64>,
+    pub db_path: Option<String>,
+}
+
+async fn kanban_heartbeat_handler(
+    Json(payload): Json<KanbanHeartbeatPayload>,
+) -> impl IntoResponse {
+    let db_path = payload.db_path.map(PathBuf::from).unwrap_or_else(|| {
+        let home = std::env::var("HAOS_DATA_DIR")
+            .or_else(|_| std::env::var("HERMES_HOME"))
+            .unwrap_or_else(|_| "/root/.haos".to_string());
+        PathBuf::from(home).join("kanban.db")
+    });
+
+    let Ok(conn) = rusqlite::Connection::open(&db_path) else {
+        return Json(serde_json::json!({ "ok": false, "error": "db_open_failed" }));
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let ttl = payload.ttl_seconds.unwrap_or(300);
+    let lease_expires = now + ttl;
+
+    let res = if let Some(ref claimer) = payload.worker_id {
+        conn.execute(
+            "UPDATE tasks SET claim_expires_at = ?1 WHERE (id = ?2 OR spec_id = ?2) AND status = 'RUNNING' AND claimer = ?3",
+            rusqlite::params![lease_expires, payload.task_id, claimer],
+        )
+    } else {
+        conn.execute(
+            "UPDATE tasks SET claim_expires_at = ?1 WHERE (id = ?2 OR spec_id = ?2) AND status = 'RUNNING'",
+            rusqlite::params![lease_expires, payload.task_id],
+        )
+    };
+
+    match res {
+        Ok(rows) if rows > 0 => Json(serde_json::json!({ "ok": true, "renewed": true, "lease_expires_at": lease_expires })),
+        Ok(_) => Json(serde_json::json!({ "ok": true, "renewed": false, "reason": "not_running_or_mismatched_worker" })),
+        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+    }
+}
+
+// 8. Fast Semantic Symbol & Call-Graph Parser (Frente 3)
+#[derive(Deserialize)]
+pub struct CodeSymbolsPayload {
+    pub file_path: String,
+    pub content: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SymbolDefinition {
+    pub kind: String, // "class" | "def" | "const"
+    pub name: String,
+    pub line: usize,
+}
+
+async fn code_symbols_handler(
+    Json(payload): Json<CodeSymbolsPayload>,
+) -> impl IntoResponse {
+    let content = match payload.content {
+        Some(c) => c,
+        None => {
+            match std::fs::read_to_string(&payload.file_path) {
+                Ok(s) => s,
+                Err(e) => return Json(serde_json::json!({ "ok": false, "error": format!("read_error: {e}") })),
+            }
+        }
+    };
+
+    let mut symbols = Vec::new();
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("class ") {
+            if let Some(rest) = trimmed.strip_prefix("class ") {
+                let name = rest.split(&['(', ':'][..]).next().unwrap_or("").trim();
+                if !name.is_empty() {
+                    symbols.push(SymbolDefinition {
+                        kind: "class".to_string(),
+                        name: name.to_string(),
+                        line: idx + 1,
+                    });
+                }
+            }
+        } else if trimmed.starts_with("def ") {
+            if let Some(rest) = trimmed.strip_prefix("def ") {
+                let name = rest.split('(').next().unwrap_or("").trim();
+                if !name.is_empty() {
+                    symbols.push(SymbolDefinition {
+                        kind: "def".to_string(),
+                        name: name.to_string(),
+                        line: idx + 1,
+                    });
+                }
+            }
+        } else if trimmed.starts_with("pub struct ") || trimmed.starts_with("pub enum ") || trimmed.starts_with("pub fn ") {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() >= 3 {
+                let kind = parts[1].to_string();
+                let name = parts[2].split(&['<', '(', '{', ';'][..]).next().unwrap_or("").trim();
+                symbols.push(SymbolDefinition {
+                    kind,
+                    name: name.to_string(),
+                    line: idx + 1,
+                });
+            }
+        } else if trimmed.starts_with("export function ") || trimmed.starts_with("function ") {
+            let rest = if trimmed.starts_with("export function ") {
+                &trimmed[16..]
+            } else {
+                &trimmed[9..]
+            };
+            let name = rest.split(&['(', '<'][..]).next().unwrap_or("").trim();
+            if !name.is_empty() {
+                symbols.push(SymbolDefinition {
+                    kind: "function".to_string(),
+                    name: name.to_string(),
+                    line: idx + 1,
+                });
+            }
+        } else if trimmed.starts_with("export const ") || trimmed.starts_with("const ") {
+            let rest = if trimmed.starts_with("export const ") {
+                &trimmed[13..]
+            } else {
+                &trimmed[6..]
+            };
+            if let Some((name_part, _)) = rest.split_once('=') {
+                let name = name_part.split(':').next().unwrap_or("").trim();
+                if !name.is_empty() && (rest.contains("=>") || rest.contains("function")) {
+                    symbols.push(SymbolDefinition {
+                        kind: "arrow_fn".to_string(),
+                        name: name.to_string(),
+                        line: idx + 1,
+                    });
+                }
+            }
+        } else if trimmed.starts_with("export interface ") || trimmed.starts_with("interface ") {
+            let rest = if trimmed.starts_with("export interface ") {
+                &trimmed[17..]
+            } else {
+                &trimmed[10..]
+            };
+            let name = rest.split(&['<', '{', ' '][..]).next().unwrap_or("").trim();
+            if !name.is_empty() {
+                symbols.push(SymbolDefinition {
+                    kind: "interface".to_string(),
+                    name: name.to_string(),
+                    line: idx + 1,
+                });
+            }
+        } else if trimmed.starts_with("func ") {
+            let rest = &trimmed[5..];
+            let name = rest.split('(').next().unwrap_or("").trim();
+            if !name.is_empty() {
+                symbols.push(SymbolDefinition {
+                    kind: "func".to_string(),
+                    name: name.to_string(),
+                    line: idx + 1,
+                });
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "file_path": payload.file_path,
+        "symbols_count": symbols.len(),
+        "symbols": symbols
+    }))
+}
+
+// 11. Fast OKF v0.2 Knowledge Scanner & Indexer em Rust Nativo (Frente 1)
+#[derive(Deserialize)]
+pub struct OkfScanPayload {
+    pub bundle_dir: String,
+}
+
+#[derive(Serialize)]
+pub struct OkfScannedDoc {
+    pub rel_path: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub body_preview: String,
+}
+
+async fn okf_scan_handler(
+    Json(payload): Json<OkfScanPayload>,
+) -> impl IntoResponse {
+    let bundle_path = std::path::Path::new(&payload.bundle_dir);
+    if !bundle_path.is_dir() {
+        return Json(serde_json::json!({ "ok": false, "error": "bundle_dir_not_found", "docs": [] }));
+    }
+
+    let mut docs = Vec::new();
+    for entry in walkdir::WalkDir::new(bundle_path).into_iter().filter_map(|e| e.ok()) {
+        let p = entry.path();
+        if p.extension().map_or(false, |ext| ext == "md") {
+            if let Ok(content) = std::fs::read_to_string(p) {
+                let rel = p
+                    .strip_prefix(bundle_path)
+                    .unwrap_or(p)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+
+                let mut title = rel.clone();
+                let mut tags = Vec::new();
+                let mut body = content.as_str();
+
+                if content.starts_with("---") {
+                    let parts: Vec<&str> = content.splitn(3, "---").collect();
+                    if parts.len() >= 3 {
+                        let frontmatter = parts[1];
+                        body = parts[2].trim();
+
+                        for line in frontmatter.lines() {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with("title:") {
+                                title = trimmed[6..].trim().trim_matches('"').trim_matches('\'').to_string();
+                            } else if trimmed.starts_with("tags:") {
+                                let t_str = trimmed[5..].trim().trim_matches('[').trim_matches(']');
+                                tags = t_str
+                                    .split(',')
+                                    .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
+                                    .filter(|s| !s.is_empty())
+                                    .collect();
+                            }
+                        }
+                    }
+                }
+
+                let preview: String = body.chars().take(200).collect();
+                docs.push(OkfScannedDoc {
+                    rel_path: rel,
+                    title,
+                    tags,
+                    body_preview: preview,
+                });
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "bundle_dir": payload.bundle_dir,
+        "count": docs.len(),
+        "docs": docs
+    }))
+}
+
+// 12. Fast Filesystem Browser em Rust Nativo (Frente 1)
+#[derive(Serialize)]
+pub struct FsItem {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size_bytes: u64,
+}
+
+async fn fs_browse_fast_handler(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let raw_path = params.get("path").cloned().unwrap_or_default();
+    let show_hidden = params.get("show_hidden").map(|v| v == "1" || v == "true").unwrap_or(false);
+
+    let target_dir = if raw_path.trim().is_empty() {
+        std::env::var("HOME").map(std::path::PathBuf::from).unwrap_or_else(|_| std::path::PathBuf::from("/root"))
+    } else {
+        std::path::PathBuf::from(raw_path)
+    };
+
+    let target_dir = if let Ok(canon) = target_dir.canonicalize() {
+        if canon.is_dir() { canon } else { canon.parent().unwrap_or(&canon).to_path_buf() }
+    } else {
+        std::path::PathBuf::from("/root")
+    };
+
+    let mut items = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&target_dir) {
+        for entry in entries.flatten() {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if !show_hidden && file_name.starts_with('.') {
+                continue;
+            }
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let item_path = entry.path().to_string_lossy().to_string();
+
+            items.push(FsItem {
+                name: file_name,
+                path: item_path,
+                is_dir,
+                size_bytes: size,
+            });
+        }
+    }
+
+    // Ordenação: Diretórios primeiro, depois alfabética
+    items.sort_by(|a, b| {
+        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    let current = target_dir.to_string_lossy().to_string();
+    let parent = target_dir.parent().map(|p| p.to_string_lossy().to_string());
+
+    Json(serde_json::json!({
+        "ok": true,
+        "current_path": current,
+        "parent_path": parent,
+        "count": items.len(),
+        "items": items,
+        "engine": "rust_fs_native"
+    }))
+}
+
+// 13. Fast Timeline & Event Aggregator em Rust Nativo (Frente 2)
+async fn timeline_fast_handler(
+    State(state): State<AppState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let limit: usize = params.get("limit").and_then(|v| v.parse().ok()).unwrap_or(80);
+    let events_db = state.data_dir.join("events.db");
+
+    if !events_db.exists() {
+        return Json(serde_json::json!({ "ok": true, "timeline": [], "count": 0 }));
+    }
+
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &events_db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return Json(serde_json::json!({ "ok": false, "error": "failed_open_events_db" }));
+    };
+
+    let mut stmt = match conn.prepare(
+        "SELECT event_id, seq, name, trace_id, timestamp, payload \
+         FROM events ORDER BY seq DESC LIMIT ?1",
+    ) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+    };
+
+    let rows = stmt.query_map([limit as i64], |row| {
+        let event_id: Option<String> = row.get(0)?;
+        let seq: i64 = row.get(1)?;
+        let name: String = row.get(2)?;
+        let trace_id: Option<String> = row.get(3)?;
+        let timestamp: f64 = row.get(4)?;
+        let payload_str: String = row.get(5)?;
+        let payload: serde_json::Value = serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
+
+        Ok(serde_json::json!({
+            "event_id": event_id,
+            "seq": seq,
+            "name": name,
+            "trace_id": trace_id,
+            "timestamp": timestamp,
+            "payload": payload,
+            "engine": "rust_timeline_aggregator"
+        }))
+    });
+
+    let mut timeline = Vec::new();
+    if let Ok(iter) = rows {
+        for item in iter.flatten() {
+            timeline.push(item);
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "count": timeline.len(),
+        "timeline": timeline
+    }))
+}
+
+// 9. Fast Sessions Reader em Rust Nativo (state.db bypass de lock)
+async fn sessions_fast_handler(
+    State(state): State<AppState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let limit: usize = params
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+
+    let state_db = state.data_dir.join("state.db");
+    if !state_db.exists() {
+        return Json(serde_json::json!({ "ok": true, "sessions": [], "count": 0 }));
+    }
+
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &state_db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return Json(serde_json::json!({ "ok": false, "error": "failed_open_state_db" }));
+    };
+
+    let mut stmt = match conn.prepare(
+        "SELECT id, title, started_at, last_activity_at FROM sessions \
+         ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ?1",
+    ) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+    };
+
+    let session_iter = stmt.query_map([limit as i64], |row| {
+        let id: String = row.get(0)?;
+        let title: Option<String> = row.get(1)?;
+        let started_at: Option<f64> = row.get(2)?;
+        let last_activity_at: Option<f64> = row.get(3)?;
+        Ok(serde_json::json!({
+            "id": id,
+            "title": title.unwrap_or_else(|| "Sem título".to_string()),
+            "started_at": started_at.unwrap_or(0.0),
+            "last_activity_at": last_activity_at.unwrap_or(started_at.unwrap_or(0.0)),
+        }))
+    });
+
+    let mut sessions = Vec::new();
+    if let Ok(iter) = session_iter {
+        for s in iter.flatten() {
+            sessions.push(s);
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "count": sessions.len(),
+        "sessions": sessions
+    }))
+}
+
+// 10. Fast FTS & Lexical Session Search em Rust Nativo (Frente 1)
+#[derive(Deserialize)]
+pub struct SessionSearchPayload {
+    pub query: String,
+    pub limit: Option<usize>,
+}
+
+async fn sessions_search_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<SessionSearchPayload>,
+) -> impl IntoResponse {
+    let limit = payload.limit.unwrap_or(20);
+    let state_db = state.data_dir.join("state.db");
+    if !state_db.exists() {
+        return Json(serde_json::json!({ "ok": true, "results": [], "count": 0 }));
+    }
+
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &state_db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return Json(serde_json::json!({ "ok": false, "error": "failed_open_state_db" }));
+    };
+
+    let q = payload.query.trim();
+    if q.is_empty() {
+        return Json(serde_json::json!({ "ok": true, "results": [], "count": 0 }));
+    }
+
+    let mut matches = Vec::new();
+
+    // 1. Tenta via FTS5 index caso exista
+    let fts_query = format!("\"{}\"*", q.replace('"', "\"\""));
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT s.id, s.title, snippet(messages_fts, -1, '<b>', '</b>', '...', 12) as snip \
+         FROM messages_fts \
+         JOIN messages m ON messages_fts.rowid = m.id \
+         JOIN sessions s ON m.session_id = s.id \
+         WHERE messages_fts MATCH ?1 \
+         GROUP BY s.id \
+         LIMIT ?2",
+    ) {
+        if let Ok(rows) = stmt.query_map(rusqlite::params![fts_query, limit as i64], |row| {
+            let id: String = row.get(0)?;
+            let title: Option<String> = row.get(1)?;
+            let snippet: Option<String> = row.get(2)?;
+            Ok(serde_json::json!({
+                "session_id": id,
+                "title": title.unwrap_or_else(|| "Sem título".to_string()),
+                "snippet": snippet.unwrap_or_default(),
+                "engine": "fts5_rust"
+            }))
+        }) {
+            for m in rows.flatten() {
+                matches.push(m);
+            }
+        }
+    }
+
+    // 2. Fallback index-free LIKE em Rust nativo se FTS5 falhou ou retornou vazio
+    if matches.is_empty() {
+        let pattern = format!("%{q}%");
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT id, title FROM sessions WHERE title LIKE ?1 ORDER BY started_at DESC LIMIT ?2",
+        ) {
+            if let Ok(rows) = stmt.query_map(rusqlite::params![pattern, limit as i64], |row| {
+                let id: String = row.get(0)?;
+                let title: Option<String> = row.get(1)?;
+                Ok(serde_json::json!({
+                    "session_id": id,
+                    "title": title.unwrap_or_else(|| "Sem título".to_string()),
+                    "snippet": "",
+                    "engine": "like_fast_rust"
+                }))
+            }) {
+                for m in rows.flatten() {
+                    matches.push(m);
+                }
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "count": matches.len(),
+        "query": q,
+        "results": matches
+    }))
 }
 
 // 7. Cancel Registry API (Cancelamento Deterministico de Sombras e Subagentes)

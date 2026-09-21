@@ -2,13 +2,16 @@ mod auth;
 pub mod blast_analyzer;
 pub mod cancel_registry;
 pub mod context_hasher;
+pub mod cron_ledger;
 mod db;
 pub mod event_hub;
+pub mod idempotency;
 pub mod loop_detector;
 mod mcp;
 mod pty;
 mod server;
 mod supervisor;
+pub mod system_one;
 pub mod vector_search;
 pub mod worktree_engine;
 
@@ -62,6 +65,22 @@ enum Commands {
 
     /// Fast diagnostics of HAOS environment and persistence
     Doctor,
+
+    /// Fast Blast Radius & Code Graph Analyzer in native Rust
+    #[command(name = "blast-radius")]
+    BlastRadius {
+        #[arg(long)]
+        root: Option<PathBuf>,
+
+        #[arg(long = "file")]
+        files: Vec<String>,
+
+        #[arg(long = "symbol")]
+        symbols: Vec<String>,
+
+        #[arg(long, default_value_t = 4)]
+        max_depth: usize,
+    },
 
     /// Administração do WebUI (senha do operador)
     Admin {
@@ -142,6 +161,11 @@ async fn main() {
         }
         Some(Commands::Doctor) => {
             cmd_doctor();
+        }
+        Some(Commands::BlastRadius { root, files, symbols, max_depth }) => {
+            let root_dir = root.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+            let res = blast_analyzer::FastAstAnalyzer::calculate_impact(&root_dir, &files, &symbols, max_depth);
+            println!("{}", serde_json::to_string_pretty(&res).unwrap());
         }
         Some(Commands::Admin { action }) => match action {
             AdminCommands::SetPassword { password } => {

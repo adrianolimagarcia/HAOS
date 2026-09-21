@@ -24,6 +24,7 @@ pub struct PtySession {
     pub master_fd: RawFd,
     pub master_file: Arc<Mutex<File>>,
     pub buffer: Arc<Mutex<Vec<u8>>>,
+    pub history: Arc<Mutex<Vec<u8>>>,
     pub running: Arc<Mutex<bool>>,
     pub last_drain: Arc<Mutex<Instant>>,
 }
@@ -48,12 +49,14 @@ impl PtySession {
 
                 let master_file = Arc::new(Mutex::new(unsafe { File::from_raw_fd(master_raw) }));
                 let buffer = Arc::new(Mutex::new(Vec::new()));
+                let history = Arc::new(Mutex::new(Vec::new()));
                 let running = Arc::new(Mutex::new(true));
                 let last_drain = Arc::new(Mutex::new(Instant::now()));
 
-                // Reader thread pulling PTY output into ring buffer
+                // Reader thread pulling PTY output into ring buffer & history
                 let m_file = Arc::clone(&master_file);
                 let buf_clone = Arc::clone(&buffer);
+                let hist_clone = Arc::clone(&history);
                 let run_clone = Arc::clone(&running);
 
                 std::thread::spawn(move || {
@@ -69,11 +72,20 @@ impl PtySession {
                                 break;
                             }
                             Ok(n) => {
-                                let mut b = buf_clone.lock().unwrap();
-                                if b.len() > 100_000 {
-                                    b.drain(0..30_000); // Ring buffer eviction
+                                {
+                                    let mut b = buf_clone.lock().unwrap();
+                                    if b.len() > 100_000 {
+                                        b.drain(0..30_000); // Ring buffer eviction
+                                    }
+                                    b.extend_from_slice(&temp_buf[..n]);
                                 }
-                                b.extend_from_slice(&temp_buf[..n]);
+                                {
+                                    let mut h = hist_clone.lock().unwrap();
+                                    if h.len() > 200_000 {
+                                        h.drain(0..50_000);
+                                    }
+                                    h.extend_from_slice(&temp_buf[..n]);
+                                }
                             }
                             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                                 std::thread::sleep(Duration::from_millis(15));
@@ -92,6 +104,7 @@ impl PtySession {
                     master_fd: master_raw,
                     master_file,
                     buffer,
+                    history,
                     running,
                     last_drain,
                 })
@@ -148,6 +161,16 @@ impl PtySession {
         let mut b = self.buffer.lock().unwrap();
         let out = String::from_utf8_lossy(&b).to_string();
         b.clear();
+        let running = *self.running.lock().unwrap();
+        (out, running)
+    }
+
+    pub fn get_replay(&self) -> (String, bool) {
+        let mut drain_time = self.last_drain.lock().unwrap();
+        *drain_time = Instant::now();
+
+        let h = self.history.lock().unwrap();
+        let out = String::from_utf8_lossy(&h).to_string();
         let running = *self.running.lock().unwrap();
         (out, running)
     }

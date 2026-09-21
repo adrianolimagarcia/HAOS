@@ -495,7 +495,36 @@ def _crash(fail_open: bool, open_summary: str, closed_summary: str) -> dict:
 
 def check_command_security(command: str) -> dict:
     """Run the tirith scan on a command -> ``{"action": allow|warn|block, "findings", "summary"}``.
+    Fast-path: First runs the ultra-fast Rust hermes-exec check-command in sub-millisecond.
     Exit code determines the action; JSON enriches. Spawn failures/timeouts respect fail_open."""
+    cmd_trimmed = (command or "").strip()
+    if not cmd_trimmed:
+        return {"action": "allow", "findings": [], "summary": ""}
+
+    # 1. Fast-Path Rust check via hermes-exec (sub-millisecond)
+    try:
+        res = subprocess.run(
+            ["/usr/local/bin/hermes-exec", "check-command", cmd_trimmed],
+            capture_output=True,
+            text=True,
+            timeout=0.5,
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            parsed = json.loads(res.stdout.strip())
+            if not parsed.get("allowed", True):
+                return {
+                    "action": "block",
+                    "findings": [{
+                        "rule_id": "rust-hermes-exec-block",
+                        "severity": "CRITICAL",
+                        "title": "Destructive Command Blocked by Rust hermes-exec",
+                        "description": parsed.get("reason", "Destructive pattern detected"),
+                    }],
+                    "summary": parsed.get("reason", "Blocked by hermes-exec"),
+                }
+    except Exception:
+        pass
+
     global _crash_count
     cfg = _load_security_config()
     if not cfg["tirith_enabled"]:

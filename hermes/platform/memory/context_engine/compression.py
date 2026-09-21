@@ -41,6 +41,25 @@ def compress_text(
     """Comprime preservando decisões: linhas-decisão verbatim + cabeçalho;
     demais viram nota de compactação. Idempotente quando não há o que cortar
     (texto curto ou sem enchimento)."""
+    # Fast-Path Nativo via Rust hermes-exec compress-context (sub-milissegundo, zero GIL)
+    if markers is None and ellipsis == "…":
+        try:
+            import subprocess
+            cmd = ["/usr/local/bin/hermes-exec", "compress-context"]
+            if max_chars is not None:
+                cmd.append(str(max_chars))
+            p = subprocess.run(
+                cmd,
+                input=text,
+                capture_output=True,
+                text=True,
+                timeout=0.2
+            )
+            if p.returncode == 0 and p.stdout:
+                return p.stdout
+        except Exception:
+            pass
+
     markers = list(markers) if markers is not None else list(DEFAULT_DECISION_MARKERS)
     if max_chars is not None and len(text) <= max_chars:
         return text

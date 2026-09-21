@@ -400,7 +400,7 @@ class ControlPlaneService:
 
         mission_count = len(mission_ids)
 
-        total_tokens = sum(e.payload.get("tokens", 0) for e in events if "tokens" in (e.payload or {}))
+        total_tokens = sum(int(e.payload.get("tokens") or 0) for e in events if "tokens" in (e.payload or {}))
 
         # Se total_tokens for 0 no EventStore (ex: execuções via CLI/subagentes
         # diretos), consulta a contagem real auditada no state.db do PERFIL ATIVO
