@@ -155,24 +155,56 @@ def _json_or_str(data: Any) -> str:
 def extract_text(message_or_params: dict) -> str:
     """Concatenated text from an A2A Message / Task-result / params payload. v1.0, v0.3
     (``kind``) and pre-0.3 (``type``) Parts all carry ``text``; file Parts render as
-    URL/filename (raw base64 noted, not decoded); data Parts render their JSON."""
-    msg = message_or_params.get("message", message_or_params)
+    URL/filename (raw base64 noted, not decoded); data Parts render their JSON.
+
+    Also supports Go/haosbot/nanobot dialects where text is passed at ``message.text``,
+    ``input``, ``output``, or in top-level Task artifacts."""
+    msg = message_or_params.get("message", message_or_params) if isinstance(message_or_params, dict) else message_or_params
     chunks = []
-    for part in msg.get("parts", []) if isinstance(msg, dict) else []:
-        if not isinstance(part, dict):
-            continue
-        if isinstance(txt := part.get("text"), str):
-            chunks.append(txt)
-        elif isinstance(url := part.get("url"), str) and url:
-            chunks.append(_file_note(part.get("filename") or part.get("name") or "", url,
-                                     part.get("mediaType") or part.get("mimeType") or ""))
-        elif isinstance(v03 := part.get("file"), dict) and isinstance(v03.get("fileWithUri"), str):
-            chunks.append(_file_note(v03.get("name") or "", v03["fileWithUri"], v03.get("mimeType") or ""))
-        elif isinstance(part.get("raw"), str):
-            chunks.append(_file_note(part.get("filename") or "", f"{len(part['raw'])} bytes base64-encoded",
-                                     part.get("mediaType") or ""))
-        elif (data := part.get("data")) is not None:
-            chunks.append(f"[data ({part.get('mediaType') or 'application/json'})]\n{_json_or_str(data)}")
+    if isinstance(msg, dict):
+        for part in msg.get("parts", []):
+            if not isinstance(part, dict):
+                continue
+            if isinstance(txt := part.get("text"), str):
+                chunks.append(txt)
+            elif isinstance(url := part.get("url"), str) and url:
+                chunks.append(_file_note(part.get("filename") or part.get("name") or "", url,
+                                         part.get("mediaType") or part.get("mimeType") or ""))
+            elif isinstance(v03 := part.get("file"), dict) and isinstance(v03.get("fileWithUri"), str):
+                chunks.append(_file_note(v03.get("name") or "", v03["fileWithUri"], v03.get("mimeType") or ""))
+            elif isinstance(part.get("raw"), str):
+                chunks.append(_file_note(part.get("filename") or "", f"{len(part['raw'])} bytes base64-encoded",
+                                         part.get("mediaType") or ""))
+            elif (data := part.get("data")) is not None:
+                chunks.append(f"[data ({part.get('mediaType') or 'application/json'})]\n{_json_or_str(data)}")
+
+        # Dialect compatibility: haosbot / nanobot-go sends message: {"text": "..."}
+        if not chunks and isinstance(txt := msg.get("text"), str) and txt.strip():
+            chunks.append(txt.strip())
+
+    # Task artifacts at root level (Task results)
+    if not chunks and isinstance(message_or_params, dict):
+        for art in message_or_params.get("artifacts", []):
+            if not isinstance(art, dict):
+                continue
+            for part in art.get("parts", []):
+                if isinstance(part, dict) and isinstance(txt := part.get("text"), str) and txt.strip():
+                    chunks.append(txt.strip())
+
+    # Dialect compatibility: haosbot / nanobot-go task output
+    if not chunks and isinstance(message_or_params, dict):
+        if isinstance(out := message_or_params.get("output"), str) and out.strip():
+            chunks.append(out.strip())
+        elif isinstance(msg, dict) and isinstance(out := msg.get("output"), str) and out.strip():
+            chunks.append(out.strip())
+
+    # Dialect compatibility: haosbot / nanobot-go task input
+    if not chunks and isinstance(message_or_params, dict):
+        if isinstance(inp := message_or_params.get("input"), str) and inp.strip():
+            chunks.append(inp.strip())
+        elif isinstance(msg, dict) and isinstance(inp := msg.get("input"), str) and inp.strip():
+            chunks.append(inp.strip())
+
     return "\n".join(chunks).strip()
 
 
@@ -182,14 +214,20 @@ def extract_context_id(params: dict) -> str:
     return (str(msg.get("contextId") or "") if isinstance(msg, dict) else "") or str(params.get("contextId") or "")
 
 
-def build_task(task_id: str, context_id: str, state: str, agent_text: str = "", *, created_at: str = "") -> dict:
+def build_task(task_id: str, context_id: str, state: str, agent_text: str = "", *, created_at: str = "", output: str = "") -> dict:
     """A2A v1.0 Task. ``created_at`` is accepted but NOT serialized: the v1.0 Task proto has no
-    createdAt and strict ProtoJSON parsers (a2a-sdk) reject unknown fields."""
+    createdAt and strict ProtoJSON parsers (a2a-sdk) reject unknown fields.
+
+    ``output`` provides backwards-compatibility for peers (such as Go/haosbot/nanobot) expecting
+    a top-level output string on completed tasks."""
     task: dict[str, Any] = {"id": task_id, "contextId": context_id, "status": {"state": state, "timestamp": now_iso()}}
     if agent_text:
         task["status"]["message"] = text_message(ROLE_AGENT, agent_text, context_id)
         if state == STATE_COMPLETED:
             task["artifacts"] = [{"artifactId": uuid.uuid4().hex, "parts": [text_part(agent_text)]}]
+    out = output or (agent_text if state == STATE_COMPLETED else "")
+    if out:
+        task["output"] = out
     return task
 
 

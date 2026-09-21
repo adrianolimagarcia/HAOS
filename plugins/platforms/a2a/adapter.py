@@ -45,7 +45,7 @@ _err = protocol.jsonrpc_error
 
 # (adapter handler, v1.0 PascalCase method per §5.3/§9.4, *legacy slash aliases still accepted)
 _METHOD_TABLE = (
-    ("_rpc_message_send", "SendMessage", "message/send"),
+    ("_rpc_message_send", "SendMessage", "message/send", "tasks/send", "tasks/create"),
     ("_rpc_message_stream", "SendStreamingMessage", "message/stream"),
     ("_rpc_tasks_get", "GetTask", "tasks/get"),
     ("_rpc_tasks_list", "ListTasks", "tasks/list"),
@@ -202,7 +202,7 @@ class A2ARequestHandler(BaseHTTPRequestHandler):
             return self._json(200, adapter._build_card(public_url, agent=agent))
         if subpath == "/metrics":
             return self._json(200, protocol.metrics.snapshot())
-        if subpath not in ("/", "/health"):
+        if subpath not in ("/", "/health", "/a2a"):
             return self._json(404, {"error": "not found"})
         payload = {"status": "ok", "agent": agent.get("name") or adapter.agent_name}
         # Agent Cards are public; profile/tenant topology is not leaked on remote unauthenticated GETs.

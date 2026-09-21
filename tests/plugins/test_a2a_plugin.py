@@ -341,6 +341,16 @@ class TestV1Parts:
         assert "hello.txt" in result
         assert "base64" in result
 
+    def test_extract_text_supports_haosbot_dialects(self):
+        """Peers like haosbot/nanobot-go send text via message.text, input, or output."""
+        # haosbot a2a_call send format: params.message.text
+        assert protocol.extract_text({"message": {"text": "hello from haosbot"}}) == "hello from haosbot"
+        # direct input field
+        assert protocol.extract_text({"input": "hello direct input"}) == "hello direct input"
+        assert protocol.extract_text({"message": {"input": "hello nested input"}}) == "hello nested input"
+        # task output field
+        assert protocol.extract_text({"output": "hello task output"}) == "hello task output"
+
     def test_context_id_extracted_from_message(self):
         params = {"message": protocol.text_message(protocol.ROLE_USER, "x", context_id="ctx-in-msg")}
         assert protocol.extract_context_id(params) == "ctx-in-msg"
@@ -1800,3 +1810,11 @@ class TestClientLegacyDialect:
             tools._send_task("odd", peer, "hello", "ctx-1")
 
         assert len(bodies) == 1
+
+    def test_adapter_accepts_tasks_send_and_tasks_create_methods(self):
+        """Adapter's method table recognizes tasks/send and tasks/create as message send handlers."""
+        from plugins.platforms.a2a import adapter
+        assert adapter._METHODS["tasks/send"][0] == "_rpc_message_send"
+        assert adapter._METHODS["tasks/create"][0] == "_rpc_message_send"
+        assert adapter._METHODS["SendMessage"][0] == "_rpc_message_send"
+        assert adapter._METHODS["message/send"][0] == "_rpc_message_send"
