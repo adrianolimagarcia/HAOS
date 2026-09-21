@@ -318,3 +318,10 @@ native/fts5_cjk/*.so
 # e um `git add -A` levaria 184 MB + 64 MB + 59 MB de binarios para sempre no
 # historico. Nenhum arquivo rastreado vive sob um target/.
 target/
+
+# Backups de editor (nunca versionar). Um `git add -A` ja varreu um
+# hermes/platform/webui/static/index.html.bak de 273 KB para o historico.
+# Nenhum arquivo com essas extensoes esta rastreado hoje.
+*.bak
+*.orig
+*.save

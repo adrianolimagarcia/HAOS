@@ -158,7 +158,14 @@ class BotSpecManager:
         definition = spec.routines.get(routine)
         if definition is None: raise KeyError(routine)
         version = int(definition.get("version", 1))
-        task = self.submit(bot_id, goal, **dict(definition.get("task_defaults", {})), **overrides)
+        # Merge antes de expandir: dois `**` com a MESMA chave numa chamada é
+        # TypeError em Python, então `**task_defaults, **overrides` estourava
+        # sempre que um caller sobrescrevia uma chave que a rotina já define
+        # (priority, posture, yolo_mode...). Mesma ordem do submit(): o override
+        # do caller vence o default da rotina.
+        routine_defaults = dict(definition.get("task_defaults", {}))
+        routine_defaults.update(overrides)
+        task = self.submit(bot_id, goal, **routine_defaults)
         payload = {"bot_id": bot_id, "routine": routine, "version": version, "task_id": task.id}
         if idempotency_key is not None:
             payload["idempotency_key"] = idempotency_key

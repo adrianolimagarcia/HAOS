@@ -839,7 +839,7 @@ if _HAS_FASTAPI and APIRouter is not None:
         missão nasce de uma ordem humana do operador e o worker não pode parar
         num prompt de aprovação que ninguém vê na superfície web.
         """
-        from hermes.platform.webui.standalone import CHAT_YOLO_DEFAULT  # noqa: PLC0415
+        from hermes.platform.tasks.spec import OPERATOR_YOLO_DEFAULT  # noqa: PLC0415
 
         state = get_engine_state()
         message = str((body or {}).get("message") or "").strip()
@@ -848,7 +848,7 @@ if _HAS_FASTAPI and APIRouter is not None:
         created = state.create_task_from_message(
             message,
             priority=int((body or {}).get("priority") or 85),
-            yolo_mode=CHAT_YOLO_DEFAULT,
+            yolo_mode=OPERATOR_YOLO_DEFAULT,
         )
         if state.settings.get("auto_dispatch", True):
             state.dispatch_in_background(max_spawn=10)
@@ -1035,7 +1035,14 @@ if _HAS_FASTAPI and APIRouter is not None:
 
     @router.post("/tasks/{task_id}/steer")  # type: ignore[union-attr]
     def post_task_steer(task_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Intervenção em tempo real (Steer / Queue / Interrupt) em tarefa em execução."""
+        """Intervenção em tempo real (Steer / Queue / Interrupt) em tarefa em execução.
+
+        ``queue`` e ``interrupt`` criam missão nova a partir de uma ordem do
+        operador, então nascem em YOLO (mesma política do console); ``steer`` só
+        injeta texto na tarefa em voo e não passa por aqui.
+        """
+        from hermes.platform.tasks.spec import OPERATOR_YOLO_DEFAULT  # noqa: PLC0415
+
         mode = payload.get("mode", "steer")  # "steer" | "queue" | "interrupt"
         message = (payload.get("message") or "").strip()
         if not message:
@@ -1066,7 +1073,8 @@ if _HAS_FASTAPI and APIRouter is not None:
                 message,
                 requires_tasks=[task_id],
                 priority=95,
-                title=f"Follow-up ({task_id}): {message[:40]}"
+                title=f"Follow-up ({task_id}): {message[:40]}",
+                yolo_mode=OPERATOR_YOLO_DEFAULT,
             )
             if log_file and log_file.is_file():
                 with open(log_file, "a", encoding="utf-8") as f:
@@ -1093,7 +1101,7 @@ if _HAS_FASTAPI and APIRouter is not None:
                 with open(log_file, "a", encoding="utf-8") as f:
                     f.write(f"\n[INTERROMPIDO PELO OPERADOR ⏹]: Abortado para executar nova missão.\n")
 
-            new_task = state.create_task_from_message(message, priority=99)
+            new_task = state.create_task_from_message(message, priority=99, yolo_mode=OPERATOR_YOLO_DEFAULT)
             state.dispatch_in_background(max_spawn=10)
             return {"ok": True, "mode": "interrupt", "interrupted_task_id": task_id, "new_task_id": new_task["task_id"]}
 

@@ -91,3 +91,28 @@ def test_submit_to_dispatcher_records_failure_without_swallowing_error():
     except RuntimeError as exc:
         assert str(exc) == "dispatcher unavailable"
     assert mgr.run_history("worker", "fix")[-1]["status"] == "dispatch_failed"
+
+
+def test_submit_to_dispatcher_carries_yolo_override_onto_the_spec(tmp_path):
+    """O override yolo_mode das superfícies de operador chega ao spec persistido.
+
+    Caminho compartilhado pelo dashboard (POST /bots/{id}/trigger|submit) e pelo
+    webhook assinado: o kwarg entra em ``overrides``, vence o ``task_defaults``
+    do BotSpec e é persistido — é o que a lane lê para decidir o ``--yolo``.
+    """
+    from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+
+    adapter = KanbanAdapter(tmp_path / "kanban.db")
+    try:
+        mgr = BotSpecManager(EventStore())
+        # task_defaults diz o contrário de propósito: a política do operador vence.
+        mgr.register(BotSpec(id="worker", name="Worker",
+                             routines={"fix": {"task_defaults": {"yolo_mode": False}}}))
+
+        yolo_id = mgr.submit_to_dispatcher("worker", "fix", "Repair it", adapter, yolo_mode=True)
+        gated_id = mgr.submit_to_dispatcher("worker", "fix", "Repair it", adapter)
+
+        assert adapter.get_task(yolo_id)["spec"]["yolo_mode"] is True
+        assert adapter.get_task(gated_id)["spec"]["yolo_mode"] is False
+    finally:
+        adapter.close()

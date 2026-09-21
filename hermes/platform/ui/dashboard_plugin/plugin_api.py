@@ -61,6 +61,7 @@ except Exception:  # pragma: no cover - ambiente sem fastapi
     HTTPException = None  # type: ignore[assignment,misc]
     _HAS_FASTAPI = False
 
+from hermes.platform.tasks.spec import OPERATOR_YOLO_DEFAULT  # noqa: E402
 from hermes.platform.ui.dashboard import dashboard_payload  # noqa: E402
 from hermes.platform.ui.stats import DashboardStats  # noqa: E402
 
@@ -553,8 +554,12 @@ if _HAS_FASTAPI and APIRouter is not None:
         adapter = resolve_kanban_adapter()
         if adapter is None:
             raise HTTPException(status_code=409, detail="kanban store não configurado")
+        # Merge antes de expandir: `**overrides, yolo_mode=...` seria TypeError se
+        # o body já trouxesse yolo_mode. A política do operador vence o body.
+        overrides = dict(body.get("overrides") or {})
+        overrides["yolo_mode"] = OPERATOR_YOLO_DEFAULT
         try:
-            task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **dict(body.get("overrides") or {}))
+            task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **overrides)
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=f"campo obrigatório ausente ou recurso inexistente: {exc}") from exc
         except (ValueError, RuntimeError) as exc:
@@ -589,8 +594,12 @@ if _HAS_FASTAPI and APIRouter is not None:
         adapter = resolve_kanban_adapter()
         if adapter is None:
             raise HTTPException(status_code=409, detail="kanban store não configurado")
+        # Mesmo merge do trigger: a política do operador vence o body, e chave
+        # duplicada entre `**overrides` e o kwarg explícito seria TypeError.
+        overrides = dict(body.get("overrides") or {})
+        overrides["yolo_mode"] = OPERATOR_YOLO_DEFAULT
         try:
-            task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **dict(body.get("overrides") or {}))
+            task_id = manager.submit_to_dispatcher(bot_id, str(body["routine"]), str(body["goal"]), adapter, **overrides)
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=f"campo obrigatório ausente ou recurso inexistente: {exc}") from exc
         except (RuntimeError, PermissionError, ValueError) as exc:

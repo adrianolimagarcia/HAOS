@@ -3435,6 +3435,14 @@ class GatewayRunner(
         self._init_startup_checks()
         self._init_session_db()
         self._init_registries_and_clocks()
+        self._init_kanban_adapter()
+
+    def _init_kanban_adapter(self) -> None:
+        """Create the webhook BotSpec adapter using the canonical profile-scoped store."""
+        from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+
+        with _profile_runtime_scope(get_hermes_home()):
+            self.kanban_adapter = KanbanAdapter()
 
     def _init_runtime_settings(self) -> None:
         """Load ephemeral per-call config (prefill, reasoning, busy modes, timeouts, routing)."""

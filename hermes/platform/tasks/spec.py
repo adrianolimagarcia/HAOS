@@ -87,8 +87,9 @@ class TaskSpec:
     allow_child_tasks: bool = True
 
     # YOLO: o worker spawnado roda sem portão de aprovação de comando perigoso.
-    # Default False — só a superfície interativa do operador (chat/console do
-    # control plane) liga, onde a missão nasce de uma decisão humana explícita.
+    # Default False — quem liga é a superfície de operador do control plane, via
+    # OPERATOR_YOLO_DEFAULT abaixo, onde a missão nasce de uma decisão humana
+    # explícita. O taskboard manual (POST /api/tasks) mantém o portão.
     yolo_mode: bool = False
 
     # Entregáveis esperados e tags
@@ -159,3 +160,20 @@ class TaskSpec:
         valid_keys = set(sig.parameters.keys()) - {"self"}
         filtered = {k: v for k, v in d.items() if k in valid_keys}
         return cls(**filtered)
+
+
+# Política das superfícies de operador do control plane: missão que nasce de uma
+# ordem humana explícita (console, chat do hub, steer, rotina de bot, webhook
+# assinado) roda em YOLO. Motivo: o worker é headless — um prompt de aprovação
+# ali não tem quem responda e trava a missão para sempre.
+#
+# Fica aqui, e não no webui, porque TODOS os caminhos que constroem um TaskSpec
+# já importam este módulo — assim o gateway não precisa importar um módulo de
+# WebUI só para ler um booleano, e a política tem uma fonte única.
+#
+# Não cobre o taskboard manual (POST /api/tasks e POST /tasks): ali o operador
+# cria um card para a frota, não uma ordem direta, e o portão permanece.
+#
+# A blocklist hardline do kernel continua valendo e não é bypassável nem sob
+# --yolo: isto desliga o portão de aprovação, não a lista de comandos proibidos.
+OPERATOR_YOLO_DEFAULT = True

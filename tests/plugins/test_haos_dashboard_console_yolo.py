@@ -1,12 +1,12 @@
-"""Console do plugin de dashboard HAOS: o chat do operador despacha em YOLO.
+"""Console e steer do plugin de dashboard HAOS despacham em YOLO.
 
 O shell oficial descobre ``plugins/haos/dashboard/plugin_api.py`` e monta o
-``router`` sob ``/api/plugins/haos/``. A rota ``POST /console`` cria a missão
-digitada pelo operador e a despacha na lane canônica; como o worker é headless,
-ela roda sem portão de aprovação por padrão — mesma política da superfície
-standalone (``CHAT_YOLO_DEFAULT``).
+``router`` sob ``/api/plugins/haos/``. As rotas que criam missão a partir de uma
+ordem do operador — ``POST /console`` e ``POST /tasks/{id}/steer`` nos modos
+``queue``/``interrupt`` — nascem em YOLO (``OPERATOR_YOLO_DEFAULT``): o worker é
+headless e um prompt de aprovação ali não tem quem responda.
 
-O teste executa a rota REAL com um ``HAOSStandaloneState`` em data_dir
+O teste executa as rotas REAIS com um ``HAOSStandaloneState`` em data_dir
 temporário e verifica o spec persistido no kanban canônico — sem mocks de store.
 """
 
@@ -50,3 +50,27 @@ class TestHaosDashboardConsoleYolo(unittest.TestCase):
         self.assertTrue(result["accepted"])
         spec = self.state.kanban.get_task(result["task_id"])["spec"]
         self.assertTrue(spec["yolo_mode"])
+
+    def test_steer_queue_and_interrupt_spawn_yolo_missions(self):
+        """Os dois modos que criam missão nova herdam a política do console."""
+        target = self.module.post_console({"message": "Missão alvo do steer"})["task_id"]
+
+        for mode in ("queue", "interrupt"):
+            with self.subTest(mode=mode):
+                result = self.module.post_task_steer(
+                    target, {"mode": mode, "message": f"ordem via {mode}"}
+                )
+                new_id = result.get("queued_task_id") or result.get("new_task_id")
+                self.assertIsNotNone(new_id, f"modo {mode} não devolveu o id da missão nova")
+                spec = self.state.kanban.get_task(new_id)["spec"]
+                self.assertTrue(spec["yolo_mode"], f"modo {mode} criou missão com portão ligado")
+
+    def test_plain_steer_does_not_create_a_mission(self):
+        """``steer`` só injeta texto na tarefa em voo — não nasce missão nova."""
+        target = self.module.post_console({"message": "Missão alvo do steer puro"})["task_id"]
+        before = len(self.state.kanban.list_tasks())
+
+        result = self.module.post_task_steer(target, {"mode": "steer", "message": "siga por aqui"})
+
+        self.assertEqual(result["mode"], "steer")
+        self.assertEqual(len(self.state.kanban.list_tasks()), before)

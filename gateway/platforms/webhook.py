@@ -507,6 +507,7 @@ class WebhookAdapter(BasePlatformAdapter):
         try:
             from hermes.platform.bots.manager import BotSpecManager
             from hermes.platform.observability.event_store import get_event_store
+            from hermes.platform.tasks.spec import OPERATOR_YOLO_DEFAULT
             manager = BotSpecManager(get_event_store())
             bot_id = str(route_config.get("bot_id", ""))
             routine = str(route_config.get("routine", ""))
@@ -520,14 +521,17 @@ class WebhookAdapter(BasePlatformAdapter):
             if routine not in spec.routines:
                 return _json_error("BotSpec routine not found", 404)
             goal = prompt or json.dumps(payload, sort_keys=True, default=str)
-            task = manager.submit_routine(
-                bot_id, routine, goal, webhook_event=event_type, idempotency_key=delivery_id,
-            )
             adapter = getattr(self.gateway_runner, "kanban_adapter", None)
             if adapter is None:
                 return _json_error("Kanban adapter unavailable", 503)
-            task_id = adapter.save_task(task)
-            manager.record_run(bot_id, routine, task_id, "submitted", delivery_id=delivery_id)
+            task_id = manager.submit_to_dispatcher(
+                bot_id, routine, goal, adapter, idempotency_key=delivery_id,
+                # Superfície de operador do control plane: a rota só chega aqui com
+                # assinatura HMAC válida, e o worker é headless — sem YOLO a missão
+                # para num prompt de aprovação que ninguém está vendo. A blocklist
+                # hardline do kernel continua valendo (não é bypassável sob --yolo).
+                yolo_mode=OPERATOR_YOLO_DEFAULT,
+            )
             return web.json_response({"status": "accepted", "route": route_name, "bot_id": bot_id,
                                       "routine": routine, "task_id": task_id, "delivery_id": delivery_id}, status=202)
         except KeyError:
@@ -664,7 +668,10 @@ class WebhookAdapter(BasePlatformAdapter):
         if route_config.get("cron_job"):
             return self._handle_cron_trigger(prompt, route_config, route_name, event_type, delivery_id, profile)
         if route_config.get("bot_id") or route_config.get("routine"):
-            return await self._handle_bot_trigger(prompt, payload, route_config, route_name, event_type, delivery_id, profile)
+            # BotSpec persistence and dispatcher selection are profile-scoped; the render scope above
+            # has ended before this branch, so bind the routed profile for the full submission.
+            with self._profile_scope(profile):
+                return await self._handle_bot_trigger(prompt, payload, route_config, route_name, event_type, delivery_id, profile)
         if route_config.get("deliver_only"):
             return await self._handle_deliver_only(prompt, payload, route_config, route_name, event_type, delivery_id,
                                                    profile)

@@ -55,7 +55,7 @@ _REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from hermes.platform.tasks.spec import TaskSpec
+from hermes.platform.tasks.spec import OPERATOR_YOLO_DEFAULT, TaskSpec
 from hermes.platform.tasks.kanban_adapter import KanbanAdapter
 from hermes.platform.observability.event_store import EventStore
 from hermes.platform.observability.events import Event
@@ -76,12 +76,6 @@ from hermes.platform.webui import settings as engine_settings
 
 _DEFAULT_PORT = 8788
 _STATIC_DIR = Path(__file__).parent / "static"
-
-# Console/chat do control plane: a missão nasce de uma ordem humana explícita do
-# operador, então o worker roda em YOLO por padrão — sem isso o filho para num
-# prompt de aprovação que ninguém está vendo na superfície web. A hardline
-# blocklist do kernel continua valendo (não é bypassável nem sob --yolo).
-CHAT_YOLO_DEFAULT = True
 
 
 def _jsonable(obj: Any) -> Any:
@@ -753,7 +747,7 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             model_profile=model_profile,
             assignee=assignee,
             agent_target=agent_target,
-            yolo_mode=CHAT_YOLO_DEFAULT,
+            yolo_mode=OPERATOR_YOLO_DEFAULT,
         )
         self.state.dispatch_in_background(max_spawn=1)
         self._send_json(200, {"accepted": True, **created})
@@ -1783,7 +1777,7 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             command, title=f"Comando para {node['name']}",
             model_profile=node.get("model") or None, agent_target=target,
             assignee=node.get("profile") or target,
-            yolo_mode=CHAT_YOLO_DEFAULT,
+            yolo_mode=OPERATOR_YOLO_DEFAULT,
         )
         self.state.event_store.append(Event(name="agent_hierarchy.commanded", payload={"target_id": target, "profile": node.get("profile"), "model_profile": node.get("model"), "command": command}))
         self.state.dispatch_in_background(max_spawn=1)
