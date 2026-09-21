@@ -134,6 +134,10 @@ class SecretBroker:
         auth.json); o segredo em si continua no vault sob ``haos``.
         """
         grant_id = self._grant_id(scope, credential_ref)
+        # Replaying a request must not reset an already-decided grant.
+        existing = self._find_grant(scope, credential_ref)
+        if existing is not None:
+            return grant_id
         self._write_grant({
             "id": grant_id,
             "scope": scope,
@@ -159,28 +163,23 @@ class SecretBroker:
         (fail-closed: aprovar do nada lança ``VaultError`` em vez de criar
         acesso fantasma).
         """
-        existing = self._find_grant(scope, credential_ref)
-        if existing is None:
-            raise VaultError(f"grant inexistente: {scope}::{credential_ref}")
-        if existing.get("status") != "pending":
-            raise VaultError(f"grant não pendente: {scope}::{credential_ref}")
-        if self._grant_expired(existing):
-            raise VaultError(f"grant expirado: {scope}::{credential_ref}")
-        updated = dict(existing)
-        updated["status"] = "approved"
-        updated["approver"] = approver
-        updated["rationale"] = rationale
-        updated["approved_at"] = _now_iso()
-        self._write_grant(updated)
+        def transition(existing: Dict[str, Any]) -> Dict[str, Any]:
+            if self._grant_expired(existing):
+                raise VaultError(f"grant expirado: {scope}::{credential_ref}")
+            updated = dict(existing)
+            updated["status"] = "approved"
+            updated["approver"] = approver
+            updated["rationale"] = rationale
+            updated["approved_at"] = _now_iso()
+            return updated
+
+        self._transition_pending_grant(scope, credential_ref, transition)
 
     def reject_grant(self, scope: str, credential_ref: str, approver: str, rationale: Optional[str] = None) -> None:
-        existing = self._find_grant(scope, credential_ref)
-        if existing is None:
-            raise VaultError(f"grant inexistente: {scope}::{credential_ref}")
-        if existing.get("status") != "pending":
-            raise VaultError(f"grant não pendente: {scope}::{credential_ref}")
-        updated = dict(existing, status="rejected", approver=approver, rationale=rationale, rejected_at=_now_iso())
-        self._write_grant(updated)
+        def transition(existing: Dict[str, Any]) -> Dict[str, Any]:
+            return dict(existing, status="rejected", approver=approver, rationale=rationale, rejected_at=_now_iso())
+
+        self._transition_pending_grant(scope, credential_ref, transition)
 
     def pending_approvals(self) -> List[Dict[str, Any]]:
         """Grants com ``policy="requires_approval"`` ainda pendentes.
@@ -227,9 +226,17 @@ class SecretBroker:
         return None
 
     def _write_grant(self, grant: Dict[str, Any]) -> None:
-        # Merge atômico do pool: reescreve o grant alterado preservando os
-        # demais grants que existem em disco (concorrência cross-process).
         self._api().write_credential_pool(_GRANTS_POOL_PROVIDER, [grant])
+
+    def _transition_pending_grant(self, scope: str, credential_ref: str, transition) -> None:
+        api = self._api()
+        with api._auth_store_lock():
+            existing = self._find_grant(scope, credential_ref)
+            if existing is None:
+                raise VaultError(f"grant inexistente: {scope}::{credential_ref}")
+            if existing.get("status") != "pending":
+                raise VaultError(f"grant não pendente: {scope}::{credential_ref}")
+            self._write_grant(transition(existing))
 
 
 class OAuthVault:

@@ -22,7 +22,7 @@ load_hermes_dotenv(hermes_home=_env_path.parent, project_env=PROJECT_ROOT / ".en
 from hermes_cli.colors import Colors, color
 from hermes_cli.doctor_report import Finding, _section, check_bool, check_info, doctor_check, warn_on_error
 from hermes_cli.doctor_connectivity import _has_healthy_oauth_fallback_for_apikey_provider, build_probes, run_probes
-from hermes_cli.doctor_tools import _safe_which
+from hermes_cli.doctor_health_agent import _check_health_agent
 
 from hermes_cli.doctor_config import (
     _check_config_drift,
@@ -121,7 +121,7 @@ DOCTOR_CHECKS = (
     ('Directory Structure', _check_directory_structure), (None, _check_state_db), (None, _check_checkpoint_store),
     (None, _check_gateway_supervision), (None, _check_command_installation),
     ('External Tools', _check_git_and_rg), (None, _check_terminal_backend), (None, _check_node_and_browser),
-    (None, _check_npm_audit), ('API Connectivity', _check_api_connectivity),
+    ('Health Agent', _check_health_agent), ('API Connectivity', _check_api_connectivity),
     ('Tool Availability', _check_tool_availability), ('Skills Hub', _check_skills_hub),
     ('Memory Provider', _check_memory_provider), (None, _check_profiles),
 )

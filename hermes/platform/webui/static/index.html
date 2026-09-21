@@ -1105,6 +1105,7 @@
   <button data-tab="agent"><span class="dot"></span>Config Agente</button>
   <button data-tab="system"><span class="dot"></span>Sistema</button>
   <button data-tab="events"><span class="dot"></span>Timeline</button>
+  <button data-tab="hub"><span class="dot"></span>🧩 Skills & Plugins</button>
   <button data-tab="config"><span class="dot"></span>Engine</button>
 </nav>
 <main>
@@ -2048,6 +2049,46 @@
         <div id="agentSummary"><span class="empty">carregando…</span></div>
       </div>
     </div>
+          <!-- System One Decision Engine Card -->
+      <div class="card" style="margin-top:14px;background:rgba(255,255,255,0.92);border:1px solid rgba(15,23,42,0.1);border-radius:14px;padding:16px;box-shadow:var(--glass-shadow);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.4rem;">⚡</span>
+            <div>
+              <h3 style="margin:0;font-size:0.98rem;color:var(--text-strong);font-weight:700;">System One — Motor de Decisões Tipadas</h3>
+              <div style="font-size:0.75rem;color:var(--muted);margin-top:1px;">
+                Aprendizado adaptativo via Gemini 2.5 Flash Lite (8790) + Cache Local SQLite (&lt; 1ms).
+              </div>
+            </div>
+          </div>
+          <button class="act" type="button" onclick="loadSystemOneStats()" style="font-size:0.75rem;padding:3px 8px;">🔄 Atualizar</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px;margin-top:12px;margin-bottom:12px;">
+          <div style="background:rgba(248,250,252,0.9);padding:10px;border-radius:8px;border:1px solid rgba(15,23,42,0.06);">
+            <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Padrões Aprendidos</div>
+            <div id="s1Patterns" style="font-size:1.25rem;font-weight:700;color:var(--text-strong);margin-top:2px;">—</div>
+          </div>
+          <div style="background:rgba(248,250,252,0.9);padding:10px;border-radius:8px;border:1px solid rgba(15,23,42,0.06);">
+            <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Decisões Servidas</div>
+            <div id="s1Decisions" style="font-size:1.25rem;font-weight:700;color:var(--accent);margin-top:2px;">—</div>
+          </div>
+          <div style="background:rgba(248,250,252,0.9);padding:10px;border-radius:8px;border:1px solid rgba(15,23,42,0.06);">
+            <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Chamadas Economizadas</div>
+            <div id="s1Saved" style="font-size:1.25rem;font-weight:700;color:#16a34a;margin-top:2px;">—</div>
+          </div>
+          <div style="background:rgba(248,250,252,0.9);padding:10px;border-radius:8px;border:1px solid rgba(15,23,42,0.06);">
+            <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Taxa de Cache Hit</div>
+            <div id="s1HitRate" style="font-size:1.25rem;font-weight:700;color:var(--accent2);margin-top:2px;">—</div>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.74rem;color:var(--muted);border-top:1px solid rgba(15,23,42,0.06);padding-top:8px;">
+          <span>Backend Cold Start: <code>http://100.77.31.78:8790/v1</code> (gemini-2.5-flash-lite)</span>
+          <span>Latência Hit: <b>~1ms</b> | Custo: <b>$0</b></span>
+        </div>
+      </div>
+
     <div class="card">
       <h3><span class="n">i</span> Arquitetura honesta</h3>
       <p style="font-size:.86rem;line-height:1.6;color:var(--muted)">
@@ -2059,6 +2100,71 @@
         classificadas e alimentam o loop Ouroboros em shadow mode. Esta UI nunca fabrica números:
         ausência de dado mostra estado vazio honesto.
       </p>
+    </div>
+  </section>
+
+  <!-- ============ SKILLS & PLUGINS HUB ============ -->
+  <section class="tab" id="tab-hub">
+    <!-- Hub Header & Search/Filters Bar -->
+    <div class="card" style="margin-bottom:16px;padding:16px 20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-size:1.8rem;">🧩</span>
+          <div>
+            <h2 style="margin:0;font-size:1.25rem;font-weight:700;color:var(--text-strong);letter-spacing:-0.01em;">Hub de Skills & Plugins</h2>
+            <div style="font-size:0.8rem;color:var(--muted);margin-top:2px;">
+              Expanda os superpoderes dos agentes Hermes e HAOS com catálogo oficial e comunitário de habilidades e extensões.
+            </div>
+          </div>
+        </div>
+
+        <!-- Segmented Control / Type Selector -->
+        <div style="display:flex;background:rgba(241,245,249,0.9);padding:4px;border-radius:10px;border:1px solid rgba(15,23,42,0.08);gap:4px;">
+          <button id="hubTypeSkillsBtn" type="button" class="act primary" onclick="setHubType('skills')" style="padding:6px 16px;font-size:0.82rem;font-weight:600;border-radius:8px;">
+            🧠 Habilidades (Skills)
+          </button>
+          <button id="hubTypePluginsBtn" type="button" class="act" onclick="setHubType('plugins')" style="padding:6px 16px;font-size:0.82rem;font-weight:600;border-radius:8px;">
+            🔌 Extensões (Plugins)
+          </button>
+        </div>
+      </div>
+
+      <!-- Search & Filters Toolbar -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:240px;position:relative;">
+          <input type="text" id="hubSearchInput" placeholder="Pesquisar por nome, palavra-chave ou capacidade..." oninput="debounceHubFilter()" style="width:100%;box-sizing:border-box;padding-left:34px;font-size:0.85rem;" />
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:0.95rem;color:var(--muted);pointer-events:none;">🔍</span>
+        </div>
+
+        <select id="hubCategoryFilter" onchange="filterHubItems()" style="width:auto;min-width:170px;font-size:0.82rem;">
+          <option value="ALL">Todas as Categorias</option>
+        </select>
+
+        <select id="hubStatusFilter" onchange="filterHubItems()" style="width:auto;min-width:150px;font-size:0.82rem;">
+          <option value="ALL">Todos os Status</option>
+          <option value="INSTALLED">✅ Instalados</option>
+          <option value="AVAILABLE">📥 Disponíveis</option>
+        </select>
+
+        <button class="act" type="button" onclick="loadHubCatalog(true)" title="Recarregar catálogo" style="padding:7px 12px;font-size:0.82rem;">
+          🔄 Atualizar
+        </button>
+      </div>
+    </div>
+
+    <!-- Hub Summary Stats -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding:0 4px;">
+      <div id="hubStatusSummary" style="font-size:0.82rem;color:var(--muted);font-weight:500;">
+        Carregando itens do catálogo...
+      </div>
+      <div style="font-size:0.75rem;color:var(--muted);">
+        Formatos: <code>SKILL.md</code> padronizado e Plugins nativos com sandboxing.
+      </div>
+    </div>
+
+    <!-- Grid de Cards de Skills & Plugins -->
+    <div id="hubGrid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:14px;">
+      <!-- Populado dinamicamente via JS -->
     </div>
   </section>
 </main>
@@ -2217,6 +2323,8 @@ function initNavTabs() {
       if (b.dataset.tab === "agent") agentCfgLoad();
       if (b.dataset.tab === "system") systemLoad();
       if (b.dataset.tab === "events") loadUnifiedTimeline();
+      if (b.dataset.tab === "hub") loadHubCatalog();
+      if (b.dataset.tab === "config") loadSystemOneStats();
     });
   });
 
@@ -5920,6 +6028,358 @@ async function fsConfirmSelectWorkspace() {
     selectWorkspace(ws.id);
   } catch (err) {
     alert("✗ Erro ao registrar workspace: " + err.message);
+  }
+}
+
+// ============================================================================
+// SKILLS & PLUGINS HUB CLIENT LOGIC (Ultra-SOTA Liquid Glass)
+// ============================================================================
+let hubCurrentType = 'skills'; // 'skills' | 'plugins'
+let hubSkillsData = [];
+let hubPluginsData = [];
+let hubFilterTimeout = null;
+
+function setHubType(type) {
+  hubCurrentType = type;
+  const sBtn = $('hubTypeSkillsBtn');
+  const pBtn = $('hubTypePluginsBtn');
+  if (type === 'skills') {
+    if (sBtn) { sBtn.className = 'act primary'; }
+    if (pBtn) { pBtn.className = 'act'; }
+  } else {
+    if (sBtn) { sBtn.className = 'act'; }
+    if (pBtn) { pBtn.className = 'act primary'; }
+  }
+  populateHubCategories();
+  filterHubItems();
+}
+
+function debounceHubFilter() {
+  clearTimeout(hubFilterTimeout);
+  hubFilterTimeout = setTimeout(filterHubItems, 180);
+}
+
+async function loadHubCatalog(force = false) {
+  const summary = $('hubStatusSummary');
+  const grid = $('hubGrid');
+  if (summary) summary.textContent = 'Carregando habilidades e plugins do catálogo...';
+
+  try {
+    const [resSkills, resPlugins] = await Promise.all([
+      fetch('/api/skills/catalog?limit=250').then(r => r.json()).catch(() => ({ skills: [] })),
+      fetch('/api/plugins/catalog').then(r => r.json()).catch(() => ({ plugins: [] }))
+    ]);
+
+    hubSkillsData = resSkills.skills || [];
+    hubPluginsData = resPlugins.plugins || [];
+
+    populateHubCategories();
+    filterHubItems();
+  } catch (err) {
+    if (summary) summary.innerHTML = `<span style="color:var(--err);">Erro ao carregar catálogo: ${esc(err.message || err)}</span>`;
+  }
+}
+
+function populateHubCategories() {
+  const select = $('hubCategoryFilter');
+  if (!select) return;
+  const curVal = select.value;
+  const items = hubCurrentType === 'skills' ? hubSkillsData : hubPluginsData;
+  const catSet = new Set();
+  items.forEach(it => {
+    if (it.category) catSet.add(it.category);
+  });
+  const sortedCats = Array.from(catSet).sort();
+
+  let html = '<option value="ALL">Todas as Categorias</option>';
+  sortedCats.forEach(c => {
+    html += `<option value="${esc(c)}">${esc(c)}</option>`;
+  });
+  select.innerHTML = html;
+  if (sortedCats.includes(curVal)) {
+    select.value = curVal;
+  }
+}
+
+function filterHubItems() {
+  const query = ($('hubSearchInput') ? $('hubSearchInput').value : '').trim().toLowerCase();
+  const category = $('hubCategoryFilter') ? $('hubCategoryFilter').value : 'ALL';
+  const status = $('hubStatusFilter') ? $('hubStatusFilter').value : 'ALL';
+  const grid = $('hubGrid');
+  const summary = $('hubStatusSummary');
+
+  const items = hubCurrentType === 'skills' ? hubSkillsData : hubPluginsData;
+
+  const filtered = items.filter(it => {
+    const nameMatch = (it.name || '').toLowerCase().includes(query);
+    const descMatch = (it.description || '').toLowerCase().includes(query);
+    const catMatch = (it.category || '').toLowerCase().includes(query);
+    if (query && !nameMatch && !descMatch && !catMatch) return false;
+
+    if (category !== 'ALL' && it.category !== category) return false;
+
+    if (status === 'INSTALLED' && !it.installed) return false;
+    if (status === 'AVAILABLE' && it.installed) return false;
+
+    return true;
+  });
+
+  const installedCount = items.filter(i => i.installed).length;
+  if (summary) {
+    summary.innerHTML = `Exibindo <b>${filtered.length}</b> de <b>${items.length}</b> ${hubCurrentType === 'skills' ? 'habilidades' : 'plugins'} (${installedCount} instalados no agent)`;
+  }
+
+  if (!filtered.length) {
+    if (grid) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1;text-align:center;padding:48px 20px;background:rgba(255,255,255,0.8);border-radius:14px;border:1px solid rgba(15,23,42,0.08);">
+          <div style="font-size:2.2rem;margin-bottom:10px;">🔍</div>
+          <b style="font-size:1rem;color:var(--text-strong);">Nenhum item encontrado</b>
+          <div style="font-size:0.82rem;color:var(--muted);margin-top:6px;">Tente ajustar sua busca ou mudar o filtro de categorias.</div>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  if (grid) {
+    grid.innerHTML = filtered.map(it => hubCurrentType === 'skills' ? renderSkillCard(it) : renderPluginCard(it)).join('');
+  }
+}
+
+function renderSkillCard(s) {
+  const isInstalled = !!s.installed;
+  const badgeText = isInstalled ? '✅ Instalado' : 'Disponível';
+  const badgeColor = isInstalled ? 'background:rgba(22,163,74,0.1);color:#15803d;border:1px solid rgba(22,163,74,0.25);' : 'background:rgba(15,23,42,0.05);color:var(--muted);border:1px solid rgba(15,23,42,0.1);';
+
+  return `
+    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px;border-radius:14px;background:rgba(255,255,255,0.92);border:1px solid rgba(15,23,42,0.08);box-shadow:var(--glass-shadow);transition:transform 0.15s, box-shadow 0.15s;">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.4rem;">🧠</span>
+            <div>
+              <b style="font-size:0.95rem;color:var(--text-strong);letter-spacing:-0.01em;">${esc(s.name)}</b>
+              <div style="font-size:0.72rem;color:var(--accent);font-weight:600;text-transform:uppercase;">${esc(s.category || 'General')}</div>
+            </div>
+          </div>
+          <span style="font-size:0.7rem;padding:3px 8px;border-radius:12px;font-weight:600;white-space:nowrap;${badgeColor}">
+            ${badgeText}
+          </span>
+        </div>
+
+        <p style="font-size:0.8rem;color:var(--muted);line-height:1.45;margin:8px 0 14px 0;min-height:42px;">
+          ${esc(s.description || 'Habilidade especializada para orientação autônoma e execução de tarefas de alta fidelidade.')}
+        </p>
+
+        <div style="font-size:0.72rem;color:var(--muted);display:flex;gap:12px;margin-bottom:12px;border-top:1px solid rgba(15,23,42,0.06);padding-top:8px;">
+          <span>👤 Autor: <b>${esc(s.author || 'Community')}</b></span>
+          <span>📜 Formato: <code>SKILL.md</code></span>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;border-top:1px solid rgba(15,23,42,0.06);padding-top:10px;">
+        ${isInstalled ? `
+          <button class="act danger" type="button" onclick="uninstallSkill('${esc(s.name)}')" style="font-size:0.75rem;padding:5px 12px;">
+            🗑️ Desinstalar
+          </button>
+        ` : `
+          <button class="act primary" type="button" onclick="installSkill('${esc(s.name)}')" style="font-size:0.75rem;padding:5px 16px;">
+            📥 Instalar Skill
+          </button>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function renderPluginCard(p) {
+  const isInstalled = !!p.installed;
+  const isEnabled = !!p.enabled;
+  const tier = p.tier || 'community';
+  const tierColor = tier === 'official' ? 'background:rgba(13,148,136,0.1);color:#0f766e;border:1px solid rgba(13,148,136,0.3);' : 'background:rgba(139,92,246,0.1);color:#6d28d9;border:1px solid rgba(139,92,246,0.25);';
+
+  return `
+    <div class="card" style="display:flex;flex-direction:column;justify-content:space-between;padding:16px;border-radius:14px;background:rgba(255,255,255,0.92);border:1px solid rgba(15,23,42,0.08);box-shadow:var(--glass-shadow);transition:transform 0.15s, box-shadow 0.15s;">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.4rem;">🔌</span>
+            <div>
+              <b style="font-size:0.95rem;color:var(--text-strong);letter-spacing:-0.01em;">${esc(p.name)}</b>
+              <div style="font-size:0.72rem;color:var(--muted);">${esc(p.category || 'Extension')}</div>
+            </div>
+          </div>
+          <span style="font-size:0.7rem;padding:2px 8px;border-radius:12px;font-weight:600;text-transform:uppercase;${tierColor}">
+            ${esc(tier)}
+          </span>
+        </div>
+
+        <p style="font-size:0.8rem;color:var(--muted);line-height:1.45;margin:8px 0 14px 0;min-height:42px;">
+          ${esc(p.description || 'Extensão nativa para fornecer ferramentas de modelo, ganchos e integrações ao Hermes.')}
+        </p>
+
+        <div style="font-size:0.72rem;color:var(--muted);display:flex;gap:12px;margin-bottom:12px;border-top:1px solid rgba(15,23,42,0.06);padding-top:8px;flex-wrap:wrap;">
+          <span>👤 ${esc(p.maintainer || 'Community')}</span>
+          ${p.repo ? `<a href="${esc(p.repo)}" target="_blank" style="color:var(--accent);text-decoration:none;">🔗 Repositório</a>` : ''}
+          ${p.docs_url ? `<a href="${esc(p.docs_url)}" target="_blank" style="color:var(--accent2);text-decoration:none;">📖 Docs</a>` : ''}
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid rgba(15,23,42,0.06);padding-top:10px;">
+        <div>
+          ${isInstalled ? `
+            <label style="font-size:0.75rem;color:var(--text);display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="togglePlugin('${esc(p.name)}', this.checked)" />
+              <b>${isEnabled ? 'Ativo' : 'Desativado'}</b>
+            </label>
+          ` : `
+            <span style="font-size:0.72rem;color:var(--muted);">Não instalado</span>
+          `}
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          ${isInstalled ? `
+            <button class="act danger" type="button" onclick="uninstallPlugin('${esc(p.name)}')" style="font-size:0.75rem;padding:5px 12px;">
+              🗑️ Remover
+            </button>
+          ` : `
+            <button class="act primary" type="button" onclick="installPlugin('${esc(p.name)}')" style="font-size:0.75rem;padding:5px 16px;">
+              📥 Instalar Plugin
+            </button>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ----------------------------------------------------------------------------
+// Ações de Instalação e Desinstalação
+// ----------------------------------------------------------------------------
+async function installSkill(skillName) {
+  showMacConfirm(`Deseja baixar, inspecionar e instalar a skill "${skillName}" no agent?`, async () => {
+    const summary = $('hubStatusSummary');
+    if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando skill ${esc(skillName)}...</span>`;
+    try {
+      const res = await fetch('/api/skills/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: skillName, force: false })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        showMacAlert(`Falha ao instalar skill: ${data.error || 'Erro desconhecido'}`);
+        return;
+      }
+      showMacAlert(`Skill "${skillName}" instalada com sucesso! Veredito de segurança: ${data.verdict || 'safe'}`);
+      await loadHubCatalog();
+    } catch (err) {
+      showMacAlert(`Erro na requisição: ${err.message || err}`);
+    }
+  });
+}
+
+async function uninstallSkill(skillName) {
+  showMacConfirm(`Tem certeza que deseja remover a skill "${skillName}" do agent?`, async () => {
+    try {
+      const res = await fetch('/api/skills/uninstall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: skillName })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        showMacAlert(`Falha ao desinstalar skill: ${data.error || 'Erro desconhecido'}`);
+        return;
+      }
+      showMacAlert(`Skill "${skillName}" removida.`);
+      await loadHubCatalog();
+    } catch (err) {
+      showMacAlert(`Erro: ${err.message || err}`);
+    }
+  });
+}
+
+async function installPlugin(pluginName) {
+  showMacConfirm(`Deseja clonar e instalar a extensão de plugin "${pluginName}" no agent?`, async () => {
+    const summary = $('hubStatusSummary');
+    if (summary) summary.innerHTML = `<span style="color:var(--accent);">Instalando plugin ${esc(pluginName)}... Isso pode levar alguns segundos.</span>`;
+    try {
+      const res = await fetch('/api/plugins/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: pluginName, force: false })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error || (data.ok === false)) {
+        showMacAlert(`Falha ao instalar plugin: ${data.error || data.message || 'Erro desconhecido'}`);
+        return;
+      }
+      showMacAlert(`Plugin "${pluginName}" instalado com sucesso!`);
+      await loadHubCatalog();
+    } catch (err) {
+      showMacAlert(`Erro na requisição: ${err.message || err}`);
+    }
+  });
+}
+
+async function togglePlugin(pluginName, enable) {
+  try {
+    const res = await fetch('/api/plugins/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: pluginName, enabled: enable })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error || (data.ok === false)) {
+      showMacAlert(`Erro ao alternar status do plugin: ${data.error || data.message || 'Falha'}`);
+      await loadHubCatalog();
+      return;
+    }
+    const p = hubPluginsData.find(x => x.name.toLowerCase() === pluginName.toLowerCase());
+    if (p) p.enabled = enable;
+    filterHubItems();
+  } catch (err) {
+    showMacAlert(`Erro: ${err.message || err}`);
+    await loadHubCatalog();
+  }
+}
+
+async function uninstallPlugin(pluginName) {
+  showMacConfirm(`Tem certeza que deseja remover o plugin "${pluginName}" e seus arquivos locais?`, async () => {
+    try {
+      const res = await fetch('/api/plugins/uninstall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: pluginName })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error || (data.ok === false)) {
+        showMacAlert(`Falha ao remover plugin: ${data.error || data.message || 'Erro desconhecido'}`);
+        return;
+      }
+      showMacAlert(`Plugin "${pluginName}" removido.`);
+      await loadHubCatalog();
+    } catch (err) {
+      showMacAlert(`Erro: ${err.message || err}`);
+    }
+  });
+}
+
+
+
+async function loadSystemOneStats() {
+  try {
+    const res = await fetch('/api/system-one/stats');
+    if (!res.ok) return;
+    const data = await res.json();
+    if ($('s1Patterns')) $('s1Patterns').textContent = data.total_learned_patterns ?? '0';
+    if ($('s1Decisions')) $('s1Decisions').textContent = data.total_decisions_served ?? '0';
+    if ($('s1Saved')) $('s1Saved').textContent = data.saved_llm_calls ?? '0';
+    if ($('s1HitRate')) $('s1HitRate').textContent = (data.cache_hit_rate ?? '0') + '%';
+  } catch (err) {
+    console.warn('SystemOne stats fetch error:', err);
   }
 }
 

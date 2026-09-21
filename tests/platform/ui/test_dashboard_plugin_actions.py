@@ -284,6 +284,28 @@ class TestPluginActionRoutes(_IsolatedStoreBase):
             self.assertFalse(sb.check_grant("ci", "svc:ci"))
 
     @unittest.skipUnless(HAVE_FASTAPI, "fastapi ausente (host do dashboard não disponível)")
+    def test_canonical_grants_get_post_reject_and_expiry(self):
+        from hermes.platform.auth.vault import SecretBroker
+        from starlette.testclient import TestClient  # type: ignore[import-not-found]
+
+        sb = SecretBroker()
+        sb.grant("ci", "pending", policy="requires_approval", requester="bot")
+        sb.grant("ci", "expired", policy="requires_approval", expires_at="2000-01-01T00:00:00Z")
+        app = self._mount()
+        with TestClient(app) as client:
+            listed = client.get("/api/plugins/haos/grants")
+            self.assertEqual(listed.status_code, 200)
+            self.assertEqual([g["credential_ref"] for g in listed.json()["pending"]], ["pending"])
+            rejected = client.post("/api/plugins/haos/grants", json={
+                "scope": "ci", "credential_ref": "pending", "approver": "operator",
+            })
+            self.assertEqual(rejected.status_code, 200)
+            self.assertEqual(rejected.json()["status"], "rejected")
+            self.assertFalse(sb.check_grant("ci", "pending"))
+            missing = client.post("/api/plugins/haos/grants", json={"scope": "ci"})
+            self.assertEqual(missing.status_code, 400)
+
+    @unittest.skipUnless(HAVE_FASTAPI, "fastapi ausente (host do dashboard não disponível)")
     def test_post_reviews_decide(self):
         """Delta 52: aprovar/rejeitar resultado de card via POST /reviews/decide."""
         try:

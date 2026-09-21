@@ -1,0 +1,1 @@
+{"circuit_breaker": {"cooldown": true, "opened": true, "recovered": true}, "errors": [], "handshake": true, "reconnects": 2, "requests": 1, "schema": "haos.mcp-a2a.harness.v1", "status": "passed"}

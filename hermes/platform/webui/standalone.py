@@ -676,6 +676,33 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
         elif self.command == "GET" and path == "/api/timeline":
             cat = parse_qs(urlparse(self.path).query).get("category", [None])[0]
             self._send_json(200, {"timeline": self.state.get_unified_timeline(category=cat)})
+        elif self.command == "GET" and path == "/api/skills/catalog":
+            self._skills_catalog()
+        elif self.command == "GET" and path == "/api/skills/installed":
+            self._skills_installed()
+        elif self.command == "POST" and path == "/api/skills/install":
+            self._skills_install()
+        elif self.command == "POST" and path == "/api/skills/uninstall":
+            self._skills_uninstall()
+        elif self.command == "GET" and path == "/api/plugins/catalog":
+            self._plugins_catalog()
+        elif self.command == "GET" and path == "/api/plugins/installed":
+            self._plugins_installed()
+        elif self.command == "POST" and path == "/api/plugins/install":
+            self._plugins_install()
+        elif self.command == "POST" and path == "/api/plugins/toggle":
+            self._plugins_toggle()
+        elif self.command == "POST" and path == "/api/plugins/uninstall":
+            self._plugins_uninstall()
+        elif self.command == "GET" and path == "/api/system-one/stats":
+            self._system_one_stats()
+        elif self.command == "GET" and path == "/api/system-one/decisions":
+            self._system_one_decisions()
+        elif self.command == "POST" and path == "/api/system-one/decide":
+            self._system_one_decide()
+        elif self.command == "POST" and path == "/api/system-one/clear":
+            self._system_one_clear()
+
         elif path.startswith("/api/tasks/"):
             parts = path.strip("/").split("/")
             if len(parts) == 3:
@@ -712,6 +739,315 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not_found", "path": path})
 
     # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
+    # Skills & Plugins Hub API
+    # ------------------------------------------------------------------ #
+    def _skills_catalog(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        from hermes.platform.skills.wshobson_catalog import WshobsonCatalog
+        from hermes_constants import get_hermes_home
+
+        qs = parse_qs(urlparse(self.path).query)
+        q = (qs.get('query') or [''])[0].strip().lower()
+        limit = int((qs.get('limit') or ['120'])[0])
+
+        catalog = WshobsonCatalog()
+        raw_skills = catalog.search(q, limit=limit)
+
+        installed_names = set()
+        skills_dir = get_hermes_home() / 'skills'
+        if skills_dir.exists():
+            for item in skills_dir.iterdir():
+                if item.is_dir():
+                    if (item / 'SKILL.md').exists():
+                        installed_names.add(item.name.lower())
+                    for sub in item.iterdir():
+                        if sub.is_dir() and (sub / 'SKILL.md').exists():
+                            installed_names.add(sub.name.lower())
+
+        results = []
+        for s in raw_skills:
+            name = s.name
+            results.append({
+                'name': name,
+                'category': s.category or 'General',
+                'description': s.description or '',
+                'author': getattr(s, 'author', None) or 'Community',
+                'path': s.path or '',
+                'installed': name.lower() in installed_names,
+            })
+        self._send_json(200, {'skills': results, 'total': len(results)})
+
+    def _skills_installed(self) -> None:
+        from hermes_constants import get_hermes_home
+
+        skills_dir = get_hermes_home() / 'skills'
+        installed = []
+        if skills_dir.exists():
+            for item in skills_dir.iterdir():
+                if item.name.startswith('.'):
+                    continue
+                if item.is_dir():
+                    skill_md = item / 'SKILL.md'
+                    if skill_md.exists():
+                        installed.append({
+                            'name': item.name,
+                            'category': 'Custom / Direct',
+                            'path': str(skill_md),
+                            'installed': True
+                        })
+                    for sub in item.iterdir():
+                        if sub.is_dir() and (sub / 'SKILL.md').exists():
+                            installed.append({
+                                'name': sub.name,
+                                'category': item.name,
+                                'path': str(sub / 'SKILL.md'),
+                                'installed': True
+                            })
+        self._send_json(200, {'skills': installed, 'count': len(installed)})
+
+    def _skills_install(self) -> None:
+        from hermes.platform.skills.wshobson_catalog import WshobsonCatalog
+        from hermes_constants import get_hermes_home
+        from pathlib import Path
+        import tempfile
+
+        body = self._read_json_body()
+        skill_name = str(body.get('name') or '').strip()
+        force = bool(body.get('force', False))
+        if not skill_name:
+            self._send_json(400, {'error': 'name_required'})
+            return
+
+        catalog = WshobsonCatalog()
+        meta = catalog.get(skill_name)
+        if not meta:
+            self._send_json(404, {'error': f'Skill {skill_name} not found in catalog'})
+            return
+
+        content = catalog.fetch_skill_content(meta)
+        if not content:
+            self._send_json(502, {'error': f'Failed to fetch skill content for {skill_name}'})
+            return
+
+        verdict = 'safe'
+        try:
+            from tools.skills_guard import scan_skill
+            with tempfile.TemporaryDirectory() as tmpdir:
+                qdir = Path(tmpdir)
+                (qdir / 'SKILL.md').write_text(content, encoding='utf-8')
+                rep = scan_skill(qdir, source='trusted')
+                if rep.verdict not in ('safe', 'caution') and not force:
+                    self._send_json(403, {
+                        'error': f'Skill security scan blocked: {rep.verdict}',
+                        'findings': [{'rule': f.rule_id, 'msg': f.message} for f in rep.findings]
+                    })
+                    return
+                verdict = rep.verdict
+        except Exception:
+            pass
+
+        cat_slug = (meta.category or 'general').lower().replace(' ', '-')
+        target_dir = get_hermes_home() / 'skills' / cat_slug / skill_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / 'SKILL.md').write_text(content, encoding='utf-8')
+
+        self._send_json(200, {'ok': True, 'name': skill_name, 'category': cat_slug, 'verdict': verdict})
+
+    def _skills_uninstall(self) -> None:
+        from hermes_constants import get_hermes_home
+        import shutil
+
+        body = self._read_json_body()
+        skill_name = str(body.get('name') or '').strip()
+        if not skill_name:
+            self._send_json(400, {'error': 'name_required'})
+            return
+
+        skills_dir = get_hermes_home() / 'skills'
+        removed = False
+        if skills_dir.exists():
+            for item in skills_dir.iterdir():
+                if item.is_dir():
+                    if item.name.lower() == skill_name.lower():
+                        shutil.rmtree(item)
+                        removed = True
+                        break
+                    for sub in item.iterdir():
+                        if sub.is_dir() and sub.name.lower() == skill_name.lower():
+                            shutil.rmtree(sub)
+                            removed = True
+                            break
+                if removed:
+                    break
+
+        if removed:
+            self._send_json(200, {'ok': True, 'name': skill_name})
+        else:
+            self._send_json(404, {'error': f'Skill {skill_name} not found'})
+
+    def _plugins_catalog(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        from hermes_cli.plugins_cmd_catalog import load_catalog_live, filter_entries
+        from hermes_cli.plugins_cmd import _discover_all_plugins, _get_enabled_set, _get_disabled_set
+
+        qs = parse_qs(urlparse(self.path).query)
+        q = (qs.get('query') or [''])[0].strip()
+
+        entries = filter_entries(load_catalog_live(), q)
+        enabled = _get_enabled_set()
+        disabled = _get_disabled_set()
+
+        installed_map = {}
+        for item in _discover_all_plugins():
+            p_name = item[0]
+            p_dir = item[4] if len(item) > 4 else ''
+            installed_map[p_name.lower()] = {
+                'name': p_name,
+                'dir': p_dir,
+                'enabled': p_name in enabled and p_name not in disabled,
+                'source': item[3] if len(item) > 3 else 'user'
+            }
+
+        results = []
+        for e in entries:
+            is_inst = e.name.lower() in installed_map
+            inst_data = installed_map.get(e.name.lower())
+            results.append({
+                'name': e.name,
+                'category': e.category,
+                'tier': e.tier,
+                'description': e.description,
+                'maintainer': e.maintainer,
+                'repo': e.repo,
+                'docs_url': e.docs_url,
+                'capabilities': e.capabilities.to_dict() if hasattr(e.capabilities, 'to_dict') else {},
+                'installed': is_inst,
+                'enabled': inst_data['enabled'] if is_inst else False,
+            })
+        self._send_json(200, {'plugins': results, 'total': len(results)})
+
+    def _plugins_installed(self) -> None:
+        from hermes_cli.plugins_cmd import _discover_all_plugins, _get_enabled_set, _get_disabled_set
+
+        enabled = _get_enabled_set()
+        disabled = _get_disabled_set()
+        installed = []
+        for item in _discover_all_plugins():
+            p_name = item[0]
+            installed.append({
+                'name': p_name,
+                'version': item[1] if len(item) > 1 else 'latest',
+                'description': item[2] if len(item) > 2 else '',
+                'source': item[3] if len(item) > 3 else 'user',
+                'dir': item[4] if len(item) > 4 else '',
+                'enabled': p_name in enabled and p_name not in disabled,
+            })
+        self._send_json(200, {'plugins': installed, 'count': len(installed)})
+
+    def _plugins_install(self) -> None:
+        from hermes_cli.plugins_cmd import dashboard_install_plugin
+
+        body = self._read_json_body()
+        ident = str(body.get('identifier') or body.get('name') or '').strip()
+        force = bool(body.get('force', False))
+        if not ident:
+            self._send_json(400, {'error': 'identifier_required'})
+            return
+
+        try:
+            res = dashboard_install_plugin(ident, force=force)
+            self._send_json(200, res)
+        except Exception as exc:
+            self._send_json(500, {'error': str(exc)})
+
+    def _plugins_toggle(self) -> None:
+        from hermes_cli.plugins_cmd import dashboard_set_agent_plugin_enabled
+
+        body = self._read_json_body()
+        name = str(body.get('name') or '').strip()
+        enabled = bool(body.get('enabled', True))
+        if not name:
+            self._send_json(400, {'error': 'name_required'})
+            return
+
+        try:
+            res = dashboard_set_agent_plugin_enabled(name, enabled=enabled)
+            self._send_json(200, res)
+        except Exception as exc:
+            self._send_json(500, {'error': str(exc)})
+
+    def _plugins_uninstall(self) -> None:
+        from hermes_cli.plugins_cmd import dashboard_remove_user_plugin
+
+        body = self._read_json_body()
+        name = str(body.get('name') or '').strip()
+        if not name:
+            self._send_json(400, {'error': 'name_required'})
+            return
+
+        try:
+            res = dashboard_remove_user_plugin(name)
+            self._send_json(200, res)
+        except Exception as exc:
+            self._send_json(500, {'error': str(exc)})
+
+    # ------------------------------------------------------------------ #
+    # System One (Fast Typed Decision Engine) API
+    # ------------------------------------------------------------------ #
+    def _system_one_stats(self) -> None:
+        from hermes.platform.decision import get_decision_engine
+        engine = get_decision_engine()
+        self._send_json(200, engine.store.get_stats())
+
+    def _system_one_decisions(self) -> None:
+        from urllib.parse import parse_qs, urlparse
+        from hermes.platform.decision import get_decision_engine
+
+        qs = parse_qs(urlparse(self.path).query)
+        limit = int((qs.get('limit') or ['40'])[0])
+        domain = (qs.get('domain') or [None])[0]
+
+        engine = get_decision_engine()
+        items = engine.store.list_recent(limit=limit, domain=domain)
+        self._send_json(200, {'decisions': items, 'count': len(items)})
+
+    def _system_one_decide(self) -> None:
+        from hermes.platform.decision import get_decision_engine
+
+        body = self._read_json_body()
+        dtype = str(body.get('type') or 'boolean').strip().lower()
+        context = str(body.get('context') or '').strip()
+        domain = str(body.get('domain') or 'general').strip()
+
+        engine = get_decision_engine()
+        if dtype == 'boolean':
+            statement = str(body.get('statement') or body.get('question') or '').strip()
+            res = engine.decide_boolean(statement=statement, context=context, domain=domain)
+            self._send_json(200, res.to_dict())
+        elif dtype == 'choice':
+            question = str(body.get('question') or '').strip()
+            options = list(body.get('options') or [])
+            if not options:
+                self._send_json(400, {'error': 'options_required_for_choice'})
+                return
+            res = engine.decide_choice(question=question, options=options, context=context, domain=domain)
+            self._send_json(200, res.to_dict())
+        elif dtype == 'score':
+            criterion = str(body.get('criterion') or '').strip()
+            res = engine.decide_score(criterion=criterion, context=context, domain=domain)
+            self._send_json(200, res.to_dict())
+        else:
+            self._send_json(400, {'error': f'unknown_decision_type: {dtype}'})
+
+    def _system_one_clear(self) -> None:
+        from hermes.platform.decision import get_decision_engine
+        body = self._read_json_body()
+        domain = body.get('domain')
+        engine = get_decision_engine()
+        cleared = engine.store.clear(domain=domain)
+        self._send_json(200, {'ok': True, 'cleared_count': cleared})
+
     def _serve_index(self) -> None:
         index = _STATIC_DIR / "index.html"
         try:

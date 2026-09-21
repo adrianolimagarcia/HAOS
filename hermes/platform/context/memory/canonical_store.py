@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import json
+import re
 import sqlite3
 import time
 import threading
@@ -12,6 +13,29 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 VALID_SCOPES = frozenset(("private", "team", "project", "global"))
+
+_FTS_TOKEN_RE = re.compile(r"\b\w+\b", re.UNICODE)
+
+
+def fts_match_expression(query: str) -> str:
+    """Build an FTS5 ``MATCH`` expression that cannot fail to parse.
+
+    ``query`` reaches this module from untrusted text (chat turns, A2A inbound
+    messages). Passed raw to ``memory_fts MATCH`` any punctuation FTS5 reads as
+    syntax (``[``, ``]``, ``(``, ``*``, an unbalanced ``"``) raised
+    ``sqlite3.OperationalError: fts5: syntax error`` and aborted the whole
+    canonical prefetch for that turn. Every word is now emitted as its own
+    quoted phrase — a quoted string accepts arbitrary characters, so the parser
+    has nothing left to choke on.
+
+    Phrases are joined by the implicit AND FTS5 applies to adjacent phrases,
+    which is the semantics the raw pass-through already had for well-formed
+    queries, so ranking and recall are unchanged. (The OR variant used by
+    ``ragflow_engine._sanitize_fts_query`` widens the candidate set: that is a
+    retrieval-quality change to be measured, not a bug fix.)
+    """
+    return " ".join('"%s"' % token for token in _FTS_TOKEN_RE.findall(query))
+
 
 @dataclass(frozen=True)
 class MemoryRecord:
@@ -383,9 +407,12 @@ class CanonicalMemoryStore:
     def search_fts(self, query: str, scopes: Sequence[str], limit: int = 20) -> List[MemoryRecord]:
         if not query.strip() or not scopes:
             return []
+        expression = fts_match_expression(query)
+        if not expression:
+            return []  # query carried no searchable word (punctuation only)
         marks = ",".join("?" for _ in scopes)
         with self._lock:
-            rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (query, *scopes, limit)).fetchall()
+            rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (expression, *scopes, limit)).fetchall()
         return [self._row(row) for row in rows]
 
     def get(self, record_id: str) -> Optional[MemoryRecord]:

@@ -1,0 +1,3 @@
+# Executor contract
+
+Executors run bounded, capability-scoped work under a deadline. Cleanup is mandatory on every terminal path: success, error, deadline, cancellation, panic, and supervisor shutdown. The executor terminates the process tree (or equivalent job object), closes pidfds/pipe and other owned descriptors, removes temporary files/cgroups, and waits for child reaping before reporting completion. Cleanup is idempotent and bounded by a cleanup deadline; failures are surfaced as a stable cleanup error and never silently ignored. Parent-death/watchdog mechanisms are defense in depth, not a substitute for explicit cleanup. No secret values or unrestricted host paths appear in executor output.

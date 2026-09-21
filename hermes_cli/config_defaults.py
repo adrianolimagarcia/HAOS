@@ -290,6 +290,10 @@ DEFAULT_CONFIG = {
         # Menlo, Consolas, monospace"). Lets users use a Nerd Font without patching the app.
         "font_family": "",
         "timeout": 180,
+        "mcp_a2a": {
+            "enabled": False,
+            "required": False,
+        },
         # Seconds between SIGTERM and escalated SIGKILL for host process trees (browser daemons). 0
         # = SIGTERM only.
         "daemon_term_grace_seconds": 2.0,
@@ -315,6 +319,12 @@ DEFAULT_CONFIG = {
             "max_cpu_seconds": 0,
             "max_memory_bytes": 0,
             "max_pids": 0,
+        },
+        "health_agent": {
+            "enabled": False,
+            "binary": "",
+            "required": False,
+            "timeout_ms": 2000,
         },
 
         # Extra files sourced in the login shell when building the per-session env snapshot — for

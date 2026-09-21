@@ -444,9 +444,15 @@ def discover_mcp_tools(allowed_mcp_names: Optional[List[str]] = None) -> List[st
     list simply don't match); ``None`` spawns every configured server. Used by
     ``haos -z -t <toolsets>`` to skip cold-starting servers the caller doesn't need (10-60s
     each); it only affects which servers start, not which names ``-t`` validation can see."""
+    enabled, required = _config._mcp_a2a_settings()
+    if not enabled:
+        logger.debug("MCP/A2A adapter disabled by terminal.mcp_a2a.enabled")
+        return []
     servers = _config._load_mcp_config()
     if not servers:
         logger.debug("No MCP servers configured")
+        if required:
+            logger.warning("MCP/A2A is required but no servers are configured")
         return []
     if allowed_mcp_names is not None:
         allowed_set = {str(n) for n in allowed_mcp_names}

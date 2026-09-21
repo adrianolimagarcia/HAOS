@@ -27,3 +27,32 @@ def test_duplicate_content_returns_original_canonical_identity(tmp_path):
     replay = store.append(content="Canonical facts survive restart.", scope="project", idempotency_key="after-restart")
     assert replay.record_id == original.record_id
     store.close()
+
+
+def test_search_fts_survives_untrusted_punctuation(tmp_path):
+    """Chat/A2A text reaches MATCH raw: punctuation must not kill the prefetch.
+
+    Regression: ``erro de espaco [btrfs]`` raised
+    ``sqlite3.OperationalError: fts5: syntax error near "["`` and aborted the
+    whole canonical prefetch for that turn.
+    """
+    store = CanonicalMemoryStore(tmp_path / "memory.db")
+    store.append(content="Erro de espaco em btrfs com subvolumes.", scope="project", idempotency_key="btrfs")
+
+    hostile = ['erro de espaco [btrfs]', '[', ']', '(', ')', '*', 'a AND', 'a OR',
+               'a NOT b', 'foo NEAR bar', 'unbalanced "quote', '""', '!!! ???', '^a', 'col:val']
+    for query in hostile:
+        assert isinstance(store.search_fts(query, ["project"]), list), query
+
+    # the legitimate query still finds the record (recall preserved)
+    hits = store.search_fts('erro de espaco [btrfs]', ["project"])
+    assert [record.content for record in hits] == ["Erro de espaco em btrfs com subvolumes."]
+
+    # diacritics folding and implicit-AND semantics preserved
+    assert store.search_fts("espaco btrfs", ["project"])
+    assert store.search_fts("btrfs subvolumes", ["project"])
+    assert store.search_fts("inexistente", ["project"]) == []
+
+    # punctuation-only queries yield nothing instead of raising
+    assert store.search_fts("!!! ???", ["project"]) == []
+    store.close()

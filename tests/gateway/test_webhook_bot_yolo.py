@@ -61,3 +61,23 @@ async def test_webhook_bot_trigger_dispatches_a_yolo_mission(wired):
     # O evento externo que disparou a missão fica registrado como proveniência
     # no ledger de runs do bot, não só no spec.
     assert manager.run_history("worker", "fix")[-1]["trigger_event"] == "push"
+
+
+@pytest.mark.asyncio
+async def test_webhook_bot_trigger_reaches_persisted_completed_run(wired):
+    """Webhook admission reaches terminal state through canonical Kanban APIs."""
+    adapter, kanban, manager = wired
+    response = await adapter._handle_bot_trigger(
+        prompt="Repair it", payload={"ref": "main"},
+        route_config={"bot_id": "worker", "routine": "fix"},
+        route_name="r1", event_type="push", delivery_id="d-complete",
+    )
+    assert response.status == 202
+    task_id = json.loads(response.text)["task_id"]
+    assert kanban.claim_task(task_id, worker_id="e2e-worker")
+    assert kanban.complete_task(task_id, summary="repaired")
+    manager.record_run("worker", "fix", task_id, "completed")
+    assert kanban.get_task(task_id)["status"] == "done"
+    replayed = BotSpecManager(manager.event_store)
+    assert replayed.run_history("worker", "fix")[-1]["run_id"] == task_id
+    assert replayed.run_history("worker", "fix")[-1]["status"] == "completed"

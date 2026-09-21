@@ -339,6 +339,23 @@ def _portable_mcp_servers(safe_servers: Dict[str, dict]) -> None:
         logger.debug("Failed to load portable MCP servers", exc_info=True)
 
 
+def _mcp_a2a_settings() -> tuple[bool, bool]:
+    """Resolve terminal MCP/A2A policy at call time for the active profile.
+
+    Existing ``mcp_servers`` remains the explicit fallback path; the new adapter is disabled
+    only when the user explicitly sets ``enabled: false`` in terminal.mcp_a2a.
+    """
+    try:
+        from hermes_cli.config_effective import load_user_config_effective
+        terminal = (load_user_config_effective().get("terminal") or {})
+        policy = terminal.get("mcp_a2a")
+        if not isinstance(policy, dict):
+            return True, False
+        return bool(policy.get("enabled", True)), bool(policy.get("required", False))
+    except Exception:
+        return True, False
+
+
 def _load_mcp_config() -> Dict[str, dict]:
     """``mcp_servers`` from config.yaml as ``{name: config}`` (empty on error / safe mode), ``${VAR}`` interpolated."""
     try:

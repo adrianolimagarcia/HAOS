@@ -1,22 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Architecture-aware, staged installation. The builder places immutable artifacts
-# under /opt/haos/artifacts/hermes-exec/<dpkg-arch>/.
+# Architecture-aware staged installation. The builder places immutable artifacts
+# under /opt/haos/artifacts/hermes-exec/<dpkg-arch>/ and manifest.tsv records:
+# <arch> <target> <size> <sha256>.
 arch="$(dpkg --print-architecture 2>/dev/null || true)"
 case "$arch" in
-  amd64) artifact_arch="amd64" ;;
-  arm64) artifact_arch="arm64" ;;
-  armhf) artifact_arch="armhf" ;;
+  amd64) artifact_arch="amd64"; elf_machine="Advanced Micro Devices X86-64" ;;
+  arm64) artifact_arch="arm64"; elf_machine="AArch64" ;;
+  armhf) artifact_arch="armhf"; elf_machine="ARM" ;;
   *) echo "[HAOS] hermes-exec unsupported architecture: ${arch:-unknown}" >&2; exit 0 ;;
 esac
 
-artifact="/opt/haos/artifacts/hermes-exec/${artifact_arch}/hermes-exec"
-if [ -f "$artifact" ]; then
-  install -D -m 0755 "$artifact" /usr/local/bin/hermes-exec
-else
-  echo "[HAOS] hermes-exec artifact not staged for ${artifact_arch}; keeping optional component disabled" >&2
+base="/opt/haos/artifacts/hermes-exec"
+artifact="$base/${artifact_arch}/hermes-exec"
+manifest="$base/manifest.tsv"
+if [ ! -f "$artifact" ]; then
+  echo "[HAOS] hermes-exec artifact not staged for $artifact_arch; keeping optional component disabled" >&2
+  exit 0
 fi
+if [ ! -r "$manifest" ]; then
+  echo "[HAOS] hermes-exec manifest missing; refusing unverified install" >&2
+  exit 1
+fi
+
+entry="$(awk -v a="$artifact_arch" -v t="$artifact" '$1==a && $2==t {print; exit}' "$manifest")"
+set -- $entry
+if [ "$#" -ne 4 ]; then
+  echo "[HAOS] hermes-exec manifest entry missing or malformed for $artifact_arch" >&2
+  exit 1
+fi
+expected_size="$3"; expected_sha="$4"
+actual_size="$(stat -c '%s' "$artifact")"
+[ "$actual_size" = "$expected_size" ] || { echo "[HAOS] hermes-exec size mismatch" >&2; exit 1; }
+actual_sha="$(sha256sum "$artifact" | awk '{print $1}')"
+[ "$actual_sha" = "$expected_sha" ] || { echo "[HAOS] hermes-exec checksum mismatch" >&2; exit 1; }
+actual_machine="$(readelf -h "$artifact" | awk -F: '/Machine:/{sub(/^ +/,"",$2); print $2; exit}')"
+[ "$actual_machine" = "$elf_machine" ] || { echo "[HAOS] hermes-exec ELF machine mismatch: $actual_machine" >&2; exit 1; }
+
+# Install atomically: stage in the destination directory, then rename.
+tmp="/usr/local/bin/.hermes-exec.$$.tmp"
+install -D -m 0755 "$artifact" "$tmp"
+mv -f "$tmp" /usr/local/bin/hermes-exec
 
 if [ -f /usr/local/libexec/hermes-exec-healthcheck ]; then
   chmod 0755 /usr/local/libexec/hermes-exec-healthcheck
