@@ -258,6 +258,7 @@ class ControlPlaneService:
         concurrency_guard: Optional[Any] = None,
         data_dir: Optional[Any] = None,
     ):
+        self.data_dir = data_dir
         self.event_store = event_store
         self.runtime = team_runtime
         self.adaptive = adaptive_coordinator
@@ -728,11 +729,44 @@ class ControlPlaneService:
         events = self.event_store.read_events()
         kb_tasks = self._live_tasks()
 
-        in_progress_tasks = [t for t in kb_tasks if str(t.get("status", "")).lower() in ("in_progress", "running")]
-        ready_tasks = [t for t in kb_tasks if str(t.get("status", "")).lower() in ("ready", "pending")]
-        done_tasks = [t for t in kb_tasks if str(t.get("status", "")).lower() in ("done", "completed")]
-        failed_tasks = [t for t in kb_tasks if str(t.get("status", "")).lower() in ("failed", "error")]
-        blocked_tasks = [t for t in kb_tasks if str(t.get("status", "")).lower() == "blocked"]
+        # ISOLAMENTO ULTRA SOTA: O Team Graph (GasTown) NUNCA deve absorver ou exibir os nós da
+        # Hierarquia Permanente de Bots (ex: the_eye, orquestrador, sentinel_sre, forge_coder, etc.).
+        # O Team Graph é estritamente a topologia de execução da missão (Mayor -> Sub-Orch -> Leafs/Witnesses).
+        # Os bots da hierarquia vivem exclusiva e isoladamente na aba "Bots".
+        hierarchy_bot_ids = set()
+        resolved_data_dir = self.data_dir
+        if not resolved_data_dir:
+            try:
+                from hermes_constants import get_hermes_home
+                resolved_data_dir = get_hermes_home()
+            except Exception:
+                pass
+        if resolved_data_dir:
+            try:
+                ah_file = Path(resolved_data_dir) / "agent_hierarchy.json"
+                if ah_file.exists():
+                    import json
+                    ah_data = json.loads(ah_file.read_text(encoding="utf-8"))
+                    for n in ah_data.get("nodes", []):
+                        if n.get("id"):
+                            hierarchy_bot_ids.add(str(n["id"]).lower())
+                        if n.get("profile"):
+                            hierarchy_bot_ids.add(str(n["profile"]).lower())
+            except Exception:
+                pass
+
+        # Filtra tarefas atribuídas à hierarquia fixa de bots para que o Team Graph
+        # reflita exclusivamente missões de swarm / GasTown
+        mission_kb_tasks = [
+            t for t in kb_tasks
+            if str(t.get("assignee", "")).lower() not in hierarchy_bot_ids
+        ]
+
+        in_progress_tasks = [t for t in mission_kb_tasks if str(t.get("status", "")).lower() in ("in_progress", "running")]
+        ready_tasks = [t for t in mission_kb_tasks if str(t.get("status", "")).lower() in ("ready", "pending")]
+        done_tasks = [t for t in mission_kb_tasks if str(t.get("status", "")).lower() in ("done", "completed")]
+        failed_tasks = [t for t in mission_kb_tasks if str(t.get("status", "")).lower() in ("failed", "error")]
+        blocked_tasks = [t for t in mission_kb_tasks if str(t.get("status", "")).lower() == "blocked"]
 
         target_mission = mission_id
         mission_goal = "Software Engineering & System Verification"
@@ -764,8 +798,8 @@ class ControlPlaneService:
             mission_status = NodeStatus.COMPLETED
             mission_goal = "Todas as tarefas foram concluídas com sucesso"
             target_mission = target_mission or active_kb_task.get("id")
-        elif kb_tasks:
-            active_kb_task = kb_tasks[0]
+        elif mission_kb_tasks:
+            active_kb_task = mission_kb_tasks[0]
             raw_st = str(active_kb_task.get("status", "")).lower()
             if raw_st in ("done", "completed"):
                 mission_status = NodeStatus.COMPLETED
@@ -819,6 +853,8 @@ class ControlPlaneService:
             p = ev.payload
             wid = p.get("worker_id")
             if wid:
+                if str(wid).lower() in hierarchy_bot_ids:
+                    continue
                 posture = p.get("posture") or ("reviewer" if "reviewer" in wid else "coder")
                 role = "reviewer" if posture == "reviewer" else "worker"
                 label = "Witness Reviewer" if posture == "reviewer" else "Polecat Coder"
@@ -860,6 +896,9 @@ class ControlPlaneService:
             if ev.name == "haos.task.spawned":
                 task_id = p.get("task_id")
                 assignee = p.get("assignee") or task_id or "worker"
+                # Se for atribuição direta a um bot da hierarquia persistente, não polui o Team Graph
+                if str(assignee).lower() in hierarchy_bot_ids:
+                    continue
                 is_rev = "reviewer" in assignee or "witness" in assignee
                 posture = "reviewer" if is_rev else "coder"
                 role = "reviewer" if is_rev else "worker"
@@ -889,6 +928,10 @@ class ControlPlaneService:
         for t in kb_tasks:
             assignee = t.get("assignee")
             if assignee and assignee not in ("engine", "hermes", "root", "user"):
+                if str(assignee).lower() in hierarchy_bot_ids:
+                    # Isolamento estrito: Tarefas atribuídas diretamente a um Bot da Hierarquia
+                    # pertencem ao ciclo de vida do Bot, e NÃO poluem o Team Graph!
+                    continue
                 kb_by_assignee.setdefault(assignee, []).append(t)
 
         for assignee, tasks_list in kb_by_assignee.items():

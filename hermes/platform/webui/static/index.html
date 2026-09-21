@@ -3097,26 +3097,9 @@ function renderAgentHierarchy(h) {
       });
       if (activeTask) return "running";
 
-      // 2. Team Graph subordinado
-      const tg = window.__hLastTG && window.__hLastTG[0];
-      if (!tg) return "idle";
-
-      const findInTree = (node) => {
-        if (!node) return null;
-        const matches = (node.node_id === botId || (profile && node.node_id === profile) ||
-                         (node.label && node.label.toLowerCase().includes(botId.toLowerCase())));
-        if (matches && node.status) {
-          return node.status;
-        }
-        for (const child of (node.children || [])) {
-          const res = findInTree(child);
-          if (res) return res;
-        }
-        return null;
-      };
-      const found = findInTree(tg);
-      if (found) return found;
-
+      // 2. ISOLAMENTO ULTRA SOTA: Os Bots da Hierarquia NÃO dependem nem herdam o status do Team Graph!
+      // Cada entidade é independente: o Team Graph reflete a missão GasTown dinâmica, enquanto
+      // os Bots vivem em seu próprio ciclo de vida de tarefas dedicadas.
       return "idle";
     } catch (_) {
       return "idle";
