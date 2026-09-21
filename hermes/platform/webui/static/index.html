@@ -2769,7 +2769,12 @@ window.openTaskReportModal = async function(taskId) {
       }
     }
 
-    if (parsedResult) {
+    // 1. Prioridade máxima: se o backend entregou o documento de relatório completo da missão (report_content)
+    if (res.report_content && typeof res.report_content === "string" && res.report_content.trim()) {
+      reportText = res.report_content.trim();
+    }
+
+    if (!reportText && parsedResult) {
       if (typeof parsedResult.summary === "string" && parsedResult.summary.trim()) {
         reportText = parsedResult.summary.trim();
       }

@@ -462,10 +462,44 @@ class HAOSStandaloneState:
                             break
             if summary:
                 log_content = f"=== [RELATÓRIO HISTÓRICO DA TAREFA: {task_id}] ===\n\n{summary}\n"
+
+        # Ultra SOTA: se a spec ou o resultado referenciam relatórios gerados em disco (*.md, *.txt), carrega o conteúdo completo
+        report_content = ""
+        candidate_paths = []
+        spec = task.get("spec") or {}
+        search_texts = [task.get("title", ""), task.get("goal", "")]
+        if isinstance(spec, dict):
+            search_texts.extend([str(v) for v in spec.values() if isinstance(v, str)])
+        elif isinstance(spec, str):
+            search_texts.append(spec)
+
+        import re
+        for text in search_texts:
+            for m in re.finditer(r'(/[\w\.\-]+(?:/[\w\.\-]+)+\.(?:md|txt|json|log))', text):
+                candidate_paths.append(m.group(1))
+
+        # Também verifica se no result.artifacts há arquivos
+        if task.get("result") and isinstance(task["result"], dict):
+            for art in task["result"].get("artifacts", []):
+                if isinstance(art, str) and art.startswith("/"):
+                    candidate_paths.append(art)
+
+        for c_path in candidate_paths:
+            p_obj = Path(c_path)
+            if p_obj.is_file() and p_obj.stat().st_size > 0:
+                try:
+                    text_data = p_obj.read_text(encoding="utf-8", errors="replace")
+                    if text_data.strip():
+                        report_content = text_data
+                        break
+                except Exception:
+                    pass
+
         return {
             **task,
             "events": events,
             "log_tail": log_content,
+            "report_content": report_content,
             "pid": pid,
         }
 
