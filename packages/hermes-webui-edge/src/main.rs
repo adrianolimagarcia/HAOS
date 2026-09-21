@@ -2,6 +2,7 @@ pub mod proxy;
 pub mod redact;
 pub mod session_detail;
 pub mod sessions;
+pub mod status_cache;
 
 use axum::{
     extract::{Query, Request, State},
@@ -26,6 +27,7 @@ pub struct AppState {
     pub static_dir: PathBuf,
     pub haos_home: PathBuf,
     pub session_cache: SessionCache,
+    pub status_cache: status_cache::SessionStatusCache,
     pub http_client: reqwest::Client,
 }
 
@@ -44,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let haos_home = SessionManager::resolve_haos_home();
     let session_cache = SessionCache::new();
+    let status_cache = status_cache::SessionStatusCache::default();
 
     let http_client = reqwest::Client::builder()
         .tcp_nodelay(true)
@@ -55,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         static_dir: static_dir.clone(),
         haos_home,
         session_cache,
+        status_cache,
         http_client,
     };
 
@@ -74,6 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 1. Endpoints de leitura acelerados em Rust Nativo (< 5ms)
         .route("/api/sessions", get(sessions_fast_handler))
         .route("/api/session", get(session_detail_handler))
+        .route("/api/session/status", get(session_status_handler))
         .route("/health", get(health_handler))
         // 2. Arquivos estáticos servidos diretamente por Rust sem tocar no Python (Zero-Copy)
         .nest_service("/static", serve_static)
@@ -166,5 +171,59 @@ async fn session_detail_handler(
             Json(serde_json::json!({ "error": "session not found" })),
         )
             .into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct SessionStatusQuery {
+    pub session_id: Option<String>,
+}
+
+async fn session_status_handler(
+    State(state): State<AppState>,
+    Query(query): Query<SessionStatusQuery>,
+    _req: Request,
+) -> Response {
+    let session_id = query.session_id.unwrap_or_default();
+    if !session_id.is_empty() {
+        if let Some((body, _)) = state.status_cache.get(&session_id) {
+            return (
+                [
+                    (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+                    (header::HeaderName::from_static("x-cache-edge"), "HIT"),
+                ],
+                body,
+            )
+                .into_response();
+        }
+    }
+
+    // Se não estiver em cache, consulta o backend Python e popula o cache Rust
+    let forward_url = format!("{}/api/session/status?session_id={session_id}", state.backend_url);
+    match state.http_client.get(&forward_url).send().await {
+        Ok(resp) => {
+            let status_code = resp.status();
+            let headers = resp.headers().clone();
+            if let Ok(bytes) = resp.bytes().await {
+                if status_code.is_success() && !session_id.is_empty() {
+                    state.status_cache.insert(&session_id, bytes.to_vec(), vec![]);
+                }
+
+                let mut response = (status_code, bytes).into_response();
+                for (k, v) in headers.iter() {
+                    if k != header::CONTENT_LENGTH && k != header::TRANSFER_ENCODING {
+                        response.headers_mut().insert(k.clone(), v.clone());
+                    }
+                }
+                response.headers_mut().insert(
+                    header::HeaderName::from_static("x-cache-edge"),
+                    header::HeaderValue::from_static("MISS"),
+                );
+                response
+            } else {
+                StatusCode::BAD_GATEWAY.into_response()
+            }
+        }
+        Err(_) => StatusCode::BAD_GATEWAY.into_response(),
     }
 }
