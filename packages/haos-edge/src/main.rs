@@ -17,6 +17,9 @@ pub mod vector_search;
 pub mod worktree_engine;
 pub mod protocols;
 pub mod transport_ingress;
+pub mod file_engine;
+pub mod subagent_engine;
+pub mod stt_engine;
 
 use clap::{Parser, Subcommand};
 use db::DbHelper;

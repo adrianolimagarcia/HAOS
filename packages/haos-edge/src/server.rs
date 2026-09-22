@@ -255,6 +255,8 @@ pub async fn run_server(
         .route("/api/tools/search-files", post(tools_search_files_handler))
         .route("/api/tools/read-file", post(tools_read_file_handler))
         .route("/api/subagent/spawn-headless", post(subagent_spawn_headless_handler))
+        .route("/v1/audio/transcriptions", post(stt_transcriptions_handler))
+        .route("/api/v1/audio/transcriptions", post(stt_transcriptions_handler))
         .route("/api/timeline/fast", get(timeline_fast_handler))
         .route("/api/cancel/register", post(cancel_register_handler))
         .route("/api/cancel/trigger", post(cancel_trigger_handler))
@@ -756,6 +758,94 @@ async fn subagent_spawn_headless_handler(
 ) -> impl IntoResponse {
     let result = crate::subagent_engine::HeadlessRunner::spawn_task(payload).await;
     Json(result)
+}
+
+// -------------------------------------------------------------
+// STT Handler Nativo em Rust (OpenAI-compatible /v1/audio/transcriptions)
+// -------------------------------------------------------------
+async fn stt_transcriptions_handler(
+    headers: axum::http::HeaderMap,
+    mut multipart: axum::extract::Multipart,
+) -> impl IntoResponse {
+    // 1. Validação de autenticação se configurado no ambiente
+    let expected_token = std::env::var("HAOS_STT_TOKEN").unwrap_or_default();
+    if !expected_token.is_empty() {
+        let auth_header = headers.get("authorization")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        let expected_bearer = format!("Bearer {}", expected_token);
+        if auth_header != expected_bearer {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "invalid bearer token" })),
+            ).into_response();
+        }
+    }
+
+    let mut audio_bytes: Option<Vec<u8>> = None;
+    let mut filename = "audio.ogg".to_string();
+    let mut model = "large-v3".to_string();
+    let mut language: Option<String> = None;
+    let mut response_format = "json".to_string();
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("").to_string();
+        if name == "file" {
+            if let Some(fname) = field.file_name() {
+                filename = fname.to_string();
+            }
+            if let Ok(bytes) = field.bytes().await {
+                audio_bytes = Some(bytes.to_vec());
+            }
+        } else if name == "model" {
+            if let Ok(text) = field.text().await {
+                if !text.trim().is_empty() {
+                    model = text.trim().to_string();
+                }
+            }
+        } else if name == "language" {
+            if let Ok(text) = field.text().await {
+                if !text.trim().is_empty() {
+                    language = Some(text.trim().to_string());
+                }
+            }
+        } else if name == "response_format" {
+            if let Ok(text) = field.text().await {
+                response_format = text.trim().to_string();
+            }
+        }
+    }
+
+    let bytes = match audio_bytes {
+        Some(b) if !b.is_empty() => b,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "empty or missing audio file" })),
+            ).into_response();
+        }
+    };
+
+    match crate::stt_engine::SttEngine::transcribe_audio(
+        &bytes,
+        &filename,
+        &model,
+        language.as_deref(),
+    ).await {
+        Ok(res) => {
+            if response_format == "text" {
+                res.text.into_response()
+            } else {
+                Json(res).into_response()
+            }
+        }
+        Err(err) => {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("transcription failed: {}", err) })),
+            ).into_response()
+        }
+    }
 }
 
 // -------------------------------------------------------------

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.43", features = ["full"] }
-axum = { version = "0.8", features = ["json", "ws"] }
+axum = { version = "0.8", features = ["json", "ws", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -19,9 +19,18 @@ tracing-subscriber = "0.3"
 sha2 = "0.10"
 hmac = "0.12"
 rand = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "blocking", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "blocking", "json", "multipart"] }
 async-stream = "0.3"
 walkdir = "2.5"
+regex = "1.10"
+
+[lib]
+name = "haos_edge"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "haos-edge"
+path = "src/main.rs"
 
 [profile.release]
 strip = true

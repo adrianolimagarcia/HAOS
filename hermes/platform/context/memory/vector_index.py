@@ -99,7 +99,7 @@ class SQLiteVectorIndex:
     @classmethod
     def _get_native_lib(cls):
         if not hasattr(cls, "_native_lib"):
-            lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
+            lib_path = "/usr/local/lib/haos/libhaos_edge.so"
             if os.path.exists(lib_path):
                 try:
                     lib = ctypes.CDLL(lib_path)

@@ -142,8 +142,8 @@ def run_turn_start_compaction(
             import ctypes, json, os
             if not hasattr(run_turn_start_compaction, "_native_lib"):
                 lib_paths = [
-                    "/usr/local/lib/haos/libhaos_vector_engine.so",
-                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../target/release/libhaos_vector_engine.so")),
+                    "/usr/local/lib/haos/libhaos_edge.so",
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../target/release/libhaos_edge.so")),
                 ]
                 lib = None
                 for lp in lib_paths:

@@ -862,7 +862,7 @@ class SessionMessagesMixin:
                 try:
                     import ctypes
                     from hermes import fast_json
-                    lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
+                    lib_path = "/usr/local/lib/haos/libhaos_edge.so"
                     if not hasattr(SessionMessagesMixin, "_native_lib"):
                         import os
                         if os.path.exists(lib_path):
