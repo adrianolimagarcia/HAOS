@@ -1000,3 +1000,115 @@ mod tests {
 }
 
 
+
+// =========================================================================
+// STATE DB ENGINE: LEITURA ULTRA-RÁPIDA DE SESSÕES E MENSAGENS EM RUST
+// =========================================================================
+
+/// Carrega mensagens de uma sessão diretamente do state.db em Rust com flags Read-Only + No-Mutex.
+/// Retorna o número de bytes gravados em `out_buf` com JSON de mensagens formatado.
+#[no_mangle]
+pub extern "C" fn state_engine_get_messages_buffered(
+    db_path_cstr: *const c_char,
+    session_id_cstr: *const c_char,
+    limit: c_int,
+    offset: c_int,
+    out_buf: *mut c_char,
+    out_buf_cap: c_int,
+) -> c_int {
+    if db_path_cstr.is_null()
+        || session_id_cstr.is_null()
+        || out_buf.is_null()
+        || out_buf_cap <= 2
+    {
+        return -1;
+    }
+
+    let db_path = unsafe { CStr::from_ptr(db_path_cstr).to_string_lossy() };
+    let session_id = unsafe { CStr::from_ptr(session_id_cstr).to_string_lossy() };
+    let p = Path::new(&*db_path);
+    if !p.exists() {
+        return -2;
+    }
+
+    let conn = match Connection::open_with_flags(
+        p,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(c) => c,
+        Err(_) => return -3,
+    };
+
+    let sql = if limit > 0 {
+        "SELECT id, role, content, tool_calls, tool_call_id, name, created_at
+         FROM messages WHERE session_id = ?1 AND active = 1 ORDER BY id ASC LIMIT ?2 OFFSET ?3;"
+    } else {
+        "SELECT id, role, content, tool_calls, tool_call_id, name, created_at
+         FROM messages WHERE session_id = ?1 AND active = 1 ORDER BY id ASC;"
+    };
+
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(_) => return -4,
+    };
+
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    let row_mapper = |row: &rusqlite::Row| {
+        let id: i64 = row.get(0)?;
+        let role: String = row.get(1)?;
+        let content: Option<String> = row.get(2)?;
+        let tool_calls: Option<String> = row.get(3)?;
+        let tool_call_id: Option<String> = row.get(4)?;
+        let name: Option<String> = row.get(5)?;
+        let created_at: Option<f64> = row.get(6)?;
+        Ok((id, role, content, tool_calls, tool_call_id, name, created_at))
+    };
+
+    let rows_res: Result<Vec<_>, _> = if limit > 0 {
+        stmt.query_map(params![&*session_id, limit, offset], row_mapper).map(|r| r.flatten().collect())
+    } else {
+        stmt.query_map(params![&*session_id], row_mapper).map(|r| r.flatten().collect())
+    };
+
+    let rows = match rows_res {
+        Ok(r) => r,
+        Err(_) => return -5,
+    };
+
+    for r in rows {
+        let (id, role, content_raw, tool_calls_raw, tool_call_id, name, created_at) = r;
+        let content_val = content_raw
+            .as_deref()
+            .and_then(|c| serde_json::from_str(c).ok())
+            .unwrap_or(serde_json::Value::String(content_raw.unwrap_or_default()));
+        let tool_calls_val: Option<serde_json::Value> = tool_calls_raw
+            .as_deref()
+            .and_then(|tc| serde_json::from_str(tc).ok());
+
+        messages.push(serde_json::json!({
+            "id": id,
+            "role": role,
+            "content": content_val,
+            "tool_calls": tool_calls_val,
+            "tool_call_id": tool_call_id,
+            "name": name,
+            "created_at": created_at,
+        }));
+    }
+
+    let json_bytes = match serde_json::to_vec(&messages) {
+        Ok(b) => b,
+        Err(_) => return -6,
+    };
+
+    if json_bytes.len() >= (out_buf_cap as usize) {
+        return -7; // buffer insuficiente
+    }
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(json_bytes.as_ptr() as *const c_char, out_buf, json_bytes.len());
+        *out_buf.add(json_bytes.len()) = 0;
+    }
+
+    json_bytes.len() as c_int
+}

@@ -857,6 +857,40 @@ class SessionMessagesMixin:
             rows = self._legacy_display_page(
                 session_id, active_clause=active_clause, limit=limit, offset=offset, latest=latest)
         else:
+            # 🦀 Fast-Path nativo em Rust (Read-Only + No-Mutex bypass de lock no state.db)
+            if not include_inactive and not include_compacted and after_id is None and not latest and getattr(self, "db_path", None):
+                try:
+                    import ctypes
+                    from hermes import fast_json
+                    lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
+                    if not hasattr(SessionMessagesMixin, "_native_lib"):
+                        import os
+                        if os.path.exists(lib_path):
+                            _lib = ctypes.CDLL(lib_path)
+                            _lib.state_engine_get_messages_buffered.argtypes = [
+                                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
+                                ctypes.c_char_p, ctypes.c_int
+                            ]
+                            _lib.state_engine_get_messages_buffered.restype = ctypes.c_int
+                            SessionMessagesMixin._native_lib = _lib
+                        else:
+                            SessionMessagesMixin._native_lib = None
+
+                    if SessionMessagesMixin._native_lib is not None:
+                        _buf = ctypes.create_string_buffer(524288)  # 512KB
+                        _written = SessionMessagesMixin._native_lib.state_engine_get_messages_buffered(
+                            str(self.db_path).encode("utf-8"),
+                            session_id.encode("utf-8"),
+                            int(limit or 0),
+                            int(offset or 0),
+                            _buf,
+                            len(_buf)
+                        )
+                        if _written > 0:
+                            return fast_json.loads(_buf.value.decode("utf-8"))
+                except Exception:
+                    pass  # Fallback seguro para o pipeline SQLite padrão
+
             sql = (f"SELECT * FROM messages WHERE session_id = ?{active_clause}"
                 f"{' AND id > ?' if after_id is not None else ''} ORDER BY id {'DESC' if latest else 'ASC'}")
             params: list = [session_id] if after_id is None else [session_id, after_id]
