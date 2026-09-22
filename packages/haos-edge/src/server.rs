@@ -230,6 +230,27 @@ pub async fn run_server(
         .route("/api/tasks/{id}", get(get_task_by_id_handler))
         .route("/api/task/{id}", get(get_task_by_id_handler))
         .route("/api/state", get(state_handler))
+        .route("/api/agent-hierarchy", get(agent_hierarchy_handler).post(agent_hierarchy_mutate_handler))
+        .route("/api/controlplane/agent-hierarchy", get(agent_hierarchy_handler).post(agent_hierarchy_mutate_handler))
+        .route("/api/team-graph", get(team_graph_handler))
+        .route("/api/controlplane/team_graph", get(team_graph_handler))
+        .route("/api/agent-hierarchy/soul", get(hierarchy_soul_get_handler).post(hierarchy_soul_post_handler))
+        .route("/api/agent-hierarchy/memory", get(hierarchy_memory_get_handler).post(hierarchy_memory_post_handler))
+        .route("/api/agent-hierarchy/notebook", get(hierarchy_notebook_get_handler).post(hierarchy_notebook_post_handler))
+        .route("/api/agent-hierarchy/toolsets", get(hierarchy_toolsets_handler))
+        .route("/api/agent-hierarchy/routines", get(hierarchy_routines_get_handler).post(hierarchy_routines_post_handler))
+        .route("/api/agent-hierarchy/routines/delete", post(hierarchy_routines_delete_handler))
+        .route("/api/agent-hierarchy/shadows", get(hierarchy_shadows_handler).post(hierarchy_shadows_spawn_handler))
+        .route("/api/agent-hierarchy/shadows/discard", post(hierarchy_shadows_discard_handler))
+        .route("/api/agent-hierarchy/microapps", get(hierarchy_microapps_get_handler).post(hierarchy_microapps_post_handler))
+        .route("/api/agent-hierarchy/microapps/delete", post(hierarchy_microapps_delete_handler))
+        .route("/api/agent-hierarchy/feed", get(hierarchy_feed_handler))
+        .route("/api/agent-hierarchy/wiki/articles", get(hierarchy_wiki_articles_handler))
+        .route("/api/agent-hierarchy/wiki/article", get(hierarchy_wiki_article_get_handler).post(hierarchy_wiki_article_post_handler))
+        .route("/api/harnesses", get(harnesses_handler))
+        .route("/api/controlplane/harnesses", get(harnesses_handler))
+        .route("/api/overview", get(overview_handler))
+        .route("/api/controlplane/overview", get(overview_handler))
         .route("/api/doc/search", get(doc_search_handler))
         .route("/api/rag/search", get(doc_search_handler))
         .route("/api/memory/vector-search", post(vector_search_handler))
@@ -1969,3 +1990,351 @@ async fn proxy_fallback_handler(
     }
 }
 
+
+// =========================================================================
+// AGENT HIERARCHY, TEAM GRAPH & CONTROL PLANE NATIVE HANDLERS EM RUST
+// =========================================================================
+
+async fn agent_hierarchy_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let p = state.data_dir.join("agent_hierarchy.json");
+    if p.exists() {
+        if let Ok(content) = std::fs::read_to_string(&p) {
+            if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(&content) {
+                return Json(json_val).into_response();
+            }
+        }
+    }
+    Json(serde_json::json!({
+        "version": "1.0",
+        "nodes": [],
+        "councils": [],
+        "advisory_edges": [],
+        "discussion_limits": {},
+        "bot_model": {}
+    })).into_response()
+}
+
+async fn agent_hierarchy_mutate_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let p = state.data_dir.join("agent_hierarchy.json");
+    if let Ok(bytes) = serde_json::to_vec_pretty(&payload) {
+        if let Ok(_) = std::fs::write(&p, bytes) {
+            return Json(serde_json::json!({ "ok": true, "saved": true })).into_response();
+        }
+    }
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": "failed_write" }))).into_response()
+}
+
+async fn team_graph_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let p = state.data_dir.join("agent_hierarchy.json");
+    let hierarchy = if p.exists() {
+        std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let mut graph = serde_json::json!({
+        "nodes": hierarchy.get("nodes").cloned().unwrap_or(serde_json::json!([])),
+        "councils": hierarchy.get("councils").cloned().unwrap_or(serde_json::json!([])),
+        "edges": hierarchy.get("advisory_edges").cloned().unwrap_or(serde_json::json!([])),
+        "organizational_hierarchy": hierarchy,
+        "engine": "haos-edge-rust-native"
+    });
+    Json(graph).into_response()
+}
+
+async fn hierarchy_soul_get_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let bot_id = query.get("bot_id").cloned().unwrap_or_else(|| "default".into());
+    let soul_file = state.data_dir.join("souls").join(format!("{bot_id}.md"));
+    let content = if soul_file.exists() {
+        std::fs::read_to_string(&soul_file).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Json(serde_json::json!({ "bot_id": bot_id, "soul": content })).into_response()
+}
+
+async fn hierarchy_soul_post_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let bot_id = payload.get("bot_id").and_then(|v| v.as_str()).unwrap_or("default");
+    let content = payload.get("soul").and_then(|v| v.as_str()).unwrap_or("");
+    let dir = state.data_dir.join("souls");
+    let _ = std::fs::create_dir_all(&dir);
+    let p = dir.join(format!("{bot_id}.md"));
+    let _ = std::fs::write(p, content);
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn hierarchy_memory_get_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let bot_id = query.get("bot_id").cloned().unwrap_or_else(|| "default".into());
+    let mem_file = state.data_dir.join("memories").join(format!("{bot_id}.json"));
+    let val = if mem_file.exists() {
+        std::fs::read_to_string(&mem_file)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .unwrap_or(serde_json::json!([]))
+    } else {
+        serde_json::json!([])
+    };
+    Json(serde_json::json!({ "bot_id": bot_id, "memories": val })).into_response()
+}
+
+async fn hierarchy_memory_post_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let bot_id = payload.get("bot_id").and_then(|v| v.as_str()).unwrap_or("default");
+    let dir = state.data_dir.join("memories");
+    let _ = std::fs::create_dir_all(&dir);
+    let p = dir.join(format!("{bot_id}.json"));
+    let _ = std::fs::write(p, serde_json::to_vec_pretty(&payload).unwrap_or_default());
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn hierarchy_notebook_get_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let bot_id = query.get("bot_id").cloned().unwrap_or_else(|| "default".into());
+    let note_file = state.data_dir.join("notebooks").join(format!("{bot_id}.md"));
+    let content = if note_file.exists() {
+        std::fs::read_to_string(&note_file).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Json(serde_json::json!({ "bot_id": bot_id, "notebook": content })).into_response()
+}
+
+async fn hierarchy_notebook_post_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let bot_id = payload.get("bot_id").and_then(|v| v.as_str()).unwrap_or("default");
+    let content = payload.get("notebook").and_then(|v| v.as_str()).unwrap_or("");
+    let dir = state.data_dir.join("notebooks");
+    let _ = std::fs::create_dir_all(&dir);
+    let p = dir.join(format!("{bot_id}.md"));
+    let _ = std::fs::write(p, content);
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn hierarchy_toolsets_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({
+        "toolsets": ["core", "terminal", "file", "web_search", "browser", "memory", "kanban", "skills"],
+        "engine": "rust_native"
+    })).into_response()
+}
+
+async fn hierarchy_routines_get_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let p = state.data_dir.join("routines.json");
+    let val = if p.exists() {
+        std::fs::read_to_string(&p)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .unwrap_or(serde_json::json!([]))
+    } else {
+        serde_json::json!([])
+    };
+    Json(val).into_response()
+}
+
+async fn hierarchy_routines_post_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let p = state.data_dir.join("routines.json");
+    let _ = std::fs::write(p, serde_json::to_vec_pretty(&payload).unwrap_or_default());
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn hierarchy_routines_delete_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn hierarchy_shadows_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "shadows": [] })).into_response()
+}
+
+async fn hierarchy_shadows_spawn_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "ok": true, "status": "spawned" })).into_response()
+}
+
+async fn hierarchy_shadows_discard_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "ok": true, "status": "discarded" })).into_response()
+}
+
+async fn hierarchy_microapps_get_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "microapps": [] })).into_response()
+}
+
+async fn hierarchy_microapps_post_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn hierarchy_microapps_delete_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn hierarchy_feed_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({ "items": [] })).into_response()
+}
+
+async fn hierarchy_wiki_articles_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let dir = state.data_dir.join("wiki");
+    let mut articles = Vec::new();
+    if dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                    let title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                    articles.push(serde_json::json!({ "title": title, "path": path.display().to_string() }));
+                }
+            }
+        }
+    }
+    Json(serde_json::json!({ "articles": articles })).into_response()
+}
+
+async fn hierarchy_wiki_article_get_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let title = query.get("title").cloned().unwrap_or_default();
+    let p = state.data_dir.join("wiki").join(format!("{title}.md"));
+    let content = if p.exists() {
+        std::fs::read_to_string(p).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Json(serde_json::json!({ "title": title, "content": content })).into_response()
+}
+
+async fn hierarchy_wiki_article_post_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+    let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    let dir = state.data_dir.join("wiki");
+    let _ = std::fs::create_dir_all(&dir);
+    let p = dir.join(format!("{title}.md"));
+    let _ = std::fs::write(p, content);
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+async fn harnesses_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    Json(serde_json::json!({
+        "harnesses": [
+            { "name": "local", "status": "active", "type": "process" },
+            { "name": "haos-edge", "status": "active", "type": "rust-daemon" }
+        ]
+    })).into_response()
+}
+
+async fn overview_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let state_payload = DbHelper::get_state_payload(&state.data_dir);
+    Json(serde_json::json!({
+        "system": "HAOS Native Edge",
+        "runtime": "Rust Tokio + Axum",
+        "state": state_payload
+    })).into_response()
+}

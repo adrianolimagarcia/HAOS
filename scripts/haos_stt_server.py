@@ -192,8 +192,25 @@ def _transcribe_bytes(data: bytes, filename: str):
         f.write(data)
         f.flush()
         kw = build_local_transcribe_kwargs(stt)
-        segments, info = model.transcribe(f.name, **kw)
-        text = " ".join(s.text.strip() for s in segments)
+        try:
+            segments, info = model.transcribe(f.name, **kw)
+            text = " ".join(s.text.strip() for s in segments)
+        except Exception as exc:
+            msg = str(exc).lower()
+            oom = "out of memory" in msg or "cuda failed" in msg or "cuda_error" in msg
+            if _state["effective"] and _state["effective"][1] != "cpu" and oom:
+                print(f"[haos-stt] CUDA OOM durante transcribe ({exc}) — recarregando na CPU int8...", flush=True)
+                _release_model()
+                from tools.transcription_local import _load_local_whisper_model
+                loc = stt.get("local") or {}
+                m_name = loc.get("model") or HAOS_STT_FALLBACK_MODEL
+                model = _load_local_whisper_model(m_name, "cpu", "int8")
+                _state["model"] = model
+                _state["effective"] = (m_name, "cpu", "int8")
+                segments, info = model.transcribe(f.name, **kw)
+                text = " ".join(s.text.strip() for s in segments)
+            else:
+                raise
     return text, info
 
 
