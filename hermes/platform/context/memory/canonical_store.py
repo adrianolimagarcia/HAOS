@@ -2,6 +2,8 @@
 from __future__ import annotations
 import hashlib
 import json
+import logging
+import os
 import re
 import sqlite3
 import time
@@ -11,6 +13,8 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 VALID_SCOPES = frozenset(("private", "team", "project", "global"))
 
@@ -100,6 +104,86 @@ class CanonicalMemoryStore:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    # -- Native Rust C-ABI library binding -----------------------------------
+    @classmethod
+    def _get_native_lib(cls):
+        if not hasattr(cls, "_native_lib"):
+            lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
+            if os.path.exists(lib_path):
+                try:
+                    import ctypes
+                    lib = ctypes.CDLL(lib_path)
+                    if hasattr(lib, "canonical_engine_read_records_buffered"):
+                        lib.canonical_engine_read_records_buffered.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                            ctypes.c_char_p, ctypes.c_int
+                        ]
+                        lib.canonical_engine_read_records_buffered.restype = ctypes.c_int
+
+                    if hasattr(lib, "canonical_engine_search_fts_buffered"):
+                        lib.canonical_engine_search_fts_buffered.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                            ctypes.c_int, ctypes.c_char_p, ctypes.c_int
+                        ]
+                        lib.canonical_engine_search_fts_buffered.restype = ctypes.c_int
+
+                    cls._native_lib = lib
+                except Exception:
+                    cls._native_lib = None
+            else:
+                cls._native_lib = None
+        return cls._native_lib
+
+    def read_canonical_records(self, record_ids: Sequence[str], scopes: Sequence[str]) -> List[MemoryRecord]:
+        """Leitura ultra-rápida via C-ABI / Rust nativo (SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_NO_MUTEX).
+
+        Executa consultas concorrentes em multithread sem bloquear o arquivo SQLite
+        nem gerar contenção de lock com a thread de escrita.
+        """
+        if not record_ids or not scopes:
+            return []
+
+        lib = self._get_native_lib()
+        if lib is not None and hasattr(lib, "canonical_engine_read_records_buffered") and self.path.exists():
+            try:
+                import ctypes
+                buf = ctypes.create_string_buffer(524288)
+                ids_json = json.dumps(list(record_ids)).encode("utf-8")
+                scopes_json = json.dumps(list(scopes)).encode("utf-8")
+                written = lib.canonical_engine_read_records_buffered(
+                    str(self.path).encode("utf-8"),
+                    ids_json,
+                    scopes_json,
+                    buf,
+                    len(buf),
+                )
+                if written > 0:
+                    raw_records = json.loads(buf.value.decode("utf-8"))
+                    return [self._dict_to_record(r) for r in raw_records]
+            except Exception as exc:
+                logger.debug("canonical native read_records fallback: %s", exc)
+
+        return self.active_by_ids(record_ids, scopes)
+
+    @staticmethod
+    def _dict_to_record(d: Dict[str, Any]) -> MemoryRecord:
+        return MemoryRecord(
+            record_id=d["record_id"],
+            logical_id=d["logical_id"],
+            revision=d["revision"],
+            scope=d["scope"],
+            content=d["content"],
+            kind=d.get("kind", "fact"),
+            status=d.get("status", "active"),
+            confidence=d.get("confidence", 1.0),
+            provenance=tuple(json.loads(d["provenance_json"])) if isinstance(d.get("provenance_json"), str) else tuple(d.get("provenance", ())),
+            valid_from=d.get("valid_from", 0.0),
+            valid_until=d.get("valid_until"),
+            supersedes=tuple(json.loads(d["supersedes_json"])) if isinstance(d.get("supersedes_json"), str) else tuple(d.get("supersedes", ())),
+            metadata=json.loads(d["metadata_json"]) if isinstance(d.get("metadata_json"), str) else d.get("metadata", {}),
+            content_hash=d.get("content_hash", ""),
+        )
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Connection]:
@@ -410,6 +494,28 @@ class CanonicalMemoryStore:
         expression = fts_match_expression(query)
         if not expression:
             return []  # query carried no searchable word (punctuation only)
+
+        # Tentativa de aceleração via Rust nativo C-ABI (SQLITE_OPEN_NO_MUTEX)
+        lib = self._get_native_lib()
+        if lib is not None and hasattr(lib, "canonical_engine_search_fts_buffered") and self.path.exists():
+            try:
+                import ctypes
+                buf = ctypes.create_string_buffer(524288)
+                scopes_json = json.dumps(list(scopes)).encode("utf-8")
+                written = lib.canonical_engine_search_fts_buffered(
+                    str(self.path).encode("utf-8"),
+                    expression.encode("utf-8"),
+                    scopes_json,
+                    int(limit),
+                    buf,
+                    len(buf),
+                )
+                if written > 0:
+                    raw_records = json.loads(buf.value.decode("utf-8"))
+                    return [self._dict_to_record(r) for r in raw_records]
+            except Exception as exc:
+                logger.debug("canonical native search_fts fallback: %s", exc)
+
         marks = ",".join("?" for _ in scopes)
         with self._lock:
             rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (expression, *scopes, limit)).fetchall()

@@ -78,3 +78,35 @@ def test_preflight_gate_skips_small_transcripts():
     est.assert_not_called()
     agent.context_compressor.should_compress.assert_not_called()
     assert out.messages is msgs
+
+
+def test_rust_native_fast_path_compaction():
+    agent = _agent(compression_enabled=False)
+    msgs = [
+        {"role": "system", "content": "System prompt (Prompt cache)"},
+        {"role": "user", "content": "Q1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "tool", "tool_call_id": "c1", "content": "Large output " * 500},
+        {"role": "user", "content": "Q2"},
+        {"role": "assistant", "content": "A2"},
+        {"role": "user", "content": "Q3"},
+        {"role": "assistant", "content": "A3"},
+        {"role": "user", "content": "Q4"},
+        {"role": "assistant", "content": "A4"},
+        {"role": "user", "content": "Q5"},
+    ]
+    out = run_turn_start_compaction(
+        agent, messages=msgs, system_message=None, active_system_prompt="sys",
+        conversation_history=None, current_turn_user_idx=10, user_message="Q5",
+        effective_task_id="t",
+    )
+    # Check that tool output in middle zone was truncated preserving head/tail
+    tool_msg = out.messages[3]
+    assert tool_msg["role"] == "tool"
+    assert "truncados pelo HAOS Rust Native Compactor" in tool_msg["content"]
+    assert len(tool_msg["content"]) < len("Large output " * 500)
+    # System prompt remains intact
+    assert out.messages[0]["content"] == "System prompt (Prompt cache)"
+    # Last message intact
+    assert out.messages[-1]["content"] == "Q5"
+

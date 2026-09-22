@@ -135,48 +135,91 @@ def run_turn_start_compaction(
         messages=messages, active_system_prompt=active_system_prompt,
         conversation_history=conversation_history, current_turn_user_idx=current_turn_user_idx,
     )
-    # Fast-Path Rust Snip (Ultra SOTA 2026): colapso imediato de tool results via haos-edge daemon
+    # Fast-Path Rust Snip (Ultra SOTA 2026): colapso imediato de tool results via haos_vector_engine C-ABI (<1ms)
     if len(out.messages) > 6:
+        rust_compacted = False
         try:
-            import json, urllib.request
-            compact_req = urllib.request.Request(
-                "http://100.77.31.78:8788/api/context/compact",
-                data=json.dumps({
-                    "messages": out.messages,
-                    "max_tool_chars": 2500,
-                    "keep_last": 6,
-                }).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(compact_req, timeout=0.15) as c_resp:
-                c_data = json.loads(c_resp.read().decode("utf-8"))
-                if c_data.get("ok") and "messages" in c_data:
-                    out.messages = c_data["messages"]
+            import ctypes, json, os
+            if not hasattr(run_turn_start_compaction, "_native_lib"):
+                lib_paths = [
+                    "/usr/local/lib/haos/libhaos_vector_engine.so",
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "../target/release/libhaos_vector_engine.so")),
+                ]
+                lib = None
+                for lp in lib_paths:
+                    if os.path.exists(lp):
+                        try:
+                            l = ctypes.CDLL(lp)
+                            l.compact_context_json.argtypes = [
+                                ctypes.c_char_p,
+                                ctypes.c_int,
+                                ctypes.c_int,
+                                ctypes.c_char_p,
+                                ctypes.c_int,
+                            ]
+                            l.compact_context_json.restype = ctypes.c_int
+                            lib = l
+                            break
+                        except Exception:
+                            continue
+                run_turn_start_compaction._native_lib = lib
+
+            native_lib = run_turn_start_compaction._native_lib
+            if native_lib is not None:
+                payload_bytes = json.dumps(out.messages).encode("utf-8")
+                # Aloca buffer de saída suficiente
+                buf_cap = max(65536, len(payload_bytes) * 2 + 1024)
+                buf = ctypes.create_string_buffer(buf_cap)
+                written = native_lib.compact_context_json(
+                    payload_bytes,
+                    2500,  # max_tool_chars
+                    6,     # keep_last
+                    buf,
+                    buf_cap,
+                )
+                if written > 0:
+                    out.messages = json.loads(buf.value.decode("utf-8"))
+                    rust_compacted = True
         except Exception:
-            # Fallback local via subprocess hermes-exec se o daemon edge estiver em reboot
+            pass
+
+        if not rust_compacted:
             try:
-                import json, subprocess, os
-                from pathlib import Path
-                rust_bin = "/usr/local/bin/hermes-exec"
-                if not Path(rust_bin).exists():
-                    candidate = os.path.join(os.getcwd(), "target/release/hermes-exec")
-                    if Path(candidate).exists():
-                        rust_bin = candidate
-                if Path(rust_bin).exists():
-                    proc = subprocess.run(
-                        [rust_bin, "snip-messages"],
-                        input=json.dumps(out.messages),
-                        capture_output=True,
-                        text=True,
-                        timeout=2,
-                    )
-                    if proc.returncode == 0 and proc.stdout.strip():
-                        snip_res = json.loads(proc.stdout)
-                        if snip_res.get("ok") and snip_res.get("snipped_count", 0) > 0:
-                            out.messages = snip_res["messages"]
+                import json, urllib.request
+                compact_req = urllib.request.Request(
+                    "http://127.0.0.1:8799/api/context/compact",
+                    data=json.dumps({
+                        "messages": out.messages,
+                        "max_tool_chars": 2500,
+                        "keep_last": 6,
+                    }).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(compact_req, timeout=0.15) as c_resp:
+                    c_data = json.loads(c_resp.read().decode("utf-8"))
+                    if c_data.get("ok") and "messages" in c_data:
+                        out.messages = c_data["messages"]
             except Exception:
-                pass
+                # Fallback 1: Control plane na porta 8788
+                try:
+                    import json, urllib.request
+                    compact_req = urllib.request.Request(
+                        "http://100.77.31.78:8788/api/context/compact",
+                        data=json.dumps({
+                            "messages": out.messages,
+                            "max_tool_chars": 2500,
+                            "keep_last": 6,
+                        }).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST"
+                    )
+                    with urllib.request.urlopen(compact_req, timeout=0.15) as c_resp:
+                        c_data = json.loads(c_resp.read().decode("utf-8"))
+                        if c_data.get("ok") and "messages" in c_data:
+                            out.messages = c_data["messages"]
+                except Exception:
+                    pass
 
     _idle_compaction(agent, out, system_message, user_message, effective_task_id)
     _preflight_compression(agent, out, system_message, user_message, effective_task_id)

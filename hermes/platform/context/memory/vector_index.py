@@ -19,9 +19,12 @@ truth:
 
 from __future__ import annotations
 
+import ctypes
 import json
 import math
+import os
 import sqlite3
+import struct
 import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -91,6 +94,43 @@ class SQLiteVectorIndex:
     def close(self) -> None:
         self.db.close()
 
+    # -- native library binding ----------------------------------------------
+
+    @classmethod
+    def _get_native_lib(cls):
+        if not hasattr(cls, "_native_lib"):
+            lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
+            if os.path.exists(lib_path):
+                try:
+                    lib = ctypes.CDLL(lib_path)
+                    lib.vector_engine_search_buffered.argtypes = [
+                        ctypes.c_char_p, ctypes.c_char_p,
+                        ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.c_int,
+                        ctypes.c_char_p, ctypes.c_int
+                    ]
+                    lib.vector_engine_search_buffered.restype = ctypes.c_int
+
+                    if hasattr(lib, "vector_engine_upsert"):
+                        lib.vector_engine_upsert.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                            ctypes.POINTER(ctypes.c_float), ctypes.c_int
+                        ]
+                        lib.vector_engine_upsert.restype = ctypes.c_int
+
+                    if hasattr(lib, "vector_engine_upsert_blob"):
+                        lib.vector_engine_upsert_blob.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                            ctypes.c_char_p, ctypes.c_int
+                        ]
+                        lib.vector_engine_upsert_blob.restype = ctypes.c_int
+
+                    cls._native_lib = lib
+                except Exception:
+                    cls._native_lib = None
+            else:
+                cls._native_lib = None
+        return cls._native_lib
+
     # -- writes --------------------------------------------------------------
 
     def upsert(self, record_id: str, vector: Sequence[float]) -> None:
@@ -111,7 +151,25 @@ class SQLiteVectorIndex:
                 % (len(values), self.model_version, self.dimensions)
             )
 
-        # Fast-path: offload upsert to native Rust haos-edge daemon (Zero-GIL, thread-safe WAL)
+        # 1. Tentativa de Upsert nativo em Rust (In-Process C-ABI / BLOB binário f32 direto)
+        lib = self._get_native_lib()
+        if lib is not None:
+            try:
+                dim = len(values)
+                v_arr = (ctypes.c_float * dim)(*values)
+                rc = lib.vector_engine_upsert(
+                    str(self.path).encode("utf-8"),
+                    record_id.encode("utf-8"),
+                    self.model_version.encode("utf-8"),
+                    v_arr,
+                    dim,
+                )
+                if rc == 0:
+                    return
+            except Exception:
+                pass  # Fallback gracioso
+
+        # 2. Fast-path alternativo: offload upsert to native Rust haos-edge daemon
         try:
             import urllib.request
             req_data = json.dumps({
@@ -131,6 +189,7 @@ class SQLiteVectorIndex:
         except Exception:
             pass
 
+        # 3. Fallback Python padrão com json.dumps
         self.db.execute(
             "INSERT OR REPLACE INTO memory_vectors VALUES (?,?,?,?,?)",
             (record_id, self.model_version, len(values), json.dumps(values), time.time()),
@@ -206,27 +265,13 @@ class SQLiteVectorIndex:
             return []
 
         # 1. Tentativa de Aceleração Máxima via Extensão Nativa em Rust (In-Process C-ABI / SIMD)
-        try:
-            import ctypes
-            lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
-            if not hasattr(SQLiteVectorIndex, "_native_lib"):
-                if os.path.exists(lib_path):
-                    lib = ctypes.CDLL(lib_path)
-                    lib.vector_engine_search_buffered.argtypes = [
-                        ctypes.c_char_p, ctypes.c_char_p,
-                        ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.c_int,
-                        ctypes.c_char_p, ctypes.c_int
-                    ]
-                    lib.vector_engine_search_buffered.restype = ctypes.c_int
-                    SQLiteVectorIndex._native_lib = lib
-                else:
-                    SQLiteVectorIndex._native_lib = None
-
-            if SQLiteVectorIndex._native_lib is not None:
+        lib = self._get_native_lib()
+        if lib is not None:
+            try:
                 dim = len(query)
                 q_arr = (ctypes.c_float * dim)(*query)
                 buf = ctypes.create_string_buffer(65536)
-                written = SQLiteVectorIndex._native_lib.vector_engine_search_buffered(
+                written = lib.vector_engine_search_buffered(
                     str(self.path).encode("utf-8"),
                     self.model_version.encode("utf-8"),
                     q_arr,
@@ -237,8 +282,8 @@ class SQLiteVectorIndex:
                 )
                 if written > 0:
                     return json.loads(buf.value.decode("utf-8"))[:limit]
-        except Exception:
-            pass  # Fallback gracioso para IPC / cálculo local
+            except Exception:
+                pass  # Fallback gracioso para IPC / cálculo local
 
         # 2. Tentativa de Aceleração Secundária via haos-edge HTTP
         try:

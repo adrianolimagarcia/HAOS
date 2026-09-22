@@ -29,7 +29,9 @@ documentado — o grafo sobrevive a reinícios para LEITURA, que é o contrato.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -388,25 +390,39 @@ class GraphRAGStore:
     def search_entities(self, terms: Sequence[str]) -> List[Dict[str, object]]:
         """Entidades cujo nome/descrição/comunidade contém qualquer termo.
 
+        Usa aceleração C-ABI em Rust quando disponível com fallback Python transparente.
         Não filtra supersedidas: a linha permanece com o ponteiro
         ``superseded_by`` para o leitor decidir (informação preservada).
-
-        Varredura linear em Python, medida a ~3,6 µs por entidade: 0,3 ms no grafo real
-        (55 entidades), 3,9 ms com 1k, 17 ms com 5k e 178 ms com 50k. Não vale indexar
-        agora — seria otimizar 360x acima do tamanho observado. Um ``LIKE '%termo%'``
-        também não ajudaria, porque nenhum índice serve busca por substring; se um dia
-        incomodar, o caminho é FTS5, como o journal já faz em ``memory_fts``.
         """
-        terms = [t.strip().lower() for t in terms if t and t.strip()]
+        clean_terms = [t.strip().lower() for t in terms if t and t.strip()]
+        if not clean_terms:
+            return self.list_entities()
+
+        if self.db_path != ":memory:":
+            lib = self._get_native_lib()
+            if lib is not None and hasattr(lib, "graphrag_engine_search_entities_buffered") and os.path.exists(self.db_path):
+                try:
+                    import ctypes
+                    buf = ctypes.create_string_buffer(262144)
+                    terms_json = json.dumps(clean_terms).encode("utf-8")
+                    written = lib.graphrag_engine_search_entities_buffered(
+                        self.db_path.encode("utf-8"),
+                        terms_json,
+                        buf,
+                        len(buf),
+                    )
+                    if written > 0:
+                        return json.loads(buf.value.decode("utf-8"))
+                except Exception as exc:
+                    logger.debug("graphrag native search_entities fallback: %s", exc)
+
         rows = self.list_entities()
-        if not terms:
-            return rows
         matched = []
         for row in rows:
             haystack = " ".join(
                 str(row.get(k) or "") for k in ("entity", "description", "community_id")
             ).lower()
-            if any(t in haystack for t in terms):
+            if any(t in haystack for t in clean_terms):
                 matched.append(row)
         return matched
 
@@ -419,3 +435,119 @@ class GraphRAGStore:
                 "relations": conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0],
                 "communities": conn.execute("SELECT COUNT(*) FROM communities").fetchone()[0],
             }
+
+    # ------------------------------------------------------------------ #
+    # Leitura nativa ultra-rápida via C-ABI / Rust (SQLITE_OPEN_NO_MUTEX)
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def _get_native_lib(cls):
+        if not hasattr(cls, "_native_lib"):
+            lib_path = "/usr/local/lib/haos/libhaos_vector_engine.so"
+            if os.path.exists(lib_path):
+                try:
+                    import ctypes
+                    lib = ctypes.CDLL(lib_path)
+                    if hasattr(lib, "graphrag_engine_find_related_buffered"):
+                        lib.graphrag_engine_find_related_buffered.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
+                            ctypes.c_char_p, ctypes.c_int
+                        ]
+                        lib.graphrag_engine_find_related_buffered.restype = ctypes.c_int
+
+                    if hasattr(lib, "graphrag_engine_search_entities_buffered"):
+                        lib.graphrag_engine_search_entities_buffered.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p,
+                            ctypes.c_char_p, ctypes.c_int
+                        ]
+                        lib.graphrag_engine_search_entities_buffered.restype = ctypes.c_int
+
+                    cls._native_lib = lib
+                except Exception:
+                    cls._native_lib = None
+            else:
+                cls._native_lib = None
+        return cls._native_lib
+
+    def find_related(self, entity_name: str, max_hops: int = 1) -> Dict[str, object]:
+        """Consulta acelerada em Rust / C-ABI para entidade e vizinhos (1 ou 2 saltos).
+        
+        Abre conexão com SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_NO_MUTEX em WAL,
+        sem lock contention nem bloqueio do arquivo.
+        """
+        if not entity_name or self.db_path == ":memory:":
+            return self._find_related_fallback(entity_name, max_hops=max_hops)
+
+        lib = self._get_native_lib()
+        if lib is not None and hasattr(lib, "graphrag_engine_find_related_buffered") and os.path.exists(self.db_path):
+            try:
+                import ctypes
+                buf = ctypes.create_string_buffer(131072)
+                written = lib.graphrag_engine_find_related_buffered(
+                    self.db_path.encode("utf-8"),
+                    entity_name.encode("utf-8"),
+                    int(max_hops),
+                    buf,
+                    len(buf),
+                )
+                if written > 0:
+                    return json.loads(buf.value.decode("utf-8"))
+            except Exception as exc:
+                logger.debug("graphrag native find_related fallback: %s", exc)
+
+        return self._find_related_fallback(entity_name, max_hops=max_hops)
+
+    def _find_related_fallback(self, entity_name: str, max_hops: int = 1) -> Dict[str, object]:
+        """Fallback Python puro para find_related."""
+        ent = self.get_entity(entity_name)
+        with self._lock:
+            conn = self._get_connection()
+            rows = conn.execute(
+                "SELECT source, target, relation_type, description, created_at FROM relations "
+                "WHERE LOWER(source) = LOWER(?) OR LOWER(target) = LOWER(?) "
+                "ORDER BY source, target, relation_type",
+                (entity_name, entity_name),
+            ).fetchall()
+        
+        relations = [dict(r) for r in rows]
+        target_lower = entity_name.lower()
+        neighbors = set()
+        for r in relations:
+            s, t = r["source"], r["target"]
+            if s.lower() == target_lower:
+                neighbors.add(t)
+            else:
+                neighbors.add(s)
+
+        if max_hops >= 2 and neighbors:
+            with self._lock:
+                conn = self._get_connection()
+                for n in list(neighbors):
+                    n_rows = conn.execute(
+                        "SELECT source, target, relation_type, description, created_at FROM relations "
+                        "WHERE LOWER(source) = LOWER(?) OR LOWER(target) = LOWER(?) LIMIT 50",
+                        (n, n),
+                    ).fetchall()
+                    for nr in n_rows:
+                        d = dict(nr)
+                        if d not in relations:
+                            relations.append(d)
+                        if d["source"].lower() != target_lower:
+                            neighbors.add(d["source"])
+                        if d["target"].lower() != target_lower:
+                            neighbors.add(d["target"])
+
+        return {
+            "entity": ent,
+            "relations": relations,
+            "neighbors": sorted(list(neighbors)),
+        }
+
+    def get_node(self, entity_name: str) -> Optional[Dict[str, object]]:
+        """Alias para get_entity com suporte C-ABI acelerado."""
+        return self.get_entity(entity_name)
+
+    def get_neighbors(self, entity_name: str, max_hops: int = 1) -> List[str]:
+        """Retorna lista de nomes de entidades vizinhas conectadas."""
+        res = self.find_related(entity_name, max_hops=max_hops)
+        return res.get("neighbors") or []
+

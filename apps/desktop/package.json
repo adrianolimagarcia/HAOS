@@ -2,7 +2,7 @@
   "name": "hermes",
   "productName": "Hermes",
   "private": true,
-  "version": "0.21.57",
+  "version": "0.21.58",
   "description": "Native desktop shell for Hermes Agent.",
   "author": "Nous Research",
   "repository": {
