@@ -58,6 +58,12 @@ async def _connect_server(name: str, config: dict) -> _core.MCPServerTask:
     # The run task copies this context: don't retain the discovery closure for its life.
     claim_token = _core._connect_server_claim.set(None) if claim is not None else None
     try:
+        # Config loading may have happened before an external secret source was
+        # hydrated for this owner (multiplex startup). Unresolved placeholders
+        # deliberately survive interpolation, so render them again now that the
+        # owning profile's scope is installed instead of retrying a frozen
+        #  header forever.
+        config = _config._interpolate_env_vars(config)
         await server.start(config)
     except asyncio.CancelledError:
         raise  # start() already reaps server._task; shutdown() here could swallow the cancel
