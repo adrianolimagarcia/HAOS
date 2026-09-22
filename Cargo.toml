@@ -9,5 +9,6 @@ members = [
     "packages/haos-protocol-client",
     "packages/hermes-webui-edge",
     "packages/haos-review",
+    "packages/haos-supervisor",
 ]
 resolver = "2"

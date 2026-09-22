@@ -533,8 +533,12 @@ def _spawn_death_supervisor():
     import shutil
     import subprocess
     parent_pgid = str(os.getpgid(0))
+    # 🦀 Prefere o micro-binário dedicado haos-supervisor (<500 KB RSS)
+    micro_supervisor = shutil.which("haos-supervisor") or "/usr/local/bin/haos-supervisor"
     rust_supervisor = shutil.which("haos-edge") or "/usr/local/bin/haos-edge"
-    if os.path.isfile(rust_supervisor) and os.access(rust_supervisor, os.X_OK):
+    if os.path.isfile(micro_supervisor) and os.access(micro_supervisor, os.X_OK):
+        cmd = [micro_supervisor, "--parent-pgid", parent_pgid]
+    elif os.path.isfile(rust_supervisor) and os.access(rust_supervisor, os.X_OK):
         cmd = [rust_supervisor, "mcp-supervisor", "--parent-pgid", parent_pgid]
     else:
         supervisor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_death_supervisor.py")
