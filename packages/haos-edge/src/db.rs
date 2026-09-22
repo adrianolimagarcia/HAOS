@@ -41,6 +41,15 @@ impl DbHelper {
         let kanban_path = data_dir.join("kanban.db");
         let events_path = data_dir.join("events.db");
         let settings_path = data_dir.join("settings.json");
+        let hierarchy_path = data_dir.join("agent_hierarchy.json");
+        let agent_hierarchy: serde_json::Value = if hierarchy_path.exists() {
+            std::fs::read_to_string(&hierarchy_path)
+                .ok()
+                .and_then(|c| serde_json::from_str(&c).ok())
+                .unwrap_or_else(|| serde_json::json!({ "nodes": [], "councils": [], "advisory_edges": [] }))
+        } else {
+            serde_json::json!({ "nodes": [], "councils": [], "advisory_edges": [] })
+        };
 
         // 1. Taskboard stats
         let mut columns = Vec::new();
@@ -172,9 +181,13 @@ impl DbHelper {
                 "mode": "haos-edge-rust",
             },
             "team_graph": {
-                "organizational_hierarchy": { "agents": [], "councils": [] }
+                "nodes": agent_hierarchy.get("nodes").cloned().unwrap_or(serde_json::json!([])),
+                "councils": agent_hierarchy.get("councils").cloned().unwrap_or(serde_json::json!([])),
+                "advisory_edges": agent_hierarchy.get("advisory_edges").cloned().unwrap_or(serde_json::json!([])),
+                "organizational_hierarchy": agent_hierarchy.clone(),
+                "engine": "haos-edge-rust-native"
             },
-            "agent_hierarchy": { "agents": [], "councils": [] },
+            "agent_hierarchy": agent_hierarchy,
             "evolution_pending": [],
             "evolution_history": [],
             "harness_bindings": [],
