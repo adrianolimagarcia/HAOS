@@ -21,9 +21,16 @@ use std::path::PathBuf;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
+/// Auto-descoberta universal de host em cascata:
+/// 1. Se especificado IP explícito (ex: 0.0.0.0, 192.168.1.10, 127.0.0.1), usa direto.
+/// 2. Se "auto" / "tailnet" / "tailscale":
+///    - Procura interface e IP ativo do Tailscale (100.x.y.z)
+///    - Se não houver Tailscale, descobre o IP da LAN privada ativa (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+///    - Se estiver offline/isolado, faz fallback seguro para 127.0.0.1
 pub fn resolve_bind_host(host_input: &str) -> String {
     let trimmed = host_input.trim();
     if trimmed.eq_ignore_ascii_case("auto") || trimmed.eq_ignore_ascii_case("tailnet") || trimmed.eq_ignore_ascii_case("tailscale") {
+        // Nível 1: Tenta obter IP do Tailscale
         if let Ok(output) = std::process::Command::new("tailscale").args(["ip", "-4"]).output() {
             if output.status.success() {
                 let ip_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -50,6 +57,30 @@ pub fn resolve_bind_host(host_input: &str) -> String {
                 }
             }
         }
+
+        // Nível 2 (sem Tailscale): Procura IP de LAN privada via probes UDP (RFC 1918)
+        let probes = [
+            "192.168.255.255:80",
+            "10.255.255.255:80",
+            "172.31.255.255:80",
+            "1.1.1.1:80",
+        ];
+        for probe in probes {
+            if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+                if socket.connect(probe).is_ok() {
+                    if let Ok(local_addr) = socket.local_addr() {
+                        let ip = local_addr.ip();
+                        if let std::net::IpAddr::V4(ipv4) = ip {
+                            if !ipv4.is_loopback() && (ipv4.is_private() || ipv4.octets()[0] == 100) {
+                                return ipv4.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Nível 3: Fallback final seguro para localhost
         return "127.0.0.1".to_string();
     }
     trimmed.to_string()
