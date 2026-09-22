@@ -73,6 +73,10 @@ class PtyBridge:
         self._fd: int = proc.fd
         self._closed = False
         os.set_blocking(self._fd, False)
+        try:
+            self._pgid: Optional[int] = os.getpgid(proc.pid)  # windows-footgun: ok — POSIX-only module (imports fcntl/termios/ptyprocess at top)
+        except Exception:
+            self._pgid = None
 
     @classmethod
     def is_available(cls) -> bool:
@@ -230,6 +234,10 @@ class PtyBridge:
 
         try:
             pgid = os.getpgid(self._proc.pid)  # windows-footgun: ok — POSIX-only module (imports fcntl/termios/ptyprocess at top)
+            if pgid != self._proc.pid:
+                # Not a group leader: the child shares OUR process group, so killpg would
+                # take the TUI down with it. Signal the child directly instead.
+                pgid = None
         except Exception:
             pgid = None
 
