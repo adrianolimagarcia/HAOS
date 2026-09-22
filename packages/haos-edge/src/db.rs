@@ -244,6 +244,31 @@ impl DbHelper {
                 serde_json::from_str::<serde_json::Value>(&raw).ok()
             });
 
+            // Inspeção proativa de relatório detalhado (Markdown / Texto)
+            let mut report_content: Option<String> = None;
+            let mut scan_targets = Vec::new();
+            if let Some(ref wp) = ws_path {
+                let r_dir = std::path::Path::new(wp).join("reports");
+                if r_dir.is_dir() {
+                    if let Ok(entries) = std::fs::read_dir(r_dir) {
+                        for e in entries.flatten() {
+                            let p = e.path();
+                            if p.is_file() {
+                                scan_targets.push(p);
+                            }
+                        }
+                    }
+                }
+            }
+            for candidate in scan_targets {
+                if let Ok(c) = std::fs::read_to_string(&candidate) {
+                    if !c.trim().is_empty() {
+                        report_content = Some(c);
+                        break;
+                    }
+                }
+            }
+
             Ok(serde_json::json!({
                 "id": id,
                 "title": title,
@@ -255,6 +280,7 @@ impl DbHelper {
                 "completed_at": completed_at,
                 "elapsed_seconds": elapsed_seconds,
                 "result": result_val,
+                "report_content": report_content,
                 "workspace_path": ws_path,
                 "last_failure_error": last_failure_error,
                 "log_tail": log_tail,

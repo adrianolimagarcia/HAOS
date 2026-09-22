@@ -21,6 +21,40 @@ use std::path::PathBuf;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
+pub fn resolve_bind_host(host_input: &str) -> String {
+    let trimmed = host_input.trim();
+    if trimmed.eq_ignore_ascii_case("auto") || trimmed.eq_ignore_ascii_case("tailnet") || trimmed.eq_ignore_ascii_case("tailscale") {
+        if let Ok(output) = std::process::Command::new("tailscale").args(["ip", "-4"]).output() {
+            if output.status.success() {
+                let ip_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !ip_str.is_empty() && ip_str.parse::<std::net::IpAddr>().is_ok() {
+                    return ip_str;
+                }
+            }
+        }
+        if let Ok(output) = std::process::Command::new("ip").args(["-4", "addr", "show", "tailscale0"]).output() {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    let trimmed_line = line.trim();
+                    if trimmed_line.starts_with("inet ") {
+                        let parts: Vec<&str> = trimmed_line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let Some(ip_part) = parts[1].split('/').next() {
+                                if ip_part.parse::<std::net::IpAddr>().is_ok() {
+                                    return ip_part.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return "127.0.0.1".to_string();
+    }
+    trimmed.to_string()
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub backend_url: String,
@@ -88,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr: SocketAddr = format!("{host}:{port}").parse()?;
+    let addr: SocketAddr = format!("{}:{}", resolve_bind_host(&host), port).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 

@@ -68,6 +68,42 @@ pub struct DrainResponse {
     pub exit_code: i32,
 }
 
+pub fn resolve_bind_host(host_input: &str) -> String {
+    let trimmed = host_input.trim();
+    if trimmed.eq_ignore_ascii_case("auto") || trimmed.eq_ignore_ascii_case("tailnet") || trimmed.eq_ignore_ascii_case("tailscale") {
+        if let Ok(output) = std::process::Command::new("tailscale").args(["ip", "-4"]).output() {
+            if output.status.success() {
+                let ip_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !ip_str.is_empty() && ip_str.parse::<std::net::IpAddr>().is_ok() {
+                    return ip_str;
+                }
+            }
+        }
+        // Fallback: tenta ler de /sys/class/net/tailscale0
+        if let Ok(output) = std::process::Command::new("ip").args(["-4", "addr", "show", "tailscale0"]).output() {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    let trimmed_line = line.trim();
+                    if trimmed_line.starts_with("inet ") {
+                        let parts: Vec<&str> = trimmed_line.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            if let Some(ip_part) = parts[1].split('/').next() {
+                                if ip_part.parse::<std::net::IpAddr>().is_ok() {
+                                    return ip_part.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback final para localhost se Tailscale não estiver ativo
+        return "127.0.0.1".to_string();
+    }
+    trimmed.to_string()
+}
+
 pub async fn run_server(
     port: u16,
     host: &str,
@@ -163,6 +199,7 @@ pub async fn run_server(
         .route("/api/terminal/{sid}/kill", post(kill_terminal))
         .route("/api/tasks", get(get_tasks_handler))
         .route("/api/tasks/{id}", get(get_task_by_id_handler))
+        .route("/api/task/{id}", get(get_task_by_id_handler))
         .route("/api/state", get(state_handler))
         .route("/api/doc/search", get(doc_search_handler))
         .route("/api/rag/search", get(doc_search_handler))
@@ -186,6 +223,9 @@ pub async fn run_server(
         .route("/api/sessions/fast", get(sessions_fast_handler))
         .route("/api/sessions/search", post(sessions_search_handler))
         .route("/api/fs/browse-fast", get(fs_browse_fast_handler))
+        .route("/api/tools/search-files", post(tools_search_files_handler))
+        .route("/api/tools/read-file", post(tools_read_file_handler))
+        .route("/api/subagent/spawn-headless", post(subagent_spawn_headless_handler))
         .route("/api/timeline/fast", get(timeline_fast_handler))
         .route("/api/cancel/register", post(cancel_register_handler))
         .route("/api/cancel/trigger", post(cancel_trigger_handler))
@@ -214,9 +254,10 @@ pub async fn run_server(
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr: SocketAddr = format!("{host}:{port}")
+    let resolved_host = resolve_bind_host(host);
+    let addr: SocketAddr = format!("{resolved_host}:{port}")
         .parse()
-        .map_err(|e| format!("Invalid bind address: {e}"))?;
+        .map_err(|e| format!("Invalid bind address ({resolved_host}:{port}): {e}"))?;
 
     println!("============================================================");
     println!("🦀 HAOS Edge Rust Daemon online!");
@@ -676,6 +717,16 @@ async fn context_compact_handler(
 ) -> impl IntoResponse {
     let res = ContextCompactor::compact(payload);
     Json(res)
+}
+
+// -------------------------------------------------------------
+// Headless Subagents Handler (Tokio Tasks em Rust - Fase 3)
+// -------------------------------------------------------------
+async fn subagent_spawn_headless_handler(
+    Json(payload): Json<crate::subagent_engine::HeadlessSubagentTask>,
+) -> impl IntoResponse {
+    let result = crate::subagent_engine::HeadlessRunner::spawn_task(payload).await;
+    Json(result)
 }
 
 // -------------------------------------------------------------
@@ -1360,6 +1411,47 @@ async fn fs_browse_fast_handler(
         "items": items,
         "engine": "rust_fs_native"
     }))
+}
+
+// 12.1 Fast Tools Handlers: search-files e read-file via Rust Daemon (Opção 2)
+#[derive(Deserialize)]
+pub struct SearchFilesPayload {
+    pub path: Option<String>,
+    pub pattern: String,
+    pub glob: Option<String>,
+    pub max_matches: Option<usize>,
+}
+
+async fn tools_search_files_handler(
+    Json(payload): Json<SearchFilesPayload>,
+) -> impl IntoResponse {
+    let root = payload.path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+
+    let max_matches = payload.max_matches.unwrap_or(250);
+
+    match crate::file_engine::FastFileEngine::search_files(&root, &payload.pattern, payload.glob.as_deref(), max_matches) {
+        Ok(res) => (StatusCode::OK, Json(serde_json::json!({ "ok": true, "result": res }))),
+        Err(err) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": err }))),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ReadFilePayload {
+    pub path: String,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
+}
+
+async fn tools_read_file_handler(
+    Json(payload): Json<ReadFilePayload>,
+) -> impl IntoResponse {
+    let path = std::path::PathBuf::from(payload.path);
+    match crate::file_engine::FastFileEngine::read_file(&path, payload.offset, payload.limit) {
+        Ok(res) => (StatusCode::OK, Json(serde_json::json!({ "ok": true, "result": res }))),
+        Err(err) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": err }))),
+    }
 }
 
 // 13. Fast Timeline & Event Aggregator em Rust Nativo (Frente 2)
