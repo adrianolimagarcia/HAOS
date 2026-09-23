@@ -59,7 +59,9 @@ Python (SessionDB) ──leitura──► state.db ◄──leitura/escrita─�
   `parent_session_id`, linhas FTS, compressão.
 - Golden JSON: saída de cada operação de leitura/escrita atual gravada como esperado.
 - Estender o contrato v1 para `rust-writer-contract-v2.md`: operações tipadas, erros,
-  `schema_version`, idempotência (`idempotency_key`), timeout.
+  `schema_version`, idempotência (`idempotency_key`), timeout, binding explícito de perfil/data_dir,
+  auth interna e ausência de SQL bruto. Os gates bloqueados vivem em
+  `tests/haos_edge/test_rust_writer_contract_v2.py`.
 
 **Gate:** teste de fingerprint de schema verde; golden fixtures commitadas.
 **Rollback:** nada executado, não aplica.
