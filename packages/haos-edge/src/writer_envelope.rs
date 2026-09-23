@@ -260,7 +260,8 @@ fn validate_payload(operation: &str, payload: &Value) -> Result<(), ValidationEr
                 "profile_name",
             ],
             &["session_id", "source"],
-        ).map(|_| ()),
+        )
+        .map(|_| ()),
         "append_messages" => {
             let object = validate_object(
                 payload,
@@ -321,11 +322,9 @@ fn validate_payload(operation: &str, payload: &Value) -> Result<(), ValidationEr
             let object = validate_object(payload, &["session_id", field], &["session_id"])?;
             bool_field(object, field)
         }
-        "set_session_title" => validate_object(
-            payload,
-            &["session_id", "title"],
-            &["session_id", "title"],
-        ).map(|_| ()),
+        "set_session_title" => {
+            validate_object(payload, &["session_id", "title"], &["session_id", "title"]).map(|_| ())
+        }
         "update_session_cwd" => validate_object(
             payload,
             &["session_id", "cwd", "git_branch", "git_repo_root"],
