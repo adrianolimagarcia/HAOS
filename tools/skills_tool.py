@@ -37,6 +37,52 @@ _SKILLS_CACHE: dict = {}
 _SKILLS_CACHE_TTL_SECONDS = 30.0
 
 
+def _extract_fn_tools(content: str) -> List[str]:
+    """Extract tool names declared via `[fn: tool_name]` tags from markdown content.
+
+    Supports formats:
+      - `[fn: tool_name]`
+      - `### Phase X [fn: tool_name]`
+      - Comma-separated or multiple tags: `[fn: tool_1, tool_2]` or `[fn: tool_1] [fn: tool_2]`
+    Returns a deduplicated list of tool names preserving order of first appearance.
+    """
+    if not content:
+        return []
+    import re
+    # Matches [fn: ...] capturing inner text
+    matches = re.findall(r"\[fn:\s*([^\]]+)\]", content, flags=re.IGNORECASE)
+    tools: List[str] = []
+    for match in matches:
+        for tool in match.split(","):
+            cleaned = tool.strip()
+            if cleaned and cleaned not in tools:
+                tools.append(cleaned)
+    return tools
+
+
+def _apply_report_template_directive(content: str) -> str:
+    """If content defines a deterministic report template, append the strict stop directive.
+
+    Triggered when sections like `## Report Template` or `## Executive Report Template` are present.
+    Directive prevents infinite tool-calling loops after report synthesis.
+    """
+    if not content:
+        return content
+    import re
+    if re.search(r"^##\s+(?:Executive\s+)?Report\s+Template\b", content, flags=re.MULTILINE | re.IGNORECASE):
+        directive = (
+            "\n\n**Aviso de Execução:** Ao preencher o Report Template acima com os "
+            "dados coletados, encerre imediatamente sua resposta. Não realize chamadas adicionais de ferramentas."
+        )
+        plain_directive = (
+            "\n\nAviso de Execução: Ao preencher o Report Template acima com os "
+            "dados coletados, encerre imediatamente sua resposta. Não realize chamadas adicionais de ferramentas."
+        )
+        if "Aviso de Execução: Ao preencher o Report Template acima" not in content:
+            return content.rstrip() + plain_directive + "\n"
+    return content
+
+
 def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
     """O(#dirs + #categories) stat-based change signature; platform is read via
     ``agent.skill_utils.sys`` so test patches are honored."""
@@ -579,6 +625,8 @@ def skill_view(
         readiness, readiness_extras = _skill_readiness(frontmatter, skill_name)
         rendered_content = content if not preprocess else _preprocess_skill(
             content, skill_dir, task_id, "Could not preprocess skill content for %s", skill_name)
+        rendered_content = _apply_report_template_directive(rendered_content)
+        declared_tools = _extract_fn_tools(content)
         org_provenance, header = None, ""
         if skill_dir:
             try:
@@ -587,7 +635,9 @@ def skill_view(
                 logger.debug("Could not resolve org provenance for %s", skill_name, exc_info=True)
         result = {
             "success": True, "name": skill_name, "description": frontmatter.get("description", ""),
-            "tags": tags, "related_skills": related_skills, "content": header + rendered_content,
+            "tags": tags, "related_skills": related_skills,
+            "declared_tools": declared_tools if declared_tools else None,
+            "content": header + rendered_content,
             "path": rel_path, "skill_dir": str(skill_dir) if skill_dir else None,
             "org_provenance": org_provenance,
             "linked_files": linked_files if linked_files else None,
@@ -623,7 +673,7 @@ SKILLS_LIST_SCHEMA = {
 
 SKILL_VIEW_SCHEMA = {
     "name": "skill_view",
-    "description": "Skills allow for loading information about specific tasks and workflows, as well as scripts and templates. Load a skill's full content or access its linked files (references, templates, scripts). First call returns SKILL.md content plus a 'linked_files' dict showing available references/templates/scripts. To access those, call again with file_path parameter.",
+    "description": "Skills allow for loading information about specific tasks and workflows, as well as scripts and templates. Load a skill's full content, declared tool requirements (`[fn: tool_name]`), or access its linked files (references, templates, scripts). First call returns SKILL.md content plus a 'linked_files' dict showing available references/templates/scripts. To access those, call again with file_path parameter.",
     "parameters": {
         "type": "object",
         "properties": {

@@ -27,7 +27,10 @@ impl NativeWorktreeEngine {
             .unwrap_or_default()
             .as_secs();
 
-        let clean_parent: String = parent_id.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+        let clean_parent: String = parent_id
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
         let leaf_id = custom_id
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("shadow-{}-{}", clean_parent, ts));
@@ -65,7 +68,11 @@ impl NativeWorktreeEngine {
         })
     }
 
-    pub fn discard_worktree(repo_dir: &Path, worktree_path: &Path, branch_name: Option<&str>) -> Result<bool, String> {
+    pub fn discard_worktree(
+        repo_dir: &Path,
+        worktree_path: &Path,
+        branch_name: Option<&str>,
+    ) -> Result<bool, String> {
         if worktree_path.exists() {
             let _ = Command::new("git")
                 .arg("-C")

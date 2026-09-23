@@ -5,7 +5,7 @@
 //! ativado sob demanda via systemd socket activation, gerenciando timeouts, multipart streams e buffers.
 
 use std::time::Instant;
-use tracing::{info, error};
+use tracing::info;
 
 pub struct SttEngine;
 
@@ -26,7 +26,8 @@ impl SttEngine {
         language: Option<&str>,
     ) -> Result<TranscriptionResponse, String> {
         let t0 = Instant::now();
-        let token = std::env::var("HAOS_STT_TOKEN").unwrap_or_else(|_| "ef3c564ddd8896464499d5522726e1ca754b3f9ca3e70cb3".to_string());
+        let token = std::env::var("HAOS_STT_TOKEN")
+            .unwrap_or_else(|_| "ef3c564ddd8896464499d5522726e1ca754b3f9ca3e70cb3".to_string());
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(90))
@@ -54,12 +55,20 @@ impl SttEngine {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| format!("Falha ao comunicar com worker STT (100.77.31.78:8645): {}", e))?;
+            .map_err(|e| {
+                format!(
+                    "Falha ao comunicar com worker STT (100.77.31.78:8645): {}",
+                    e
+                )
+            })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
             let err_text = resp.text().await.unwrap_or_default();
-            return Err(format!("Worker STT retornou status {}: {}", status, err_text));
+            return Err(format!(
+                "Worker STT retornou status {}: {}",
+                status, err_text
+            ));
         }
 
         let json_body = resp

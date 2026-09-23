@@ -30,8 +30,12 @@ pub struct PtySession {
 }
 
 impl PtySession {
-    pub fn new(cwd: Option<&str>, env_vars: Option<HashMap<String, String>>) -> Result<Self, String> {
-        let OpenptyResult { master, slave } = openpty(None, None).map_err(|e| format!("openpty failed: {e}"))?;
+    pub fn new(
+        cwd: Option<&str>,
+        env_vars: Option<HashMap<String, String>>,
+    ) -> Result<Self, String> {
+        let OpenptyResult { master, slave } =
+            openpty(None, None).map_err(|e| format!("openpty failed: {e}"))?;
 
         let master_raw: RawFd = master.into_raw_fd();
         let slave_raw: RawFd = slave.into_raw_fd();
@@ -240,7 +244,11 @@ impl PtyManager {
         manager
     }
 
-    pub fn start(&self, cwd: Option<&str>, env_vars: Option<HashMap<String, String>>) -> Result<Arc<PtySession>, String> {
+    pub fn start(
+        &self,
+        cwd: Option<&str>,
+        env_vars: Option<HashMap<String, String>>,
+    ) -> Result<Arc<PtySession>, String> {
         let session = PtySession::new(cwd, env_vars)?;
         let arc = Arc::new(session);
         let mut map = self.sessions.lock().unwrap();

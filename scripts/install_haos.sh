@@ -66,6 +66,10 @@ UPDATE_KEY_SRC="${HAOS_UPDATE_KEY:-}"
 HAOS_EXTRAS="${HAOS_EXTRAS:-all}"
 # Serviços systemd provisionados, para o HAOS voltar sozinho depois de um reboot.
 HAOS_SERVICES="${HAOS_SERVICES:-controlplane,gateway}"
+# Componente opcional: Ouroboros (engine autônomo de auto-evolução, Ralph loops, Socratic PM e QA).
+# Extremamente recomendado para fornecer suporte a loops autônomos ao HAOS.
+# Valores: auto (pergunta se interativo; instala por default se não-interativo), true, false.
+HAOS_OUROBOROS="${HAOS_OUROBOROS:-auto}"
 
 # Argument parsing
 while [[ $# -gt 0 ]]; do
@@ -79,6 +83,8 @@ while [[ $# -gt 0 ]]; do
         --no-extras) HAOS_EXTRAS="none"; shift ;;
         --services) HAOS_SERVICES="$2"; shift 2 ;;
         --no-services) HAOS_SERVICES="none"; shift ;;
+        --ouroboros|--with-ouroboros) HAOS_OUROBOROS="true"; shift ;;
+        --no-ouroboros|--without-ouroboros) HAOS_OUROBOROS="false"; shift ;;
         --skip-system-deps) SKIP_SYSTEM_DEPS=true; shift ;;
         --help|-h)
             echo "HAOS Standalone Installer"
@@ -92,12 +98,40 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-extras           Alias de --extras none (só o core)"
             echo "  --services <list|none> Serviços systemd (default: controlplane,gateway)"
             echo "  --no-services         Não provisiona serviço nenhum"
+            echo "  --ouroboros           Instala o Ouroboros autonomous engine (extremamente recomendado)"
+            echo "  --no-ouroboros        Pula a instalação do Ouroboros autonomous engine"
             echo "  --skip-system-deps    Skip apt/pacman/dnf package installation"
             exit 0
             ;;
         *) log_warn "Unknown argument: $1"; shift ;;
     esac
 done
+
+# Resolução da instalação do Ouroboros (opcional, mas extremamente recomendado)
+INSTALL_OUROBOROS=false
+if [ "$HAOS_OUROBOROS" = "true" ]; then
+    INSTALL_OUROBOROS=true
+elif [ "$HAOS_OUROBOROS" = "false" ]; then
+    INSTALL_OUROBOROS=false
+elif [ -t 0 ]; then
+    echo ""
+    echo -e "${BOLD}${BLUE}==>${NC} ${BOLD}Componente Opcional: Ouroboros Autonomous Evolution Engine${NC}"
+    echo -e "O Ouroboros habilita loops autônomos de engenharia (Ralph loop, Socratic PM,"
+    echo -e "geração formal de especificações, verificação de QA e auto-evolução contínua)."
+    echo -e "${BOLD}${YELLOW}⭐ [EXTREMAMENTE RECOMENDADO para capacitar o HAOS com auto-evolução]${NC}"
+    read -r -p "Deseja instalar o engine autônomo Ouroboros? [Y/n]: " ouroboros_choice
+    case "${ouroboros_choice:-Y}" in
+        [yY][eE][sS]|[yY]|"")
+            INSTALL_OUROBOROS=true
+            ;;
+        *)
+            INSTALL_OUROBOROS=false
+            ;;
+    esac
+else
+    INSTALL_OUROBOROS=true
+    log_info "Ouroboros engine (opcional, extremamente recomendado): instalando por padrão (use --no-ouroboros para ignorar)."
+fi
 
 echo -e "${CYAN}"
 echo "  ██╗  ██╗ █████╗  ██████╗ ███████╗"
@@ -292,6 +326,36 @@ else
     install_haos_into_venv
     if [ "${SKIP_FETCH_EXTRA:-0}" != "1" ]; then
         "$PYTHON" -m pip install --quiet "scrapling[fetchers]==0.4.15" || log_warn "scrapling (backend do haos-fetch) não pré-instalado — o haos-fetch resolve no primeiro uso via lazy_deps, ou instale com: uv pip install 'scrapling[fetchers]==0.4.15'"
+    fi
+fi
+
+# 5b. Ouroboros Autonomous Evolution Engine (Optional, Recommended)
+if [ "$INSTALL_OUROBOROS" = true ]; then
+    log_step "Installing Ouroboros Autonomous Evolution Engine..."
+    if [ "$(id -u)" -eq 0 ]; then
+        OUROBOROS_VENV_DIR="/opt/ouroboros-venv"
+    else
+        OUROBOROS_VENV_DIR="$INSTALL_DIR/ouroboros-venv"
+    fi
+
+    mkdir -p "$(dirname "$OUROBOROS_VENV_DIR")"
+    if command -v uv >/dev/null 2>&1; then
+        log_info "Creating dedicated Ouroboros venv ($OUROBOROS_VENV_DIR)..."
+        uv venv "$OUROBOROS_VENV_DIR" --python 3.12 2>/dev/null || uv venv "$OUROBOROS_VENV_DIR"
+        VIRTUAL_ENV="$OUROBOROS_VENV_DIR" uv pip install "ouroboros-ai>=0.54.0" || log_warn "Falha ao instalar ouroboros-ai via uv pip"
+    else
+        log_info "Creating dedicated Ouroboros venv ($OUROBOROS_VENV_DIR)..."
+        python3 -m venv "$OUROBOROS_VENV_DIR" 2>/dev/null || python3.12 -m venv "$OUROBOROS_VENV_DIR"
+        "$OUROBOROS_VENV_DIR/bin/pip" install --upgrade --quiet pip 2>/dev/null || true
+        "$OUROBOROS_VENV_DIR/bin/pip" install "ouroboros-ai>=0.54.0" || log_warn "Falha ao instalar ouroboros-ai via pip"
+    fi
+
+    if [ -x "$OUROBOROS_VENV_DIR/bin/ouroboros" ]; then
+        mkdir -p "$BIN_DIR"
+        ln -sf "$OUROBOROS_VENV_DIR/bin/ouroboros" "$BIN_DIR/ouroboros"
+        log_ok "Ouroboros installed at $BIN_DIR/ouroboros"
+    else
+        log_warn "Executável do Ouroboros não encontrado em $OUROBOROS_VENV_DIR/bin/ouroboros"
     fi
 fi
 
@@ -603,7 +667,35 @@ delegation:
     witness: deepseek-v4
     polecat: deepseek-v4-flash
 EOF
+    if [ "$INSTALL_OUROBOROS" = true ]; then
+        cat << 'EOF' >> "$HAOS_HOME/config.yaml"
+
+mcp_servers:
+  ouroboros:
+    command: ouroboros
+    args:
+      - mcp
+      - serve
+      - --runtime
+      - opencode
+EOF
+    fi
     log_ok "Created initial $HAOS_HOME/config.yaml"
+elif [ "$INSTALL_OUROBOROS" = true ]; then
+    if ! grep -q "ouroboros:" "$HAOS_HOME/config.yaml" 2>/dev/null; then
+        cat << 'EOF' >> "$HAOS_HOME/config.yaml"
+
+mcp_servers:
+  ouroboros:
+    command: ouroboros
+    args:
+      - mcp
+      - serve
+      - --runtime
+      - opencode
+EOF
+        log_ok "Registered Ouroboros MCP server in existing $HAOS_HOME/config.yaml"
+    fi
 fi
 
 # 7b. Estrutura canônica de memória (espelha o haos-storage-init da ISO)

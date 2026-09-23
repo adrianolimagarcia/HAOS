@@ -84,24 +84,22 @@ class PostureResolver:
             model_profile="security-primary",
             prompt_overlay=["system.constitution", "posture.security"]
         ))
-        # GasTown-inspired team seats (Fase 1 — TeamSpec): two roles that are
-        # not plain code roles map to their own postures instead of reusing
-        # implementer/reviewer, so a team can bind them to a different model
-        # per function (GasTown leaves that as config; HAOS makes it explicit).
+        # Generic supervisor/refinery postures remain available to review workflows;
+        # they are not a legacy TeamSpec roster.
+        # implementer/reviewer remain distinct generic workflows; no role roster is implied.
         self.register(PostureSpec(
             id="supervisor",
-            name="Supervisor (Deacon)",
-            description="Cross-rig watchdog: patrol, health/stuck detection, gate routing "
-                        "and escalation. Formula-driven and prescriptive — a downgrade "
-                        "candidate (cheap tier) like GasTown's official patrol roles.",
+            name="Supervisor",
+            description="Cross-domain watchdog: patrol, health/stuck detection, gate routing "
+                        "and escalation. Formula-driven and prescriptive.",
             model_profile="coding-primary",
             prompt_overlay=["system.constitution", "posture.supervisor"],
             capabilities_prefer=["terminal", "git"]
         ))
         self.register(PostureSpec(
             id="refinery",
-            name="Refinery (Merge Gate)",
-            description="Sequential land queue: rebase, deterministic verification gates, "
+            name="Refinery",
+            description="Sequential merge queue: rebase, deterministic verification gates, "
                         "then merge. Never writes application code; deterministic "
                         "acceptance first, LLM only on conflict/triage.",
             model_profile="review-primary",

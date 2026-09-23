@@ -457,6 +457,62 @@ class TestSkillView:
         assert result["success"] is True
         assert result["name"] == "knowledge-brain"
 
+    def test_view_extracts_fn_tools_and_applies_report_template(self, tmp_path):
+        body = """\
+### Phase 1: Exploration [fn: terminal]
+Execute discovery commands.
+
+### Phase 2: Inspection [fn: read_file, search_files]
+Inspect code.
+
+## Executive Report Template
+| Metric | Value |
+| --- | --- |
+| Status | Done |
+"""
+        _make_skill(tmp_path, "report-agent", body=body)
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            raw = skill_view("report-agent")
+
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert result["declared_tools"] == ["terminal", "read_file", "search_files"]
+        assert "Aviso de Execução: Ao preencher o Report Template acima" in result["content"]
+        assert "Não realize chamadas adicionais de ferramentas." in result["content"]
+
+    def test_view_extracts_fn_tools_plain_report_template(self, tmp_path):
+        body = """\
+[fn: web_search]
+Search online.
+
+## Report Template
+Summary of results.
+"""
+        _make_skill(tmp_path, "search-reporter", body=body)
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            raw = skill_view("search-reporter")
+
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert result["declared_tools"] == ["web_search"]
+        assert "Aviso de Execução: Ao preencher o Report Template acima" in result["content"]
+
+    def test_view_without_fn_tags_or_report_template(self, tmp_path):
+        body = """\
+Just basic steps without functional tags or templates.
+"""
+        _make_skill(tmp_path, "plain-skill", body=body)
+
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            raw = skill_view("plain-skill")
+
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert result["declared_tools"] is None
+        assert "Aviso de Execução" not in result["content"]
+
 
 class TestSkillViewSecureSetupOnLoad:
     def test_requests_missing_required_env_and_continues(self, tmp_path, monkeypatch):

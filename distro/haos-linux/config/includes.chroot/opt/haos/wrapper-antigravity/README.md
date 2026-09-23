@@ -50,7 +50,6 @@ Faz o mapeamento inverso das respostas obtidas do Google para o DSH:
 
 ---
 
-## 🛡️ Robustez (melhorias aplicadas)
 
 * **Contrato 429 retryable:** rate limit é devolvido ao cliente como `429` com `type: "rate_limit_error"` (e `Retry-After` quando o upstream envia). Antes, o 429 virava `502 upstream_error` — erro fatal que o DSH não conseguia retryar. Agora o `retryPolicy` do provider no DSH (que inclui `RATE_LIMIT`) faz backoff e retenta sozinho.
 * **429 é por-endpoint, não da conta (verificado empiricamente):** com a mesma conta, `cloudcode-pa.googleapis.com` pode responder `Resource has been exhausted` e `autopush` `Individual quota reached` enquanto `daily-cloudcode-pa.googleapis.com` responde **200 OK** — mesmo com o painel mostrando 93% de cota semanal livre. Cada endpoint tem quota individual própria. Por isso o proxy **nunca aborta** o loop de endpoints em 429: sempre tenta todos.

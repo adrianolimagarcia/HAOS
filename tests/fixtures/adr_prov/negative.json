@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "oracle": "tools/adr_prov.py",
+  "cases": [
+    {
+      "argv": [
+        "check"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "70d31cd33edcfd5fc524f3cad93c93c44ff6da4e1491a92abdc3291aa590f0ec",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 336,
+      "stderr_bytes": 0,
+      "case": "empty_vault",
+      "warnings": [],
+      "ghosts": [],
+      "nodes": [],
+      "node_count": 0
+    },
+    {
+      "argv": [
+        "check"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "8fec4590edc00fc917b85cbc807d5ea87986a6168238df58b2404b088893094e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 418,
+      "stderr_bytes": 0,
+      "case": "missing_frontmatter",
+      "warnings": [
+        "no_frontmatter.md: frontmatter_ausente"
+      ],
+      "ghosts": [],
+      "nodes": [],
+      "node_count": 0
+    },
+    {
+      "argv": [
+        "check"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "e75da1070cb5044c0887a7cf6374424648f214512292e569dd44e329be9cb542",
+      "stderr_sha256": "7596b5ad625d880df6f1fb7d2d213cdc98a45a1313bcad2881f3c557191b2c64",
+      "stdout_bytes": 403,
+      "stderr_bytes": 382,
+      "case": "malformed_frontmatter",
+      "warnings": [
+        "bad.md: yaml_malformado"
+      ],
+      "ghosts": [],
+      "nodes": [],
+      "node_count": 0
+    },
+    {
+      "argv": [
+        "check"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "66779ec797443a6a2bd1ff5a5944e36c9b30148a42d68ac4d0ba69d6e03cd757",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 571,
+      "stderr_bytes": 0,
+      "case": "ghost_reference",
+      "warnings": [],
+      "ghosts": [
+        "[Entidade Fantasma] ADR-001 aponta causado_by -> 'ADR-999', mas 'ADR-999' não existe no vault de ADRs.",
+        "[Entidade Fantasma] ADR-001 aponta wasDerivedFrom -> 'ADR-999', mas 'ADR-999' não existe no vault de ADRs."
+      ],
+      "nodes": [
+        "ADR-001"
+      ],
+      "node_count": 1
+    },
+    {
+      "argv": [
+        "why",
+        "ADR-001"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "6433881757c97d3fd944496bafbfe3b46b7d97b0b1221535d25971f6f5d93e49",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 655,
+      "stderr_bytes": 0,
+      "case": "causal_cycle",
+      "warnings": [],
+      "ghosts": [],
+      "nodes": [
+        "ADR-001",
+        "ADR-002"
+      ],
+      "node_count": 2
+    }
+  ]
+}

@@ -38,11 +38,14 @@ impl HeadlessRunner {
         let task_id = task.task_id.clone();
         let timeout_ms = task.timeout_ms.unwrap_or(15_000);
 
-        let runner_handle = tokio::spawn(async move {
-            Self::execute_leaf_logic(task).await
-        });
+        let runner_handle = tokio::spawn(async move { Self::execute_leaf_logic(task).await });
 
-        match tokio::time::timeout(tokio::time::Duration::from_millis(timeout_ms), runner_handle).await {
+        match tokio::time::timeout(
+            tokio::time::Duration::from_millis(timeout_ms),
+            runner_handle,
+        )
+        .await
+        {
             Ok(Ok(exec_result)) => {
                 let duration = start.elapsed().as_millis();
                 match exec_result {
@@ -86,14 +89,19 @@ impl HeadlessRunner {
     async fn execute_leaf_logic(task: HeadlessSubagentTask) -> Result<serde_json::Value, String> {
         match task.task_type.as_str() {
             "code_review" => {
-                let diff_text = task.payload.get("diff").and_then(|v| v.as_str()).unwrap_or_default();
+                let diff_text = task
+                    .payload
+                    .get("diff")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
                 // Invoca a verificação estática interna
                 let res = crate::file_engine::FastFileEngine::search_files(
                     &std::path::PathBuf::from("."),
                     "TODO|FIXME",
                     None,
                     10,
-                ).map_err(|e| e.to_string())?;
+                )
+                .map_err(|e| e.to_string())?;
 
                 Ok(serde_json::json!({
                     "summary": "Headless code review completed by Rust Tokio task",
@@ -102,9 +110,21 @@ impl HeadlessRunner {
                 }))
             }
             "file_search" => {
-                let pattern = task.payload.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-                let path = task.payload.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-                let max_matches = task.payload.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+                let pattern = task
+                    .payload
+                    .get("pattern")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let path = task
+                    .payload
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".");
+                let max_matches = task
+                    .payload
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(50) as usize;
 
                 let res = crate::file_engine::FastFileEngine::search_files(
                     &std::path::PathBuf::from(path),
@@ -115,8 +135,13 @@ impl HeadlessRunner {
                 Ok(serde_json::to_value(res).map_err(|e| e.to_string())?)
             }
             "security_check" => {
-                let cmd = task.payload.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                let is_safe = !cmd.contains("rm -rf") && !cmd.contains("mkfs") && !cmd.contains("> /dev/sd");
+                let cmd = task
+                    .payload
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let is_safe =
+                    !cmd.contains("rm -rf") && !cmd.contains("mkfs") && !cmd.contains("> /dev/sd");
                 Ok(serde_json::json!({
                     "command": cmd,
                     "is_safe": is_safe,

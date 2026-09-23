@@ -6,6 +6,10 @@ in the middle of an interactive CLI conversation (e.g., when the user asks:
 
 Executes DSH in its own isolated subagent context/workspace and streams or returns
 the structured outcome back to the parent HAOS conversation.
+
+The installed DSH headless CLI is one-shot (``dsh --profile headless <task>``);
+it exposes no cancellation option.  Timeout is therefore enforced by the parent
+subprocess boundary, and cancellation remains unsupported by this adapter.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ def dsh_run_tool(
     objective: str,
     workdir: Optional[str] = None,
     task_id: str = "default",
+    timeout_seconds: float = 600,
 ) -> str:
     """Delegate a focused subtask to DeepSeek Harness (DSH).
 
@@ -34,9 +39,12 @@ def dsh_run_tool(
         objective: Clear, self-contained instruction for DSH to accomplish.
         workdir: Directory where DSH should execute (defaults to CWD).
         task_id: Active task context.
+        timeout_seconds: Maximum runtime in seconds.
     """
     if not objective or not objective.strip():
         return json.dumps({"success": False, "error": "Objective cannot be empty."}, ensure_ascii=False)
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
+        return json.dumps({"success": False, "error": "timeout_seconds must be positive."}, ensure_ascii=False)
 
     dsh_bin = shutil.which("dsh") or os.environ.get("DSH_PATH") or "dsh"
     target_dir = os.path.abspath(workdir) if workdir else os.getcwd()
@@ -47,11 +55,14 @@ def dsh_run_tool(
             "error": f"Target workdir does not exist: {target_dir}"
         }, ensure_ascii=False)
 
+    # DSH 0.1.x exposes task execution through the headless profile.  The
+    # launcher accepts the task as a positional argument; it has no `exec`
+    # subcommand or `--objective`/`--workdir` flags.  cwd is the runtime's
+    # workspace selection mechanism.
     cmd = [
         dsh_bin,
-        "exec",
-        "--objective", objective.strip(),
-        "--workdir", target_dir,
+        "--profile", "headless",
+        objective.strip(),
     ]
 
     logger.info("Executing DSH subagent: %s (workdir: %s)", " ".join(cmd), target_dir)
@@ -62,11 +73,12 @@ def dsh_run_tool(
             cmd,
             cwd=target_dir,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=600,  # 10 min cap for autonomous subagent run
+            timeout=timeout_seconds,
         )
         stdout_clean = proc.stdout.strip() if proc.stdout else ""
+        stderr_clean = proc.stderr.strip() if proc.stderr else ""
         # Tail output if excessively long to keep prompt caching healthy
         if len(stdout_clean) > 8000:
             preview = stdout_clean[:2000] + "\n\n[... output pruned ...]\n\n" + stdout_clean[-6000:]
@@ -75,26 +87,37 @@ def dsh_run_tool(
 
         return json.dumps({
             "success": proc.returncode == 0,
+            "status": "completed" if proc.returncode == 0 else "failed",
             "exit_code": proc.returncode,
+            "stdout": preview,
+            "stderr": stderr_clean,
             "output": preview,
             "workdir": target_dir,
         }, ensure_ascii=False)
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         return json.dumps({
             "success": False,
-            "error": "DSH execution timed out after 10 minutes.",
+            "status": "timed_out",
+            "error_code": "timeout",
+            "error": f"DSH execution timed out after {timeout_seconds} seconds.",
+            "stdout": (exc.stdout or "") if isinstance(exc.stdout, str) else "",
+            "stderr": (exc.stderr or "") if isinstance(exc.stderr, str) else "",
             "workdir": target_dir,
         }, ensure_ascii=False)
     except FileNotFoundError:
         return json.dumps({
             "success": False,
+            "status": "failed",
+            "error_code": "backend_error",
             "error": f"DeepSeek Harness executable '{dsh_bin}' not found on system PATH.",
             "suggestion": "Verify DSH installation or set DSH_PATH in the environment.",
         }, ensure_ascii=False)
     except Exception as exc:
         return json.dumps({
             "success": False,
+            "status": "failed",
+            "error_code": "backend_error",
             "error": f"DSH delegation error: {exc}",
             "workdir": target_dir,
         }, ensure_ascii=False)
@@ -119,6 +142,10 @@ DSH_RUN_SCHEMA = {
                 "type": "string",
                 "description": "Optional working directory for DSH (defaults to current project directory).",
             },
+            "timeout_seconds": {
+                "type": "number",
+                "description": "Maximum runtime in seconds (default 600).",
+            },
         },
         "required": ["objective"],
     },
@@ -135,6 +162,7 @@ registry.register(
     handler=lambda args, **kw: dsh_run_tool(
         objective=args.get("objective", ""),
         workdir=args.get("workdir"),
+        timeout_seconds=args.get("timeout_seconds", 600),
         task_id=kw.get("task_id", "default"),
     ),
     check_fn=_check_dsh_available,

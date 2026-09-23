@@ -116,76 +116,8 @@ class TestAuditRegressions(unittest.TestCase):
         cp2 = ControlPlaneService(event_store=store)
         self.assertEqual(cp2.get_pending_intervention("worker-01"), "pause")
 
-    def test_a07_mission_graph_isolation(self):
-        """A07: O grafo de equipe filtra estritamente eventos da missão alvo."""
-        store = EventStore(db_path=":memory:")
-        cp = ControlPlaneService(event_store=store)
 
-        # Evento da missão A
-        store.append(Event(name="haos.task.spawned", payload={"mission_id": "mission-A", "task_id": "T-A", "assignee": "worker-A"}))
-        # Evento da missão B
-        store.append(Event(name="haos.task.spawned", payload={"mission_id": "mission-B", "task_id": "T-B", "assignee": "worker-B"}))
 
-        snapshot_a = cp.get_team_graph_snapshot(mission_id="mission-A")
-        sub_orch = snapshot_a["children"][0]
-        worker_ids = [w["node_id"] for w in sub_orch["children"]]
-
-        self.assertIn("worker-A", worker_ids)
-        self.assertNotIn("worker-B", worker_ids)
-
-    def test_a08_empty_store_has_no_invented_usage(self):
-        """A08: Observabilidade não inventa métricas ou nós quando loja está vazia."""
-        store = EventStore(db_path=":memory:")
-        cp = ControlPlaneService(event_store=store)
-
-        overview = cp.get_overview()
-        self.assertEqual(overview.total_tokens, 0)
-        self.assertEqual(overview.total_cost_usd, 0.0)
-        self.assertEqual(overview.active_workers, 0)
-
-        snapshot = cp.get_team_graph_snapshot(mission_id="mission-none")
-        sub_orch = snapshot["children"][0]
-        self.assertEqual(len(sub_orch["children"]), 0)
-
-    def test_a08_state_db_candidates_never_escape_active_profile(self):
-        """A08: fallback de tokens consulta só o store do perfil ativo.
-
-        ``canonical_state_db_paths()`` nunca lista state.db fora de
-        HAOS_HOME/HERMES_HOME quando uma env de perfil está setada — um unit
-        run (HERMES_HOME = temp dir) não pode alcançar o store real de outra
-        instalação via caminho hardcoded do host.
-        """
-        import hermes.platform.webui.controlplane as cp_module
-
-        with tempfile.TemporaryDirectory() as tmp:
-            profile_home = Path(tmp) / "profile"
-            profile_home.mkdir()
-            old_haos = os.environ.get("HAOS_HOME")
-            old_hermes = os.environ.get("HERMES_HOME")
-            try:
-                os.environ["HERMES_HOME"] = str(profile_home)
-                os.environ.pop("HAOS_HOME", None)
-                for key in ("HAOS_STATE_DB", "STATE_DB"):
-                    os.environ.pop(key, None)
-                candidates = cp_module.canonical_state_db_paths()
-            finally:
-                if old_haos is None:
-                    os.environ.pop("HAOS_HOME", None)
-                else:
-                    os.environ["HAOS_HOME"] = old_haos
-                if old_hermes is None:
-                    os.environ.pop("HERMES_HOME", None)
-                else:
-                    os.environ["HERMES_HOME"] = old_hermes
-
-            # Todos os candidatos vivem sob o perfil ativo; nenhum caminho do
-            # host (home real, /root, absoluto de outra máquina) é alcançável.
-            self.assertTrue(candidates, "espera ao menos o state.db do perfil")
-            for cand in candidates:
-                self.assertTrue(
-                    str(Path(cand)).startswith(str(profile_home)),
-                    f"candidato {cand} escapa do HERMES_HOME ativo",
-                )
 
     def test_a09_client_emits_route_exhausted(self):
         """A09: ExactModelClient emite evento route_exhausted quando rotas falham."""

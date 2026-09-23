@@ -6,6 +6,7 @@
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI64, Ordering};
 use tokio::sync::broadcast;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -26,18 +27,41 @@ pub struct PlatformEvent {
     pub schema_version: Option<i64>,
     #[serde(default)]
     pub timestamp: Option<f64>,
+    #[serde(default)]
+    pub seq: Option<i64>,
 }
 
 #[derive(Clone)]
 pub struct EventHub {
     pub sender: broadcast::Sender<PlatformEvent>,
     pub db_path: PathBuf,
+    pub next_seq: std::sync::Arc<AtomicI64>,
 }
 
 impl EventHub {
     pub fn new(db_path: PathBuf) -> Self {
         let (sender, _) = broadcast::channel(2048);
-        let hub = Self { sender, db_path };
+        let initial_seq = std::fs::read(&db_path)
+            .ok()
+            .and_then(|_| {
+                Connection::open_with_flags(
+                    &db_path,
+                    OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                )
+                .ok()
+            })
+            .and_then(|conn| {
+                conn.query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .ok()
+            })
+            .unwrap_or(0);
+        let hub = Self {
+            sender,
+            db_path,
+            next_seq: std::sync::Arc::new(AtomicI64::new(initial_seq)),
+        };
         hub.spawn_writer_task();
         hub
     }
@@ -78,7 +102,9 @@ impl EventHub {
 
         if let Ok(mut conn) = Connection::open_with_flags(
             db_path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         ) {
             let _ = conn.execute("PRAGMA journal_mode=WAL;", []);
             let _ = conn.execute("PRAGMA synchronous=NORMAL;", []);
@@ -97,7 +123,10 @@ impl EventHub {
                 );",
                 [],
             );
-            let _ = conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_events_seq_unique ON events(seq);", []);
+            let _ = conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_seq_unique ON events(seq);",
+                [],
+            );
 
             // Descobre o próximo seq de forma atômica
             let current_seq: i64 = conn
@@ -107,16 +136,20 @@ impl EventHub {
 
             if let Ok(tx) = conn.transaction() {
                 for evt in batch.drain(..) {
-                    next_seq += 1;
                     let ts = evt.timestamp.unwrap_or_else(|| {
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs_f64()
                     });
-                    let evt_id = evt.event_id.unwrap_or_else(|| {
-                        format!("evt_{}_{}", next_seq, (ts * 1000.0) as u64)
+                    let stored_seq = evt.seq.unwrap_or_else(|| {
+                        next_seq += 1;
+                        next_seq
                     });
+                    next_seq = next_seq.max(stored_seq);
+                    let evt_id = evt
+                        .event_id
+                        .unwrap_or_else(|| format!("evt_{}_{}", stored_seq, (ts * 1000.0) as u64));
                     let trace = evt.trace_id.unwrap_or_else(|| "trace_auto".to_string());
                     let trust = evt.trust_level.unwrap_or_else(|| "system".to_string());
                     let schema_ver = evt.schema_version.unwrap_or(1);
@@ -144,7 +177,20 @@ impl EventHub {
         }
     }
 
-    pub fn publish(&self, evt: PlatformEvent) -> Result<(), String> {
+    pub fn publish(&self, mut evt: PlatformEvent) -> Result<(), String> {
+        let seq = self.next_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        evt.seq = Some(seq);
+        if evt.event_id.is_none() {
+            evt.event_id = Some(format!("evt-{seq}"));
+        }
+        if evt.timestamp.is_none() {
+            evt.timestamp = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs_f64(),
+            );
+        }
         let _ = self.sender.send(evt);
         Ok(())
     }

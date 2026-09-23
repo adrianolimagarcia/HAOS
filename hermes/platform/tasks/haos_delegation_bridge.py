@@ -1,7 +1,7 @@
 """HAOS Control Plane Bridge for Subagent Delegation.
 
 Bridges Hermes native `delegate_task` executions directly into HAOS Kanban
-(`kanban.db`) and EventStore (`events.db`), updating the Team Graph and Taskboard
+(`kanban.db`) and EventStore (`events.db`), updating the taskboard and worker status.
 in real-time on http://<host>:8788/.
 """
 from __future__ import annotations
@@ -118,7 +118,7 @@ def haos_bridge_spawn_batch(batch: Any) -> None:
                         INSERT OR REPLACE INTO tasks (
                             id, title, body, assignee, status, priority,
                             created_by, created_at, started_at, workspace_kind
-                        ) VALUES (?, ?, ?, ?, 'in_progress', 1, 'haos-mayor', ?, ?, 'lane')
+                        ) VALUES (?, ?, ?, ?, 'in_progress', 1, 'haos-the-eye', ?, ?, 'lane')
                     """, (task_id, goal[:120], goal, assignee, now_int, now_int))
                     
                     # Also insert into haos_task_meta if available

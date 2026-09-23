@@ -75,7 +75,7 @@ impl IdempotencyEngine {
                  CREATE TABLE IF NOT EXISTS conversations (
                      name TEXT PRIMARY KEY,
                      response_id TEXT NOT NULL
-                 );"
+                 );",
             );
         }
     }
@@ -85,7 +85,8 @@ impl IdempotencyEngine {
         let conn = Connection::open_with_flags(
             &self.idemp_db,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).ok()?;
+        )
+        .ok()?;
 
         let mut stmt = conn.prepare(
             "SELECT scope, idempotency_key, fingerprint, run_id, status_json, created_at, updated_at
@@ -104,7 +105,8 @@ impl IdempotencyEngine {
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
             })
-        }).ok()
+        })
+        .ok()
     }
 
     /// Registra ou atualiza um run com chave de idempotência
@@ -119,7 +121,8 @@ impl IdempotencyEngine {
         let conn = Connection::open_with_flags(
             &self.idemp_db,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         let now = Self::now_secs();
         let st_json = serde_json::to_string(status).unwrap_or_else(|_| "{}".to_string());
@@ -135,7 +138,8 @@ impl IdempotencyEngine {
                 status_json = excluded.status_json,
                 updated_at = excluded.updated_at",
             params![scope, key, fingerprint, run_id, st_json, now + 86400.0, now],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         Ok(())
     }
@@ -145,9 +149,12 @@ impl IdempotencyEngine {
         let conn = Connection::open_with_flags(
             &self.resp_db,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).ok()?;
+        )
+        .ok()?;
 
-        let mut stmt = conn.prepare("SELECT data FROM responses WHERE response_id = ?1").ok()?;
+        let mut stmt = conn
+            .prepare("SELECT data FROM responses WHERE response_id = ?1")
+            .ok()?;
         let data: String = stmt.query_row(params![resp_id], |row| row.get(0)).ok()?;
 
         let now = Self::now_secs();
@@ -164,7 +171,8 @@ impl IdempotencyEngine {
         let conn = Connection::open_with_flags(
             &self.resp_db,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         let now = Self::now_secs();
         conn.execute(

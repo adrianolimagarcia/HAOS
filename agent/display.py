@@ -1046,8 +1046,8 @@ def _cute_delegate(a: dict, _r) -> str:
     tasks = a.get("tasks")
     role = str(a.get("role") or "").strip().lower()
 
-    if role in ("mayor", "town_mayor"):
-        role_label = "👑 mayor   "
+    if role in ("the_eye", "the-eye", "eye"):
+        role_label = "👁 the_eye "
     elif role in ("orchestrator", "sub_orchestrator"):
         role_label = "🏛️ orch    "
     elif role in ("reviewer", "qa"):

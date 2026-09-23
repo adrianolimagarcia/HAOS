@@ -44,7 +44,11 @@ impl TransportIngress {
     /// Publica uma mensagem recebida de qualquer adaptador como evento normalizado no hub
     pub fn ingest_inbound_message(&self, payload: InboundMessagePayload) -> Result<(), String> {
         let event = PlatformEvent {
-            event_id: Some(format!("msg_{}_{}", payload.platform, payload.message_id.clone().unwrap_or_default())),
+            event_id: Some(format!(
+                "msg_{}_{}",
+                payload.platform,
+                payload.message_id.clone().unwrap_or_default()
+            )),
             name: format!("messaging.{}.inbound", payload.platform),
             payload: serde_json::to_value(&payload).map_err(|e| e.to_string())?,
             trace_id: None,
@@ -53,9 +57,12 @@ impl TransportIngress {
             trust_level: Some("transport_ingress".to_string()),
             schema_version: Some(1),
             timestamp: Some(payload.timestamp),
+            seq: None,
         };
 
-        self.event_hub.publish(event).map_err(|e| format!("Failed to publish inbound message: {e}"))?;
+        self.event_hub
+            .publish(event)
+            .map_err(|e| format!("Failed to publish inbound message: {e}"))?;
         Ok(())
     }
 
@@ -85,15 +92,33 @@ impl TransportIngress {
                         if let Ok(json) = resp.json::<serde_json::Value>().await {
                             if let Some(updates) = json.get("result").and_then(|r| r.as_array()) {
                                 for upd in updates {
-                                    if let Some(upd_id) = upd.get("update_id").and_then(|u| u.as_i64()) {
+                                    if let Some(upd_id) =
+                                        upd.get("update_id").and_then(|u| u.as_i64())
+                                    {
                                         offset = upd_id + 1;
                                     }
 
                                     if let Some(msg) = upd.get("message") {
-                                        let text = msg.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
-                                        let chat_id = msg.get("chat").and_then(|c| c.get("id")).map(|id| id.to_string()).unwrap_or_default();
-                                        let user_id = msg.get("from").and_then(|f| f.get("id")).map(|id| id.to_string()).unwrap_or_default();
-                                        let username = msg.get("from").and_then(|f| f.get("username")).and_then(|u| u.as_str()).map(|s| s.to_string());
+                                        let text = msg
+                                            .get("text")
+                                            .and_then(|t| t.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let chat_id = msg
+                                            .get("chat")
+                                            .and_then(|c| c.get("id"))
+                                            .map(|id| id.to_string())
+                                            .unwrap_or_default();
+                                        let user_id = msg
+                                            .get("from")
+                                            .and_then(|f| f.get("id"))
+                                            .map(|id| id.to_string())
+                                            .unwrap_or_default();
+                                        let username = msg
+                                            .get("from")
+                                            .and_then(|f| f.get("username"))
+                                            .and_then(|u| u.as_str())
+                                            .map(|s| s.to_string());
                                         let msg_id = msg.get("message_id").map(|m| m.to_string());
 
                                         let now = std::time::SystemTime::now()
@@ -114,13 +139,15 @@ impl TransportIngress {
                                         let event = PlatformEvent {
                                             event_id: Some(format!("tg_upd_{}", offset - 1)),
                                             name: "messaging.telegram.inbound".to_string(),
-                                            payload: serde_json::to_value(&payload).unwrap_or_default(),
+                                            payload: serde_json::to_value(&payload)
+                                                .unwrap_or_default(),
                                             trace_id: None,
                                             correlation_id: payload.message_id.clone(),
                                             causation_id: None,
                                             trust_level: Some("transport_ingress".to_string()),
                                             schema_version: Some(1),
                                             timestamp: Some(now),
+                                            seq: None,
                                         };
 
                                         let _ = hub.publish(event);

@@ -1,0 +1,1234 @@
+{
+  "schema_version": 1,
+  "oracle": "tools/adr_prov.py",
+  "vault": "tests/fixtures/adr_prov/vault",
+  "inventory": {
+    "ADR-001": {
+      "id": "ADR-001",
+      "titulo": "Stack de memória do HAOS no nó cachyos-x8664",
+      "status": "Aceito",
+      "file": "ADR-001-stack-de-memoria-haos.md",
+      "causado_by": [
+        "migração HAOS (10/09, home vivo = /root/.haos) com ferramentas built-in de memória ociosas"
+      ],
+      "evidence": [
+        "/root/.haos/vault e /root/.haos/okf não existiam",
+        "grafo operacional real residia no MCP sdb (hermes/graphrag-lite/graph.db)"
+      ],
+      "affects": [
+        "memories/MEMORY.md",
+        "memories/USER.md",
+        "state.db",
+        "obsidian_vault/adrs/*",
+        "okf/*"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:migracao-haos-stack-memoria",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "system:migracao-haos-20260910"
+        ],
+        "causado_by": "migração HAOS com ferramentas built-in de memória ociosas",
+        "affects": [
+          "obsidian_vault/adrs/*",
+          "okf/*"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-002": {
+      "id": "ADR-002",
+      "titulo": "Re-ranker híbrido (grafo) no recall do GraphRAG",
+      "status": "Aceito",
+      "file": "ADR-002-reranker-hibrido-graphrag.md",
+      "causado_by": [
+        "adr:ADR-001",
+        "recall single-stage do GraphRAG ignorava estrutura relacional na ordenação de candidatos"
+      ],
+      "evidence": [
+        "sessão contendo entidade exata perdia para termos comuns no FTS5 bm25 saturado",
+        "código query.py seed_sessions"
+      ],
+      "affects": [
+        "sdb/hermes/graphrag-lite/query.py",
+        "mcp_graphrag_recall"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:otimizacao-recall-graphrag",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-001"
+        ],
+        "causado_by": "recall single-stage do GraphRAG ignorava estrutura relacional",
+        "affects": [
+          "sdb/hermes/graphrag-lite/query.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-003": {
+      "id": "ADR-003",
+      "titulo": "Semeadura do recall pelo grafo (graph seed)",
+      "status": "Aceito e implementado",
+      "file": "ADR-003-graph-seed.md",
+      "causado_by": [
+        "adr:ADR-001",
+        "adr:ADR-002",
+        "sessões antigas existiam só no grafo (161 de 190 sessões) e eram inalcançáveis por palavra-chave no corpus"
+      ],
+      "evidence": [
+        "backup query.py.bak-20260911-graphseed",
+        "eval graphrag-graph-seed",
+        "161 das 190 sessões do perfil default existiam apenas no grafo"
+      ],
+      "affects": [
+        "sdb/hermes/graphrag-lite/query.py"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:graph-seed-recall",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-002"
+        ],
+        "causado_by": "161 das 190 sessões existiam apenas no grafo e eram inalcançáveis por palavra-chave",
+        "affects": [
+          "sdb/hermes/graphrag-lite/query.py"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-004": {
+      "id": "ADR-004",
+      "titulo": "O dream não destila: é cópia determinística por palavra-chave",
+      "status": "Aceito e implementado",
+      "file": "ADR-004-dream-nao-destila.md",
+      "causado_by": [
+        "adr:ADR-001",
+        "adr:ADR-002",
+        "auditoria de consolidação de memória revelou que dream gerava cópias brutas de 200 caracteres sem chamar LLM"
+      ],
+      "evidence": [
+        "33 sessões consolidadas geraram 33 arquivos okf/lesson_*.md com transcrições cruas dos primeiros 200 caracteres",
+        "memory/instincts/ vazio (0 arquivos)",
+        "análise de código de DreamConsolidator.run_dream"
+      ],
+      "affects": [
+        "hermes/platform/memory/dream.py",
+        "okf/lesson_*.md",
+        "memory/instincts/"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:auditoria-dream-consolidator",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-001"
+        ],
+        "causado_by": "dream não realizava destilação via LLM gerando licoes brutas inúteis",
+        "affects": [
+          "hermes/platform/memory/dream.py",
+          "okf/lesson_*.md"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-005": {
+      "id": "ADR-005",
+      "titulo": "Caminho canônico do vault e escopo dos dois grafos",
+      "status": "Aceito",
+      "file": "ADR-005-caminho-canonico-do-vault-e-escopo-dos-grafos.md",
+      "causado_by": [
+        "adr:ADR-001",
+        "adr:ADR-002",
+        "adr:ADR-003",
+        "adr:ADR-004",
+        "divergência entre caminho documentado ($HERMES_HOME/vault) e real (/root/.haos/obsidian_vault) e sobreposição de grafos"
+      ],
+      "evidence": [
+        "/root/.haos/vault inexistente vs /root/.haos/obsidian_vault com notas reais",
+        "graphrag.db ativo com 18 entidades sendo reconstruído de hora em hora",
+        "eval graphrag-vault-adr mostrando sobreposição de indexação no sdb"
+      ],
+      "affects": [
+        "obsidian_vault/*",
+        "okf/contratos/contrato-memoria-haos-nos-cachyos.md",
+        "memory/graphrag.db",
+        "haos_memory_populate.py"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:auditoria-stack-memoria-20260913",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-001"
+        ],
+        "causado_by": "divergências de documentação de caminhos e duplicidade de indexação de grafos",
+        "affects": [
+          "obsidian_vault/*",
+          "okf/contratos/contrato-memoria-haos-nos-cachyos.md"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-006": {
+      "id": "ADR-006",
+      "titulo": "Conflito de numeração de ADR e a resolução por ID",
+      "status": "Aceito",
+      "file": "ADR-006-conflito-de-numeracao-de-adr-e-resolucao-por-id.md",
+      "causado_by": [
+        "adr:ADR-005",
+        "duas ADRs ocupavam o número 005 no vault canônico quebrando obsidian_get_adr('ADR-005')"
+      ],
+      "evidence": [
+        "obsidian_get_adr('ADR-005') retornava ADR de PDF em vez de caminho canônico do vault",
+        "colisão entre ADR-005-caminho-canonico e ADR-005-extracao-de-pdf"
+      ],
+      "affects": [
+        "obsidian_vault/adrs/ADR-005*",
+        "obsidian_vault/adrs/ADR-007*"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:resolucao-conflito-numeracao-adrs",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-005"
+        ],
+        "causado_by": "colisão de ID no vault quebrando lookup determinístico de ADR",
+        "affects": [
+          "obsidian_vault/adrs/*"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-007": {
+      "id": "ADR-007",
+      "titulo": "Extração de PDF: pymupdf4llm como caminho local, docling descartado",
+      "status": "Aceito",
+      "file": "ADR-007-extracao-de-pdf-pymupdf4llm.md",
+      "causado_by": [
+        "container docling-serve redundante e pesado com benchmark demonstrando superioridade de pymupdf4llm",
+        "renumerado de ADR-005 em 2026-09-15 conforme ADR-006"
+      ],
+      "evidence": [
+        "benchmark em 4 PDFs onde docling foi ~1.5x mais lento",
+        "overhead desnecessário de container GPU vs biblioteca local python"
+      ],
+      "affects": [
+        "tools/read_extract.py",
+        "skills/productivity/pdf"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:benchmark-extracao-pdf",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "audit:benchmark-docling-vs-pymupdf"
+        ],
+        "causado_by": "desempenho inferior e peso operacional do docling-serve",
+        "affects": [
+          "tools/read_extract.py",
+          "skills/productivity/pdf"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-008": {
+      "id": "ADR-008",
+      "titulo": "REGISTRY: estado canônico, histórico rotacionado, índice no grafo e espelho no vault",
+      "status": "Aceito",
+      "file": "ADR-008-registry-estado-log-indice-espelho.md",
+      "causado_by": [
+        "adr:ADR-005",
+        "adr:ADR-002",
+        "adr:ADR-003",
+        "adr:ADR-006",
+        "REGISTRY.md acumulando 281KB (69% log histórico) inflacionando o custo de contexto em cada ação de infra"
+      ],
+      "evidence": [
+        "REGISTRY.md medido em 281.064 bytes / 941 linhas com 88 entradas datadas",
+        "zero indexação de council/ no grafo"
+      ],
+      "affects": [
+        "REGISTRY.md",
+        "REGISTRY-HISTORICO.md",
+        "obsidian_vault/infra/REGISTRY.md",
+        "sdb/hermes/graphrag-lite"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:otimizacao-e-governanca-registry",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-005"
+        ],
+        "causado_by": "inchaço do REGISTRY.md misturando estado vivo com log append-only",
+        "affects": [
+          "REGISTRY.md",
+          "obsidian_vault/infra/*"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-009": {
+      "id": "ADR-009",
+      "titulo": "Espaço de ADR do repo: três namespaces e a autoridade única",
+      "status": "Aceito",
+      "file": "ADR-009-espaco-de-adr-do-repo-tres-namespaces.md",
+      "causado_by": [
+        "adr:ADR-006",
+        "adr:ADR-008",
+        "necessidade de esclarecer os três namespaces de ADR no repo após imprecisão em ADR-006 §4"
+      ],
+      "evidence": [
+        "repo mantinha namespaces distintos: ADR-NNN em docs/architecture/, GOV-NNN em architecture/ADRs/ e GUILD-NNN"
+      ],
+      "affects": [
+        "docs/architecture/*",
+        "architecture/ADRs/*"
+      ],
+      "supersedes": [
+        "ADR-006§4"
+      ],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:governanca-namespaces-adr-repo",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-006"
+        ],
+        "causado_by": "correção da descrição dos namespaces no repositório HERMES-TURBO",
+        "affects": [
+          "docs/architecture/*",
+          "architecture/ADRs/*"
+        ],
+        "supersedes": [
+          "ADR-006§4"
+        ],
+        "superseded_by": null
+      }
+    },
+    "ADR-010": {
+      "id": "ADR-010",
+      "titulo": "/tmp fora da RAM e zram como swap (nunca como filesystem)",
+      "status": "Aceito e aplicado",
+      "file": "ADR-010-tmp-fora-da-ram-e-zram-como-swap.md",
+      "causado_by": [
+        "/tmp em tmpfs consumindo RAM e empurrando 4.8G para compressão no zram por falta de swap em disco"
+      ],
+      "evidence": [
+        "df /tmp indicando 5.1G alocados",
+        "zramctl indicando 14.5G de dados comprimidos para 6G prendendo 6.6G de RAM",
+        "swapon confirmando zram0 como único swap ativo"
+      ],
+      "affects": [
+        "/etc/fstab",
+        "/etc/tmpfiles.d/tmp.conf",
+        "/swap/swapfile",
+        "btrfs subvol @tmp_disk"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:otimizacao-zram-tmpfs",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "incident:zram-exhaustion-tmpfs"
+        ],
+        "causado_by": "tmpfs em /tmp competindo diretamente com a RAM e sobrecarregando o zram",
+        "affects": [
+          "/etc/fstab",
+          "/etc/tmpfiles.d/tmp.conf"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-011": {
+      "id": "ADR-011",
+      "titulo": "Google Drive como unidade de disco do servidor (rclone) e a identidade OAuth única",
+      "status": "Aceito",
+      "file": "ADR-011-google-drive-como-unidade-de-disco-via-rclone.md",
+      "causado_by": [
+        "adr:ADR-005",
+        "adr:ADR-008",
+        "demanda do dono para montagem de storage Google Drive como unidade de disco do servidor"
+      ],
+      "evidence": [
+        "rclone não instalado e token OAuth revogado em /root/.haos/google_token.json",
+        "teste de refresh token retornando 400 invalid_grant"
+      ],
+      "affects": [
+        "/root/.config/rclone/rclone.conf",
+        "systemd/rclone-mount",
+        "/root/.haos/google_token.json"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:montagem-google-drive-rclone",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "request:mount-google-drive"
+        ],
+        "causado_by": "necessidade de storage em nuvem integrado ao filesystem local",
+        "affects": [
+          "/root/.config/rclone/rclone.conf"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-012": {
+      "id": "ADR-012",
+      "titulo": "O corpus REST é classificação, não recuperação; e não existe peso único de fusão",
+      "status": "Aceito",
+      "file": "ADR-012-rest-e-classificacao-nao-recuperacao-e-nao-existe-peso-unico-de-fusao.md",
+      "causado_by": [
+        "adr:ADR-002",
+        "divergência de comportamento na fusão lexical e densa entre documentação textual e operações REST"
+      ],
+      "evidence": [
+        "varredura experimental de RAG_RRF_W demonstrando curvas monotônicas opostas entre os dois corpora"
+      ],
+      "affects": [
+        "tws-RAG-PRONTO/rag_fusion.py",
+        "tws-RAG-PRONTO/config.py"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:otimizacao-rag-rrf-tws",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-002"
+        ],
+        "causado_by": "incompatibilidade de peso de fusão único para corpora de naturezas distintas",
+        "affects": [
+          "tws-RAG-PRONTO/*"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-013": {
+      "id": "ADR-013",
+      "titulo": "haos-shell: MCP de acesso root exposto ao ChatGPT web via Secure MCP Tunnel",
+      "status": "Construído e verificado; INATIVO",
+      "file": "ADR-013-mcp-shell-acesso-root-via-tunnel-openai.md",
+      "causado_by": [
+        "decisão do dono por Tier C (root irrestrito) via OpenAI Secure MCP Tunnel com mitigações de auditoria"
+      ],
+      "evidence": [
+        "análise do produto openai/tunnel-client v0.0.14 e avaliação de tiers de isolamento A/B/C"
+      ],
+      "affects": [
+        "/var/log/mcp-shell/audit.jsonl",
+        "mcp-shell-server"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:implantacao-mcp-tunnel-shell",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "request:chatgpt-tunnel-access"
+        ],
+        "causado_by": "necessidade de acesso remoto interativo do ChatGPT web com auditoria rígida",
+        "affects": [
+          "/var/log/mcp-shell/audit.jsonl"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-014": {
+      "id": "ADR-014",
+      "titulo": "Gates que passavam mentindo: frescor do destilador e regime por gold set",
+      "status": "Aceito",
+      "file": "ADR-014-gates-de-memoria-que-passavam-mentindo.md",
+      "causado_by": [
+        "adr:ADR-001",
+        "adr:ADR-004",
+        "adr:ADR-005",
+        "auditoria identificou gates verdes que não mediam frescor do destilador nem integridade real do RAG"
+      ],
+      "evidence": [
+        "dream_distill estagnado devolvendo 0 lições com eval dream-destilador passando por tautologia",
+        "eval do RAG com limiares incompatíveis com o gold set congelado"
+      ],
+      "affects": [
+        "scripts/dream_distill.py",
+        "evals/cases/dream-destilador.json",
+        "evals/cases/tws-rag-mrr.json"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:auditoria-frescor-gates-memoria",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "adr:ADR-004"
+        ],
+        "causado_by": "detecção de avaliações tautológicas e gates que mascaravam estagnação",
+        "affects": [
+          "scripts/dream_distill.py",
+          "evals/cases/*"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    },
+    "ADR-015": {
+      "id": "ADR-015",
+      "titulo": "Schema causal de proveniência para ADR, auditoria A2A e OKF",
+      "status": "Aceito",
+      "file": "ADR-015-schema-causal-de-proveniencia-para-adr-audit-e-okf.md",
+      "causado_by": [
+        "adr:ADR-001",
+        "adr:ADR-005",
+        "adr:ADR-006",
+        "adr:ADR-009",
+        "necessidade de rastreabilidade causal em cadeia entre decisoes, auditoria e licoes aprendidas"
+      ],
+      "evidence": [
+        "fragmentação de menções livres em prosa nos ADRs legados",
+        "contrato okf/contratos/proveniencia-prov-o-no-haos.md"
+      ],
+      "affects": [
+        "obsidian_vault/adrs/*",
+        "okf/contratos/*",
+        "okf/licoes/*",
+        "a2a_audit.jsonl"
+      ],
+      "supersedes": [],
+      "superseded_by": null,
+      "prov": {
+        "wasGeneratedBy": "task:fase-1-contratos-canonicos",
+        "wasAssociatedWith": "agent:haos-cachyos-x8664",
+        "wasDerivedFrom": [
+          "contract:contrato-memoria-haos-nos-cachyos.md"
+        ],
+        "causado_by": "necessidade de rastreabilidade causal em cadeia entre decisoes, auditoria e licoes aprendidas",
+        "affects": [
+          "obsidian_vault/adrs/*",
+          "okf/contratos/*",
+          "okf/licoes/*",
+          "a2a_audit.jsonl"
+        ],
+        "supersedes": [],
+        "superseded_by": null
+      }
+    }
+  },
+  "commands": {
+    "why_ADR-015": {
+      "argv": [
+        "why",
+        "ADR-015"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "fe000f8dca5ea82813de8c70aef137b721d542e021b5ae89d67caa591e437b70",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 18540,
+      "stderr_bytes": 0,
+      "structure": {
+        "root": "ADR-015",
+        "trace": [
+          {
+            "event": "node",
+            "id": "ADR-015",
+            "depth": 0,
+            "via": "root"
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 1,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-005",
+            "depth": 1,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 2,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-001",
+            "depth": 2
+          },
+          {
+            "event": "node",
+            "id": "ADR-002",
+            "depth": 2,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-001",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 3,
+            "via": "wasDerivedFrom"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-001",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-003",
+            "depth": 2,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-001",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-002",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-002",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-002",
+            "depth": 3,
+            "via": "wasDerivedFrom"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-002",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-004",
+            "depth": 2,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-001",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-002",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-002",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 3,
+            "via": "wasDerivedFrom"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-001",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-001",
+            "depth": 2,
+            "via": "wasDerivedFrom"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-001",
+            "depth": 2
+          },
+          {
+            "event": "node",
+            "id": "ADR-006",
+            "depth": 1,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-005",
+            "depth": 2,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-005",
+            "depth": 2
+          },
+          {
+            "event": "node",
+            "id": "ADR-005",
+            "depth": 2,
+            "via": "wasDerivedFrom"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-005",
+            "depth": 2
+          },
+          {
+            "event": "node",
+            "id": "ADR-009",
+            "depth": 1,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-006",
+            "depth": 2,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-006",
+            "depth": 2
+          },
+          {
+            "event": "node",
+            "id": "ADR-008",
+            "depth": 2,
+            "via": "causado_by"
+          },
+          {
+            "event": "node",
+            "id": "ADR-005",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-005",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-002",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-002",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-003",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-003",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-006",
+            "depth": 3,
+            "via": "causado_by"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-006",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-005",
+            "depth": 3,
+            "via": "wasDerivedFrom"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-005",
+            "depth": 3
+          },
+          {
+            "event": "node",
+            "id": "ADR-006",
+            "depth": 2,
+            "via": "wasDerivedFrom"
+          },
+          {
+            "event": "cycle",
+            "id": "ADR-006",
+            "depth": 2
+          }
+        ],
+        "cycle_ids": [
+          "ADR-001",
+          "ADR-002",
+          "ADR-003",
+          "ADR-005",
+          "ADR-006"
+        ],
+        "unresolved_ids": []
+      }
+    },
+    "desc_ADR-015": {
+      "argv": [
+        "desc",
+        "ADR-015"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "dff8054447eef2c0583a075ceb51004dcbc28708a1abbd5da4b62e7071ff4a81",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 735,
+      "stderr_bytes": 0,
+      "structure": {
+        "root": "ADR-015",
+        "superseded_by": null,
+        "supersedes": [],
+        "children": {
+          "causado_by": [],
+          "wasDerivedFrom": [],
+          "supersedes": []
+        },
+        "affects": [
+          "obsidian_vault/adrs/*",
+          "okf/contratos/*",
+          "okf/licoes/*",
+          "a2a_audit.jsonl"
+        ]
+      }
+    },
+    "effects_ADR-015": {
+      "argv": [
+        "effects",
+        "ADR-015"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "dff8054447eef2c0583a075ceb51004dcbc28708a1abbd5da4b62e7071ff4a81",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 735,
+      "stderr_bytes": 0,
+      "structure": {
+        "root": "ADR-015",
+        "superseded_by": null,
+        "supersedes": [],
+        "children": {
+          "causado_by": [],
+          "wasDerivedFrom": [],
+          "supersedes": []
+        },
+        "affects": [
+          "obsidian_vault/adrs/*",
+          "okf/contratos/*",
+          "okf/licoes/*",
+          "a2a_audit.jsonl"
+        ]
+      }
+    },
+    "graph": {
+      "argv": [
+        "graph"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "f3edc9278853f57d53e36b5fa2a897ed935dbac9f2a93c08b8e3d326427a263c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 3512,
+      "stderr_bytes": 0,
+      "structure": {
+        "nodes": [
+          "ADR-001",
+          "ADR-002",
+          "ADR-003",
+          "ADR-004",
+          "ADR-005",
+          "ADR-006",
+          "ADR-007",
+          "ADR-008",
+          "ADR-009",
+          "ADR-010",
+          "ADR-011",
+          "ADR-012",
+          "ADR-013",
+          "ADR-014",
+          "ADR-015"
+        ],
+        "edges": [
+          {
+            "source": "ADR-001",
+            "relation": "wasDerivedFrom",
+            "target": "system:migracao-haos-20260910"
+          },
+          {
+            "source": "ADR-001",
+            "relation": "wasGeneratedBy",
+            "target": "task:migracao-haos-stack-memoria"
+          },
+          {
+            "source": "ADR-002",
+            "relation": "causado_by",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-002",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-002",
+            "relation": "wasGeneratedBy",
+            "target": "task:otimizacao-recall-graphrag"
+          },
+          {
+            "source": "ADR-003",
+            "relation": "causado_by",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-003",
+            "relation": "causado_by",
+            "target": "ADR-002"
+          },
+          {
+            "source": "ADR-003",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-002"
+          },
+          {
+            "source": "ADR-003",
+            "relation": "wasGeneratedBy",
+            "target": "task:graph-seed-recall"
+          },
+          {
+            "source": "ADR-004",
+            "relation": "causado_by",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-004",
+            "relation": "causado_by",
+            "target": "ADR-002"
+          },
+          {
+            "source": "ADR-004",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-004",
+            "relation": "wasGeneratedBy",
+            "target": "task:auditoria-dream-consolidator"
+          },
+          {
+            "source": "ADR-005",
+            "relation": "causado_by",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-005",
+            "relation": "causado_by",
+            "target": "ADR-002"
+          },
+          {
+            "source": "ADR-005",
+            "relation": "causado_by",
+            "target": "ADR-003"
+          },
+          {
+            "source": "ADR-005",
+            "relation": "causado_by",
+            "target": "ADR-004"
+          },
+          {
+            "source": "ADR-005",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-005",
+            "relation": "wasGeneratedBy",
+            "target": "task:auditoria-stack-memoria-20260913"
+          },
+          {
+            "source": "ADR-006",
+            "relation": "causado_by",
+            "target": "ADR-005"
+          },
+          {
+            "source": "ADR-006",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-005"
+          },
+          {
+            "source": "ADR-006",
+            "relation": "wasGeneratedBy",
+            "target": "task:resolucao-conflito-numeracao-adrs"
+          },
+          {
+            "source": "ADR-007",
+            "relation": "wasDerivedFrom",
+            "target": "audit:benchmark-docling-vs-pymupdf"
+          },
+          {
+            "source": "ADR-007",
+            "relation": "wasGeneratedBy",
+            "target": "task:benchmark-extracao-pdf"
+          },
+          {
+            "source": "ADR-008",
+            "relation": "causado_by",
+            "target": "ADR-005"
+          },
+          {
+            "source": "ADR-008",
+            "relation": "causado_by",
+            "target": "ADR-002"
+          },
+          {
+            "source": "ADR-008",
+            "relation": "causado_by",
+            "target": "ADR-003"
+          },
+          {
+            "source": "ADR-008",
+            "relation": "causado_by",
+            "target": "ADR-006"
+          },
+          {
+            "source": "ADR-008",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-005"
+          },
+          {
+            "source": "ADR-008",
+            "relation": "wasGeneratedBy",
+            "target": "task:otimizacao-e-governanca-registry"
+          },
+          {
+            "source": "ADR-009",
+            "relation": "causado_by",
+            "target": "ADR-006"
+          },
+          {
+            "source": "ADR-009",
+            "relation": "causado_by",
+            "target": "ADR-008"
+          },
+          {
+            "source": "ADR-009",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-006"
+          },
+          {
+            "source": "ADR-009",
+            "relation": "supersedes",
+            "target": "ADR-006§4"
+          },
+          {
+            "source": "ADR-009",
+            "relation": "wasGeneratedBy",
+            "target": "task:governanca-namespaces-adr-repo"
+          },
+          {
+            "source": "ADR-010",
+            "relation": "wasDerivedFrom",
+            "target": "incident:zram-exhaustion-tmpfs"
+          },
+          {
+            "source": "ADR-010",
+            "relation": "wasGeneratedBy",
+            "target": "task:otimizacao-zram-tmpfs"
+          },
+          {
+            "source": "ADR-011",
+            "relation": "causado_by",
+            "target": "ADR-005"
+          },
+          {
+            "source": "ADR-011",
+            "relation": "causado_by",
+            "target": "ADR-008"
+          },
+          {
+            "source": "ADR-011",
+            "relation": "wasDerivedFrom",
+            "target": "request:mount-google-drive"
+          },
+          {
+            "source": "ADR-011",
+            "relation": "wasGeneratedBy",
+            "target": "task:montagem-google-drive-rclone"
+          },
+          {
+            "source": "ADR-012",
+            "relation": "causado_by",
+            "target": "ADR-002"
+          },
+          {
+            "source": "ADR-012",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-002"
+          },
+          {
+            "source": "ADR-012",
+            "relation": "wasGeneratedBy",
+            "target": "task:otimizacao-rag-rrf-tws"
+          },
+          {
+            "source": "ADR-013",
+            "relation": "wasDerivedFrom",
+            "target": "request:chatgpt-tunnel-access"
+          },
+          {
+            "source": "ADR-013",
+            "relation": "wasGeneratedBy",
+            "target": "task:implantacao-mcp-tunnel-shell"
+          },
+          {
+            "source": "ADR-014",
+            "relation": "causado_by",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-014",
+            "relation": "causado_by",
+            "target": "ADR-004"
+          },
+          {
+            "source": "ADR-014",
+            "relation": "causado_by",
+            "target": "ADR-005"
+          },
+          {
+            "source": "ADR-014",
+            "relation": "wasDerivedFrom",
+            "target": "ADR-004"
+          },
+          {
+            "source": "ADR-014",
+            "relation": "wasGeneratedBy",
+            "target": "task:auditoria-frescor-gates-memoria"
+          },
+          {
+            "source": "ADR-015",
+            "relation": "causado_by",
+            "target": "ADR-001"
+          },
+          {
+            "source": "ADR-015",
+            "relation": "causado_by",
+            "target": "ADR-005"
+          },
+          {
+            "source": "ADR-015",
+            "relation": "causado_by",
+            "target": "ADR-006"
+          },
+          {
+            "source": "ADR-015",
+            "relation": "causado_by",
+            "target": "ADR-009"
+          },
+          {
+            "source": "ADR-015",
+            "relation": "wasDerivedFrom",
+            "target": "contract:contrato-memoria-haos-nos-cachyos.md"
+          },
+          {
+            "source": "ADR-015",
+            "relation": "wasGeneratedBy",
+            "target": "task:fase-1-contratos-canonicos"
+          }
+        ]
+      }
+    },
+    "check": {
+      "argv": [
+        "check"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "92fe8fe2ce0c7e5dc11c191ca14e1ca51ae40c0bdd45e531a7bc7594fbde8e6b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 1703,
+      "stderr_bytes": 0,
+      "structure": {
+        "warnings": [],
+        "ghosts": [],
+        "nodes": [
+          "ADR-001",
+          "ADR-002",
+          "ADR-003",
+          "ADR-004",
+          "ADR-005",
+          "ADR-006",
+          "ADR-007",
+          "ADR-008",
+          "ADR-009",
+          "ADR-010",
+          "ADR-011",
+          "ADR-012",
+          "ADR-013",
+          "ADR-014",
+          "ADR-015"
+        ],
+        "node_count": 15
+      }
+    }
+  }
+}

@@ -429,7 +429,11 @@ function MessageBubble({
   );
 }
 
-/** Message list with auto-scroll to first search hit. */
+/** Initial visible limit of messages for performance and DOM node retention. */
+const INITIAL_MESSAGE_WINDOW = 40;
+const MESSAGE_WINDOW_STEP = 40;
+
+/** Message list with auto-scroll to first search hit and sliding window / DOM retention cap. */
 function MessageList({
   messages,
   highlight,
@@ -438,6 +442,20 @@ function MessageList({
   highlight?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const total = messages.length;
+  // If there is a search hit, expand the window or show all messages to preserve search discovery
+  const [visibleCount, setVisibleCount] = useState<number>(() => {
+    return highlight ? total : Math.min(total, INITIAL_MESSAGE_WINDOW);
+  });
+
+  // When messages change, ensure visibleCount stays sane
+  useEffect(() => {
+    if (highlight) {
+      setVisibleCount(total);
+    } else {
+      setVisibleCount((prev) => Math.min(total, Math.max(prev, INITIAL_MESSAGE_WINDOW)));
+    }
+  }, [total, highlight]);
 
   useEffect(() => {
     if (!highlight || !containerRef.current) return;
@@ -451,13 +469,52 @@ function MessageList({
     return () => clearTimeout(timer);
   }, [messages, highlight]);
 
+  const hasHiddenPrevious = visibleCount < total;
+  const startIndex = hasHiddenPrevious ? total - visibleCount : 0;
+  const visibleMessages = useMemo(
+    () => messages.slice(startIndex),
+    [messages, startIndex]
+  );
+
+  const loadMorePrevious = () => {
+    setVisibleCount((prev) => Math.min(total, prev + MESSAGE_WINDOW_STEP));
+  };
+
+  const loadAllPrevious = () => {
+    setVisibleCount(total);
+  };
+
   return (
     <div
       ref={containerRef}
       className="flex flex-col gap-3 max-h-[600px] overflow-y-auto pr-2"
     >
-      {messages.map((msg, i) => (
-        <MessageBubble key={i} msg={msg} highlight={highlight} />
+      {hasHiddenPrevious && (
+        <div className="flex items-center justify-center gap-2 py-2 mb-1 border-b border-border/50 text-xs text-muted-foreground bg-muted/20 rounded-md">
+          <span>
+            Exibindo as últimas {visibleCount} de {total} mensagens
+          </span>
+          <button
+            type="button"
+            onClick={loadMorePrevious}
+            className="font-medium text-primary hover:underline hover:text-primary/80 transition-colors ml-1 cursor-pointer"
+            aria-label="Carregar mensagens anteriores"
+          >
+            ↑ Carregar mensagens anteriores (+{Math.min(MESSAGE_WINDOW_STEP, total - visibleCount)})
+          </button>
+          <span className="text-border">&#183;</span>
+          <button
+            type="button"
+            onClick={loadAllPrevious}
+            className="text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
+            aria-label="Carregar todas as mensagens"
+          >
+            Ver todas ({total})
+          </button>
+        </div>
+      )}
+      {visibleMessages.map((msg, i) => (
+        <MessageBubble key={startIndex + i} msg={msg} highlight={highlight} />
       ))}
     </div>
   );

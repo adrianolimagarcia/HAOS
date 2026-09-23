@@ -86,7 +86,7 @@ O HAOS traz um servidor HTTP nativo e autônomo. Acesse pelo navegador:
 Abas e funcionalidades disponíveis na interface:
 - **Console / Chat (`/chat`):** Terminal de missões com streaming em tempo real e despacho nas lanes do agente.
 - **Taskboard:** Kanban interativo em tempo real (Ready, Running, Review, Done) com criação e limpeza de tarefas.
-- **Team Graph:** Visualização em árvore do grafo cognitivo de subagentes e delegações.
+- **Live control plane:** Visão operacional do taskboard, workers e intervenções.
 - **Scheduler:** Gestor de tarefas com agendamento dinâmico e grafos de dependência DAG.
 - **Ouroboros:** Ledger de auto-evolução com análise de histórico e raio de impacto (*Blast Radius*).
 - **Terminal Web:** Shell PTY emulado no navegador para monitoramento e intervenções operacionais.

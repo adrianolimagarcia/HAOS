@@ -92,7 +92,10 @@ impl NativeVectorEngine {
         }
 
         if !db_path.exists() {
-            return Err(format!("Vectors database not found at {}", db_path.display()));
+            return Err(format!(
+                "Vectors database not found at {}",
+                db_path.display()
+            ));
         }
 
         // Calcula a norma da query uma única vez
@@ -206,7 +209,7 @@ impl NativeVectorEngine {
                  normalize INTEGER NOT NULL,
                  reindex_policy TEXT NOT NULL,
                  updated_at REAL NOT NULL
-             );"
+             );",
         )
         .map_err(|e| format!("Failed to init vector schema: {e}"))?;
 
@@ -255,7 +258,10 @@ mod tests {
             sum += dot;
         }
         let elapsed = start.elapsed();
-        println!("RUST NATIVO (5.000 vetores x 384d): {:.3} ms (checksum: {})", elapsed.as_secs_f64() * 1000.0, sum);
+        println!(
+            "RUST NATIVO (5.000 vetores x 384d): {:.3} ms (checksum: {})",
+            elapsed.as_secs_f64() * 1000.0,
+            sum
+        );
     }
-
 }

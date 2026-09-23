@@ -70,11 +70,12 @@ from hermes.platform.execution.dispatcher import HAOSDispatcher
 from hermes.platform.evolution.ledger import EvolutionLedger
 from hermes.platform.evolution.analyzer import OuroborosAnalyzer
 from hermes.platform.ui.dashboard import dashboard_payload
+from hermes.platform.ui.views import task_list_projection
 from hermes.platform.ui.stats import DashboardStats
 from hermes.platform.webui.controlplane import ControlPlaneService
 from hermes.platform.webui.agent_hierarchy import AgentHierarchyStore, HierarchyError
 from hermes.platform.webui.council_adapter import CouncilAdapter
-from hermes.platform.webui.harness_bindings import HARNESS_CATALOG
+from hermes.platform.webui.metrics import RouteMetrics, process_memory_status
 
 from hermes.platform.webui import settings as engine_settings
 
@@ -151,6 +152,7 @@ class HAOSStandaloneState:
         # Permite que até 6 tarefas/lanes rodem verdadeiramente em paralelo sem lock serializado.
         from concurrent.futures import ThreadPoolExecutor
         self._dispatch_pool = ThreadPoolExecutor(max_workers=6, thread_name_prefix="haos-lane-worker")
+        self.route_metrics = RouteMetrics()
 
     # ------------------------------------------------------------------ #
     def create_task_from_message(
@@ -322,16 +324,12 @@ class HAOSStandaloneState:
                 "payload": json.dumps(ev.payload, ensure_ascii=False)[:240],
             })
         payload["events_tail"] = events
-        payload["team_graph"] = self.control_plane.get_team_graph_snapshot()
-        payload["team_graph"]["organizational_hierarchy"] = self.agent_hierarchy.snapshot()
-        payload["agent_hierarchy"] = payload["team_graph"]["organizational_hierarchy"]
+        payload["agent_hierarchy"] = self.agent_hierarchy.snapshot()
         try:
             payload["control_overview"] = dataclasses.asdict(self.control_plane.get_overview())
         except Exception:
             payload["control_overview"] = {}
         payload["settings"] = dict(self.settings)
-        payload["harness_bindings"] = self.control_plane.bindings.all()
-        payload["harness_catalog"] = list(HARNESS_CATALOG)
         payload["meta"] = {
             "data_dir": str(self.data_dir),
             "tasks_db": str(self.kanban_db),
@@ -398,7 +396,7 @@ class HAOSStandaloneState:
         economizando mais de 100MB de RAM permanente.
         """
         def _run() -> None:
-            pass
+            self.ensure_symbol_index(root=root)
 
         thread = threading.Thread(
             target=_run, daemon=True, name="haos-symbol-index-warmup")
@@ -688,7 +686,14 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ #
     def _serve(self) -> None:
+        started = time.perf_counter()
         path = urlparse(self.path).path
+        try:
+            self._serve_instrumented(path)
+        finally:
+            self.state.route_metrics.observe(path, (time.perf_counter() - started) * 1000, "python")
+
+    def _serve_instrumented(self, path: str) -> None:
         parts = path.strip("/").split("/")
         if len(parts) == 3 and parts[:2] == ["bots", parts[1]] and parts[2] == "knowledge":
             if self.command == "GET":
@@ -718,6 +723,10 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
                 "kanban_db": str(k_db),
                 "events_db": str(e_db),
             })
+        elif self.command == "GET" and path in ("/api/metrics", "/metrics"):
+            self._send_json(200, self.state.route_metrics.snapshot())
+        elif self.command == "GET" and path in ("/api/status/memory", "/api/memory"):
+            self._send_json(200, process_memory_status())
         elif self.command == "GET" and path == "/api/state":
             try:
                 self._send_json(200, self.state.state_payload())
@@ -807,10 +816,6 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"ok": False, "error": str(e)})
         elif self.command == "GET" and path in ("/v1/models", "/api/v1/models"):
             self._handle_v1_models()
-        elif self.command == "GET" and path in ("/api/team-graph", "/api/controlplane/team_graph"):
-            graph = self.state.control_plane.get_team_graph_snapshot()
-            graph["organizational_hierarchy"] = self.state.agent_hierarchy.snapshot()
-            self._send_json(200, graph)
         elif self.command == "GET" and path in ("/api/agent-hierarchy", "/api/controlplane/agent-hierarchy"):
             self._send_json(200, self.state.agent_hierarchy.snapshot())
         elif self.command == "GET" and path == "/api/agent-hierarchy/soul":
@@ -859,8 +864,6 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._get_hierarchy_feed()
         elif self.command == "POST" and path == "/api/agent-hierarchy/clone":
             self._clone_hierarchy_node()
-        elif self.command == "GET" and path in ("/api/harnesses", "/api/controlplane/harnesses"):
-            self._send_json(200, self.state.control_plane.harness_overview())
         elif self.command == "GET" and path in ("/api/controlplane/overview", "/api/overview"):
             self._send_json(200, dataclasses.asdict(self.state.control_plane.get_overview()))
         elif self.command == "POST" and path in ("/api/agent-hierarchy/council", "/api/controlplane/agent-hierarchy/council"):
@@ -871,15 +874,13 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._hierarchy_mutation()
         elif self.command == "POST" and path in ("/api/agent-hierarchy/command", "/api/controlplane/agent-hierarchy/command"):
             self._hierarchy_command()
-        elif self.command == "POST" and path in ("/api/harness-binding", "/api/controlplane/harness_binding"):
-            self._set_harness_binding()
         elif self.command == "GET" and path == "/api/agent-settings":
             self._agent_settings()
         elif self.command == "POST" and path == "/api/console":
             self._console()
         elif self.command == "GET" and path == "/api/tasks":
             tasks = self.state.kanban.list_tasks() or []
-            self._send_json(200, {"tasks": [t.to_dict() if hasattr(t, "to_dict") else t for t in tasks]})
+            self._send_json(200, {"tasks": [task_list_projection(t.to_dict() if hasattr(t, "to_dict") else t) for t in tasks]})
         elif self.command == "POST" and path == "/api/tasks":
             self._create_task()
         elif self.command == "POST" and path in ("/api/tasks/clear", "/api/tasks/clear-completed"):
@@ -957,7 +958,8 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
                 req = urllib.request.Request(f"http://100.77.31.78:8788/api/timeline/fast?{qs}")
                 with urllib.request.urlopen(req, timeout=0.5) as resp:
                     if resp.status == 200:
-                        self.wfile.write(resp.read())
+                        payload = json.loads(resp.read().decode("utf-8"))
+                        self._send_json(200, payload)
                         return
             except Exception:
                 pass
@@ -2435,21 +2437,6 @@ class HAOSStandaloneHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"ok": False, "error": str(exc)}); return
         self._send_json(200, {"ok": True, "result": result})
 
-    def _set_harness_binding(self) -> None:
-        body = self._read_json_body()
-        role = str(body.get("role") or "").strip()
-        harness = str(body.get("harness") or "").strip()
-        if not role or not harness:
-            self._send_json(400, {"ok": False, "error": "role_and_harness_required"})
-            return
-        try:
-            result = self.state.control_plane.set_harness_binding(role, harness)
-        except ValueError as exc:
-            self._send_json(400, {"ok": False, "error": str(exc)})
-            return
-        result["ok"] = True
-        result["overview"] = self.state.control_plane.harness_overview()
-        self._send_json(200, result)
 
     def _intervene(self) -> None:
         body = self._read_json_body()

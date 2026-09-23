@@ -1,0 +1,240 @@
+commit f70ac01f50016a470d475eb33a3254520bf685ac
+Author:     HAOS verification <haos-verification@localhost>
+AuthorDate: Tue Sep 22 02:32:57 2026 -0300
+Commit:     HAOS verification <haos-verification@localhost>
+CommitDate: Tue Sep 22 02:39:57 2026 -0300
+
+    fix HAOS runtime and profile compatibility
+
+diff --git a/api/oauth.py b/api/oauth.py
+index 97924c5b..bcf39efa 100644
+--- a/api/oauth.py
++++ b/api/oauth.py
+@@ -25,7 +25,10 @@ from typing import Any
+ logger = logging.getLogger(__name__)
+ 
+ # Compatibility for older helper tests and self-heal code that import these.
++# Keep this name as a legacy constant, but resolve the default path at call time
++# so profile switches and HAOS HERMES_HOME changes cannot write to ~/.hermes.
+ AUTH_JSON_PATH = Path.home() / ".hermes" / "auth.json"
++_INITIAL_AUTH_JSON_PATH = AUTH_JSON_PATH
+ 
+ CODEX_ISSUER = "https://auth.openai.com"
+ CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+@@ -163,9 +166,18 @@ def _get_active_hermes_home() -> Path:
+ 
+ # ── legacy auth.json helpers ────────────────────────────────────────────────
+ 
++def _default_auth_json_path() -> Path:
++    """Return the active profile auth path, retaining legacy test overrides."""
++    if AUTH_JSON_PATH != _INITIAL_AUTH_JSON_PATH:
++        return AUTH_JSON_PATH
++    try:
++        return _get_active_hermes_home() / "auth.json"
++    except Exception:
++        return Path(os.getenv("HERMES_HOME") or Path.home() / ".hermes").expanduser() / "auth.json"
++
+ def _read_auth_json(auth_path: Path | None = None) -> dict[str, Any]:
+     """Read auth.json and return parsed dict, or an empty compatible store."""
+-    path = auth_path or AUTH_JSON_PATH
++    path = Path(auth_path) if auth_path is not None else _default_auth_json_path()
+     if path.exists():
+         try:
+             loaded = json.loads(path.read_text(encoding="utf-8"))
+@@ -187,7 +199,7 @@ def _write_auth_json(data: dict[str, Any], auth_path: Path | None = None) -> Pat
+     OAuth access/refresh tokens live in this file. The temp file is chmod 0600
+     before rename so the final path never inherits a permissive process umask.
+     """
+-    path = auth_path or AUTH_JSON_PATH
++    path = Path(auth_path) if auth_path is not None else _default_auth_json_path()
+     path.parent.mkdir(parents=True, exist_ok=True)
+     tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
+     try:
+diff --git a/api/routes.py b/api/routes.py
+index 5a6a319f..fc27937e 100644
+--- a/api/routes.py
++++ b/api/routes.py
+@@ -1900,6 +1900,21 @@ _LIVE_MODELS_CACHE: dict[tuple[str, str], tuple[float, dict]] = {}
+ _LIVE_MODELS_CACHE_LOCK = threading.RLock()
+ 
+ 
++def _provider_model_ids_from_agent(provider: str) -> list[str]:
++    """Load the provider catalog from the configured Hermes Agent checkout."""
++    from api import config as _api_config
++
++    agent_dir = getattr(_api_config, "_AGENT_DIR", None)
++    if not agent_dir:
++        raise ImportError("Hermes agent checkout not found")
++    agent_path = str(Path(agent_dir).expanduser().resolve())
++    if agent_path not in sys.path:
++        sys.path.append(agent_path)
++    from hermes_cli.models import provider_model_ids
++
++    return provider_model_ids(provider)
++
++
+ def _active_profile_for_live_models_cache() -> str:
+     try:
+         from api.profiles import get_active_profile_name
+@@ -21631,15 +21646,7 @@ def _handle_live_models(handler, parsed):
+         # provider_model_ids() tries live endpoints first and falls back to
+         # the static _PROVIDER_MODELS list — it never raises.
+         try:
+-            import sys as _sys
+-            import os as _os
+-            _agent_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+-                                       "..", "..", ".hermes", "hermes-agent")
+-            _agent_dir = _os.path.normpath(_agent_dir)
+-            if _agent_dir not in _sys.path:
+-                _sys.path.insert(0, _agent_dir)
+-            from hermes_cli.models import provider_model_ids as _pmi
+-            ids = _pmi(provider)
++            ids = _provider_model_ids_from_agent(provider)
+         except Exception as _import_err:
+             logger.debug("provider_model_ids import failed for %s: %s", provider, _import_err)
+             ids = []
+diff --git a/api/startup.py b/api/startup.py
+index b2da451b..27f1a887 100644
+--- a/api/startup.py
++++ b/api/startup.py
+@@ -65,6 +65,11 @@ def _agent_dir() -> Path | None:
+             return p.resolve()
+     return None
+ 
++
++def _runtime_python() -> str:
++    """Return the configured HAOS/Agent interpreter for dependency installs."""
++    return os.environ.get("HERMES_WEBUI_PYTHON", "").strip() or sys.executable
++
+ def _trusted_agent_dir(agent_dir: Path) -> bool:
+     """Return True if agent_dir passes ownership and permission checks.
+ 
+@@ -103,10 +108,10 @@ def auto_install_agent_deps() -> bool:
+     req_file = agent_dir / 'requirements.txt'
+     pyproject = agent_dir / 'pyproject.toml'
+     if req_file.exists():
+-        install_args = [sys.executable, '-m', 'pip', 'install', '--quiet', '-r', str(req_file)]
++        install_args = [_runtime_python(), '-m', 'pip', 'install', '--quiet', '-r', str(req_file)]
+         print(f'     Installing from {req_file} ...', flush=True)
+     elif pyproject.exists():
+-        install_args = [sys.executable, '-m', 'pip', 'install', '--quiet', str(agent_dir)]
++        install_args = [_runtime_python(), '-m', 'pip', 'install', '--quiet', str(agent_dir)]
+         print(f'     Installing from {agent_dir} (pyproject.toml) ...', flush=True)
+     else:
+         print('[!!] Auto-install skipped: no requirements.txt or pyproject.toml in agent dir.', flush=True)
+diff --git a/bootstrap.py b/bootstrap.py
+index cf665fd8..17ce8a1c 100755
+--- a/bootstrap.py
++++ b/bootstrap.py
+@@ -209,6 +209,11 @@ def _agent_dir_from_python(python_exe: str) -> Path | None:
+ 
+ def discover_agent_dir() -> Path | None:
+     home = Path(os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
++    configured_python = os.getenv("HERMES_WEBUI_PYTHON", "").strip()
++    if configured_python:
++        agent_dir = _agent_dir_from_python(configured_python)
++        if agent_dir:
++            return agent_dir
+     candidates = [
+         os.getenv("HERMES_WEBUI_AGENT_DIR", ""),
+         str(home / "hermes-agent"),
+@@ -230,6 +235,9 @@ def discover_agent_dir() -> Path | None:
+     agent_dir = _agent_dir_from_hermes_cli()
+     if agent_dir:
+         return agent_dir
++    # The configured HAOS interpreter is authoritative: it is the runtime that
++    # will execute server.py and therefore the source tree it imports is the
++    # correct agent discovery target.
+     return _agent_dir_from_python(discover_launcher_python(None))
+ 
+ 
+diff --git a/tests/test_haos_runtime_profile_compat.py b/tests/test_haos_runtime_profile_compat.py
+new file mode 100644
+index 00000000..8f452803
+--- /dev/null
++++ b/tests/test_haos_runtime_profile_compat.py
+@@ -0,0 +1,84 @@
++"""Behavior regressions for HAOS runtime/profile compatibility."""
++
++from __future__ import annotations
++
++import subprocess
++import sys
++import types
++
++
++def test_oauth_default_auth_path_follows_active_profile_but_explicit_path_wins(
++    monkeypatch, tmp_path
++):
++    import api.oauth as oauth
++
++    profile_home = tmp_path / "profile-a"
++    profile_home.mkdir()
++    monkeypatch.setattr(oauth, "_get_active_hermes_home", lambda: profile_home)
++    monkeypatch.setattr(oauth, "AUTH_JSON_PATH", oauth._INITIAL_AUTH_JSON_PATH)
++
++    oauth._write_auth_json({"profile": "active"})
++    assert (profile_home / "auth.json").exists()
++    assert oauth._read_auth_json() == {"profile": "active"}
++
++    explicit_path = tmp_path / "explicit" / "auth.json"
++    oauth._write_auth_json({"profile": "explicit"}, auth_path=explicit_path)
++    assert oauth._read_auth_json(explicit_path) == {"profile": "explicit"}
++    assert "explicit" not in (profile_home / "auth.json").read_text(encoding="utf-8")
++
++
++def test_provider_model_lookup_uses_configured_agent_dir(monkeypatch, tmp_path):
++    import api.config as api_config
++    from api import routes
++
++    agent_dir = tmp_path / "haos-agent"
++    agent_dir.mkdir()
++    monkeypatch.setattr(api_config, "_AGENT_DIR", agent_dir)
++
++    calls: list[str] = []
++    models_module = types.ModuleType("hermes_cli.models")
++    models_module.provider_model_ids = lambda provider: calls.append(provider) or ["haos-model"]
++    package_module = types.ModuleType("hermes_cli")
++    package_module.__path__ = []
++    monkeypatch.setitem(sys.modules, "hermes_cli", package_module)
++    monkeypatch.setitem(sys.modules, "hermes_cli.models", models_module)
++
++    assert routes._provider_model_ids_from_agent("openai") == ["haos-model"]
++    assert calls == ["openai"]
++    assert str(agent_dir.resolve()) in sys.path
++
++
++def test_bootstrap_prefers_configured_python_for_agent_discovery(monkeypatch, tmp_path):
++    import bootstrap
++
++    configured_python = str(tmp_path / "haos-python")
++    configured_agent = tmp_path / "configured-agent"
++    monkeypatch.setenv("HERMES_WEBUI_PYTHON", configured_python)
++    monkeypatch.setattr(bootstrap, "_agent_dir_from_python", lambda value: configured_agent if value == configured_python else None)
++    monkeypatch.setattr(bootstrap, "_agent_dir_from_hermes_cli", lambda: (_ for _ in ()).throw(AssertionError("CLI fallback used")))
++    monkeypatch.setattr(bootstrap, "REPO_ROOT", tmp_path)
++    monkeypatch.setattr(bootstrap, "shutil", types.SimpleNamespace(which=lambda _: None))
++
++    assert bootstrap.discover_agent_dir() == configured_agent
++
++
++def test_startup_auto_install_uses_configured_runtime_python(monkeypatch, tmp_path):
++    import api.startup as startup
++
++    agent_dir = tmp_path / "agent"
++    agent_dir.mkdir()
++    (agent_dir / "requirements.txt").write_text("example-package\n", encoding="utf-8")
++    runtime_python = str(tmp_path / "haos-python")
++    monkeypatch.setenv("HERMES_WEBUI_AUTO_INSTALL", "1")
++    monkeypatch.setenv("HERMES_WEBUI_PYTHON", runtime_python)
++    monkeypatch.setattr(startup, "_agent_dir", lambda: agent_dir)
++    monkeypatch.setattr(startup, "_trusted_agent_dir", lambda _: True)
++    seen: list[list[str]] = []
++
++    def fake_run(argv, **kwargs):
++        seen.append(argv)
++        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
++
++    monkeypatch.setattr(startup.subprocess, "run", fake_run)
++    assert startup.auto_install_agent_deps() is True
++    assert seen == [[runtime_python, "-m", "pip", "install", "--quiet", "-r", str(agent_dir / "requirements.txt")]]

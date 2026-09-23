@@ -66,29 +66,34 @@ impl SystemOneEngine {
         let conn = Connection::open_with_flags(
             &self.db_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).ok()?;
+        )
+        .ok()?;
 
-        let mut stmt = conn.prepare(
-            "SELECT pattern_key, domain, raw_signature, decision_type, result_json,
+        let mut stmt = conn
+            .prepare(
+                "SELECT pattern_key, domain, raw_signature, decision_type, result_json,
                     confidence, hit_count, created_at, last_hit_at
-             FROM system_one_decisions WHERE pattern_key = ?1"
-        ).ok()?;
+             FROM system_one_decisions WHERE pattern_key = ?1",
+            )
+            .ok()?;
 
-        let record = stmt.query_row(params![key], |row| {
-            let res_str: String = row.get(4)?;
-            let res_val = serde_json::from_str(&res_str).unwrap_or(serde_json::Value::Null);
-            Ok(DecisionRecord {
-                pattern_key: row.get(0)?,
-                domain: row.get(1)?,
-                raw_signature: row.get(2)?,
-                decision_type: row.get(3)?,
-                result: res_val,
-                confidence: row.get(5)?,
-                hit_count: row.get(6)?,
-                created_at: row.get(7)?,
-                last_hit_at: row.get(8)?,
+        let record = stmt
+            .query_row(params![key], |row| {
+                let res_str: String = row.get(4)?;
+                let res_val = serde_json::from_str(&res_str).unwrap_or(serde_json::Value::Null);
+                Ok(DecisionRecord {
+                    pattern_key: row.get(0)?,
+                    domain: row.get(1)?,
+                    raw_signature: row.get(2)?,
+                    decision_type: row.get(3)?,
+                    result: res_val,
+                    confidence: row.get(5)?,
+                    hit_count: row.get(6)?,
+                    created_at: row.get(7)?,
+                    last_hit_at: row.get(8)?,
+                })
             })
-        }).ok()?;
+            .ok()?;
 
         // Incrementa hit_count atomicamente
         let now = Self::now_secs();
@@ -104,7 +109,8 @@ impl SystemOneEngine {
         let conn = Connection::open_with_flags(
             &self.db_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         let now = Self::now_secs();
         let res_json = serde_json::to_string(&record.result).unwrap_or_else(|_| "{}".to_string());
@@ -131,7 +137,8 @@ impl SystemOneEngine {
                 record.confidence,
                 now
             ],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
 
         Ok(())
     }
@@ -149,7 +156,7 @@ impl SystemOneEngine {
             if let Ok(mut stmt) = conn.prepare(
                 "SELECT pattern_key, domain, raw_signature, decision_type, result_json,
                         confidence, hit_count, created_at, last_hit_at
-                 FROM system_one_decisions WHERE domain = ?1 ORDER BY hit_count DESC LIMIT ?2"
+                 FROM system_one_decisions WHERE domain = ?1 ORDER BY hit_count DESC LIMIT ?2",
             ) {
                 if let Ok(rows) = stmt.query_map(params![dom, limit as i64], |row| {
                     let res_str: String = row.get(4)?;
@@ -174,7 +181,7 @@ impl SystemOneEngine {
         } else if let Ok(mut stmt) = conn.prepare(
             "SELECT pattern_key, domain, raw_signature, decision_type, result_json,
                     confidence, hit_count, created_at, last_hit_at
-             FROM system_one_decisions ORDER BY hit_count DESC LIMIT ?1"
+             FROM system_one_decisions ORDER BY hit_count DESC LIMIT ?1",
         ) {
             if let Ok(rows) = stmt.query_map(params![limit as i64], |row| {
                 let res_str: String = row.get(4)?;

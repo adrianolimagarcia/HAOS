@@ -12,6 +12,31 @@ from typing import Any, Dict, List
 from hermes.platform.ui.stats import DashboardStats
 
 
+def task_list_projection(task: Dict[str, Any]) -> Dict[str, Any]:
+    """Bounded list shape; report/log/blob content stays on the detail route."""
+    result = task.get("result")
+    if hasattr(result, "to_dict"):
+        result = result.to_dict()
+    elif not isinstance(result, dict):
+        result = None
+    projected = {key: task.get(key) for key in (
+        "id", "title", "status", "phase", "priority", "assignee",
+        "created_at", "started_at", "completed_at", "elapsed_seconds",
+        "tokens", "cost", "last_failure_error", "workspace_path",
+    ) if key in task}
+    spec = task.get("spec")
+    if isinstance(spec, dict):
+        projected["spec"] = {key: spec[key] for key in ("goal", "description", "title") if key in spec}
+    run = task.get("run")
+    if isinstance(run, dict):
+        projected["run"] = {key: run[key] for key in ("worker_id", "status", "exit_reason") if key in run}
+    if result is not None:
+        projected["result"] = {key: result[key] for key in ("summary", "outcome", "reviewer_verdict") if key in result}
+    projected["report_available"] = bool(task.get("report_content") or (isinstance(result, dict) and (result.get("artifacts") or result.get("evidence"))))
+    projected["detail_url"] = f"/api/tasks/{task.get('id', '')}"
+    return projected
+
+
 def taskboard_view(stats: DashboardStats) -> Dict[str, Any]:
     """View AionUI taskboard: contagem por status + tarefas recentes."""
     board = stats.task_board()
@@ -22,7 +47,7 @@ def taskboard_view(stats: DashboardStats) -> Dict[str, Any]:
             {"status": status, "count": count}
             for status, count in sorted(board.by_status.items())
         ],
-        "recent": board.recent,
+        "recent": [task_list_projection(task) for task in board.recent],
     }
 
 

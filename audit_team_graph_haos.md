@@ -1,4 +1,10 @@
-# Relatório de Auditoria e Validação: Team Graph no HAOS
+# Historical audit: Team Graph (retired)
+
+This document records the former Team Graph implementation for provenance only. It is not a
+current runtime contract; the projection, routes, UI tab, CLI commands, and bindings were retired.
+The live control plane, taskboard, worker status, delegation/A2A, The Eye orchestration, and
+GraphRAG remain separate and active.
+
 
 **ID da Missão/Tarefa:** T-0f8470  
 **Data:** 2026-09-07  

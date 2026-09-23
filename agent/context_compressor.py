@@ -652,7 +652,11 @@ _PRUNED_TOOL_PLACEHOLDER = "[Old tool output cleared to save context space]"
 
 
 def _is_summary_stub(content: str) -> bool:
-    """True for a tool result already replaced by a 1-line ``[tool] ... (N chars)`` summary."""
+    """True for a tool result already replaced by a 1-line summary or masked observation."""
+    if not isinstance(content, str):
+        return False
+    if content.startswith("[Observation masked:"):
+        return True
     return content.startswith("[") and " chars)" in content and len(content) < 400
 
 
@@ -1380,6 +1384,165 @@ def _str_arg(args: dict, key: str, default: str = "") -> str:
     """Coerce a parsed tool arg to ``str`` (models emit non-string values)."""
     val = args.get(key, default)
     return val if isinstance(val, str) else default if val is None else str(val)
+
+
+def mask_stale_observation(tool_name: str, tool_args: Any, content: str) -> str:
+    """Mask stale tool observations outside the protected tail.
+
+    Deterministic zero-LLM observation masking (Camada A / ToolResultCompaction).
+    Collapses inspection tools (read_file, search_files, web_extract, web_search)
+    and execution tools (terminal, execute_code) into concise deterministic markers.
+    """
+    args = _json_dict(tool_args) if not isinstance(tool_args, dict) else tool_args
+    content_str = content if isinstance(content, str) else ""
+    total_chars = len(content_str)
+
+    if tool_name == "read_file":
+        path = args.get("path", "?")
+        return f"[Observation masked: read_file(path='{path}') — execution succeeded ({total_chars:,} chars omitted)]"
+
+    if tool_name == "search_files":
+        pattern = args.get("pattern", "?")
+        target = args.get("target", "content")
+        path = args.get("path", ".")
+        return f"[Observation masked: search_files(pattern='{pattern}', target='{target}', path='{path}') — execution succeeded ({total_chars:,} chars omitted)]"
+
+    if tool_name == "web_extract":
+        urls = args.get("urls", [])
+        first = urls[0] if isinstance(urls, list) and urls else "?"
+        if isinstance(first, dict):
+            first = first.get("url") or first.get("href") or "?"
+        elif not isinstance(first, str):
+            first = "?"
+        if isinstance(urls, list) and len(urls) > 1:
+            first += f" (+{len(urls) - 1} more)"
+        return f"[Observation masked: web_extract(urls=['{first}']) — execution succeeded ({total_chars:,} chars omitted)]"
+
+    if tool_name == "web_search":
+        query = args.get("query", "?")
+        return f"[Observation masked: web_search(query='{query}') — execution succeeded ({total_chars:,} chars omitted)]"
+
+    if tool_name == "terminal":
+        cmd = _str_arg(args, "command")
+        cmd_preview = cmd if len(cmd) <= 60 else cmd[:57] + "..."
+        exit_code = m.group(1) if (m := re.search(r'"exit_code"\s*:\s*(-?\d+)', content_str)) else "0"
+        lines = [line.strip() for line in content_str.strip().splitlines() if line.strip()]
+        last_line = lines[-1] if lines else ""
+        if len(last_line) > 80:
+            last_line = last_line[:77] + "..."
+        status_suffix = f" | last: {last_line}" if last_line and last_line != f'"exit_code": {exit_code}' else ""
+        return f"[Observation masked: terminal('{cmd_preview}') -> exit {exit_code}{status_suffix}, output omitted]"
+
+    if tool_name == "execute_code":
+        code = _str_arg(args, "code")
+        code_preview = code[:60].replace("\n", " ") + ("..." if len(code) > 60 else "")
+        lines = [line.strip() for line in content_str.strip().splitlines() if line.strip()]
+        last_line = lines[-1] if lines else ""
+        if len(last_line) > 80:
+            last_line = last_line[:77] + "..."
+        status_suffix = f" | last: {last_line}" if last_line else ""
+        return f"[Observation masked: execute_code(`{code_preview}`){status_suffix}, output omitted]"
+
+    return _summarize_tool_result(tool_name, tool_args if isinstance(tool_args, str) else json.dumps(tool_args), content_str)
+
+
+class ToolResultCompaction:
+    """ToolResultCompaction (Camada A de Observações) para o compressor de contexto do HAOS.
+
+    Identifica pares de mensagens de tool_call e tool_result anteriores à cauda protegida
+    e colapsa saídas volumosas de ferramentas de inspeção, terminal, código e scraping
+    para marcadores compactos informativos preservando call_id/tool_call_id, role e integridade.
+    """
+
+    @classmethod
+    def prune_stale_tool_observations(
+        cls,
+        messages: List[Dict[str, Any]],
+        protect_last_n: int = 4,
+        min_prune_chars: int = _PRUNE_MIN_CHARS,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Poda cirurgicamente saídas volumosas de ferramentas anteriores à cauda protegida.
+
+        Preserva rigorosamente:
+        - tool_call_id / call_id
+        - name da ferramenta
+        - role da mensagem ('tool')
+        - integridade de alternância de turnos
+
+        Retorna (mensagens_atualizadas, count_podados).
+        """
+        if not messages:
+            return messages, 0
+
+        # Identificar boundary da cauda protegida (protect_last_n mensagens no final)
+        boundary = max(0, len(messages) - protect_last_n)
+        if boundary <= 0:
+            return messages, 0
+
+        call_id_to_tool = _tool_calls_by_id(messages)
+        result = [m.copy() for m in messages]
+        pruned_count = 0
+
+        for i in range(boundary):
+            msg = result[i]
+            if msg.get("role") != "tool":
+                continue
+            content = msg.get("content", "")
+            if not isinstance(content, str) or len(content) <= min_prune_chars:
+                continue
+            if _is_summary_stub(content) or content == _PRUNED_TOOL_PLACEHOLDER:
+                continue
+
+            call_id = msg.get("tool_call_id", "")
+            tool_name, tool_args = call_id_to_tool.get(call_id, ("unknown", ""))
+
+            # Mascara com marker determinístico informativo
+            new_content = mask_stale_observation(tool_name, tool_args, content)
+            if new_content != content:
+                result[i] = {**msg, "content": new_content}
+                pruned_count += 1
+
+        return result, pruned_count
+
+    @classmethod
+    def compact_tool_results(
+        cls,
+        messages: List[Dict[str, Any]],
+        protect_last_n: int = 4,
+        min_prune_chars: int = _PRUNE_MIN_CHARS,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Alias para prune_stale_tool_observations."""
+        return cls.prune_stale_tool_observations(
+            messages,
+            protect_last_n=protect_last_n,
+            min_prune_chars=min_prune_chars,
+        )
+
+
+def compact_tool_results(
+    messages: List[Dict[str, Any]],
+    protect_last_n: int = 4,
+    min_prune_chars: int = _PRUNE_MIN_CHARS,
+) -> tuple[List[Dict[str, Any]], int]:
+    """Função de conveniência para ToolResultCompaction.compact_tool_results."""
+    return ToolResultCompaction.compact_tool_results(
+        messages,
+        protect_last_n=protect_last_n,
+        min_prune_chars=min_prune_chars,
+    )
+
+
+def prune_stale_tool_observations(
+    messages: List[Dict[str, Any]],
+    protect_last_n: int = 4,
+    min_prune_chars: int = _PRUNE_MIN_CHARS,
+) -> tuple[List[Dict[str, Any]], int]:
+    """Função de conveniência para ToolResultCompaction.prune_stale_tool_observations."""
+    return ToolResultCompaction.prune_stale_tool_observations(
+        messages,
+        protect_last_n=protect_last_n,
+        min_prune_chars=min_prune_chars,
+    )
 
 
 def _summarize_tool_result(tool_name: str, tool_args: str, tool_content: str) -> str:
@@ -2699,7 +2862,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
             _skill = _json_dict(tool_args).get("name", "")
             if isinstance(_skill, str) and _skill.lower() in protected_skills:
                 return False
-        result[idx] = {**msg, "content": _summarize_tool_result(tool_name, tool_args, content)}
+        result[idx] = {**msg, "content": mask_stale_observation(tool_name, tool_args, content)}
         return True
 
     def _pressure_demote_tail(
@@ -2926,6 +3089,40 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         # Reclamation just ran: let a future lockout warn again.
         self._last_reclaim_block_warn = None
         return pruned_msgs, pruned_count
+
+    def compact_tool_results(
+        self,
+        messages: List[Dict[str, Any]],
+        protect_tail_count: int | None = None,
+        protect_tail_tokens: int | None = None,
+        min_prune_chars: int = _PRUNE_MIN_CHARS,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Poda cirúrgica de saídas de ferramentas via instância de ContextCompressor.
+
+        Aplica prune_stale_tool_observations respeitando as políticas e buffers configurados.
+        """
+        tail_count = self.protect_last_n if protect_tail_count is None else protect_tail_count
+        return self._prune_old_tool_results(
+            messages,
+            protect_tail_count=tail_count,
+            protect_tail_tokens=protect_tail_tokens,
+            min_prune_chars=min_prune_chars,
+        )
+
+    def prune_stale_tool_observations(
+        self,
+        messages: List[Dict[str, Any]],
+        protect_tail_count: int | None = None,
+        protect_tail_tokens: int | None = None,
+        min_prune_chars: int = _PRUNE_MIN_CHARS,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Alias para compact_tool_results."""
+        return self.compact_tool_results(
+            messages,
+            protect_tail_count=protect_tail_count,
+            protect_tail_tokens=protect_tail_tokens,
+            min_prune_chars=min_prune_chars,
+        )
 
     def _compute_summary_budget(self, turns_to_summarize: List[Dict[str, Any]]) -> int:
         """Scale the summary token budget with content size and context window."""
@@ -3230,8 +3427,8 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
                 "api_mode": self.api_mode,
             },
             "messages": [{"role": "user", "content": prompt}], "route_info": _aux_route,
-            # NO max_tokens: Anthropic/NIM wires forward it and a hard cap truncates summaries
-            # (thinking models burn it on reasoning). Timeout comes from call_llm config.
+            "extra_body": {"metadata": {"task": "compression"}},
+            # NO max_tokens: the wrapper reserves a dedicated compression budget.
         }
         if self.summary_model:
             call_kwargs["model"] = self.summary_model
@@ -3446,10 +3643,11 @@ Be specific with file paths, commands, line numbers, and results.]
 
 ## Active State
 [Current working state — include:
-- Working directory and branch (if applicable)
-- Modified/created files with brief note on each
-- Test status (X/Y passing)
-- Any running processes or servers
+- Modified/created files: [exact absolute paths]
+- Git branches and commit SHAs (if mentioned)
+- Completed & pending milestones: [active task IDs and state]
+- Test/execution status: [passing/failing suites and error signatures]
+- Any running processes or background daemons
 - Environment details that matter]
 
 ## Blocked

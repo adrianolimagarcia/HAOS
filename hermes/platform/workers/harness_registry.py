@@ -12,7 +12,7 @@ Manages heterogeneous execution harnesses for multi-agent teams:
 Provides:
 1. Dynamic detection & health checking of tool availability on host (PATH, sockets, env vars, ports).
 2. Automated allocation of external worker specs (arguments, isolated git worktrees, env variables).
-3. Integration with TeamSpec / TeamRole and TeamGraphNode.
+3. Harness metadata consumed by worker allocation and status reporting (independent of GraphRAG memory).
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -230,36 +229,17 @@ class HarnessRegistry:
         elif home_agy.is_file() and os.access(home_agy, os.X_OK):
             executable = str(home_agy)
 
-        # Also probe wrapper-antigravity proxy socket/port (8790 default)
-        port = int(os.environ.get("ANTIGRAVITY_PROXY_PORT", "8790"))
-        proxy_live = False
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.1)
-                proxy_live = (s.connect_ex(("127.0.0.1", port)) == 0)
-        except Exception:
-            proxy_live = False
+        # AGY is a real CLI worker.  Do not infer availability from the
+        # separate wrapper-antigravity proxy: it has a different contract.
+        details = {"cli_available": bool(executable)}
 
-        gemini_token = Path.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
-        token_present = gemini_token.is_file()
-
-        available = bool(executable or proxy_live or token_present)
-        endpoint = f"http://127.0.0.1:{port}" if proxy_live else None
-
-        details = {
-            "proxy_live": proxy_live,
-            "port": port,
-            "oauth_token_present": token_present,
-        }
-
-        if available:
+        if executable:
             return HarnessInfo(
                 name="agy",
                 available=True,
                 status="available",
-                executable=executable or "agy-proxy",
-                endpoint=endpoint,
-                description="AGY / Antigravity (Google Cloud Code Assist & Gemini OAuth)",
+                executable=executable,
+                description="AGY / Antigravity CLI (non-interactive print mode)",
                 details=details,
             )
 
@@ -267,8 +247,8 @@ class HarnessRegistry:
             name="agy",
             available=False,
             status="missing",
-            description="AGY / Antigravity (Google Cloud Code Assist & Gemini OAuth)",
-            error="AGY executable, token, or wrapper-antigravity proxy (port 8790) not found.",
+            description="AGY / Antigravity CLI (non-interactive print mode)",
+            error="Executable 'agy' not found on PATH or AGY_PATH.",
             details=details,
         )
 
@@ -397,10 +377,12 @@ class HarnessRegistry:
             )
 
         if h_clean == "dsh":
+            # DSH 0.1.x has no exec/--objective/--workdir surface.  The
+            # headless profile accepts one positional task and inherits cwd.
             return ExternalWorkerSpec(
                 kind="dsh",
                 executable=executable,
-                args=[executable, "exec", "--objective", objective, "--workdir", workspace],
+                args=[executable, "--profile", "headless", objective],
                 env_vars={
                     "HAOS_EXTERNAL_WORKER": "dsh",
                     "HAOS_HARNESS": "dsh",
@@ -425,16 +407,28 @@ class HarnessRegistry:
             )
 
         if h_clean == "agy":
+            # `agy chat` is not a supported command.  The stable automation
+            # surface is print mode; keep the prompt attached to --print so
+            # argparse cannot consume the following option as its value.
+            args = [executable, "--print", f"{objective}", "--add-dir", workspace]
+            model = task_context.get("model")
+            agent = task_context.get("agent")
+            effort = task_context.get("effort")
+            if model:
+                args.extend(["--model", str(model)])
+            if agent:
+                args.extend(["--agent", str(agent)])
+            if effort:
+                args.extend(["--effort", str(effort)])
             return ExternalWorkerSpec(
                 kind="agy",
                 executable=executable,
-                args=[executable, "chat", "--message", objective, "--cwd", workspace],
+                args=args,
                 env_vars={
                     "HAOS_EXTERNAL_WORKER": "agy",
                     "HAOS_HARNESS": "agy",
                     "HAOS_KANBAN_TASK_ID": task_id,
                     "HAOS_WORKTREE_PATH": workspace,
-                    "ANTIGRAVITY_PROXY_ENDPOINT": info.endpoint or "http://127.0.0.1:8790",
                 },
                 workspace=workspace,
             )

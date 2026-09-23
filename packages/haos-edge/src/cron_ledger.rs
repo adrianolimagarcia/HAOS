@@ -111,7 +111,7 @@ impl CronLedgerEngine {
         let mut out = Vec::new();
         if let Ok(mut stmt) = conn.prepare(
             "SELECT execution_id, job_json, content, status, created_at, finished_at, error
-             FROM deliveries WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?1"
+             FROM deliveries WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?1",
         ) {
             if let Ok(rows) = stmt.query_map(params![limit as i64], |row| {
                 let job_raw: String = row.get(1)?;

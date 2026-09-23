@@ -144,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/sessions", get(sessions_fast_handler))
         .route("/api/session", get(session_detail_handler))
         .route("/api/session/status", get(session_status_handler))
+        .route("/api/events", get(proxy::events_ws_handler))
         .route("/health", get(health_handler))
         // 2. Arquivos estáticos servidos diretamente por Rust sem tocar no Python (Zero-Copy)
         .nest_service("/static", serve_static)

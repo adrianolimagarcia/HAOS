@@ -6,7 +6,7 @@
 
 - **Decoupled Architecture:** Runs completely standalone with isolated configurations and data persistence in `~/.haos`.
 - **Kanban & Task Engine:** Canonical task DAG orchestration, backpressure concurrency control, and deterministic multi-lane execution.
-- **Standalone Web UI:** Real-time web dashboard for swarm monitoring, Team Graph, task inspection, and control interventions.
+- **Standalone Web UI:** Real-time web dashboard for taskboard, worker status, task inspection, and control interventions.
 - **Built-in Self-Diagnostics:** Run `/haos doctor` or `haos doctor` anytime to audit environment, filesystem permissions, SQLite database integrity, and network port availability.
 
 ## Installation

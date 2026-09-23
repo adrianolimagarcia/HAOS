@@ -68,7 +68,7 @@ CONTROL_PID=$!
 echo ""
 echo "✅ Both servers are online!"
 echo "👉 Hermes Configuration Dashboard: http://${HAOS_HOST:-localhost}:9191/"
-echo "👉 HAOS Control Plane (Team Graph): http://${HAOS_HOST:-localhost}:${HAOS_PORT:-8788}/"
+echo "👉 HAOS Control Plane: http://${HAOS_HOST:-localhost}:${HAOS_PORT:-8788}/"
 echo "============================================================"
 
 trap "kill -TERM ${DASHBOARD_PID} ${PROXY_PID} ${CONTROL_PID} 2>/dev/null || true" INT TERM EXIT

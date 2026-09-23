@@ -41,7 +41,7 @@ canonical — see §5 for the citing sites.
 | ADR-003 | `docs/architecture/ADR-003-PHASE-2-TEAM-RUNTIME.md` | Phase 2 — Multi-Agent Team Runtime Architecture | Accepted (Canonical Phase 2) | 2026-09-08 |
 | ADR-004 | `docs/architecture/ADR-004-PHASE-3-ADAPTIVE-INTELLIGENCE.md` | Phase 3 — Adaptive Intelligence Platform (Ouroboros SOTA) | Accepted (Canonical Phase 3) | 2026-09-08 |
 | ADR-005 | `docs/architecture/ADR-005-PHASE-4-PROTOCOL-FEDERATION-RUNTIME.md` | Phase 4 — Universal Protocol Gateway & Federation Runtime | Accepted (Canonical Phase 4) | 2026-09-08 |
-| ADR-006 | `docs/architecture/ADR-006-PHASE-5-CONTROL-PLANE.md` | Phase 5 — Comprehensive Control Plane & Team Graph UI | Accepted (Canonical Phase 5) | 2026-09-08 |
+| ADR-006 | `docs/architecture/ADR-006-PHASE-5-CONTROL-PLANE.md` | Phase 5 — Comprehensive Control Plane | Superseded: graph projection retired | 2026-09-08 |
 | ADR-007 | `docs/architecture/ADR-007-PHASE-6-7-HARDENING-SCALE.md` | Phase 6 & 7 — Production Hardening, Chaos Resilience & Distributed Scale | Accepted (Canonical Hardening) | 2026-09-08 |
 | ADR-013 | `docs/architecture/ADR-013-CANONICAL-MEMORY-FABRIC.md` | Canonical Memory Fabric | Accepted (Migration Path) | 2026-09-17 |
 
@@ -140,7 +140,7 @@ updating every one of them.
 | ADR-001 | HAOS SOTA multi-agent architecture | `docs/architecture/HAOS_SYSTEM_SPEC.md`, `docs/haos/ARCHITECTURE.md`, `.hermes/obsidian_vault/architecture/` mirror, `tests/platform/test_canonical_adr_contract.py` |
 | ADR-002 | Architecture Freeze v0.1 (the 10 frozen contracts) | `tests/platform/test_adr_002_freeze_contract.py`, `docs/architecture/MASTER-PLAN-EXECUTION-BLUEPRINT-P1-P2.md`, and the `# Canonical ADR-002 alias` comments in `hermes/platform/` |
 | ADR-003 | Phase 2 Team Runtime | `docs/architecture/MASTER-PLAN-EXECUTION-BLUEPRINT-P1-P2.md` |
-| ADR-006 | Phase 5 Control Plane & Team Graph | `audit_team_graph_haos.md`, `.haos/result.json` |
+| ADR-006 | Phase 5 Control Plane | `docs/architecture/ADR-006-PHASE-5-CONTROL-PLANE.md` |
 | GOV-001 | Hermes remains the kernel | `architecture/core-patches.md` |
 | GOV-004 | Model ≠ Provider axiom | `hermes/platform/evals/golden_tasks.py` (G003) |
 | GOV-010 | GenericWorkerLane contract | `hermes/platform/execution/lane_generic.py`, `hermes/platform/evals/golden_tasks.py` |

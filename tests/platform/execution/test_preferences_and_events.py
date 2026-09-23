@@ -17,6 +17,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from hermes.platform.models.profiles import (
     ModelIdentity, ModelProfile, ProviderRoute,
@@ -209,44 +210,21 @@ class TestRequiredPreferredWiring(unittest.TestCase):
         self.assertEqual(persisted["model_profile_preferred"], "coding-primary")
 
     def test_team_binding_for_soft_preferred(self):
-        from hermes.platform.execution.team import (
-            TeamSpec, TeamRole, TeamResolver,
-        )
-        resolver = TeamResolver()
-        # binding_for não exige registro: resolve direto do roster (papel sem
-        # tabela canônica p/ isolar o caminho soft).
-        naked = TeamSpec(
-            team_id="pref-team", name="pref",
-            roles=[TeamRole(role_id="naked")],
-            gate_edges=(),
-        )
-        # Sem required/tabela => preferred (soft) resolve e marca o nível.
-        binding = resolver.binding_for(
-            naked, "naked",
-            task_model_profile_preferred="review-primary",
-        )
-        self.assertEqual(binding["model_profile"], "review-primary")
-        self.assertEqual(binding["binding_level"], "preferred")
-        # Required da task vence o preferred.
-        binding2 = resolver.binding_for(
-            naked, "naked",
-            task_model_profile="coding-primary",
-            task_model_profile_preferred="review-primary",
-        )
-        self.assertEqual(binding2["model_profile"], "coding-primary")
-        self.assertEqual(binding2["binding_level"], "required")
-        # Papel canônico (tabela) também vence o preferred (default domina).
-        canon = TeamSpec(
-            team_id="canon-team", name="canon",
-            roles=[TeamRole(role_id="polecat")],
-            gate_edges=(),
-        )
-        binding3 = resolver.binding_for(
-            canon, "polecat",
-            task_model_profile_preferred="security-primary",
-        )
-        self.assertEqual(binding3["model_profile"], "coding-primary")
-        self.assertEqual(binding3["binding_level"], "required")
+        """Delegation model preferences resolve without the removed team roster contract."""
+        from hermes.platform.webui.controlplane import _resolve_role_model_binding
+
+        with patch("hermes_cli.config.load_config", return_value={
+            "model": {"default": "default-model", "provider": "default-provider"},
+            "delegation": {"role_models": {"the_eye": "eye-model"}},
+        }):
+            self.assertEqual(
+                _resolve_role_model_binding("the_eye"),
+                ("eye-model", "default-provider"),
+            )
+            self.assertEqual(
+                _resolve_role_model_binding("the_eye", fallback_model="fallback-model", fallback_provider="fallback-provider"),
+                ("eye-model", "default-provider"),
+            )
 
 
 if __name__ == "__main__":

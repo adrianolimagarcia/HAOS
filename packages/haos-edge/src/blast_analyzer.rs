@@ -52,7 +52,13 @@ impl FastAstAnalyzer {
             let mut next_targets = HashSet::new();
 
             // Caminha pelos arquivos .py
-            Self::walk_and_scan(root_dir, &current_targets, &mut affected_files_set, &mut affected_callers_set, &mut next_targets);
+            Self::walk_and_scan(
+                root_dir,
+                &current_targets,
+                &mut affected_files_set,
+                &mut affected_callers_set,
+                &mut next_targets,
+            );
 
             current_targets = next_targets;
         }
@@ -89,9 +95,13 @@ impl FastAstAnalyzer {
         affected_callers: &mut HashSet<String>,
         _next_targets: &mut HashSet<String>,
     ) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
-            let Ok(ft) = entry.file_type() else { continue; };
+            let Ok(ft) = entry.file_type() else {
+                continue;
+            };
             if ft.is_symlink() {
                 continue;
             }
@@ -110,7 +120,13 @@ impl FastAstAnalyzer {
                     && name != "docs"
                     && name != "website"
                 {
-                    Self::walk_and_scan(&path, targets, affected_files, affected_callers, _next_targets);
+                    Self::walk_and_scan(
+                        &path,
+                        targets,
+                        affected_files,
+                        affected_callers,
+                        _next_targets,
+                    );
                 }
             } else if path.extension().map_or(false, |ext| ext == "py") {
                 if let Ok(content) = std::fs::read_to_string(&path) {

@@ -217,6 +217,73 @@ class TestAudit:
         assert rec["direction"] == "inbound"
         assert rec["peer"] == "peer-y"
         assert rec["task_id"] == "task-1"
+        assert "prov" not in rec
+
+    def test_audit_with_explicit_prov(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        prov_data = {
+            "wasGeneratedBy": "task:task-123",
+            "wasAssociatedWith": "agent:haos-cachyos-x8664",
+            "wasDerivedFrom": "audit:task-orig",
+            "causado_by": "delegacao formal",
+            "used": ["task:task-123"],
+            "supersedes": [],
+        }
+        security.audit("outbound", "peer-remote", "task-123", "executado", prov=prov_data)
+        audit_file = tmp_path / "a2a_audit.jsonl"
+        assert audit_file.exists()
+        rec = json.loads(audit_file.read_text().strip().splitlines()[-1])
+        assert rec["direction"] == "outbound"
+        assert rec["peer"] == "peer-remote"
+        assert rec["task_id"] == "task-123"
+        assert rec["prov"] == prov_data
+        assert rec["prov"]["wasGeneratedBy"] == "task:task-123"
+        assert rec["prov"]["wasAssociatedWith"] == "agent:haos-cachyos-x8664"
+        assert rec["prov"]["used"] == ["task:task-123"]
+
+    def test_audit_with_prov_kwargs_inference(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        security.audit(
+            "inbound",
+            "peer-remote",
+            "task-456",
+            "teste kwargs",
+            session_id="session-xyz",
+            caller="agent:remote-peer",
+            used=["task:task-prev"],
+        )
+        audit_file = tmp_path / "a2a_audit.jsonl"
+        assert audit_file.exists()
+        rec = json.loads(audit_file.read_text().strip().splitlines()[-1])
+        assert "prov" in rec
+        assert rec["prov"]["wasGeneratedBy"] == "session:session-xyz"
+        assert rec["prov"]["wasAssociatedWith"] == "agent:remote-peer"
+        assert rec["prov"]["used"] == ["task:task-prev"]
+
+    def test_audit_with_session_id_fallback_agent(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delenv("HERMES_AGENT_ID", raising=False)
+        monkeypatch.delenv("HAOS_NODE_NAME", raising=False)
+        security.audit(
+            "outbound",
+            "peer-z",
+            "task-789",
+            "resumo",
+            session_id="",
+        )
+        audit_file = tmp_path / "a2a_audit.jsonl"
+        assert audit_file.exists()
+        rec = json.loads(audit_file.read_text().strip().splitlines()[-1])
+        assert "prov" in rec
+        assert rec["prov"]["wasGeneratedBy"] == "session:unknown"
+        assert rec["prov"]["wasAssociatedWith"] == "agent:cachyos"
+        assert rec["prov"]["used"] == ["task:task-789"]
+
+    def test_audit_never_raises_on_invalid_input_or_io_error(self, monkeypatch):
+        # Even if prov is malformed or filesystem fails, audit() must never raise
+        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: None)
+        # Should not raise exception
+        security.audit("inbound", "peer-y", "task-err", "msg", prov={"corrupted": object()})
 
 
 # --------------------------------------------------------------------------

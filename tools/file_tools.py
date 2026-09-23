@@ -1287,6 +1287,41 @@ def _handle_patch(args, **kw):
 
 
 def _handle_search_files(args, **kw):
+    # Fast-Path Nativo em Rust via haos-edge Daemon (Opção 2 IPC)
+    try:
+        import urllib.request, json
+        pattern = args.get("pattern", "")
+        path = args.get("path", ".")
+        file_glob = args.get("file_glob")
+        limit = args.get("limit", 50)
+
+        req_payload = json.dumps({
+            "path": path,
+            "pattern": pattern,
+            "glob": file_glob,
+            "max_matches": limit,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "http://127.0.0.1:8799/api/tools/search-files",
+            data=req_payload,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("ok") and "result" in data:
+                res = data["result"]
+                return json.dumps({
+                    "success": True,
+                    "engine": "rust_haos_edge",
+                    "total_matches": res.get("total_matches", 0),
+                    "files_searched": res.get("files_searched", 0),
+                    "matches": res.get("matches", []),
+                    "truncated": res.get("truncated", False)
+                }, ensure_ascii=False)
+    except Exception:
+        pass  # Fallback transparente para o buscador Python nativo
+
     tid = kw.get("task_id") or "default"
     target_map = {"grep": "content", "find": "files"}
     raw_target = args.get("target", "content")

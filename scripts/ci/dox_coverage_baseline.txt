@@ -168,7 +168,6 @@ hermes/platform/ui/stats.py
 hermes/platform/ui/views.py
 hermes/platform/webui/agentconfig.py
 hermes/platform/webui/controlplane.py
-hermes/platform/webui/harness_bindings.py
 hermes/platform/webui/settings.py
 hermes/platform/webui/standalone.py
 hermes/platform/webui/systemfacts.py

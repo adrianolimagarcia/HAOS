@@ -408,120 +408,7 @@
   .frow textarea { width: 220px; flex: none; height: 42px; font-family: var(--mono); font-size: .76rem; }
   .frow input.secret { color: var(--warn); }
   .secname { font-size: .8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent2); margin: 10px 0 4px; font-weight: 700; }
-  /* Team Graph Visuals (Phase 5) */
-  .tg-container { display: flex; flex-direction: column; gap: 16px; }
-  .tg-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
-  .tg-stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--glass-shadow); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
-  .tg-stat-card .lbl { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
-  .tg-stat-card .val { font-size: 1.35rem; font-weight: 700; color: var(--text-strong); margin-top: 4px; font-family: var(--mono); }
-  .tg-tree-canvas {
-    background: radial-gradient(circle at 50% 15%, rgba(255, 255, 255, 0.85) 0%, rgba(241, 245, 249, 0.7) 100%);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 36px 20px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    position: relative;
-    overflow-x: auto;
-    box-shadow: var(--glass-shadow-lg);
-  }
-  .tg-node {
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 16px 20px;
-    min-width: 280px;
-    max-width: 360px;
-    box-shadow: var(--glass-shadow);
-    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
-    position: relative;
-  }
-  .tg-node:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--glass-shadow-lg); }
-  .tg-node.mayor { border-top: 4px solid var(--accent2); background: linear-gradient(180deg, rgba(239, 246, 255, 0.8) 0%, rgba(255, 255, 255, 0.95) 100%); }
-  .tg-node.suborch { border-top: 4px solid var(--accent); background: linear-gradient(180deg, rgba(240, 253, 250, 0.8) 0%, rgba(255, 255, 255, 0.95) 100%); }
-  .tg-node.coder { border-top: 4px solid var(--ok); background: linear-gradient(180deg, rgba(240, 253, 244, 0.8) 0%, rgba(255, 255, 255, 0.95) 100%); }
-  .tg-node.reviewer { border-top: 4px solid #8b5cf6; background: linear-gradient(180deg, rgba(245, 243, 255, 0.8) 0%, rgba(255, 255, 255, 0.95) 100%); }
-  
-  .tg-node-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .tg-node-title { font-weight: 700; font-size: 0.95rem; color: var(--text-strong); display: flex; align-items: center; gap: 6px; }
-  .tg-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 10px; font-family: var(--mono); text-transform: uppercase; font-weight: 700; }
-  .tg-badge.running { background: #fef3c7; color: #b45309; border: 1px solid rgba(217, 119, 6, 0.3); }
-  .tg-badge.completed { background: #dcfce7; color: #15803d; border: 1px solid rgba(22, 163, 74, 0.3); }
-  .tg-badge.idle { background: #f1f5f9; color: var(--muted); border: 1px solid var(--border); }
-  .tg-badge.paused { background: #ede9fe; color: #6d28d9; border: 1px solid rgba(124, 58, 237, 0.3); }
-  .tg-badge.failed, .tg-badge.error { background: #fee2e2; color: #b91c1c; border: 1px solid rgba(220, 38, 38, 0.3); }
-  .tg-badge.blocked { background: #ffedd5; color: #c2410c; border: 1px solid rgba(194, 65, 12, 0.3); }
-  
-  .tg-node-meta { font-size: 0.78rem; color: var(--muted); display: flex; flex-direction: column; gap: 5px; margin-top: 8px; border-top: 1px solid rgba(15, 23, 42, 0.06); padding-top: 8px; }
-  .tg-node-row { display: flex; justify-content: space-between; align-items: center; }
-  .tg-node-row .val { font-family: var(--mono); color: var(--text-strong); font-weight: 500; }
-  
-  .tg-connector-v { width: 2px; height: 32px; background: linear-gradient(180deg, var(--accent2), var(--accent)); margin: 6px auto; }
-  .tg-connector-fork {
-    width: 65%;
-    min-width: 360px;
-    height: 24px;
-    border-top: 2px solid var(--accent);
-    border-left: 2px solid var(--ok);
-    border-right: 2px solid #8b5cf6;
-    margin: 0 auto;
-  }
-  .tg-workers-row {
-    display: flex;
-    justify-content: center;
-    gap: 36px;
-    width: 100%;
-    flex-wrap: wrap;
-    position: relative;
-    margin-top: 6px;
-  }
-  .tg-review-link {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: #ffffff;
-    border: 1px dashed #8b5cf6;
-    color: #6d28d9;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 0.72rem;
-    font-family: var(--mono);
-    font-weight: 600;
-    z-index: 2;
-    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
-  }
-  /* Animated Pulse for Active Nodes */
-  @keyframes pulseNodeRunning {
-    0% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4); }
-    70% { box-shadow: 0 0 0 10px rgba(217, 119, 6, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); }
-  }
-  @keyframes pulseNodeCompleted {
-    0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4); }
-    70% { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
-  }
-  .tg-node.status-running {
-    animation: pulseNodeRunning 2s infinite;
-    border-color: var(--warn) !important;
-  }
-  .tg-node.status-completed {
-    border-color: var(--ok) !important;
-  }
-  .tg-node.status-failed, .tg-node.status-blocked {
-    border-color: var(--err) !important;
-  }
-
-  .tg-actions { display: flex; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(15, 23, 42, 0.06); }
-  .tg-btn { flex: 1; padding: 5px 8px; font-size: 0.72rem; border-radius: 6px; cursor: pointer; background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(15, 23, 42, 0.12); color: var(--text-strong); font-weight: 600; transition: all 0.15s ease; }
-  .tg-btn:hover { border-color: var(--accent); color: var(--accent); background: #ffffff; }
-  .tg-btn.abort:hover { border-color: var(--err); color: var(--err); background: var(--err-light); }
-
-  /* Persistent bot hierarchy (Visual Studio Team Graph Style) ---------------- */
+  /* Persistent bot hierarchy ---------------- */
   .bot-config-shell {
     display: block;
     width: 100%;
@@ -603,7 +490,6 @@
     position: relative;
     width: 100%;
   }
-  /* Linhas conectores idênticas ao Team Graph */
   .bot-branch > .bot-node::after {
     content: "";
     position: absolute;
@@ -1112,7 +998,6 @@
   <button data-tab="console" class="active"><span class="dot"></span>💬 Chat</button>
   <button data-tab="terminal"><span class="dot"></span>Terminal</button>
   <button data-tab="taskboard"><span class="dot"></span>Taskboard</button>
-  <button data-tab="teamgraph"><span class="dot"></span>🌲 Team Graph</button>
   <button data-tab="bots"><span class="dot"></span>🤖 Bots / Hierarquia</button>
   <button data-tab="scheduler"><span class="dot"></span>Scheduler</button>
   <button data-tab="ouroboros"><span class="dot"></span>Ouroboros</button>
@@ -1332,60 +1217,6 @@
     </div>
   </section>
 
-  <!-- ============ TEAM GRAPH (PHASE 5) ============ -->
-  <section class="tab" id="tab-teamgraph">
-    <div class="tg-container">
-      <div class="tg-overview" id="tgOverview"></div>
-
-      <div class="card" style="padding: 24px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap:wrap; gap:10px;">
-          <div>
-            <h3 style="margin:0; font-size:1.15rem; color:var(--text-strong); display:flex; align-items:center; gap:8px;">
-              🌲 Hierarquia Viva da Equipe Multi-Agente (Phase 5 Control Plane)
-            </h3>
-            <span style="font-size:0.82rem; color:var(--muted)">Topologia GasTown: Town Mayor ⟶ Sub-Orchestrator ⟶ Polecat Coder ⟷ Witness Reviewer</span>
-          </div>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <button class="act" onclick="openModelBindingModal()">🎛️ Vincular Modelos (Mayor / Orch / Leafs)</button>
-            <button class="act" onclick="fetchState()">🔄 Atualizar Grafo</button>
-          </div>
-        </div>
-
-                 <!-- Model Binding Controls Card -->
-        <div id="tgModelSelectorCard" class="card" style="background:rgba(255,255,255,0.92); border:1px solid var(--border); padding:16px; margin-bottom:20px; display:none; box-shadow:var(--glass-shadow);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <b style="font-size:0.95rem; color:var(--accent2);">⚙️ Model Binding dos Papéis (Salvo no config.yaml)</b>
-            <button class="act" style="padding:2px 8px; font-size:0.75rem;" onclick="$('tgModelSelectorCard').style.display='none'">✕ Fechar</button>
-          </div>
-          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
-            <div style="position:relative;">
-              <span style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:4px; font-weight:600;">👑 Town Mayor (Líder Executivo)</span>
-              <input type="text" id="tgMayorModel" class="mono" style="width:100%; padding:8px 12px;" placeholder="Digite para buscar modelo ou provider..." autocomplete="off" oninput="filterModelDropdown('mayor')" onfocus="filterModelDropdown('mayor')" />
-              <div id="drop_mayor" class="tg-model-drop" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:rgba(255,255,255,0.98); border:1px solid rgba(15,23,42,0.15); border-radius:8px; z-index:1000; box-shadow:var(--glass-shadow-lg); margin-top:4px;"></div>
-            </div>
-            <div style="position:relative;">
-              <span style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:4px; font-weight:600;">🏛️ Sub-Orchestrator (Arquiteto)</span>
-              <input type="text" id="tgOrchModel" class="mono" style="width:100%; padding:8px 12px;" placeholder="Digite para buscar modelo ou provider..." autocomplete="off" oninput="filterModelDropdown('orch')" onfocus="filterModelDropdown('orch')" />
-              <div id="drop_orch" class="tg-model-drop" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:rgba(255,255,255,0.98); border:1px solid rgba(15,23,42,0.15); border-radius:8px; z-index:1000; box-shadow:var(--glass-shadow-lg); margin-top:4px;"></div>
-            </div>
-            <div style="position:relative;">
-              <span style="font-size:0.8rem; color:var(--muted); display:block; margin-bottom:4px; font-weight:600;">🤖 Leafs / Workers (Executores)</span>
-              <input type="text" id="tgLeafModel" class="mono" style="width:100%; padding:8px 12px;" placeholder="Digite para buscar modelo ou provider..." autocomplete="off" oninput="filterModelDropdown('leaf')" onfocus="filterModelDropdown('leaf')" />
-              <div id="drop_leaf" class="tg-model-drop" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:rgba(255,255,255,0.98); border:1px solid rgba(15,23,42,0.15); border-radius:8px; z-index:1000; box-shadow:var(--glass-shadow-lg); margin-top:4px;"></div>
-            </div>
-          </div>
-          <datalist id="tgAvailModels"></datalist>
-          <div style="margin-top:14px; display:flex; justify-content:space-between; align-items:center;">
-            <span id="tgModelSaveMsg" style="font-size:0.8rem; color:var(--muted);"></span>
-            <button class="act primary" onclick="saveTeamModels()">💾 Aplicar Modelos aos Agentes</button>
-          </div>
-        </div>
-
-        <div class="tg-tree-canvas" id="tgTreeCanvas"></div>
-      </div>
-    </div>
-  </section>
-
    <section class="tab" id="tab-bots">
      <!-- ============ BOTS / AGENT HIERARCHY ============ -->
      <div class="bot-config-shell">
@@ -1395,7 +1226,7 @@
              <h3>🤖 Arquitetura Persistente dos Bots</h3>
              <p class="bot-graph-subtitle" style="margin-bottom:0;">
                Visualização em árvore da hierarquia permanente: <b>Master ⟶ Gerente ⟶ Bots</b>.<br/>
-               Diferente do Team Graph (que reflete missões dinâmicas), esta é a estrutura operacional fixa.
+               Estrutura operacional fixa, independente do taskboard.
              </p>
            </div>
            <div style="display:flex;gap:10px;align-items:center;">
@@ -2446,7 +2277,6 @@ function initNavTabs() {
         const current = terminalTabs.find((t) => t.id === activeTabId);
         if (current && current.fit) setTimeout(() => current.fit.fit(), 30);
       }
-      if (b.dataset.tab === "teamgraph") fetchState();
       if (b.dataset.tab === "scheduler") schedLoad();
       if (b.dataset.tab === "agent") agentCfgLoad();
       if (b.dataset.tab === "system") systemLoad();
@@ -2518,11 +2348,7 @@ function render(stateData) {
     "🛡 " + (st.concurrency ? st.concurrency.active_global + "/" + st.concurrency.max_global : "0/0") +
     " · ◔ " + (st.evolution_pending ? st.evolution_pending.length : 0) + " propostas";
   renderTaskboard(st.taskboard);
-  __hBind = st.harness_bindings || __hBind || {};
-  __hLastTG = [st.team_graph, st.control_overview];
-  renderTeamGraph(st.team_graph, st.control_overview);
   renderAgentHierarchy(st.agent_hierarchy);
-  if (!__hCat) ensureHarnessCatalog();
   renderScheduler(st.concurrency, st.critical_path, st.approvals);
   renderOuroboros(st.evolution_pending, st.evolution_history);
   renderEvents(st.events_tail);
@@ -2532,7 +2358,7 @@ function render(stateData) {
 
   // Update Inspector Panel with live model, cost, and skills
   try {
-    const activeM = (st.control_overview && st.control_overview.mayor_route) ||
+    const activeM = (st.control_overview && (st.control_overview.the_eye_route || st.control_overview.the_eye)) ||
                     (st.settings && st.settings.model) ||
                     "local · deepseek-v4-flash";
     const mLabel = $("inspectorModelLabel");
@@ -2864,302 +2690,6 @@ window.copyTaskReportText = function() {
   });
 };
 
-// ---- team graph (phase 5) ---------------------------------------------
-async function fetchState() {
-  await refresh();
-}
-
-// ---- Team Graph Model Binding Helpers ------------------------------
-let cachedAvailableModels = [];
-
-async function openModelBindingModal() {
-  const card = $("tgModelSelectorCard");
-  if (!card) return;
-  card.style.display = card.style.display === "none" ? "block" : "none";
-  if (card.style.display === "block") {
-    try {
-      const cfgResp = await api("/api/agent-config");
-      const sec = (cfgResp && cfgResp.sections) || {};
-      const delFields = (sec.delegation && sec.delegation.fields) || [];
-      const mdlFields = (sec.model && sec.model.fields) || [];
-
-      const fFind = (fields, path) => (fields.find(f => f.path === path) || {}).value || "";
-      const curMayor = fFind(delFields, "delegation.role_models.mayor") || fFind(mdlFields, "model.default") || "deepseek-v4-flash";
-      const curOrch = fFind(delFields, "delegation.role_models.orchestrator") || "gemini-3.8-flash-medium";
-      const curLeaf = fFind(delFields, "delegation.role_models.leaf") || "gemini-3.8-flash-medium";
-
-      $("tgMayorModel").value = curMayor;
-      $("tgOrchModel").value = curOrch;
-      $("tgLeafModel").value = curLeaf;
-
-      const modelsResp = await api("/v1/models");
-      cachedAvailableModels = (modelsResp && modelsResp.data) || [];
-    } catch (e) {
-      console.error("Failed to load models for binding:", e);
-    }
-  }
-}
-
-function filterModelDropdown(role) {
-  const input = role === "mayor" ? $("tgMayorModel") : (role === "orch" ? $("tgOrchModel") : $("tgLeafModel"));
-  const drop = $(`drop_${role}`);
-  if (!input || !drop) return;
-
-  const q = input.value.trim().toLowerCase();
-  const matched = cachedAvailableModels.filter(m => {
-    const id = String(m.id || "").toLowerCase();
-    const owner = String(m.owned_by || "").toLowerCase();
-    return !q || id.includes(q) || owner.includes(q);
-  });
-
-  if (!matched.length) {
-    drop.style.display = "none";
-    return;
-  }
-
-  drop.innerHTML = matched.slice(0, 25).map(m => {
-    const id = esc(m.id || "");
-    const prov = esc(m.owned_by || "custom");
-    return `<div class="tg-model-item" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid rgba(15,23,42,0.08); display:flex; justify-content:space-between; align-items:center;" onmousedown="selectModelOption('${role}', '${id}')">
-      <span style="color:#e2e8f0; font-family:var(--mono); font-size:0.85rem;">${id}</span>
-      <span style="font-size:0.75rem; color:#58a6ff; background:#1f242c; padding:2px 6px; border-radius:4px; border:1px solid #388bfd33;">${prov}</span>
-    </div>`;
-  }).join("");
-
-  drop.style.display = "block";
-}
-
-async function ensureCachedModels() {
-  if (!cachedAvailableModels || !cachedAvailableModels.length) {
-    try {
-      const modelsResp = await api("/v1/models");
-      cachedAvailableModels = (modelsResp && modelsResp.data) || [];
-    } catch (e) {
-      console.error("Failed to load models list:", e);
-    }
-  }
-  return cachedAvailableModels || [];
-}
-
-async function filterHierModelDropdown() {
-  const input = $("hierNodeModel");
-  const drop = $("drop_hier_model");
-  if (!input || !drop) return;
-
-  await ensureCachedModels();
-  const q = input.value.trim().toLowerCase();
-  const matched = (cachedAvailableModels || []).filter(m => {
-    const id = String(m.id || "").toLowerCase();
-    const owner = String(m.owned_by || "").toLowerCase();
-    return !q || id.includes(q) || owner.includes(q);
-  });
-
-  if (!matched.length) {
-    drop.style.display = "none";
-    return;
-  }
-
-  drop.innerHTML = matched.slice(0, 30).map(m => {
-    const id = esc(m.id || "");
-    const prov = esc(m.owned_by || "custom");
-    return `<div class="tg-model-item" style="padding:7px 12px; cursor:pointer; border-bottom:1px solid #21262d; display:flex; justify-content:space-between; align-items:center;" onmousedown="selectHierModelOption('${id}')">
-      <span style="color:#e2e8f0; font-family:var(--mono); font-size:0.83rem;">${id}</span>
-      <span style="font-size:0.72rem; color:#58a6ff; background:#1f242c; padding:2px 6px; border-radius:4px; border:1px solid #388bfd33;">${prov}</span>
-    </div>`;
-  }).join("");
-
-  drop.style.display = "block";
-}
-
-function selectHierModelOption(modelId) {
-  const input = $("hierNodeModel");
-  const drop = $("drop_hier_model");
-  if (input) input.value = modelId;
-  if (drop) drop.style.display = "none";
-}
-
-function selectModelOption(role, modelId) {
-  const input = role === "mayor" ? $("tgMayorModel") : (role === "orch" ? $("tgOrchModel") : $("tgLeafModel"));
-  const drop = $(`drop_${role}`);
-  if (input) input.value = modelId;
-  if (drop) drop.style.display = "none";
-}
-
-// Fechar dropdowns ao clicar fora
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".tg-model-drop") && !e.target.closest(".tg-model-dropdown") &&
-      !e.target.id.startsWith("tgMayor") && !e.target.id.startsWith("tgOrch") && !e.target.id.startsWith("tgLeaf") &&
-      e.target.id !== "hierNodeModel") {
-    document.querySelectorAll(".tg-model-drop, .tg-model-dropdown").forEach(d => d.style.display = "none");
-  }
-});
-
-async function saveTeamModels() {
-  const mayor = $("tgMayorModel").value.trim();
-  const orch = $("tgOrchModel").value.trim();
-  const leaf = $("tgLeafModel").value.trim();
-  const msg = $("tgModelSaveMsg");
-  msg.textContent = "Gravando configurações...";
-  msg.style.color = "var(--muted)";
-
-  const updates = {};
-  if (mayor) updates["delegation.role_models.mayor"] = { kind: "str", value: mayor };
-  if (orch) updates["delegation.role_models.orchestrator"] = { kind: "str", value: orch };
-  if (leaf) updates["delegation.role_models.leaf"] = { kind: "str", value: leaf };
-
-  try {
-    const r = await api("/api/agent-config", { updates });
-    msg.textContent = "✓ Modelos vinculados e salvos no config.yaml (" + r.applied.length + " campos atualizados).";
-    msg.style.color = "var(--ok)";
-    setTimeout(() => {
-      fetchState();
-    }, 500);
-  } catch (e) {
-    msg.textContent = "✗ Erro: " + e.message;
-    msg.style.color = "var(--err)";
-  }
-}
-
-// ---- harness binding select (Team Graph) -------------------------------
-// Seleção de plataforma por papel, no padrão do seletor de modelos:
-// lista os harnesses detectados e persiste o vínculo papel -> plataforma.
-let __hCat = null;        // catálogo [{name,available,status,...}]
-let __hBind = {};         // bindings {role: harness}
-let __hLastTG = null;     // último (team_graph, overview) p/ re-render pós-load
-
-async function ensureHarnessCatalog() {
-  if (__hCat) return __hCat;
-  try {
-    const res = await api("/api/harnesses");
-    __hCat = (res && res.catalog) || [];
-    __hBind = (res && res.bindings) || __hBind || {};
-    if (__hLastTG) renderTeamGraph(__hLastTG[0], __hLastTG[1]);
-  } catch (_) {
-    __hCat = [];
-  }
-  return __hCat;
-}
-
-function harnessOptionsHtml(roleKey, nodeHarness) {
-  const cur = (__hBind && __hBind[roleKey]) || nodeHarness || "native";
-  const cat = (__hCat && __hCat.length)
-    ? __hCat
-    : ["native", "dsh", "opencode", "agy", "codex", "claude-code", "acp"].map((n) => ({ name: n, available: null }));
-  let hasCur = false;
-  const opts = cat.map((h) => {
-    if (h.name === cur) hasCur = true;
-    const unavail = h.available === false;
-    const mark = unavail ? " ⚠" : (h.available ? " ✓" : "");
-    return `<option value="${esc(h.name)}" ${h.name === cur ? "selected" : ""} title="${unavail ? "indisponível agora — execução fará fallback native" : (h.status || "")}">${esc(h.name)}${mark}</option>`;
-  }).join("");
-  const extra = hasCur ? "" : `<option value="${esc(cur)}" selected>${esc(cur)} (atual)</option>`;
-  return `<select class="tg-harness-sel" style="max-width:150px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:1px 4px;font:inherit;font-size:.78rem;" data-role="${esc(roleKey)}" onchange="setHarnessBinding(this,'${esc(roleKey)}')" title="Plataforma de execução deste papel">${extra}${opts}</select>`;
-}
-
-async function setHarnessBinding(sel, roleKey) {
-  const harness = sel.value;
-  const prev = sel.dataset.prev || ((__hBind && __hBind[roleKey]) || "native");
-  sel.dataset.prev = harness;
-  try {
-    const res = await api("/api/harness-binding", { role: roleKey, harness: harness });
-    if (__hBind) __hBind[roleKey] = harness;
-    if (res && res.warning) console.warn("HAOS harness:", res.warning);
-    fetchState();
-  } catch (err) {
-    sel.value = prev;
-    alert("✗ Erro ao vincular plataforma: " + err.message);
-  }
-}
-
-function selectBotRole(role) {
-  const select = $("hierNodeRole");
-  if (select) select.value = role;
-  document.querySelectorAll(".bot-role-choice").forEach(btn => {
-    btn.classList.toggle("selected", btn.classList.contains(role));
-  });
-}
-
-async function saveHierarchyNode() {
-  const name = ($("hierNodeName")?.value || "").trim();
-  if (!name) {
-    alert("Por favor, digite o nome do agente.");
-    $("hierNodeName")?.focus();
-    return;
-  }
-  const role = $("hierNodeRole")?.value || "bot";
-  const parentId = $("hierNodeParent")?.value || null;
-  if ((role === "manager" || role === "bot") && !parentId) {
-    const nodes = (state.last?.agent_hierarchy?.nodes || []);
-    const master = nodes.find(n => n.role === "master");
-    if (master) {
-      if (confirm(`Nenhum superior selecionado. Vincular este ${role === 'manager' ? 'gerente' : 'bot'} ao Master "${master.name}"?`)) {
-        if ($("hierNodeParent")) $("hierNodeParent").value = master.id;
-        if ($("hierNodeParentSelect")) $("hierNodeParentSelect").value = master.id;
-      } else {
-        $("hierNodeParentSelect")?.focus();
-        return;
-      }
-    }
-  }
-
-  const p = {
-    action: "upsert_node",
-    id: $("hierNodeId")?.value || undefined,
-    name: name,
-    role: role,
-    parent_id: $("hierNodeParent")?.value || null,
-    profile: $("hierNodeProfile")?.value || "",
-    model: $("hierNodeModel")?.value || "",
-    description: $("hierNodeDescription")?.value || "",
-    yolo_mode: Boolean($("hierNodeYoloMode")?.checked),
-    toolsets: getSelectedToolsets()
-  };
-
-  try {
-    const res = await api("/api/agent-hierarchy", p);
-    addHierarchyNode();
-    await fetchState();
-    console.log("Agente salvo com sucesso:", res);
-  } catch (e) {
-    alert("Erro ao salvar agente: " + (e.message || e));
-  }
-}
-
-async function saveBotModel() {
-  const provider = ($("hierBotProvider")?.value || "").trim();
-  const model = ($("hierBotModel")?.value || "").trim();
-  try {
-    await api("/api/agent-hierarchy", { action: "set_bot_model", provider, model });
-    await fetchState();
-    alert("Modelo padrão dos bots atualizado!");
-  } catch (e) {
-    alert("Erro ao salvar modelo: " + (e.message || e));
-  }
-}
-
-async function startHierarchyCouncil() {
-  const from_id = $("councilFrom")?.value;
-  const to_id = $("councilTo")?.value;
-  const topic = ($("councilTopic")?.value || "").trim();
-  const max_turns = Number($("councilTurns")?.value || 3);
-  if (!from_id || !to_id) {
-    alert("Selecione os gerentes participantes do conselho.");
-    return;
-  }
-  if (!topic) {
-    alert("Digite o tema a ser deliberado.");
-    $("councilTopic")?.focus();
-    return;
-  }
-  try {
-    await api("/api/agent-hierarchy/council", { action: "start", from_id, to_id, topic, max_turns });
-    await fetchState();
-    alert("Conselho deliberativo iniciado!");
-  } catch (e) {
-    alert("Erro ao iniciar conselho: " + (e.message || e));
-  }
-}
-
 function renderAgentHierarchy(h) {
   if (!availableToolsetsList || !availableToolsetsList.length) {
     loadAvailableToolsets();
@@ -3176,7 +2706,8 @@ function renderAgentHierarchy(h) {
 
   const getBotLiveStatus = (botId, profile) => {
     try {
-      // 1. Prioridade Absoluta: Verifica se este bot tem tarefa ativa no Taskboard (Kanban)
+      // Bots da hierarquia têm ciclo de vida próprio, independente do taskboard.
+      // os Bots vivem em seu próprio ciclo de vida de tarefas dedicadas (atribuídas ao ID/profile do bot).
       const tbTasks = (state.last && state.last.taskboard && (state.last.taskboard.recent || state.last.taskboard.tasks)) || [];
       const activeTask = tbTasks.find(t => {
         const botMatch = t.assignee === botId || t.assignee === profile ||
@@ -3187,9 +2718,6 @@ function renderAgentHierarchy(h) {
       });
       if (activeTask) return "running";
 
-      // 2. ISOLAMENTO ULTRA SOTA: Os Bots da Hierarquia NÃO dependem nem herdam o status do Team Graph!
-      // Cada entidade é independente: o Team Graph reflete a missão GasTown dinâmica, enquanto
-      // os Bots vivem em seu próprio ciclo de vida de tarefas dedicadas.
       return "idle";
     } catch (_) {
       return "idle";
@@ -4748,153 +4276,6 @@ async function removeAdvisoryEdge(from_id, to_id) {
   }
 }
 
-function renderTeamGraph(tg, ov) {
-  if (!tg) return;
-
-  // 1. Overview cards
-  const ovBox = $("tgOverview");
-  if (ovBox) {
-    const o = ov || {};
-    const mayorModel = (tg && tg.model_id) || "deepseek-v4-flash";
-    const mayorProv = (tg && tg.provider_id) || "custom";
-    const poolSize = Number(o.pool_size) > 0 ? Number(o.pool_size) : 4;
-    ovBox.innerHTML = `
-      <div class="tg-stat-card"><div class="lbl">Missões Executadas</div><div class="val" style="color:var(--accent2);">${o.total_missions != null ? o.total_missions : 0}</div></div>
-      <div class="tg-stat-card"><div class="lbl">Workers Ativos / Pool</div><div class="val" style="color:var(--ok);">${Number(o.active_workers) || 0} / ${poolSize}</div></div>
-      <div class="tg-stat-card"><div class="lbl">Tokens Consumidos</div><div class="val" style="color:var(--info);">${Number(o.total_tokens || 0).toLocaleString()}</div></div>
-      <div class="tg-stat-card"><div class="lbl">Custo Total (USD)</div><div class="val" style="color:var(--warn);">$${Number(o.total_cost_usd || 0).toFixed(4)}</div></div>
-      <div class="tg-stat-card"><div class="lbl">Rota do Mayor Ativa</div><div class="val" style="font-size:0.95rem;color:var(--accent);">${esc(mayorProv)}:${esc(mayorModel)}</div></div>
-      ${o.board_db ? `<div class="tg-stat-card" style="grid-column:span 2;"><div class="lbl">Board Ativo (fonte viva)</div><div class="val" style="font-size:0.8rem;color:var(--muted);font-family:var(--mono);">${esc(o.board_db)}</div></div>` : ""}
-    `;
-  }
-
-  // 2. Tree Canvas
-  const canvas = $("tgTreeCanvas");
-  if (!canvas) return;
-
-  const mayor = tg;
-  const subOrch = (mayor.children && mayor.children[0]) || null;
-  const workers = (subOrch && subOrch.children) || [];
-
-  const mayorStatus = mayor.status || "idle";
-  const subOrchStatus = subOrch ? (subOrch.status || mayorStatus) : "idle";
-
-  let html = `
-    <!-- LEVEL 1: TOWN MAYOR -->
-    <div class="tg-node mayor status-${esc(mayorStatus)}">
-      <div class="tg-node-header">
-        <div class="tg-node-title">👑 Town Mayor <span style="font-size:0.75rem;color:var(--muted);">(Executive Lead)</span></div>
-        <span class="tg-badge ${esc(mayorStatus)}">${esc(mayorStatus)}</span>
-      </div>
-      <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:6px;font-weight:500;">${esc(mayor.current_task || 'Strategic Mission Orchestrator')}</div>
-      <div class="tg-node-meta">
-        <div class="tg-node-row"><span>ID do Nó:</span><span class="val">${esc(mayor.node_id)}</span></div>
-        <div class="tg-node-row"><span>Postura:</span><span class="val" style="color:var(--accent2);">${esc(mayor.posture || 'executive')}</span></div>
-        <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(mayor.provider_id || 'a6api')}:${esc(mayor.model_id || 'deepseek-v4-flash')}</span></div>
-        <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml('mayor', mayor.harness)}</span></div>
-      </div>
-      <div class="tg-actions">
-        <button class="tg-btn" onclick="directNodeTerminal('${esc(mayor.node_id)}', 'Town Mayor')">▮ Terminal</button>
-        <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','steer')">🎯 Steer</button>
-        <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','pause')">⏸ Pause</button>
-        <button class="tg-btn" onclick="intervene('${esc(mayor.node_id)}','resume')">▶ Resume</button>
-      </div>
-    </div>
-
-    <!-- CONNECTOR V -->
-    <div class="tg-connector-v"></div>
-
-    <!-- LEVEL 2: DOMAIN SUB-ORCHESTRATOR -->
-  `;
-
-  if (subOrch) {
-    html += `
-    <div class="tg-node suborch status-${esc(subOrchStatus)}">
-      <div class="tg-node-header">
-        <div class="tg-node-title">🧠 Domain Sub-Orchestrator</div>
-        <span class="tg-badge ${esc(subOrchStatus)}">${esc(subOrchStatus)}</span>
-      </div>
-      <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:6px;font-weight:500;">${esc(subOrch.label || 'Sub-Orchestrator')}</div>
-      <div class="tg-node-meta">
-        <div class="tg-node-row"><span>Escopo:</span><span class="val" style="color:var(--accent);">software DAG (impl ➔ test ➔ review)</span></div>
-        <div class="tg-node-row"><span>Postura:</span><span class="val">${esc(subOrch.posture || 'architect')}</span></div>
-        <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(subOrch.provider_id || 'a6api')}:${esc(subOrch.model_id || 'deepseek-v4-flash')}</span></div>
-        <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml('sub_orchestrator', subOrch.harness)}</span></div>
-      </div>
-      <div class="tg-actions">
-        <button class="tg-btn" onclick="directNodeTerminal('${esc(subOrch.node_id)}', 'Sub-Orchestrator')">▮ Terminal</button>
-        <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','steer')">🎯 Steer</button>
-        <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','pause')">⏸ Pause</button>
-        <button class="tg-btn" onclick="intervene('${esc(subOrch.node_id)}','resume')">▶ Resume</button>
-      </div>
-    </div>
-
-    <!-- CONNECTOR FORK -->
-    <div class="tg-connector-v" style="height:16px;"></div>
-    <div class="tg-connector-fork"></div>
-
-    <!-- LEVEL 3: SPECIALIST WORKERS ROW -->
-    <div class="tg-workers-row">
-      ${workers.length > 1 ? '<div class="tg-review-link">⟷ Code & Verdict Review Link</div>' : ''}
-    `;
-
-    workers.forEach((w) => {
-      const isReviewer = w.role === "reviewer" || w.posture === "reviewer";
-      const icon = isReviewer ? "👁" : "⚡";
-      const postureClass = isReviewer ? "reviewer" : "coder";
-      const rawStatus = (w.status || "idle").toLowerCase();
-      let statusClass = "idle";
-      let statusText = "idle";
-      if (rawStatus === "running" || rawStatus === "in_progress") {
-        statusClass = "running";
-        statusText = "running";
-      } else if (rawStatus === "completed" || rawStatus === "done") {
-        statusClass = "completed";
-        statusText = "completed";
-      } else if (rawStatus === "paused") {
-        statusClass = "paused";
-        statusText = "paused";
-      } else if (rawStatus === "failed" || rawStatus === "error") {
-        statusClass = "failed";
-        statusText = "failed";
-      } else if (rawStatus === "blocked") {
-        statusClass = "blocked";
-        statusText = "blocked";
-      } else {
-        statusClass = "idle";
-        statusText = rawStatus;
-      }
-
-      html += `
-      <div class="tg-node ${postureClass} status-${esc(statusClass)}">
-        <div class="tg-node-header">
-          <div class="tg-node-title">${icon} ${esc(w.label || w.node_id)}</div>
-          <span class="tg-badge ${esc(statusClass)}">${esc(statusText)}</span>
-        </div>
-        <div style="font-size:0.85rem;color:#e2e8f0;margin-bottom:6px;font-weight:500;">${esc(w.current_task || w.task || 'Execução de tarefa')}</div>
-        <div class="tg-node-meta">
-          <div class="tg-node-row"><span>Worker ID:</span><span class="val">${esc(w.node_id || w.id)}</span></div>
-          <div class="tg-node-row"><span>Postura:</span><span class="val" style="color:${isReviewer ? '#d2a8ff' : 'var(--ok)'};">${esc(w.posture || (isReviewer ? 'reviewer' : 'coder'))}</span></div>
-          <div class="tg-node-row"><span>Modelo:</span><span class="val">${esc(w.provider_id || 'a6api')}:${esc(w.model_id || 'deepseek-v4-flash')}</span></div>
-          <div class="tg-node-row"><span>Plataforma:</span><span class="val">${harnessOptionsHtml(isReviewer ? 'reviewer' : 'coder', w.harness)}</span></div>
-          <div class="tg-node-row"><span>Tokens / Custo:</span><span class="val">${w.tokens_consumed || w.tokens || 0} tkn · $${Number(w.cost_usd || w.cost || 0).toFixed(5)}</span></div>
-        </div>
-        <div class="tg-actions">
-          <button class="tg-btn" onclick="directNodeTerminal('${esc(w.node_id || w.id)}', '${esc(w.label || w.node_id)}')">▮ Terminal</button>
-          <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','steer')">🎯 Steer</button>
-          <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','pause')">⏸ Pause</button>
-          <button class="tg-btn" onclick="intervene('${esc(w.node_id || w.id)}','resume')">▶ Resume</button>
-        </div>
-      </div>
-      `;
-    });
-
-    html += `</div>`; // End tg-workers-row
-  }
-
-  canvas.innerHTML = html;
-}
-
 // ---- operator intervention & direct terminal -------------------------
 function directNodeTerminal(nodeId, label) {
   const shortLabel = label || nodeId;
@@ -5169,13 +4550,82 @@ async function renderAgentSummary() {
 let activeConsoleTaskId = null;
 let activeConsoleEventSource = null;
 
+// Janelamento visual / sliding window para retenção segura de nós DOM
+const CONSOLE_DOM_LIMIT = 50;
+const CONSOLE_DOM_STEP = 30;
+let consoleAllMessages = [];
+let consoleVisibleCount = CONSOLE_DOM_LIMIT;
+
 function clearConsoleFeed() {
+  consoleAllMessages = [];
+  consoleVisibleCount = CONSOLE_DOM_LIMIT;
   $("consoleMsgs").innerHTML = `
     <div class="msg engine">
       <div class="meta">HAOS · Cognitive Mission Console</div>
       Feed limpo. Digite uma missão para iniciar um novo fluxo agêntico autônomo.
     </div>
   `;
+}
+
+function renderConsoleSlidingWindow(preserveScroll = false) {
+  const container = $("consoleMsgs");
+  if (!container) return;
+
+  const prevScrollHeight = container.scrollHeight;
+  const prevScrollTop = container.scrollTop;
+
+  const total = consoleAllMessages.length;
+  if (total === 0) return;
+
+  const hasHidden = consoleVisibleCount < total;
+  const startIndex = hasHidden ? total - consoleVisibleCount : 0;
+  const visible = consoleAllMessages.slice(startIndex);
+
+  let bannerHtml = "";
+  if (hasHidden) {
+    bannerHtml = `
+      <div id="consoleWindowBanner" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 14px;margin-bottom:12px;background:rgba(15,23,42,0.04);border:1px solid rgba(15,23,42,0.08);border-radius:10px;font-size:0.75rem;color:var(--muted);width:100%;">
+        <span>Exibindo as últimas <b>${visible.length}</b> de <b>${total}</b> mensagens</span>
+        <button type="button" onclick="loadMoreConsolePrevious()" style="background:transparent;border:none;color:#0a84ff;font-weight:600;cursor:pointer;padding:2px 6px;border-radius:4px;text-decoration:underline;">
+          ↑ Carregar anteriores (+${Math.min(CONSOLE_DOM_STEP, total - consoleVisibleCount)})
+        </button>
+        <span style="color:rgba(15,23,42,0.2);">&bull;</span>
+        <button type="button" onclick="loadAllConsolePrevious()" style="background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 6px;text-decoration:underline;">
+          Ver todas (${total})
+        </button>
+      </div>
+    `;
+  }
+
+  // Monta nós no fragmento
+  const frag = document.createDocumentFragment();
+  if (hasHidden) {
+    const temp = document.createElement("div");
+    temp.innerHTML = bannerHtml;
+    frag.appendChild(temp.firstElementChild);
+  }
+
+  visible.forEach(m => frag.appendChild(m.el));
+
+  container.innerHTML = "";
+  container.appendChild(frag);
+
+  if (preserveScroll) {
+    const newScrollHeight = container.scrollHeight;
+    container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+  } else {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function loadMoreConsolePrevious() {
+  consoleVisibleCount = Math.min(consoleAllMessages.length, consoleVisibleCount + CONSOLE_DOM_STEP);
+  renderConsoleSlidingWindow(true);
+}
+
+function loadAllConsolePrevious() {
+  consoleVisibleCount = consoleAllMessages.length;
+  renderConsoleSlidingWindow(true);
 }
 
 function formatChatMarkdown(rawText) {
@@ -5284,8 +4734,25 @@ function pushMsg(kind, content, botName = "The Eye", avatar = "👁️", isRawHt
     </div>
   `;
 
-  msgsContainer.appendChild(row);
-  msgsContainer.scrollTop = msgsContainer.scrollHeight;
+  // Registra no histórico em memória para suporte a sliding window / DOM retention cap
+  consoleAllMessages.push({
+    kind,
+    content,
+    botName,
+    avatar,
+    isRawHtml,
+    timeStr,
+    el: row
+  });
+
+  // Se a quantidade de mensagens em exibição ultrapassar o limite, renderiza a janela deslizante
+  if (consoleAllMessages.length > consoleVisibleCount) {
+    renderConsoleSlidingWindow(false);
+  } else {
+    msgsContainer.appendChild(row);
+    msgsContainer.scrollTop = msgsContainer.scrollHeight;
+  }
+
   return row;
 }
 
@@ -5748,6 +5215,7 @@ async function termStartNewTab(initialCmd = null, customTitle = null) {
   const xtermInstance = new window.Terminal({
     cursorBlink: true,
     fontSize: 13,
+    scrollback: 5000,
     theme: { background: "#0a0d13", foreground: "#d7dde7", cursor: "#4fd1c5" }
   });
   if (fit) xtermInstance.loadAddon(fit);
@@ -5940,6 +5408,7 @@ async function restoreTerminalTabsState() {
     const xtermInstance = new window.Terminal({
       cursorBlink: true,
       fontSize: 13,
+      scrollback: 5000,
       theme: { background: "#0a0d13", foreground: "#d7dde7", cursor: "#4fd1c5" }
     });
     if (fit) xtermInstance.loadAddon(fit);

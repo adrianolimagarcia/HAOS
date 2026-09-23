@@ -38,12 +38,14 @@ def _has_xai_stt_credentials() -> bool:
 
 
 def _with_openai_client(api_key: str, base_url: Optional[str], file_path: str, log_label: str, body):
-    """Run ``body(client)`` on a fresh OpenAI SDK client (30s timeout, no retries); always closed.
+    """Run ``body(client)`` on a fresh OpenAI SDK client (timeout configuravel / default 60s, no retries); always closed.
     Errors map to the shared envelope. APIConnectionError is checked before APITimeoutError (its
     subclass) so timeouts report as connection errors, as they always have."""
     try:
+        import os
         from openai import OpenAI
-        client = OpenAI(api_key=api_key, base_url=base_url, timeout=30, max_retries=0)
+        timeout = float(os.getenv("OPENAI_AUDIO_TIMEOUT", "60.0"))
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=0)
         try:
             return body(client)
         finally:

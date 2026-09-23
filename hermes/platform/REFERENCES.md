@@ -22,7 +22,7 @@ O **HAOS (Hermes Agent Operating System v1.1)** mantem o **Hermes AIAgent como K
 | **DeerFlow (ByteDance)** | Subagentes de pesquisa profunda (*Deep Research*), decomposição de perguntas e artefatos de evidência. | [GitHub](https://github.com/bytedance/deer-flow) · `TEMP/references/deer-flow` |
 | **GraphRAG (Microsoft)** | Projeção de memória relacional, extração de entidades/comunidades e consultas global/local. | [GitHub](https://github.com/microsoft/graphrag) · `TEMP/references/graphrag` |
 | **Obsidian** | Memória canônica/humana, especificações de projeto e Decision Records (ADRs) via CLI/Vault. | [Site Oficial](https://obsidian.md/) · [Obsidian CLI](https://obsidian.md/help/cli) |
-| **Gas Town** | Referência de orquestração de times (Mayor, Deacon, Witness, Refinery, Polecat) e modelos por função. | [GitHub](https://github.com/gastownhall/gastown) · `TEMP/references/gastown` |
+| **GasTown** `gastown` (Go) | Referência histórica de orquestração de times | [GitHub](https://github.com/gastownhall/gastown) · `TEMP/references/gastown` | O contrato legado `TeamSpec`/`mayor` não faz parte do runtime HAOS. |
 | **Beads** | Task/work ledger persistente e gestão de estado de trabalho operacional. | [GitHub](https://github.com/gastownhall/beads) · `TEMP/references/beads` |
 | **Gas City** | Generalização do Gas Town em SDK de orquestração assíncrona por eventos. | [GitHub](https://github.com/gastownhall/gascity) · `TEMP/references/gascity` |
 | **Kilo Code** | Execution backend para coding em *Git worktrees* paralelos com suporte LSP nativo. | [GitHub](https://github.com/Kilo-Org/kilocode) · `TEMP/references/kilocode` |

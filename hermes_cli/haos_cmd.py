@@ -614,54 +614,6 @@ def cmd_haos_doc_search(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_haos_team_graph(args: argparse.Namespace) -> int:
-    """Executes 'haos haos team'."""
-    from hermes.platform.observability.event_store import get_event_store
-    from hermes.platform.tasks.kanban_adapter import KanbanAdapter
-    from hermes.platform.webui.controlplane import ControlPlaneService
-    import json
-    import dataclasses
-
-    store = get_event_store()
-    kanban = KanbanAdapter()
-    cp = ControlPlaneService(event_store=store, kanban=kanban)
-    snapshot = cp.get_team_graph_snapshot()
-    overview = cp.get_overview()
-
-    if getattr(args, "json", False):
-        print(json.dumps({"team_graph": snapshot, "overview": dataclasses.asdict(overview)}, indent=2, ensure_ascii=False))
-        return 0
-
-    print("=" * 60)
-    print("           HAOS COGNITIVE TEAM GRAPH & HIERARCHY           ")
-    print("=" * 60)
-    print(f"Total de Missões     : {overview.total_missions}")
-    print(f"Workers Ativos / Pool: {overview.active_workers} (Livres: {overview.idle_specialists})")
-    print(f"Tokens / Custo Total : {overview.total_tokens} tkn | ${overview.total_cost_usd:.5f}")
-    print("-" * 60)
-
-    # Print Tree Hierarchy
-    def print_node(node: dict, indent: int = 0):
-        prefix = "  " * indent
-        icon = "👑" if node.get("role") == "mayor" else ("🧠" if node.get("role") == "sub_orchestrator" else "⚡")
-        status = str(node.get("status", "idle")).upper()
-        role = node.get("posture") or node.get("role")
-        model = f"{node.get('provider_id', '')}:{node.get('model_id', '')}"
-        print(f"{prefix}{icon} [{status}] {node.get('label', node.get('node_id'))}")
-        print(f"{prefix}   • ID: {node.get('node_id')} | Postura: {role} | Modelo: {model}")
-        if node.get("current_task"):
-            print(f"{prefix}   • Tarefa Atual: {node.get('current_task')}")
-        blocker = (node.get("metadata") or {}).get("blocker")
-        if blocker:
-            b_kind = str(blocker.get("kind", "blocked")).upper()
-            b_reason = blocker.get("reason", "")
-            print(f"{prefix}   ⛔ BLOQUEIO [{b_kind}]: {b_reason}")
-        for ch in node.get("children", []):
-            print_node(ch, indent + 1)
-
-    print_node(snapshot)
-    print("=" * 60)
-    return 0
 
 
 def cmd_haos_scheduler_status(args: argparse.Namespace) -> int:
@@ -714,17 +666,6 @@ def cmd_haos_scheduler_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_haos_team_intervene(args: argparse.Namespace) -> int:
-    """Executes 'haos haos team intervene <target_id> <action> [--reason <reason>]'."""
-    from hermes.platform.observability.event_store import get_event_store
-    from hermes.platform.tasks.kanban_adapter import KanbanAdapter
-    from hermes.platform.webui.controlplane import ControlPlaneService
-    store = get_event_store()
-    kanban = KanbanAdapter()
-    cp = ControlPlaneService(event_store=store, kanban=kanban)
-    cp.record_intervention(target_id=args.target_id, action=args.action, reason=args.reason or "CLI Operator intervention")
-    print(f"✓ Intervenção '{args.action.upper()}' registrada e aplicada ao nó '{args.target_id}' no EventStore auditável.")
-    return 0
 
 
 def cmd_haos_eval(args: argparse.Namespace) -> int:
@@ -912,21 +853,6 @@ def build_haos_parser(subparsers) -> argparse.ArgumentParser:
     doctor_parser = haos_sub.add_parser("doctor", help="Valida a integridade, permissões e isolamento do HAOS")
     doctor_parser.add_argument("--json", action="store_true", help="Output doctor diagnostics as JSON")
     doctor_parser.set_defaults(func=cmd_haos_doctor)
-
-    # haos haos team [status|intervene]
-    team_parser = haos_sub.add_parser("team", aliases=["teamgraph"], help="Cognitive Team Graph & multi-agent hierarchy")
-    team_sub = team_parser.add_subparsers(dest="team_command")
-
-    team_status_parser = team_sub.add_parser("status", help="Exibe a hierarquia cognitiva e nós ativos")
-    team_status_parser.add_argument("--json", action="store_true", help="Output as JSON")
-    team_status_parser.set_defaults(func=cmd_haos_team_graph)
-
-    team_intervene_parser = team_sub.add_parser("intervene", help="Intervenção do operador em um nó do grafo (steer/pause/resume)")
-    team_intervene_parser.add_argument("target_id", help="Identificador do nó (ex: polecat-1, sub-orch-*, mayor)")
-    team_intervene_parser.add_argument("action", choices=["steer", "pause", "resume", "abort"], help="Ação de controle")
-    team_intervene_parser.add_argument("--reason", help="Instrução ou motivo da intervenção")
-    team_intervene_parser.set_defaults(func=cmd_haos_team_intervene)
-    team_parser.set_defaults(func=cmd_haos_team_graph)
 
     # haos haos scheduler
     sched_parser = haos_sub.add_parser("scheduler", aliases=["sched"], help="Scheduler determinístico (CPM, PIP, ConcurrencyGuard)")

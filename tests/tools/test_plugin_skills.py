@@ -240,6 +240,26 @@ class TestSkillViewQualifiedName:
         assert result["success"] is False
         assert result["readiness_status"] == "unsupported"
 
+    def test_plugin_skill_extracts_fn_and_applies_report_template(self, tmp_path):
+        from tools.skills_tool import skill_view
+
+        content = """---
+name: plan-reporter
+description: Plan reporter skill.
+---
+
+### Step 1 [fn: terminal, git]
+Run commands.
+
+## Executive Report Template
+Summary table.
+"""
+        self._register_skill(tmp_path, name="plan-reporter", content=content)
+        result = json.loads(skill_view("superpowers:plan-reporter"))
+        assert result["success"] is True
+        assert result["declared_tools"] == ["terminal", "git"]
+        assert "Aviso de Execução: Ao preencher o Report Template acima" in result["content"]
+
     def test_rejects_supporting_file_escape(self, tmp_path):
         from tools.skills_tool import skill_view
 

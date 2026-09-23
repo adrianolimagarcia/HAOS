@@ -55,6 +55,10 @@ class ACPUnavailableError(ACPError):
     """The agent process is gone or never completed the handshake."""
 
 
+class ACPUnsupportedError(ACPError):
+    """The peer did not advertise the requested ACP capability."""
+
+
 @dataclass
 class ACPIdentity:
     """Agent identity reported by the ``initialize`` handshake."""
@@ -146,6 +150,31 @@ class ACPSessionClient:
         """Server pushes recorded so far (snapshot; never answered)."""
         with self._lock:
             return tuple(self._notifications)
+
+    @property
+    def capabilities(self) -> Dict[str, bool]:
+        """Capabilities conservatively derived from the initialize handshake."""
+        advertised = self.identity.agent_capabilities if self.identity else {}
+        cancel = advertised.get("sessionCancel", advertised.get("cancel", False))
+        return {
+            "session_new": self.identity is not None,
+            "session_prompt": self.identity is not None,
+            "session_update": True,
+            "session_close": self.identity is not None,
+            "session_cancel": cancel is True,
+        }
+
+    def cancel(self, session: ACPSession) -> Any:
+        """Cancel only when the peer explicitly advertises session/cancel."""
+        self._ensure_running()
+        if not self.capabilities["session_cancel"]:
+            raise ACPUnsupportedError(
+                "ACP peer does not advertise session/cancel; cancellation is unavailable"
+            )
+        return self._request(
+            "session/cancel", {"sessionId": session.session_id},
+            timeout_s=self.request_timeout_s,
+        )
 
     # ---------------------------------------------------------------- lifecycle
 

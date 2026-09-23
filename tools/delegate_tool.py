@@ -494,6 +494,49 @@ def delegate_task(
         return tool_error(err)
 
     overall_start = time.monotonic()
+
+    # Fast-Path Headless Subagents em Rust Tokio:
+    # Apenas tarefas COM CONTRATO EXPLÍCITO (`headless_task_type` e `headless_payload`) são despachadas para Rust.
+    # NUNCA usar heurística textual sobre o `goal` para não sequestrar tarefas cognitivas/abertas (Princípio Anti-Trap).
+    if task_list is not None and len(task_list) == 1 and not background:
+        t0 = task_list[0]
+        task_type = t0.get("headless_task_type")
+        payload = t0.get("headless_payload")
+
+        if task_type and isinstance(payload, dict):
+            try:
+                import json, urllib.request
+                h_req = urllib.request.Request(
+                    "http://127.0.0.1:8799/api/subagent/spawn-headless",
+                    data=json.dumps({
+                        "task_id": f"sa-headless-{int(time.time()*1000)}",
+                        "goal": t0.get("goal", ""),
+                        "task_type": task_type,
+                        "payload": payload,
+                        "timeout_ms": 10000,
+                    }).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(h_req, timeout=5.0) as h_resp:
+                    h_data = json.loads(h_resp.read().decode("utf-8"))
+                    if h_data.get("ok"):
+                        duration = (time.monotonic() - overall_start)
+                        return json.dumps({
+                            "status": "completed",
+                            "engine": "rust_tokio_headless_daemon",
+                            "execution_ms": h_data.get("execution_ms", 0),
+                            "results": [{
+                                "task_index": 0,
+                                "status": "completed",
+                                "summary": f"Headless subagent finished in {h_data.get('execution_ms')}ms: {json.dumps(h_data.get('result', {}))}",
+                                "result": h_data.get("result"),
+                                "duration_seconds": round(duration, 3)
+                            }]
+                        }, ensure_ascii=False)
+            except Exception as _headless_err:
+                logger.debug("Headless subagent fast-path bypassed: %s", _headless_err)
+
     # Live transcripts: cache/delegation/live/<id>/task-<n>.log per task, a side channel with zero effect on message
     # content or prompt caching. Best-effort: on failure live_paths is empty and delegation proceeds.
     from tools.delegation_live_log import create_live_transcripts

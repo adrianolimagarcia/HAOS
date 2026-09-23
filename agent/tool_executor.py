@@ -1518,8 +1518,8 @@ def _delegate_spinner_label(function_args: dict) -> str:
     tasks = function_args.get("tasks")
     role = str(function_args.get("role") or "").strip().lower()
 
-    if role in ("mayor", "town_mayor"):
-        role_tag = "👑 Mayor"
+    if role in ("the_eye", "the-eye", "eye"):
+        role_tag = "👁 The Eye"
     elif role in ("orchestrator", "sub_orchestrator"):
         role_tag = "🏛️ Orchestrator"
     elif role in ("reviewer", "qa"):

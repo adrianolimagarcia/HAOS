@@ -24,7 +24,7 @@ from hermes.platform.observability.event_store import EventStore
 from hermes.platform.execution.runs import TaskResult
 from hermes.platform.ui.stats import DashboardStats
 from hermes.platform.ui.views import (
-    approvals_view, memory_graph_view, taskboard_view,
+    approvals_view, memory_graph_view, taskboard_view, task_list_projection,
 )
 from hermes.platform.ui.dashboard import (
     dashboard_payload, render_dashboard,
@@ -111,6 +111,20 @@ class TestUiViews(unittest.TestCase):
         self.assertEqual(view["total"], 1)
         self.assertEqual(view["columns"][0]["status"], "ready")
         self.assertEqual(view["columns"][0]["count"], 1)
+
+    def test_taskboard_list_excludes_report_and_blobs(self):
+        report = "R" * 100_000
+        projected = task_list_projection({
+            "id": "T-large", "title": "large", "status": "done",
+            "report_content": report, "log_tail": report,
+            "events": [{"payload": report}],
+            "result": {"summary": "ok", "artifacts": [report], "evidence": {"blob": report}},
+        })
+        self.assertNotIn("report_content", projected)
+        self.assertNotIn("log_tail", projected)
+        self.assertNotIn("events", projected)
+        self.assertEqual(projected["result"], {"summary": "ok"})
+        self.assertTrue(projected["report_available"])
 
     def test_approvals_view_derives_verdict(self):
         spec = TaskSpec(id="T-2", title="T-2", goal="g",

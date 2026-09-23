@@ -1,21 +1,12 @@
-"""Tests for HAOS Harness Registry, Dynamic Allocation & Team Graph Integration.
-
-Validates:
-1. HarnessRegistry detection for standard harnesses (native, dsh, opencode, agy, codex, acp).
-2. Dynamic allocation with argument generation, env variables and worktree isolation.
-3. Heterogeneous TeamSpec configuration (Mayor=DSH, Sub-Orchestrator=OpenCode, Workers=AGY).
-4. TeamGraph tree construction and status correlation from TeamSpec.
-"""
+"""Tests for the live harness registry and worker allocation."""
 
 import os
 import stat
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-from hermes.platform.execution.team import TeamRole, TeamSpec
+from unittest.mock import MagicMock, patch
 from hermes.platform.observability.event_store import EventStore
-from hermes.platform.webui.controlplane import ControlPlaneService, NodeStatus
 from hermes.platform.workers.harness_registry import (
     HarnessRegistry,
     HarnessInfo,
@@ -23,8 +14,6 @@ from hermes.platform.workers.harness_registry import (
 )
 from hermes.platform.workers.external import resolve_external_worker
 from hermes.platform.workers import harness_discovery
-
-
 def _reset_discovery():
     """Reset the discovery singleton so each test scans fresh dirs."""
     harness_discovery._singleton = None
@@ -76,7 +65,22 @@ class TestHarnessRegistry(unittest.TestCase):
             self.assertTrue(info.available)
             self.assertEqual(info.name, "agy")
 
-    def test_custom_detector(self):
+    def test_allocate_agy_uses_real_cli_print_mode(self):
+        with patch("shutil.which", return_value="/usr/local/bin/agy"):
+            spec = self.registry.allocate("agy", {
+                "task_id": "T-AGY",
+                "title": "Inspect adapter",
+                "workspace": "/tmp/test-ws",
+                "model": "gemini-3.8-flash-low",
+                "effort": "low",
+            })
+        self.assertEqual(spec.kind, "agy")
+        self.assertEqual(spec.args[:4], ["/usr/local/bin/agy", "--print", "Inspect adapter", "--add-dir"])
+        self.assertIn("/tmp/test-ws", spec.args)
+        self.assertIn("--model", spec.args)
+        self.assertNotIn("chat", spec.args)
+        self.assertNotIn("ANTIGRAVITY_PROXY_ENDPOINT", spec.env_vars)
+
         self.registry.register_detector(
             "custom-runner",
             lambda: HarnessInfo(
@@ -100,9 +104,11 @@ class TestHarnessRegistry(unittest.TestCase):
             })
             self.assertEqual(spec.kind, "dsh")
             self.assertEqual(spec.executable, "/bin/dsh")
-            self.assertIn("--objective", spec.args)
-            self.assertIn("Refactor parser", spec.args)
-            self.assertEqual(spec.env_vars.get("HAOS_HARNESS"), "dsh")
+            self.assertEqual(spec.args, ["/bin/dsh", "--profile", "headless", "Refactor parser"])
+            self.assertNotIn("exec", spec.args)
+            self.assertNotIn("--objective", spec.args)
+            self.assertNotIn("--workdir", spec.args)
+            self.assertEqual(spec.workspace, "/tmp/test-ws")
             self.assertEqual(spec.env_vars.get("HAOS_KANBAN_TASK_ID"), "T-100")
 
     def test_allocate_missing_harness_raises(self):
@@ -212,65 +218,3 @@ class TestHarnessAutoDiscovery(unittest.TestCase):
                 # The dispatcher-level resolver returns None => native worker path.
                 spec = resolve_external_worker("dsh", {"task_id": "T-300", "title": "x"})
                 self.assertIsNone(spec)
-
-
-class TestHeterogeneousTeamGraph(unittest.TestCase):
-    def setUp(self):
-        self.event_store = EventStore(db_path=":memory:")
-        self.service = ControlPlaneService(event_store=self.event_store)
-
-    def test_heterogeneous_team_spec_and_graph(self):
-        """Validates TeamSpec with Mayor=DSH, Sub-Orchestrator=OpenCode, Workers=AGY."""
-        team = TeamSpec(
-            team_id="hetero-team",
-            name="Heterogeneous Multi-Harness Team",
-            roles=[
-                TeamRole(role_id="mayor", posture_id="executive", harness="dsh", model_profile="orchestrator-primary"),
-                TeamRole(role_id="sub_orchestrator", posture_id="architect", harness="opencode", model_profile="architecture-primary"),
-                TeamRole(role_id="polecat", posture_id="implementer", harness="agy", model_profile="coding-primary"),
-                TeamRole(role_id="witness", posture_id="reviewer", harness="native", model_profile="review-primary"),
-            ],
-            gate_edges=(("witness", "polecat"),),
-        )
-
-        with patch("shutil.which", side_effect=lambda bin_name: f"/usr/local/bin/{bin_name}"):
-            graph = self.service.build_graph_from_team_spec(
-                team_spec=team,
-                mission_id="m-hetero-01",
-                goal="Autonomous SOTA Mission",
-                active_tasks=[{"role": "polecat", "title": "Implement cache"}],
-            )
-
-            # Check Mayor
-            self.assertEqual(graph.role, "mayor")
-            self.assertEqual(graph.harness, "dsh")
-            self.assertEqual(graph.status, NodeStatus.RUNNING)
-            self.assertEqual(graph.harness_status, "allocated")
-
-            # Check Sub-Orchestrator
-            self.assertEqual(len(graph.children), 1)
-            so_node = graph.children[0]
-            self.assertEqual(so_node.role, "sub_orchestrator")
-            self.assertEqual(so_node.harness, "opencode")
-            self.assertEqual(so_node.status, NodeStatus.RUNNING)
-
-            # Check Workers
-            self.assertEqual(len(so_node.children), 2)
-            polecat_node = next(c for c in so_node.children if c.role == "polecat")
-            witness_node = next(c for c in so_node.children if c.role == "witness")
-
-            self.assertEqual(polecat_node.harness, "agy")
-            self.assertEqual(polecat_node.status, NodeStatus.RUNNING)
-            self.assertEqual(polecat_node.harness_status, "allocated")
-            self.assertEqual(polecat_node.current_task, "Implement cache")
-
-            self.assertEqual(witness_node.harness, "native")
-            self.assertEqual(witness_node.status, NodeStatus.IDLE)
-            self.assertEqual(witness_node.harness_status, "available")
-
-            # Verify dictionary serialization contains harness and harness_status
-            data = graph.to_dict()
-            self.assertEqual(data["harness"], "dsh")
-            self.assertEqual(data["harness_status"], "allocated")
-            self.assertEqual(data["children"][0]["harness"], "opencode")
-            self.assertEqual(data["children"][0]["children"][0]["harness"], "agy")

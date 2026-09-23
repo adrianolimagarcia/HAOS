@@ -23,6 +23,7 @@ def test_dsh_run_successful_mock(tmp_path: Path):
     mock_res = MagicMock()
     mock_res.returncode = 0
     mock_res.stdout = "DSH execution completed successfully with 3 files modified."
+    mock_res.stderr = "diagnostic stream"
 
     with patch("subprocess.run", return_value=mock_res) as mock_run:
         res_raw = dsh_run_tool("Refatorar login", workdir=str(tmp_path))
@@ -30,11 +31,29 @@ def test_dsh_run_successful_mock(tmp_path: Path):
         assert res["success"] is True
         assert res["exit_code"] == 0
         assert "DSH execution completed" in res["output"]
+        assert res["stdout"] == res["output"]
+        assert res["stderr"] == "diagnostic stream"
         assert mock_run.called
         called_args = mock_run.call_args[0][0]
-        assert "exec" in called_args
-        assert "--objective" in called_args
+        assert called_args[1:3] == ["--profile", "headless"]
         assert "Refatorar login" in called_args
+        assert "exec" not in called_args
+        assert "--objective" not in called_args
+        assert "--workdir" not in called_args
+
+
+def test_dsh_run_timeout_is_structured(tmp_path: Path):
+    with patch("subprocess.run", side_effect=__import__("subprocess").TimeoutExpired(["dsh"], 0.01)):
+        res = json.loads(dsh_run_tool("short task", workdir=str(tmp_path), timeout_seconds=0.01))
+    assert res["success"] is False
+    assert res["status"] == "timed_out"
+    assert res["error_code"] == "timeout"
+
+
+def test_dsh_run_rejects_invalid_timeout():
+    res = json.loads(dsh_run_tool("task", timeout_seconds=0))
+    assert res["success"] is False
+    assert "timeout_seconds" in res["error"]
 
 
 def test_dsh_availability_check():

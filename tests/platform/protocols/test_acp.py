@@ -18,6 +18,7 @@ from hermes.platform.protocols.acp.adapter import (
     ACPError,
     ACPIdentity,
     ACPProtocolError,
+    ACPUnsupportedError,
     ACPSession,
     ACPSessionClient,
     ACPUnavailableError,
@@ -91,6 +92,14 @@ class ACPWireContractTest(unittest.TestCase):
         self.assertEqual(raw, {"result": [{"type": "text", "text": "ok"}]})
         pushed = [n.get("method") for n in client.notifications]
         self.assertIn("session/update", pushed)
+
+    def test_cancel_is_explicitly_unavailable_when_peer_does_not_advertise_it(self):
+        client = self._new_client()
+        client.start()
+        session = client.new_session(self._abs_cwd())
+        self.assertFalse(client.capabilities["session_cancel"])
+        with self.assertRaises(ACPUnsupportedError):
+            client.cancel(session)
 
     def test_close_terminates_the_process_within_a_timeout(self):
         client = self._new_client()

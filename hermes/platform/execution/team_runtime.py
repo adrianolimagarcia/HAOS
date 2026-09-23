@@ -3,7 +3,7 @@
 Implements:
 1. SpecialistPool: Worker pooling and reuse with hygienic sanitization between tasks.
 2. DomainSubOrchestrator: Hierarchical task decomposition into executable DAGs.
-3. MultiAgentTeamRuntime: Coordinates Town Mayor -> Sub-Orchestrator -> Workers (Polecats) -> Reviewer (Witness) -> Integrator (Refinery).
+3. MultiAgentTeamRuntime: Coordinates The Eye -> Orquestrador -> Workers -> Reviewer -> Integrator.
 4. Full telemetry integration into EventStore.
 """
 
@@ -23,7 +23,6 @@ from hermes.platform.context.memory.events import KnowledgeEvent, KnowledgeEvent
 from hermes.platform.context.memory.federated_fabric import FederatedMemoryCoordinator
 from hermes.platform.execution.assignment import AssignmentSpec
 from hermes.platform.execution.scheduler import HAOSScheduler
-from hermes.platform.execution.team import TeamSpec, DEFAULT_TEAM_ID
 from hermes.platform.models.profiles import ModelProfile
 from hermes.platform.observability.events import Event
 from hermes.platform.observability.event_store import EventStore

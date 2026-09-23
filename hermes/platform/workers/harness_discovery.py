@@ -394,28 +394,20 @@ class HarnessAutoDiscovery:
                     details={"auto_discovered": True, "source": str(found_binary)},
                 )
 
-        if name == "agy" and found_repo is not None:
-            # AGY can run through the wrapper-antigravity proxy even without the CLI.
-            port = int(os.environ.get("ANTIGRAVITY_PROXY_PORT", "8790"))
-            proxy_script = found_repo / "server.mjs"
-            token_dir = Path.home() / ".gemini" / "antigravity-cli"
-            token_present = (token_dir / "antigravity-oauth-token").is_file()
-            if proxy_script.is_file() and token_present:
-                launcher = _agy_launcher(f"http://127.0.0.1:{port}")
-                if launcher:
-                    return HarnessInfo(
-                        name="agy",
-                        available=True,
-                        status="available",
-                        executable=launcher,
-                        endpoint=f"http://127.0.0.1:{port}",
-                        description="AGY / Antigravity via wrapper-antigravity proxy (auto-discovered)",
-                        details={
-                            "auto_discovered": True,
-                            "proxy_script": str(proxy_script),
-                            "oauth_token_present": True,
-                        },
-                    )
+        if name == "agy" and found_binary is not None:
+            # A discovered AGY binary is a CLI worker.  The local
+            # wrapper-antigravity proxy is intentionally a separate product
+            # and must not be synthesized into an AGY CLI launcher.
+            launcher = _install_binary_launcher(name, found_binary)
+            if launcher:
+                return HarnessInfo(
+                    name=name,
+                    available=True,
+                    status="available",
+                    executable=launcher,
+                    description="AGY / Antigravity CLI (auto-discovered)",
+                    details={"auto_discovered": True, "source": str(found_binary)},
+                )
 
         # Nothing usable: return a diagnostic carrying the fallback guidance.
         guidance = (
@@ -439,7 +431,7 @@ def _env_hint(name: str) -> str:
     hints = {
         "dsh": "DSH_PATH",
         "opencode": "OPENCODE_PATH",
-        "agy": "AGY_PATH / ANTIGRAVITY_PROXY_PORT",
+        "agy": "AGY_PATH (the CLI; wrapper-antigravity proxy is separate)",
         "codex": "CODEX_PATH",
         "claude-code": "CLAUDE_CODE_PATH",
         "acp": "PATH (hermes-acp)",

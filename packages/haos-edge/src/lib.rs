@@ -1,4 +1,6 @@
 pub mod compactor;
+pub mod okf;
+pub mod worker_snapshot;
 
 use compactor::{ChatMessage, ContextCompactor};
 use rusqlite::{params, Connection, OpenFlags};
@@ -91,7 +93,13 @@ pub extern "C" fn vector_engine_upsert(
     let byte_len = (vector_len as usize) * std::mem::size_of::<f32>();
     let bytes_slice = unsafe { std::slice::from_raw_parts(vector_ptr as *const u8, byte_len) };
 
-    upsert_blob_internal(db_path_cstr, record_id_cstr, model_version_cstr, bytes_slice, vector_len as usize)
+    upsert_blob_internal(
+        db_path_cstr,
+        record_id_cstr,
+        model_version_cstr,
+        bytes_slice,
+        vector_len as usize,
+    )
 }
 
 /// Grava diretamente um buffer de bytes brutos (BLOB) como vetor na coluna vector_json.
@@ -117,7 +125,13 @@ pub extern "C" fn vector_engine_upsert_blob(
     let dimensions = (blob_len as usize) / std::mem::size_of::<f32>();
     let bytes_slice = unsafe { std::slice::from_raw_parts(blob_ptr, blob_len as usize) };
 
-    upsert_blob_internal(db_path_cstr, record_id_cstr, model_version_cstr, bytes_slice, dimensions)
+    upsert_blob_internal(
+        db_path_cstr,
+        record_id_cstr,
+        model_version_cstr,
+        bytes_slice,
+        dimensions,
+    )
 }
 
 fn upsert_blob_internal(
@@ -319,7 +333,11 @@ pub extern "C" fn vector_engine_search_buffered(
     }
 
     unsafe {
-        std::ptr::copy_nonoverlapping(json_bytes.as_ptr() as *const c_char, out_buf, json_bytes.len());
+        std::ptr::copy_nonoverlapping(
+            json_bytes.as_ptr() as *const c_char,
+            out_buf,
+            json_bytes.len(),
+        );
         *out_buf.add(json_bytes.len()) = 0; // null-terminator
     }
 
@@ -408,11 +426,19 @@ fn open_readonly_nomutex<P: AsRef<Path>>(path: P) -> rusqlite::Result<Connection
 }
 
 #[inline]
-unsafe fn copy_json_to_buffer(json_bytes: &[u8], out_buf: *mut c_char, out_buf_cap: c_int) -> c_int {
+unsafe fn copy_json_to_buffer(
+    json_bytes: &[u8],
+    out_buf: *mut c_char,
+    out_buf_cap: c_int,
+) -> c_int {
     if json_bytes.len() >= (out_buf_cap as usize) {
         return -7; // Buffer do chamador insuficiente
     }
-    std::ptr::copy_nonoverlapping(json_bytes.as_ptr() as *const c_char, out_buf, json_bytes.len());
+    std::ptr::copy_nonoverlapping(
+        json_bytes.as_ptr() as *const c_char,
+        out_buf,
+        json_bytes.len(),
+    );
     *out_buf.add(json_bytes.len()) = 0;
     json_bytes.len() as c_int
 }
@@ -427,7 +453,8 @@ pub extern "C" fn graphrag_engine_find_related_buffered(
     out_buf: *mut c_char,
     out_buf_cap: c_int,
 ) -> c_int {
-    if db_path_cstr.is_null() || entity_name_cstr.is_null() || out_buf.is_null() || out_buf_cap <= 1 {
+    if db_path_cstr.is_null() || entity_name_cstr.is_null() || out_buf.is_null() || out_buf_cap <= 1
+    {
         return -1;
     }
 
@@ -531,8 +558,12 @@ pub extern "C" fn graphrag_engine_find_related_buffered(
                         let (s, t, rt, d, ca) = r;
                         let s_low = s.to_lowercase();
                         let t_low = t.to_lowercase();
-                        if s_low != target_lower { neighbors.insert(s.clone()); }
-                        if t_low != target_lower { neighbors.insert(t.clone()); }
+                        if s_low != target_lower {
+                            neighbors.insert(s.clone());
+                        }
+                        if t_low != target_lower {
+                            neighbors.insert(t.clone());
+                        }
                         relations.push(serde_json::json!({
                             "source": s,
                             "target": t,
@@ -570,7 +601,8 @@ pub extern "C" fn graphrag_engine_search_entities_buffered(
     out_buf: *mut c_char,
     out_buf_cap: c_int,
 ) -> c_int {
-    if db_path_cstr.is_null() || terms_json_cstr.is_null() || out_buf.is_null() || out_buf_cap <= 1 {
+    if db_path_cstr.is_null() || terms_json_cstr.is_null() || out_buf.is_null() || out_buf_cap <= 1
+    {
         return -1;
     }
 
@@ -713,9 +745,15 @@ pub extern "C" fn canonical_engine_read_records_buffered(
     let _ = conn.execute_batch("PRAGMA busy_timeout=30000;");
 
     // Cria cláusulas IN parametrizadas dinamicamente
-    let id_placeholders: String = (1..=record_ids.len()).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+    let id_placeholders: String = (1..=record_ids.len())
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
     let scope_start = record_ids.len() + 1;
-    let scope_placeholders: String = (scope_start..scope_start + scopes.len()).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+    let scope_placeholders: String = (scope_start..scope_start + scopes.len())
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
 
     let sql = format!(
         "SELECT record_id, logical_id, revision, scope, kind, status, content, \
@@ -825,7 +863,10 @@ pub extern "C" fn canonical_engine_search_fts_buffered(
     };
     let _ = conn.execute_batch("PRAGMA busy_timeout=30000;");
 
-    let scope_placeholders: String = (2..=scopes.len() + 1).map(|i| format!("?{}", i)).collect::<Vec<_>>().join(",");
+    let scope_placeholders: String = (2..=scopes.len() + 1)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
     let sql = format!(
         "SELECT r.record_id, r.logical_id, r.revision, r.scope, r.kind, r.status, r.content, \
                 r.content_hash, r.confidence, r.provenance_json, r.metadata_json, \
@@ -834,7 +875,8 @@ pub extern "C" fn canonical_engine_search_fts_buffered(
          JOIN memory_records r ON r.record_id = f.record_id \
          WHERE memory_fts MATCH ?1 AND r.status = 'active' AND r.scope IN ({}) \
          ORDER BY bm25(memory_fts) LIMIT ?{};",
-        scope_placeholders, scopes.len() + 2
+        scope_placeholders,
+        scopes.len() + 2
     );
 
     let mut stmt = match conn.prepare(&sql) {
@@ -885,7 +927,6 @@ pub extern "C" fn canonical_engine_search_fts_buffered(
     unsafe { copy_json_to_buffer(&json_bytes, out_buf, out_buf_cap) }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -903,7 +944,13 @@ mod tests {
     #[test]
     fn test_graphrag_c_abi_functions() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("test_graphrag_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "test_graphrag_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let conn = Connection::open(&db_path).unwrap();
         conn.execute_batch(
             "CREATE TABLE entities (entity TEXT PRIMARY KEY, entity_type TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', community_id TEXT, superseded_by TEXT, updated_at REAL NOT NULL);
@@ -940,7 +987,8 @@ mod tests {
             buf.len() as c_int,
         );
         assert!(ret_search > 0);
-        let search_parsed: Vec<serde_json::Value> = serde_json::from_slice(&buf[..ret_search as usize]).unwrap();
+        let search_parsed: Vec<serde_json::Value> =
+            serde_json::from_slice(&buf[..ret_search as usize]).unwrap();
         assert_eq!(search_parsed.len(), 2);
 
         let _ = std::fs::remove_file(db_path);
@@ -949,7 +997,13 @@ mod tests {
     #[test]
     fn test_canonical_c_abi_functions() {
         let temp_dir = std::env::temp_dir();
-        let db_path = temp_dir.join(format!("test_canonical_{}.db", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join(format!(
+            "test_canonical_{}.db",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let conn = Connection::open(&db_path).unwrap();
         conn.execute_batch(
             "CREATE TABLE memory_records (record_id TEXT PRIMARY KEY, logical_id TEXT NOT NULL, revision INTEGER NOT NULL, scope TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, confidence REAL NOT NULL, provenance_json TEXT NOT NULL, metadata_json TEXT NOT NULL, valid_from REAL NOT NULL, valid_until REAL, supersedes_json TEXT NOT NULL, created_at REAL NOT NULL);
@@ -975,7 +1029,8 @@ mod tests {
             buf.len() as c_int,
         );
         assert!(ret_read > 0);
-        let read_parsed: Vec<serde_json::Value> = serde_json::from_slice(&buf[..ret_read as usize]).unwrap();
+        let read_parsed: Vec<serde_json::Value> =
+            serde_json::from_slice(&buf[..ret_read as usize]).unwrap();
         // rec2 is superseded so only active rec1 should return
         assert_eq!(read_parsed.len(), 1);
         assert_eq!(read_parsed[0]["record_id"], "rec1");
@@ -991,15 +1046,14 @@ mod tests {
             buf.len() as c_int,
         );
         assert!(ret_fts > 0);
-        let fts_parsed: Vec<serde_json::Value> = serde_json::from_slice(&buf[..ret_fts as usize]).unwrap();
+        let fts_parsed: Vec<serde_json::Value> =
+            serde_json::from_slice(&buf[..ret_fts as usize]).unwrap();
         assert_eq!(fts_parsed.len(), 1);
         assert_eq!(fts_parsed[0]["record_id"], "rec1");
 
         let _ = std::fs::remove_file(db_path);
     }
 }
-
-
 
 // =========================================================================
 // STATE DB ENGINE: LEITURA ULTRA-RÁPIDA DE SESSÕES E MENSAGENS EM RUST
@@ -1016,10 +1070,7 @@ pub extern "C" fn state_engine_get_messages_buffered(
     out_buf: *mut c_char,
     out_buf_cap: c_int,
 ) -> c_int {
-    if db_path_cstr.is_null()
-        || session_id_cstr.is_null()
-        || out_buf.is_null()
-        || out_buf_cap <= 2
+    if db_path_cstr.is_null() || session_id_cstr.is_null() || out_buf.is_null() || out_buf_cap <= 2
     {
         return -1;
     }
@@ -1061,13 +1112,23 @@ pub extern "C" fn state_engine_get_messages_buffered(
         let tool_call_id: Option<String> = row.get(4)?;
         let name: Option<String> = row.get(5)?;
         let created_at: Option<f64> = row.get(6)?;
-        Ok((id, role, content, tool_calls, tool_call_id, name, created_at))
+        Ok((
+            id,
+            role,
+            content,
+            tool_calls,
+            tool_call_id,
+            name,
+            created_at,
+        ))
     };
 
     let rows_res: Result<Vec<_>, _> = if limit > 0 {
-        stmt.query_map(params![&*session_id, limit, offset], row_mapper).map(|r| r.flatten().collect())
+        stmt.query_map(params![&*session_id, limit, offset], row_mapper)
+            .map(|r| r.flatten().collect())
     } else {
-        stmt.query_map(params![&*session_id], row_mapper).map(|r| r.flatten().collect())
+        stmt.query_map(params![&*session_id], row_mapper)
+            .map(|r| r.flatten().collect())
     };
 
     let rows = match rows_res {
@@ -1106,7 +1167,11 @@ pub extern "C" fn state_engine_get_messages_buffered(
     }
 
     unsafe {
-        std::ptr::copy_nonoverlapping(json_bytes.as_ptr() as *const c_char, out_buf, json_bytes.len());
+        std::ptr::copy_nonoverlapping(
+            json_bytes.as_ptr() as *const c_char,
+            out_buf,
+            json_bytes.len(),
+        );
         *out_buf.add(json_bytes.len()) = 0;
     }
 

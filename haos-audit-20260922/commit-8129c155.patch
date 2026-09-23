@@ -1,0 +1,87 @@
+commit 8129c155b659dfb6ecbc81c51539f820ac3b64f9
+Author:     HAOS verification <haos-verification@localhost>
+AuthorDate: Tue Sep 22 19:57:08 2026 -0300
+Commit:     HAOS verification <haos-verification@localhost>
+CommitDate: Tue Sep 22 19:57:08 2026 -0300
+
+    docs: record HAOS branding and updater policy
+
+diff --git a/README.md b/README.md
+index 7e73b9f1..c977a7ae 100644
+--- a/README.md
++++ b/README.md
+@@ -684,6 +684,7 @@ The WebUI is still coupled to Hermes Agent internals for runtime execution, prov
+ - [`docs/docker.md`](docs/docker.md) — Docker compose setup, common failures, and bind-mount migration
+ - [`docs/supervisor.md`](docs/supervisor.md) — launchd, systemd, supervisord, runit, and s6 process-supervisor setup
+ - [`docs/wsl-autostart.md`](docs/wsl-autostart.md) — WSL2 auto-start at Windows login
++- [`docs/haos-branding-updater-policy.md`](docs/haos-branding-updater-policy.md) — HAOS shell branding audit and safe WebUI/Agent updater policy
+ - [`docs/onboarding-agent-checklist.md`](docs/onboarding-agent-checklist.md) — safety rules and pass/fail checks for assistant-led install/reinstall support
+ 
+ **Contributing & design**
+diff --git a/docs/haos-branding-updater-policy.md b/docs/haos-branding-updater-policy.md
+new file mode 100644
+index 00000000..cef4aa8d
+--- /dev/null
++++ b/docs/haos-branding-updater-policy.md
+@@ -0,0 +1,61 @@
++# HAOS WebUI branding and updater policy
++
++This document records the safe branding boundary for the HAOS deployment of the
++WebUI. It is intentionally explicit about what was verified and what was not.
++
++## Branding audit
++
++- The browser shell identifies itself as **HAOS WebUI** in `static/index.html`.
++- The PWA manifest identifies itself as **HAOS WebUI** and its icon references
++  resolve to files shipped in `static/`.
++- The favicon family (`favicon.svg`, `favicon-512.svg`, PNG variants, ICO, and
++  Apple touch icon) is existing repository content. No external asset was added
++  by this audit.
++- The repository history attributes the current icon family to commit
++  `5eff106e` ("Swap brand to new cyan caduceus..."). The source/licence of that
++  artwork is not independently verified here. Therefore this change does not
++  replace, redraw, or redistribute it.
++- `LICENSE` remains the repository's MIT license for the WebUI. It is not used
++  as proof that the artwork has a separate third-party license. A future asset
++  replacement requires a source URL, license evidence, and an explicit record
++  of the asset's provenance before it is merged.
++
++The product identity remains distinct from the runtime assistant identity:
++branding the shell as HAOS WebUI does not rename the Hermes assistant shown in
++conversation settings or welcome copy.
++
++## Updater policy
++
++The policy has two independent controls:
++
++1. `allow_agent_updates: false` (default) protects the HAOS-managed Agent
++   checkout at `/usr/local/lib/haos-agent` from WebUI-initiated Agent mutations.
++   The guard covers normal update, force update, and lock-recovery mutation
++   entry points. It fails closed when settings cannot be read. Setting the
++   value to the literal boolean `true` is an explicit operator opt-in.
++2. `ignore_agent_updates` controls Agent update discovery/fetches and notices.
++   It does **not** control WebUI updates. When it is false (the default), the
++   WebUI continues checking both repositories; when true, Agent checks are
++   omitted while WebUI checks continue.
++
++Normal WebUI updates remain available regardless of the Agent mutation policy:
++`target=webui` is not classified as the managed Agent boundary and continues to
++use the existing WebUI updater path. Docker/no-git installs remain manual-update
++or informational paths as determined by the existing updater behavior.
++
++This policy does not authorize direct edits to the Agent checkout, automatic
++restart of a stale WebUI process, or deletion of Git lock files. Those remain
++separate safety boundaries documented in `docs/troubleshooting.md`.
++
++## Verification record
++
++Verified in the source tree:
++
++- `static/index.html` and `static/manifest.json` contain the HAOS WebUI shell
++  identity.
++- The manifest's local icon paths exist.
++- Existing updater regression tests cover the protected managed-Agent path,
++  explicit opt-in, skipped Agent checks, and the unaffected WebUI path.
++
++Not verified: independent copyright/licence provenance for the existing icon
++artwork, and a live browser/PWA install against a deployed server.

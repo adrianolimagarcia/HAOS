@@ -29,7 +29,7 @@ _HERMES_CORE_TOOLS = [
     "todo_list", "memory", "instinct_manage",
     "session_search",
     "clarify", "request_operator_form",
-    "execute_code", "delegate_task", "dsh_run",
+    "execute_code", "delegate_task", "the_eye_dispatch", "dsh_run", "code_review_audit",
     "cronjob_manage",
     "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
     "kanban_show", "kanban_list",

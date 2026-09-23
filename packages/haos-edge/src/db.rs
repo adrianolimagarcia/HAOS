@@ -46,7 +46,9 @@ impl DbHelper {
             std::fs::read_to_string(&hierarchy_path)
                 .ok()
                 .and_then(|c| serde_json::from_str(&c).ok())
-                .unwrap_or_else(|| serde_json::json!({ "nodes": [], "councils": [], "advisory_edges": [] }))
+                .unwrap_or_else(
+                    || serde_json::json!({ "nodes": [], "councils": [], "advisory_edges": [] }),
+                )
         } else {
             serde_json::json!({ "nodes": [], "councils": [], "advisory_edges": [] })
         };
@@ -62,10 +64,12 @@ impl DbHelper {
                 OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             ) {
                 // Group by status
-                if let Ok(mut stmt) = conn.prepare("SELECT status, count(*) FROM tasks GROUP BY status;") {
-                    if let Ok(rows) = stmt.query_map([], |r| {
-                        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-                    }) {
+                if let Ok(mut stmt) =
+                    conn.prepare("SELECT status, count(*) FROM tasks GROUP BY status;")
+                {
+                    if let Ok(rows) =
+                        stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+                    {
                         for row in rows.flatten() {
                             total_tasks += row.1;
                             columns.push(serde_json::json!({
@@ -180,18 +184,9 @@ impl DbHelper {
                 "kanban_available": kanban_path.exists(),
                 "mode": "haos-edge-rust",
             },
-            "team_graph": {
-                "nodes": agent_hierarchy.get("nodes").cloned().unwrap_or(serde_json::json!([])),
-                "councils": agent_hierarchy.get("councils").cloned().unwrap_or(serde_json::json!([])),
-                "advisory_edges": agent_hierarchy.get("advisory_edges").cloned().unwrap_or(serde_json::json!([])),
-                "organizational_hierarchy": agent_hierarchy.clone(),
-                "engine": "haos-edge-rust-native"
-            },
             "agent_hierarchy": agent_hierarchy,
             "evolution_pending": [],
             "evolution_history": [],
-            "harness_bindings": [],
-            "harness_catalog": ["dsh", "opencode", "claude_code", "gemini_cli", "cursor", "windsurf", "codex", "hermes_native"]
         })
     }
 
@@ -216,90 +211,90 @@ impl DbHelper {
             )
             .map_err(|e| format!("Query prepare failed: {e}"))?;
 
-        let row = stmt.query_row([task_id], |r| {
-            let id: String = r.get(0)?;
-            let title: String = r.get(1)?;
-            let status: String = r.get(2)?;
-            let priority: i32 = r.get(3)?;
-            let assignee: Option<String> = r.get(4)?;
-            let created_at: Option<i64> = r.get(5)?;
-            let started_at: Option<i64> = r.get(6)?;
-            let completed_at: Option<i64> = r.get(7)?;
-            let result_raw: Option<String> = r.get(8)?;
-            let ws_path: Option<String> = r.get(9)?;
-            let last_failure_error: Option<String> = r.get(10)?;
+        let row = stmt
+            .query_row([task_id], |r| {
+                let id: String = r.get(0)?;
+                let title: String = r.get(1)?;
+                let status: String = r.get(2)?;
+                let priority: i32 = r.get(3)?;
+                let assignee: Option<String> = r.get(4)?;
+                let created_at: Option<i64> = r.get(5)?;
+                let started_at: Option<i64> = r.get(6)?;
+                let completed_at: Option<i64> = r.get(7)?;
+                let result_raw: Option<String> = r.get(8)?;
+                let ws_path: Option<String> = r.get(9)?;
+                let last_failure_error: Option<String> = r.get(10)?;
 
-            let elapsed_seconds = match (started_at, completed_at) {
-                (Some(s), Some(c)) if c >= s => c - s,
-                (Some(s), None) => {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs() as i64)
-                        .unwrap_or(s);
-                    now.saturating_sub(s)
-                }
-                _ => 0,
-            };
+                let elapsed_seconds = match (started_at, completed_at) {
+                    (Some(s), Some(c)) if c >= s => c - s,
+                    (Some(s), None) => {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(s);
+                        now.saturating_sub(s)
+                    }
+                    _ => 0,
+                };
 
-            let mut log_tail = String::new();
-            if let Some(ref wp) = ws_path {
-                let log_file = std::path::Path::new(wp).join(".haos").join("worker.log");
-                if log_file.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&log_file) {
-                        let lines: Vec<&str> = content.lines().collect();
-                        let start = lines.len().saturating_sub(60);
-                        log_tail = lines[start..].join("\n");
+                let mut log_tail = String::new();
+                if let Some(ref wp) = ws_path {
+                    let log_file = std::path::Path::new(wp).join(".haos").join("worker.log");
+                    if log_file.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&log_file) {
+                            let lines: Vec<&str> = content.lines().collect();
+                            let start = lines.len().saturating_sub(60);
+                            log_tail = lines[start..].join("\n");
+                        }
                     }
                 }
-            }
 
-            let result_val = result_raw.and_then(|raw| {
-                serde_json::from_str::<serde_json::Value>(&raw).ok()
-            });
+                let result_val =
+                    result_raw.and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
 
-            // Inspeção proativa de relatório detalhado (Markdown / Texto)
-            let mut report_content: Option<String> = None;
-            let mut scan_targets = Vec::new();
-            if let Some(ref wp) = ws_path {
-                let r_dir = std::path::Path::new(wp).join("reports");
-                if r_dir.is_dir() {
-                    if let Ok(entries) = std::fs::read_dir(r_dir) {
-                        for e in entries.flatten() {
-                            let p = e.path();
-                            if p.is_file() {
-                                scan_targets.push(p);
+                // Inspeção proativa de relatório detalhado (Markdown / Texto)
+                let mut report_content: Option<String> = None;
+                let mut scan_targets = Vec::new();
+                if let Some(ref wp) = ws_path {
+                    let r_dir = std::path::Path::new(wp).join("reports");
+                    if r_dir.is_dir() {
+                        if let Ok(entries) = std::fs::read_dir(r_dir) {
+                            for e in entries.flatten() {
+                                let p = e.path();
+                                if p.is_file() {
+                                    scan_targets.push(p);
+                                }
                             }
                         }
                     }
                 }
-            }
-            for candidate in scan_targets {
-                if let Ok(c) = std::fs::read_to_string(&candidate) {
-                    if !c.trim().is_empty() {
-                        report_content = Some(c);
-                        break;
+                for candidate in scan_targets {
+                    if let Ok(c) = std::fs::read_to_string(&candidate) {
+                        if !c.trim().is_empty() {
+                            report_content = Some(c);
+                            break;
+                        }
                     }
                 }
-            }
 
-            Ok(serde_json::json!({
-                "id": id,
-                "title": title,
-                "status": status,
-                "priority": priority,
-                "assignee": assignee,
-                "created_at": created_at,
-                "started_at": started_at,
-                "completed_at": completed_at,
-                "elapsed_seconds": elapsed_seconds,
-                "result": result_val,
-                "report_content": report_content,
-                "workspace_path": ws_path,
-                "last_failure_error": last_failure_error,
-                "log_tail": log_tail,
-            }))
-        })
-        .map_err(|e| format!("Task not found: {e}"))?;
+                Ok(serde_json::json!({
+                    "id": id,
+                    "title": title,
+                    "status": status,
+                    "priority": priority,
+                    "assignee": assignee,
+                    "created_at": created_at,
+                    "started_at": started_at,
+                    "completed_at": completed_at,
+                    "elapsed_seconds": elapsed_seconds,
+                    "result": result_val,
+                    "report_content": report_content,
+                    "workspace_path": ws_path,
+                    "last_failure_error": last_failure_error,
+                    "log_tail": log_tail,
+                }))
+            })
+            .map_err(|e| format!("Task not found: {e}"))?;
 
         Ok(row)
     }
@@ -340,7 +335,10 @@ impl DbHelper {
         Ok(tasks)
     }
 
-    pub fn search_ragflow(query_str: &str, limit: usize) -> Result<Vec<(String, String, String, String)>, String> {
+    pub fn search_ragflow(
+        query_str: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, String, String, String)>, String> {
         let haos_home = Self::get_haos_home();
         let db_path = haos_home.join("memory").join("ragflow.db");
         if !db_path.exists() {

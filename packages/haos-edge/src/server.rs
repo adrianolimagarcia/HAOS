@@ -11,10 +11,10 @@ use crate::loop_detector::LoopDetector;
 use crate::pty::PtyManager;
 use crate::system_one::{DecisionRecord, SystemOneEngine};
 use crate::worktree_engine::NativeWorktreeEngine;
-use tokio::sync::Mutex as TokioMutex;
+use crate::worker_snapshot;
 use axum::extract::{Path as AxPath, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::{Html, IntoResponse, Json};
+use axum::response::{sse::Event, Html, IntoResponse, Json, Sse};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex as TokioMutex;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
@@ -76,9 +77,15 @@ pub struct DrainResponse {
 ///    - Se estiver offline/isolado, faz fallback seguro para 127.0.0.1
 pub fn resolve_bind_host(host_input: &str) -> String {
     let trimmed = host_input.trim();
-    if trimmed.eq_ignore_ascii_case("auto") || trimmed.eq_ignore_ascii_case("tailnet") || trimmed.eq_ignore_ascii_case("tailscale") {
+    if trimmed.eq_ignore_ascii_case("auto")
+        || trimmed.eq_ignore_ascii_case("tailnet")
+        || trimmed.eq_ignore_ascii_case("tailscale")
+    {
         // Nível 1: Tenta obter IP do Tailscale
-        if let Ok(output) = std::process::Command::new("tailscale").args(["ip", "-4"]).output() {
+        if let Ok(output) = std::process::Command::new("tailscale")
+            .args(["ip", "-4"])
+            .output()
+        {
             if output.status.success() {
                 let ip_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !ip_str.is_empty() && ip_str.parse::<std::net::IpAddr>().is_ok() {
@@ -86,7 +93,10 @@ pub fn resolve_bind_host(host_input: &str) -> String {
                 }
             }
         }
-        if let Ok(output) = std::process::Command::new("ip").args(["-4", "addr", "show", "tailscale0"]).output() {
+        if let Ok(output) = std::process::Command::new("ip")
+            .args(["-4", "addr", "show", "tailscale0"])
+            .output()
+        {
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout);
                 for line in text.lines() {
@@ -118,7 +128,8 @@ pub fn resolve_bind_host(host_input: &str) -> String {
                     if let Ok(local_addr) = socket.local_addr() {
                         let ip = local_addr.ip();
                         if let std::net::IpAddr::V4(ipv4) = ip {
-                            if !ipv4.is_loopback() && (ipv4.is_private() || ipv4.octets()[0] == 100) {
+                            if !ipv4.is_loopback() && (ipv4.is_private() || ipv4.octets()[0] == 100)
+                            {
                                 return ipv4.to_string();
                             }
                         }
@@ -146,14 +157,18 @@ pub async fn run_server(
     let lock_path = data_dir.join(format!("controlplane_{port}.lock"));
     let _ = std::fs::create_dir_all(&data_dir);
 
-    let lock_file = File::create(&lock_path).map_err(|e| format!("Failed to create lock file: {e}"))?;
+    let lock_file =
+        File::create(&lock_path).map_err(|e| format!("Failed to create lock file: {e}"))?;
     unsafe {
         let fd = std::os::fd::AsRawFd::as_raw_fd(&lock_file);
         if libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) != 0 {
-            return Err(format!("Control plane is already running on port {port} (locked by another process)"));
+            return Err(format!(
+                "Control plane is already running on port {port} (locked by another process)"
+            ));
         }
     }
-    auth::ensure_sessions_dir(&data_dir).map_err(|e| format!("Failed to init sessions dir: {e}"))?;
+    auth::ensure_sessions_dir(&data_dir)
+        .map_err(|e| format!("Failed to init sessions dir: {e}"))?;
 
     // Resolve static files directory
     let static_dir = if let Some(p) = static_path {
@@ -174,8 +189,8 @@ pub async fn run_server(
         .or_else(|| std::env::var("HAOS_UPSTREAM_URL").ok())
         .or_else(|| std::env::var("HAOS_UPSTREAM_WEBUI").ok());
 
-    let gateway_upstream_url = gateway_upstream
-        .or_else(|| std::env::var("HAOS_UPSTREAM_GATEWAY").ok());
+    let gateway_upstream_url =
+        gateway_upstream.or_else(|| std::env::var("HAOS_UPSTREAM_GATEWAY").ok());
 
     let http_client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))
@@ -189,7 +204,9 @@ pub async fn run_server(
     let system_one = Arc::new(SystemOneEngine::new(&data_dir));
     let idempotency = Arc::new(IdempotencyEngine::new(&data_dir));
     let cron_ledger = Arc::new(CronLedgerEngine::new(&data_dir));
-    let transport_ingress = Arc::new(crate::transport_ingress::TransportIngress::new((*event_hub).clone()));
+    let transport_ingress = Arc::new(crate::transport_ingress::TransportIngress::new(
+        (*event_hub).clone(),
+    ));
     let state = AppState {
         pty_manager,
         event_hub,
@@ -227,28 +244,75 @@ pub async fn run_server(
         .route("/api/terminal/{sid}/resize", post(resize_terminal))
         .route("/api/terminal/{sid}/kill", post(kill_terminal))
         .route("/api/tasks", get(get_tasks_handler))
+        .route("/api/worker-snapshots", get(worker_snapshots_handler))
         .route("/api/tasks/{id}", get(get_task_by_id_handler))
         .route("/api/task/{id}", get(get_task_by_id_handler))
         .route("/api/state", get(state_handler))
-        .route("/api/agent-hierarchy", get(agent_hierarchy_handler).post(agent_hierarchy_mutate_handler))
-        .route("/api/controlplane/agent-hierarchy", get(agent_hierarchy_handler).post(agent_hierarchy_mutate_handler))
-        .route("/api/team-graph", get(team_graph_handler))
-        .route("/api/controlplane/team_graph", get(team_graph_handler))
-        .route("/api/agent-hierarchy/soul", get(hierarchy_soul_get_handler).post(hierarchy_soul_post_handler))
-        .route("/api/agent-hierarchy/memory", get(hierarchy_memory_get_handler).post(hierarchy_memory_post_handler))
-        .route("/api/agent-hierarchy/notebook", get(hierarchy_notebook_get_handler).post(hierarchy_notebook_post_handler))
-        .route("/api/agent-hierarchy/toolsets", get(hierarchy_toolsets_handler))
-        .route("/api/agent-hierarchy/routines", get(hierarchy_routines_get_handler).post(hierarchy_routines_post_handler))
-        .route("/api/agent-hierarchy/routines/delete", post(hierarchy_routines_delete_handler))
-        .route("/api/agent-hierarchy/shadows", get(hierarchy_shadows_handler).post(hierarchy_shadows_spawn_handler))
-        .route("/api/agent-hierarchy/shadows/discard", post(hierarchy_shadows_discard_handler))
-        .route("/api/agent-hierarchy/microapps", get(hierarchy_microapps_get_handler).post(hierarchy_microapps_post_handler))
-        .route("/api/agent-hierarchy/microapps/delete", post(hierarchy_microapps_delete_handler))
+        .route(
+            "/api/agent-hierarchy",
+            get(agent_hierarchy_handler).post(agent_hierarchy_mutate_handler),
+        )
+        .route(
+            "/api/controlplane/agent-hierarchy",
+            get(agent_hierarchy_handler).post(agent_hierarchy_mutate_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/soul",
+            get(hierarchy_soul_get_handler).post(hierarchy_soul_post_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/memory",
+            get(hierarchy_memory_get_handler).post(hierarchy_memory_post_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/notebook",
+            get(hierarchy_notebook_get_handler).post(hierarchy_notebook_post_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/toolsets",
+            get(hierarchy_toolsets_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/routines",
+            get(hierarchy_routines_get_handler).post(hierarchy_routines_post_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/routines/delete",
+            post(hierarchy_routines_delete_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/shadows",
+            get(hierarchy_shadows_handler).post(hierarchy_shadows_spawn_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/shadows/discard",
+            post(hierarchy_shadows_discard_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/microapps",
+            get(hierarchy_microapps_get_handler).post(hierarchy_microapps_post_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/microapps/delete",
+            post(hierarchy_microapps_delete_handler),
+        )
         .route("/api/agent-hierarchy/feed", get(hierarchy_feed_handler))
-        .route("/api/agent-hierarchy/wiki/articles", get(hierarchy_wiki_articles_handler))
-        .route("/api/agent-hierarchy/wiki/article", get(hierarchy_wiki_article_get_handler).post(hierarchy_wiki_article_post_handler))
-        .route("/api/harnesses", get(harnesses_handler))
-        .route("/api/controlplane/harnesses", get(harnesses_handler))
+        .route(
+            "/api/agent-hierarchy/command",
+            post(hierarchy_command_handler),
+        )
+        .route(
+            "/api/controlplane/agent-hierarchy/command",
+            post(hierarchy_command_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/wiki/articles",
+            get(hierarchy_wiki_articles_handler),
+        )
+        .route(
+            "/api/agent-hierarchy/wiki/article",
+            get(hierarchy_wiki_article_get_handler).post(hierarchy_wiki_article_post_handler),
+        )
         .route("/api/overview", get(overview_handler))
         .route("/api/controlplane/overview", get(overview_handler))
         .route("/api/doc/search", get(doc_search_handler))
@@ -264,8 +328,14 @@ pub async fn run_server(
         .route("/api/worktree/discard", post(worktree_discard_handler))
         .route("/api/analysis/blast-radius", post(blast_radius_handler))
         .route("/api/tools/detect-loop", post(detect_loop_handler))
-        .route("/api/protocols/envelope/verify", post(protocol_envelope_verify_handler))
-        .route("/api/protocols/bridge/translate", post(protocol_bridge_translate_handler))
+        .route(
+            "/api/protocols/envelope/verify",
+            post(protocol_envelope_verify_handler),
+        )
+        .route(
+            "/api/protocols/bridge/translate",
+            post(protocol_bridge_translate_handler),
+        )
         .route("/api/kanban/claim", post(kanban_claim_handler))
         .route("/api/kanban/heartbeat", post(kanban_heartbeat_handler))
         .route("/api/code/symbols", post(code_symbols_handler))
@@ -275,21 +345,39 @@ pub async fn run_server(
         .route("/api/fs/browse-fast", get(fs_browse_fast_handler))
         .route("/api/tools/search-files", post(tools_search_files_handler))
         .route("/api/tools/read-file", post(tools_read_file_handler))
-        .route("/api/subagent/spawn-headless", post(subagent_spawn_headless_handler))
+        .route(
+            "/api/subagent/spawn-headless",
+            post(subagent_spawn_headless_handler),
+        )
         .route("/v1/audio/transcriptions", post(stt_transcriptions_handler))
-        .route("/api/v1/audio/transcriptions", post(stt_transcriptions_handler))
+        .route(
+            "/api/v1/audio/transcriptions",
+            post(stt_transcriptions_handler),
+        )
         .route("/api/timeline/fast", get(timeline_fast_handler))
         .route("/api/cancel/register", post(cancel_register_handler))
         .route("/api/cancel/trigger", post(cancel_trigger_handler))
         .route("/api/cancel/status", get(cancel_status_handler))
-        .route("/api/settings", get(get_settings_handler).post(post_settings_handler))
-        .route("/api/system-one/decide", get(system_one_get_handler).post(system_one_post_handler))
+        .route(
+            "/api/settings",
+            get(get_settings_handler).post(post_settings_handler),
+        )
+        .route(
+            "/api/system-one/decide",
+            get(system_one_get_handler).post(system_one_post_handler),
+        )
         .route("/api/system-one/list", get(system_one_list_handler))
         .route("/api/idempotency/check", post(idempotency_check_handler))
         .route("/api/idempotency/record", post(idempotency_record_handler))
-        .route("/api/response-store/{id}", get(response_store_get_handler).post(response_store_post_handler))
+        .route(
+            "/api/response-store/{id}",
+            get(response_store_get_handler).post(response_store_post_handler),
+        )
         .route("/api/cron/executions", get(cron_executions_handler))
-        .route("/api/cron/deliveries/pending", get(cron_deliveries_pending_handler))
+        .route(
+            "/api/cron/deliveries/pending",
+            get(cron_deliveries_pending_handler),
+        )
         .route("/api/system-facts", get(system_facts_handler))
         .route("/api/agent-config", get(agent_config_handler))
         .route("/api/v1/models", get(models_handler))
@@ -334,7 +422,8 @@ pub async fn run_server(
             if kanban_db.exists() {
                 if let Ok(conn) = rusqlite::Connection::open_with_flags(
                     &kanban_db,
-                    rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                        | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
                 ) {
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -376,7 +465,10 @@ fn cookie_from(headers: &HeaderMap) -> Option<&str> {
 }
 
 fn unauthorized() -> (StatusCode, Json<serde_json::Value>) {
-    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Não autenticado"})))
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({"error": "Não autenticado"})),
+    )
 }
 
 async fn login_page_handler() -> impl IntoResponse {
@@ -390,27 +482,50 @@ pub struct LoginRequest {
     pub remember: bool,
 }
 
-async fn login_handler(State(state): State<AppState>, Json(payload): Json<LoginRequest>) -> impl IntoResponse {
+async fn login_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<LoginRequest>,
+) -> impl IntoResponse {
     if !auth::password_is_set(&state.data_dir) {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "error": format!(
-                "Senha não definida. Rode no nó: HAOS_DATA_DIR={} haos-edge admin set-password",
-                state.data_dir.display()
-            )
-        }))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": format!(
+                    "Senha não definida. Rode no nó: HAOS_DATA_DIR={} haos-edge admin set-password",
+                    state.data_dir.display()
+                )
+            })),
+        )
+            .into_response();
     }
     if !auth::verify_password(&state.data_dir, &payload.password) {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Senha incorreta"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "Senha incorreta"})),
+        )
+            .into_response();
     }
     match auth::create_session(&state.data_dir, payload.remember) {
-        Ok((_token, cookie)) => ([(header::SET_COOKIE, cookie)], Json(serde_json::json!({"ok": true}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Erro ao criar sessão: {e}")).into_response(),
+        Ok((_token, cookie)) => (
+            [(header::SET_COOKIE, cookie)],
+            Json(serde_json::json!({"ok": true})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Erro ao criar sessão: {e}"),
+        )
+            .into_response(),
     }
 }
 
 async fn logout_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     auth::destroy_session(&state.data_dir, cookie_from(&headers));
-    ([(header::SET_COOKIE, auth::clear_cookie())], Json(serde_json::json!({"ok": true}))).into_response()
+    (
+        [(header::SET_COOKIE, auth::clear_cookie())],
+        Json(serde_json::json!({"ok": true})),
+    )
+        .into_response()
 }
 
 async fn index_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
@@ -421,7 +536,11 @@ async fn index_handler(State(state): State<AppState>, headers: HeaderMap) -> imp
     if index_file.exists() {
         match std::fs::read_to_string(&index_file) {
             Ok(content) => Html(content).into_response(),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Error reading index.html: {e}")).into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Error reading index.html: {e}"),
+            )
+                .into_response(),
         }
     } else {
         Html("<h1>HAOS Edge Rust Server</h1><p>index.html not found</p>").into_response()
@@ -482,7 +601,12 @@ async fn drain_terminal(
         None => return StatusCode::NOT_FOUND.into_response(),
     };
     let (data, running) = session.drain();
-    Json(DrainResponse { data, running, exit_code: if running { 0 } else { 1 } }).into_response()
+    Json(DrainResponse {
+        data,
+        running,
+        exit_code: if running { 0 } else { 1 },
+    })
+    .into_response()
 }
 
 async fn replay_terminal(
@@ -504,7 +628,8 @@ async fn replay_terminal(
         "buffer": data,
         "running": running,
         "exit_code": if running { 0 } else { 1 }
-    })).into_response()
+    }))
+    .into_response()
 }
 
 async fn resize_terminal(
@@ -548,7 +673,11 @@ async fn get_task_by_id_handler(
     }
     match DbHelper::get_task_details(&task_id) {
         Ok(details) => Json(details).into_response(),
-        Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e }))).into_response(),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
     }
 }
 
@@ -559,6 +688,40 @@ async fn get_tasks_handler(State(state): State<AppState>, headers: HeaderMap) ->
     match DbHelper::get_tasks() {
         Ok(tasks) => Json(serde_json::json!({ "tasks": tasks })).into_response(),
         Err(e) => Json(serde_json::json!({ "error": e, "tasks": [] })).into_response(),
+    }
+}
+
+async fn worker_snapshots_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let profile = query.get("profile").map(String::as_str);
+    let now = query
+        .get("now")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or_else(worker_snapshot::unix_now);
+    let max_idle_seconds = query
+        .get("max_idle_seconds")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(30)
+        .max(0);
+    let db_path = DbHelper::get_haos_home().join("kanban.db");
+    match worker_snapshot::read_snapshots(&db_path, profile, now, max_idle_seconds) {
+        Ok(snapshots) => Json(serde_json::json!({
+            "ok": true,
+            "db": db_path,
+            "snapshots": snapshots,
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "db": db_path, "error": error.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -703,7 +866,8 @@ async fn transport_inbound_handler(
     Json(payload): Json<crate::transport_ingress::InboundMessagePayload>,
 ) -> impl IntoResponse {
     match state.transport_ingress.ingest_inbound_message(payload) {
-        Ok(_) => Json(serde_json::json!({ "ok": true, "transport": "rust_native_ingress" })).into_response(),
+        Ok(_) => Json(serde_json::json!({ "ok": true, "transport": "rust_native_ingress" }))
+            .into_response(),
         Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "ok": false, "error": err })),
@@ -728,25 +892,86 @@ async fn event_ingest_handler(
 }
 
 // 2. Stream SSE de Eventos em Tempo Real para WebUI / Dashboards
+#[derive(Deserialize, Default)]
+struct EventStreamQuery {
+    last_seq: Option<i64>,
+}
+
 async fn event_stream_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<EventStreamQuery>,
 ) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let last_seq = query.last_seq.unwrap_or(0);
     let mut rx = state.event_hub.sender.subscribe();
-    let stream = async_stream::stream! {
-        loop {
-            if let Ok(evt) = rx.recv().await {
-                if let Ok(json_str) = serde_json::to_string(&evt) {
-                    yield Ok::<_, axum::Error>(format!("data: {json_str}\n\n"));
+    let db_path = state.data_dir.join("events.db");
+    let (replay, replay_limit_exceeded) = if last_seq > 0 {
+        let mut events = Vec::new();
+        let mut limited = false;
+        if let Ok(conn) = rusqlite::Connection::open_with_flags(
+            &db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) {
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT event_id, seq, name, trace_id, correlation_id, causation_id, trust_level, schema_version, timestamp, payload FROM events WHERE seq > ?1 ORDER BY seq LIMIT 101",
+            ) {
+                if let Ok(rows) = stmt.query_map([last_seq], |row| {
+                    let raw: String = row.get(9)?;
+                    let payload = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+                    Ok(PlatformEvent {
+                        event_id: row.get(0)?,
+                        seq: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        trace_id: row.get(3)?,
+                        correlation_id: row.get(4)?,
+                        causation_id: row.get(5)?,
+                        trust_level: row.get(6)?,
+                        schema_version: row.get(7)?,
+                        timestamp: row.get(8)?,
+                        payload,
+                    })
+                }) {
+                    for row in rows.flatten() {
+                        events.push(row);
+                    }
                 }
             }
         }
+        if events.len() > 100 {
+            events.truncate(100);
+            limited = true;
+        }
+        (events, limited)
+    } else {
+        (Vec::new(), false)
     };
-    axum::response::Response::builder()
-        .header("Content-Type", "text/event-stream")
-        .header("Cache-Control", "no-cache")
-        .header("Connection", "keep-alive")
-        .body(axum::body::Body::from_stream(stream))
-        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+    let stream = async_stream::stream! {
+        let snapshot = serde_json::json!({"type":"snapshot","last_seq":last_seq});
+        yield Ok::<Event, axum::Error>(Event::default().event("snapshot").id(last_seq.to_string()).json_data(snapshot).unwrap());
+        for row in replay { let id = row.seq.unwrap_or(0).to_string(); yield Ok(Event::default().event("event").id(id).json_data(row).unwrap()); }
+        if replay_limit_exceeded { yield Ok(Event::default().event("resync").data("replay_limit_exceeded")); }
+        let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
+        loop {
+            tokio::select! {
+                result = rx.recv() => match result {
+                    Ok(evt) => { let id = evt.seq.unwrap_or(0).to_string(); yield Ok(Event::default().event("event").id(id).json_data(evt).unwrap()); },
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => { yield Ok(Event::default().event("resync").data("stream_lagged")); break; },
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                },
+                _ = heartbeat.tick() => yield Ok(Event::default().comment("heartbeat")),
+            }
+        }
+    };
+    Sse::new(stream)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("heartbeat"),
+        )
+        .into_response()
 }
 
 // 3. Token & Context Hasher (SHA-256 SIMD / Rolling Prefixes)
@@ -756,17 +981,13 @@ pub struct ContextHashPayload {
     pub segments: Option<usize>,
 }
 
-async fn context_hash_handler(
-    Json(payload): Json<ContextHashPayload>,
-) -> impl IntoResponse {
+async fn context_hash_handler(Json(payload): Json<ContextHashPayload>) -> impl IntoResponse {
     let segments = payload.segments.unwrap_or(4);
     let fp = ContextHasher::compute_fingerprint(&payload.text, segments);
     Json(serde_json::json!({ "ok": true, "fingerprint": fp }))
 }
 
-async fn context_compact_handler(
-    Json(payload): Json<CompactPayload>,
-) -> impl IntoResponse {
+async fn context_compact_handler(Json(payload): Json<CompactPayload>) -> impl IntoResponse {
     let res = ContextCompactor::compact(payload);
     Json(res)
 }
@@ -791,7 +1012,8 @@ async fn stt_transcriptions_handler(
     // 1. Validação de autenticação se configurado no ambiente
     let expected_token = std::env::var("HAOS_STT_TOKEN").unwrap_or_default();
     if !expected_token.is_empty() {
-        let auth_header = headers.get("authorization")
+        let auth_header = headers
+            .get("authorization")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
         let expected_bearer = format!("Bearer {}", expected_token);
@@ -799,7 +1021,8 @@ async fn stt_transcriptions_handler(
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({ "error": "invalid bearer token" })),
-            ).into_response();
+            )
+                .into_response();
         }
     }
 
@@ -843,7 +1066,8 @@ async fn stt_transcriptions_handler(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({ "error": "empty or missing audio file" })),
-            ).into_response();
+            )
+                .into_response();
         }
     };
 
@@ -852,7 +1076,9 @@ async fn stt_transcriptions_handler(
         &filename,
         &model,
         language.as_deref(),
-    ).await {
+    )
+    .await
+    {
         Ok(res) => {
             if response_format == "text" {
                 res.text.into_response()
@@ -860,12 +1086,11 @@ async fn stt_transcriptions_handler(
                 Json(res).into_response()
             }
         }
-        Err(err) => {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": format!("transcription failed: {}", err) })),
-            ).into_response()
-        }
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("transcription failed: {}", err) })),
+        )
+            .into_response(),
     }
 }
 
@@ -883,7 +1108,11 @@ async fn system_one_get_handler(
 ) -> impl IntoResponse {
     match state.system_one.get_decision(&query.key) {
         Some(rec) => Json(serde_json::json!({ "found": true, "decision": rec })).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "found": false }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "found": false })),
+        )
+            .into_response(),
     }
 }
 
@@ -893,7 +1122,11 @@ async fn system_one_post_handler(
 ) -> impl IntoResponse {
     match state.system_one.save_decision(&record) {
         Ok(_) => Json(serde_json::json!({ "ok": true, "saved": true })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": e }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e })),
+        )
+            .into_response(),
     }
 }
 
@@ -908,7 +1141,9 @@ async fn system_one_list_handler(
     Query(query): Query<SystemOneListQuery>,
 ) -> impl IntoResponse {
     let limit = query.limit.unwrap_or(50);
-    let list = state.system_one.list_decisions(query.domain.as_deref(), limit);
+    let list = state
+        .system_one
+        .list_decisions(query.domain.as_deref(), limit);
     Json(serde_json::json!({ "decisions": list, "count": list.len() }))
 }
 
@@ -925,7 +1160,10 @@ async fn idempotency_check_handler(
     State(state): State<AppState>,
     Json(payload): Json<IdempotencyCheckPayload>,
 ) -> impl IntoResponse {
-    match state.idempotency.check_idempotency(&payload.scope, &payload.key) {
+    match state
+        .idempotency
+        .check_idempotency(&payload.scope, &payload.key)
+    {
         Some(rec) => Json(serde_json::json!({ "exists": true, "record": rec })).into_response(),
         None => Json(serde_json::json!({ "exists": false })).into_response(),
     }
@@ -952,7 +1190,11 @@ async fn idempotency_record_handler(
         &payload.status,
     ) {
         Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": e }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e })),
+        )
+            .into_response(),
     }
 }
 
@@ -962,7 +1204,11 @@ async fn response_store_get_handler(
 ) -> impl IntoResponse {
     match state.idempotency.get_response(&id) {
         Some(data) => Json(serde_json::json!({ "found": true, "data": data })).into_response(),
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "found": false }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "found": false })),
+        )
+            .into_response(),
     }
 }
 
@@ -978,7 +1224,11 @@ async fn response_store_post_handler(
 ) -> impl IntoResponse {
     match state.idempotency.save_response(&id, &payload.data) {
         Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": e }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": e })),
+        )
+            .into_response(),
     }
 }
 
@@ -996,7 +1246,9 @@ async fn cron_executions_handler(
     Query(query): Query<CronExecutionsQuery>,
 ) -> impl IntoResponse {
     let limit = query.limit.unwrap_or(50);
-    let list = state.cron_ledger.list_executions(query.job_id.as_deref(), limit);
+    let list = state
+        .cron_ledger
+        .list_executions(query.job_id.as_deref(), limit);
     Json(serde_json::json!({ "executions": list, "count": list.len() }))
 }
 
@@ -1027,7 +1279,10 @@ async fn worktree_spawn_handler(
     State(_state): State<AppState>,
     Json(payload): Json<WorktreeSpawnPayload>,
 ) -> impl IntoResponse {
-    let repo_dir = payload.repo_dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let repo_dir = payload
+        .repo_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let shadows_root = PathBuf::from("/tmp/haos-shadows");
     let base_commit = payload.base_commit.as_deref().unwrap_or("HEAD");
 
@@ -1057,10 +1312,17 @@ pub struct WorktreeDiscardPayload {
 async fn worktree_discard_handler(
     Json(payload): Json<WorktreeDiscardPayload>,
 ) -> impl IntoResponse {
-    let repo_dir = payload.repo_dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let repo_dir = payload
+        .repo_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let wt_path = PathBuf::from(payload.worktree_path);
 
-    match NativeWorktreeEngine::discard_worktree(&repo_dir, &wt_path, payload.branch_name.as_deref()) {
+    match NativeWorktreeEngine::discard_worktree(
+        &repo_dir,
+        &wt_path,
+        payload.branch_name.as_deref(),
+    ) {
         Ok(_) => Json(serde_json::json!({ "ok": true, "discarded": true })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1079,10 +1341,11 @@ pub struct BlastRadiusPayload {
     pub max_depth: Option<usize>,
 }
 
-async fn blast_radius_handler(
-    Json(payload): Json<BlastRadiusPayload>,
-) -> impl IntoResponse {
-    let root_dir = payload.root_dir.map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+async fn blast_radius_handler(Json(payload): Json<BlastRadiusPayload>) -> impl IntoResponse {
+    let root_dir = payload
+        .root_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
     let mod_files = payload.modified_files.unwrap_or_default();
     let symbols = payload.target_symbols.unwrap_or_default();
     let max_depth = payload.max_depth.unwrap_or(4);
@@ -1112,7 +1375,9 @@ async fn detect_loop_handler(
         .or_insert_with(|| LoopDetector::new(threshold, true));
 
     match detector.record_and_evaluate(&payload.tool_name, &payload.arguments, payload.iteration) {
-        Some(alert) => Json(serde_json::json!({ "ok": true, "loop_detected": true, "alert": alert })),
+        Some(alert) => {
+            Json(serde_json::json!({ "ok": true, "loop_detected": true, "alert": alert }))
+        }
         None => Json(serde_json::json!({ "ok": true, "loop_detected": false })),
     }
 }
@@ -1153,29 +1418,49 @@ async fn protocol_bridge_translate_handler(
     match (src.as_str(), tgt.as_str()) {
         ("ACP", "INTERNAL") => {
             let event = payload.acp_event.unwrap_or_else(|| serde_json::json!({}));
-            let bridged = crate::protocols::FastCrossProtocolBridge::acp_to_internal(event, sender, recipient);
-            (StatusCode::OK, Json(serde_json::json!({ "ok": true, "envelope": bridged })))
+            let bridged = crate::protocols::FastCrossProtocolBridge::acp_to_internal(
+                event, sender, recipient,
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "ok": true, "envelope": bridged })),
+            )
         }
         ("INTERNAL", "A2A") => {
             if let Some(env) = payload.envelope {
                 let bridged = crate::protocols::FastCrossProtocolBridge::internal_to_a2a(&env);
-                (StatusCode::OK, Json(serde_json::json!({ "ok": true, "envelope": bridged })))
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({ "ok": true, "envelope": bridged })),
+                )
             } else {
-                (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": "Missing envelope" })))
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "ok": false, "error": "Missing envelope" })),
+                )
             }
         }
         ("A2A", "ANP") => {
             if let Some(env) = payload.envelope {
-                let bridged = crate::protocols::FastCrossProtocolBridge::a2a_to_anp(&env, sender, recipient);
-                (StatusCode::OK, Json(serde_json::json!({ "ok": true, "envelope": bridged })))
+                let bridged =
+                    crate::protocols::FastCrossProtocolBridge::a2a_to_anp(&env, sender, recipient);
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({ "ok": true, "envelope": bridged })),
+                )
             } else {
-                (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": "Missing envelope" })))
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "ok": false, "error": "Missing envelope" })),
+                )
             }
         }
         _ => (
             StatusCode::NOT_IMPLEMENTED,
-            Json(serde_json::json!({ "ok": false, "error": format!("Bridge translation from {} to {} not supported in fast path", src, tgt) }))
-        )
+            Json(
+                serde_json::json!({ "ok": false, "error": format!("Bridge translation from {} to {} not supported in fast path", src, tgt) }),
+            ),
+        ),
     }
 }
 
@@ -1188,9 +1473,7 @@ pub struct KanbanClaimPayload {
     pub db_path: Option<String>,
 }
 
-async fn kanban_claim_handler(
-    Json(payload): Json<KanbanClaimPayload>,
-) -> impl IntoResponse {
+async fn kanban_claim_handler(Json(payload): Json<KanbanClaimPayload>) -> impl IntoResponse {
     let db_path = payload.db_path.map(PathBuf::from).unwrap_or_else(|| {
         let home = std::env::var("HAOS_DATA_DIR")
             .or_else(|_| std::env::var("HERMES_HOME"))
@@ -1208,7 +1491,9 @@ async fn kanban_claim_handler(
         .unwrap_or(0);
     let ttl = payload.ttl_seconds.unwrap_or(300);
     let lease_expires = now + ttl;
-    let claimer = payload.worker_id.unwrap_or_else(|| "haos-worker".to_string());
+    let claimer = payload
+        .worker_id
+        .unwrap_or_else(|| "haos-worker".to_string());
 
     // Update atômico: claim somente se READY, ou claim expirado
     let res = conn.execute(
@@ -1276,8 +1561,12 @@ async fn kanban_heartbeat_handler(
     };
 
     match res {
-        Ok(rows) if rows > 0 => Json(serde_json::json!({ "ok": true, "renewed": true, "lease_expires_at": lease_expires })),
-        Ok(_) => Json(serde_json::json!({ "ok": true, "renewed": false, "reason": "not_running_or_mismatched_worker" })),
+        Ok(rows) if rows > 0 => Json(
+            serde_json::json!({ "ok": true, "renewed": true, "lease_expires_at": lease_expires }),
+        ),
+        Ok(_) => Json(
+            serde_json::json!({ "ok": true, "renewed": false, "reason": "not_running_or_mismatched_worker" }),
+        ),
         Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
     }
 }
@@ -1296,17 +1585,17 @@ pub struct SymbolDefinition {
     pub line: usize,
 }
 
-async fn code_symbols_handler(
-    Json(payload): Json<CodeSymbolsPayload>,
-) -> impl IntoResponse {
+async fn code_symbols_handler(Json(payload): Json<CodeSymbolsPayload>) -> impl IntoResponse {
     let content = match payload.content {
         Some(c) => c,
-        None => {
-            match std::fs::read_to_string(&payload.file_path) {
-                Ok(s) => s,
-                Err(e) => return Json(serde_json::json!({ "ok": false, "error": format!("read_error: {e}") })),
+        None => match std::fs::read_to_string(&payload.file_path) {
+            Ok(s) => s,
+            Err(e) => {
+                return Json(
+                    serde_json::json!({ "ok": false, "error": format!("read_error: {e}") }),
+                )
             }
-        }
+        },
     };
 
     let mut symbols = Vec::new();
@@ -1334,11 +1623,18 @@ async fn code_symbols_handler(
                     });
                 }
             }
-        } else if trimmed.starts_with("pub struct ") || trimmed.starts_with("pub enum ") || trimmed.starts_with("pub fn ") {
+        } else if trimmed.starts_with("pub struct ")
+            || trimmed.starts_with("pub enum ")
+            || trimmed.starts_with("pub fn ")
+        {
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
             if parts.len() >= 3 {
                 let kind = parts[1].to_string();
-                let name = parts[2].split(&['<', '(', '{', ';'][..]).next().unwrap_or("").trim();
+                let name = parts[2]
+                    .split(&['<', '(', '{', ';'][..])
+                    .next()
+                    .unwrap_or("")
+                    .trim();
                 symbols.push(SymbolDefinition {
                     kind,
                     name: name.to_string(),
@@ -1424,16 +1720,19 @@ pub struct OkfScannedDoc {
     pub body_preview: String,
 }
 
-async fn okf_scan_handler(
-    Json(payload): Json<OkfScanPayload>,
-) -> impl IntoResponse {
+async fn okf_scan_handler(Json(payload): Json<OkfScanPayload>) -> impl IntoResponse {
     let bundle_path = std::path::Path::new(&payload.bundle_dir);
     if !bundle_path.is_dir() {
-        return Json(serde_json::json!({ "ok": false, "error": "bundle_dir_not_found", "docs": [] }));
+        return Json(
+            serde_json::json!({ "ok": false, "error": "bundle_dir_not_found", "docs": [] }),
+        );
     }
 
     let mut docs = Vec::new();
-    for entry in walkdir::WalkDir::new(bundle_path).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(bundle_path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let p = entry.path();
         if p.extension().map_or(false, |ext| ext == "md") {
             if let Ok(content) = std::fs::read_to_string(p) {
@@ -1453,17 +1752,44 @@ async fn okf_scan_handler(
                         let frontmatter = parts[1];
                         body = parts[2].trim();
 
+                        let mut in_tags_list = false;
                         for line in frontmatter.lines() {
                             let trimmed = line.trim();
                             if trimmed.starts_with("title:") {
-                                title = trimmed[6..].trim().trim_matches('"').trim_matches('\'').to_string();
+                                in_tags_list = false;
+                                title = trimmed[6..]
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .to_string();
                             } else if trimmed.starts_with("tags:") {
-                                let t_str = trimmed[5..].trim().trim_matches('[').trim_matches(']');
-                                tags = t_str
-                                    .split(',')
-                                    .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
-                                    .filter(|s| !s.is_empty())
-                                    .collect();
+                                let t_str = trimmed[5..].trim();
+                                if t_str.starts_with('[') {
+                                    in_tags_list = false;
+                                    let cleaned = t_str.trim_matches('[').trim_matches(']');
+                                    tags = cleaned
+                                        .split(',')
+                                        .map(|s| {
+                                            s.trim()
+                                                .trim_matches('"')
+                                                .trim_matches('\'')
+                                                .to_string()
+                                        })
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                } else {
+                                    in_tags_list = true;
+                                }
+                            } else if in_tags_list {
+                                if trimmed.starts_with('-') {
+                                    let item =
+                                        trimmed[1..].trim().trim_matches('"').trim_matches('\'');
+                                    if !item.is_empty() {
+                                        tags.push(item.to_string());
+                                    }
+                                } else if trimmed.contains(':') {
+                                    in_tags_list = false;
+                                }
                             }
                         }
                     }
@@ -1501,16 +1827,25 @@ async fn fs_browse_fast_handler(
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
     let raw_path = params.get("path").cloned().unwrap_or_default();
-    let show_hidden = params.get("show_hidden").map(|v| v == "1" || v == "true").unwrap_or(false);
+    let show_hidden = params
+        .get("show_hidden")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
 
     let target_dir = if raw_path.trim().is_empty() {
-        std::env::var("HOME").map(std::path::PathBuf::from).unwrap_or_else(|_| std::path::PathBuf::from("/root"))
+        std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("/root"))
     } else {
         std::path::PathBuf::from(raw_path)
     };
 
     let target_dir = if let Ok(canon) = target_dir.canonicalize() {
-        if canon.is_dir() { canon } else { canon.parent().unwrap_or(&canon).to_path_buf() }
+        if canon.is_dir() {
+            canon
+        } else {
+            canon.parent().unwrap_or(&canon).to_path_buf()
+        }
     } else {
         std::path::PathBuf::from("/root")
     };
@@ -1537,7 +1872,9 @@ async fn fs_browse_fast_handler(
 
     // Ordenação: Diretórios primeiro, depois alfabética
     items.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
     let current = target_dir.to_string_lossy().to_string();
@@ -1562,18 +1899,30 @@ pub struct SearchFilesPayload {
     pub max_matches: Option<usize>,
 }
 
-async fn tools_search_files_handler(
-    Json(payload): Json<SearchFilesPayload>,
-) -> impl IntoResponse {
-    let root = payload.path
+async fn tools_search_files_handler(Json(payload): Json<SearchFilesPayload>) -> impl IntoResponse {
+    let root = payload
+        .path
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+        .unwrap_or_else(|| {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        });
 
     let max_matches = payload.max_matches.unwrap_or(250);
 
-    match crate::file_engine::FastFileEngine::search_files(&root, &payload.pattern, payload.glob.as_deref(), max_matches) {
-        Ok(res) => (StatusCode::OK, Json(serde_json::json!({ "ok": true, "result": res }))),
-        Err(err) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": err }))),
+    match crate::file_engine::FastFileEngine::search_files(
+        &root,
+        &payload.pattern,
+        payload.glob.as_deref(),
+        max_matches,
+    ) {
+        Ok(res) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "result": res })),
+        ),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        ),
     }
 }
 
@@ -1584,13 +1933,17 @@ pub struct ReadFilePayload {
     pub limit: Option<usize>,
 }
 
-async fn tools_read_file_handler(
-    Json(payload): Json<ReadFilePayload>,
-) -> impl IntoResponse {
+async fn tools_read_file_handler(Json(payload): Json<ReadFilePayload>) -> impl IntoResponse {
     let path = std::path::PathBuf::from(payload.path);
     match crate::file_engine::FastFileEngine::read_file(&path, payload.offset, payload.limit) {
-        Ok(res) => (StatusCode::OK, Json(serde_json::json!({ "ok": true, "result": res }))),
-        Err(err) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "ok": false, "error": err }))),
+        Ok(res) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "result": res })),
+        ),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        ),
     }
 }
 
@@ -1599,7 +1952,10 @@ async fn timeline_fast_handler(
     State(state): State<AppState>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let limit: usize = params.get("limit").and_then(|v| v.parse().ok()).unwrap_or(80);
+    let limit: usize = params
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(80);
     let events_db = state.data_dir.join("events.db");
 
     if !events_db.exists() {
@@ -1628,7 +1984,8 @@ async fn timeline_fast_handler(
         let trace_id: Option<String> = row.get(3)?;
         let timestamp: f64 = row.get(4)?;
         let payload_str: String = row.get(5)?;
-        let payload: serde_json::Value = serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
+        let payload: serde_json::Value =
+            serde_json::from_str(&payload_str).unwrap_or(serde_json::Value::Null);
 
         Ok(serde_json::json!({
             "event_id": event_id,
@@ -1834,7 +2191,10 @@ async fn cancel_status_handler(
     Json(serde_json::json!({ "ok": true, "id": id, "active": is_active }))
 }
 
-async fn get_settings_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn get_settings_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
@@ -1859,11 +2219,17 @@ async fn post_settings_handler(
         return unauthorized().into_response();
     }
     let p = state.data_dir.join("settings.json");
-    let _ = std::fs::write(&p, serde_json::to_string_pretty(&payload).unwrap_or_default());
+    let _ = std::fs::write(
+        &p,
+        serde_json::to_string_pretty(&payload).unwrap_or_default(),
+    );
     Json(serde_json::json!({ "success": true, "settings": payload })).into_response()
 }
 
-async fn system_facts_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn system_facts_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
@@ -1876,7 +2242,10 @@ async fn system_facts_handler(State(state): State<AppState>, headers: HeaderMap)
     })).into_response()
 }
 
-async fn agent_config_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn agent_config_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
@@ -1888,7 +2257,8 @@ async fn agent_config_handler(State(state): State<AppState>, headers: HeaderMap)
         "exists": exists,
         "managed": false,
         "sections": {}
-    })).into_response()
+    }))
+    .into_response()
 }
 
 async fn models_handler() -> impl IntoResponse {
@@ -1915,7 +2285,10 @@ async fn proxy_fallback_handler(
         || raw_path.starts_with("/api/cron/");
 
     let upstream_base = if is_gateway_route && state.gateway_upstream_url.is_some() {
-        state.gateway_upstream_url.as_ref().map(|u| u.trim_end_matches('/'))
+        state
+            .gateway_upstream_url
+            .as_ref()
+            .map(|u| u.trim_end_matches('/'))
     } else {
         state.upstream_url.as_ref().map(|u| u.trim_end_matches('/'))
     };
@@ -1923,7 +2296,10 @@ async fn proxy_fallback_handler(
     let upstream = match upstream_base {
         Some(u) => u,
         None => {
-            if !raw_path.starts_with("/api/") && !raw_path.starts_with("/v1/") && !is_prefixed_gateway {
+            if !raw_path.starts_with("/api/")
+                && !raw_path.starts_with("/v1/")
+                && !is_prefixed_gateway
+            {
                 let index_file = state.static_dir.join("index.html");
                 if index_file.exists() {
                     if let Ok(content) = std::fs::read_to_string(&index_file) {
@@ -1952,8 +2328,8 @@ async fn proxy_fallback_handler(
     let method = req.method().clone();
     let (parts, body) = req.into_parts();
 
-    let reqwest_method = reqwest::Method::from_bytes(method.as_str().as_bytes())
-        .unwrap_or(reqwest::Method::GET);
+    let reqwest_method =
+        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
     let mut client_req = state.http_client.request(reqwest_method, &target_url);
 
     for (name, val) in parts.headers.iter() {
@@ -1979,7 +2355,11 @@ async fn proxy_fallback_handler(
             let body = axum::body::Body::from_stream(stream);
 
             resp_builder.body(body).unwrap_or_else(|_| {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response").into_response()
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to build response",
+                )
+                    .into_response()
             })
         }
         Err(err) => (
@@ -1990,12 +2370,14 @@ async fn proxy_fallback_handler(
     }
 }
 
-
 // =========================================================================
 // AGENT HIERARCHY, TEAM GRAPH & CONTROL PLANE NATIVE HANDLERS EM RUST
 // =========================================================================
 
-async fn agent_hierarchy_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn agent_hierarchy_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
@@ -2014,7 +2396,8 @@ async fn agent_hierarchy_handler(State(state): State<AppState>, headers: HeaderM
         "advisory_edges": [],
         "discussion_limits": {},
         "bot_model": {}
-    })).into_response()
+    }))
+    .into_response()
 }
 
 async fn agent_hierarchy_mutate_handler(
@@ -2031,31 +2414,11 @@ async fn agent_hierarchy_mutate_handler(
             return Json(serde_json::json!({ "ok": true, "saved": true })).into_response();
         }
     }
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "ok": false, "error": "failed_write" }))).into_response()
-}
-
-async fn team_graph_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
-    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
-        return unauthorized().into_response();
-    }
-    let p = state.data_dir.join("agent_hierarchy.json");
-    let hierarchy = if p.exists() {
-        std::fs::read_to_string(&p)
-            .ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .unwrap_or(serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    let mut graph = serde_json::json!({
-        "nodes": hierarchy.get("nodes").cloned().unwrap_or(serde_json::json!([])),
-        "councils": hierarchy.get("councils").cloned().unwrap_or(serde_json::json!([])),
-        "edges": hierarchy.get("advisory_edges").cloned().unwrap_or(serde_json::json!([])),
-        "organizational_hierarchy": hierarchy,
-        "engine": "haos-edge-rust-native"
-    });
-    Json(graph).into_response()
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({ "ok": false, "error": "failed_write" })),
+    )
+        .into_response()
 }
 
 async fn hierarchy_soul_get_handler(
@@ -2066,7 +2429,10 @@ async fn hierarchy_soul_get_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let bot_id = query.get("bot_id").cloned().unwrap_or_else(|| "default".into());
+    let bot_id = query
+        .get("bot_id")
+        .cloned()
+        .unwrap_or_else(|| "default".into());
     let soul_file = state.data_dir.join("souls").join(format!("{bot_id}.md"));
     let content = if soul_file.exists() {
         std::fs::read_to_string(&soul_file).unwrap_or_default()
@@ -2084,7 +2450,10 @@ async fn hierarchy_soul_post_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let bot_id = payload.get("bot_id").and_then(|v| v.as_str()).unwrap_or("default");
+    let bot_id = payload
+        .get("bot_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
     let content = payload.get("soul").and_then(|v| v.as_str()).unwrap_or("");
     let dir = state.data_dir.join("souls");
     let _ = std::fs::create_dir_all(&dir);
@@ -2101,8 +2470,14 @@ async fn hierarchy_memory_get_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let bot_id = query.get("bot_id").cloned().unwrap_or_else(|| "default".into());
-    let mem_file = state.data_dir.join("memories").join(format!("{bot_id}.json"));
+    let bot_id = query
+        .get("bot_id")
+        .cloned()
+        .unwrap_or_else(|| "default".into());
+    let mem_file = state
+        .data_dir
+        .join("memories")
+        .join(format!("{bot_id}.json"));
     let val = if mem_file.exists() {
         std::fs::read_to_string(&mem_file)
             .ok()
@@ -2122,7 +2497,10 @@ async fn hierarchy_memory_post_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let bot_id = payload.get("bot_id").and_then(|v| v.as_str()).unwrap_or("default");
+    let bot_id = payload
+        .get("bot_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
     let dir = state.data_dir.join("memories");
     let _ = std::fs::create_dir_all(&dir);
     let p = dir.join(format!("{bot_id}.json"));
@@ -2138,8 +2516,14 @@ async fn hierarchy_notebook_get_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let bot_id = query.get("bot_id").cloned().unwrap_or_else(|| "default".into());
-    let note_file = state.data_dir.join("notebooks").join(format!("{bot_id}.md"));
+    let bot_id = query
+        .get("bot_id")
+        .cloned()
+        .unwrap_or_else(|| "default".into());
+    let note_file = state
+        .data_dir
+        .join("notebooks")
+        .join(format!("{bot_id}.md"));
     let content = if note_file.exists() {
         std::fs::read_to_string(&note_file).unwrap_or_default()
     } else {
@@ -2156,8 +2540,14 @@ async fn hierarchy_notebook_post_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let bot_id = payload.get("bot_id").and_then(|v| v.as_str()).unwrap_or("default");
-    let content = payload.get("notebook").and_then(|v| v.as_str()).unwrap_or("");
+    let bot_id = payload
+        .get("bot_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
+    let content = payload
+        .get("notebook")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let dir = state.data_dir.join("notebooks");
     let _ = std::fs::create_dir_all(&dir);
     let p = dir.join(format!("{bot_id}.md"));
@@ -2165,7 +2555,10 @@ async fn hierarchy_notebook_post_handler(
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
-async fn hierarchy_toolsets_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_toolsets_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
@@ -2175,7 +2568,10 @@ async fn hierarchy_toolsets_handler(State(state): State<AppState>, headers: Head
     })).into_response()
 }
 
-async fn hierarchy_routines_get_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_routines_get_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
@@ -2204,63 +2600,142 @@ async fn hierarchy_routines_post_handler(
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
-async fn hierarchy_routines_delete_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_routines_delete_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
-async fn hierarchy_shadows_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_shadows_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
     Json(serde_json::json!({ "shadows": [] })).into_response()
 }
 
-async fn hierarchy_shadows_spawn_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_shadows_spawn_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
     Json(serde_json::json!({ "ok": true, "status": "spawned" })).into_response()
 }
 
-async fn hierarchy_shadows_discard_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_shadows_discard_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
     Json(serde_json::json!({ "ok": true, "status": "discarded" })).into_response()
 }
 
-async fn hierarchy_microapps_get_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_microapps_get_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
     Json(serde_json::json!({ "microapps": [] })).into_response()
 }
 
-async fn hierarchy_microapps_post_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_microapps_post_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
-async fn hierarchy_microapps_delete_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_microapps_delete_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
     Json(serde_json::json!({ "ok": true })).into_response()
 }
 
-async fn hierarchy_feed_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_feed_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    Json(serde_json::json!({ "items": [] })).into_response()
+    let target_id = query.get("target_id").cloned().unwrap_or_default();
+
+    let mut tasks = Vec::new();
+    let kanban_path = state.data_dir.join("kanban.db");
+    if kanban_path.exists() {
+        if let Ok(conn) = rusqlite::Connection::open_with_flags(
+            &kanban_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) {
+            if !target_id.is_empty() {
+                if let Ok(mut stmt) = conn.prepare("SELECT id, title, status, priority, assignee FROM tasks WHERE assignee = ?1 ORDER BY created_at DESC LIMIT 15;") {
+                    if let Ok(rows) = stmt.query_map(rusqlite::params![target_id], |r| {
+                        Ok(serde_json::json!({
+                            "id": r.get::<_, String>(0)?,
+                            "title": r.get::<_, String>(1)?,
+                            "status": r.get::<_, String>(2)?,
+                            "priority": r.get::<_, i32>(3)?,
+                            "assignee": r.get::<_, Option<String>>(4)?
+                        }))
+                    }) {
+                        for r in rows.flatten() {
+                            tasks.push(r);
+                        }
+                    }
+                }
+            } else {
+                if let Ok(mut stmt) = conn.prepare("SELECT id, title, status, priority, assignee FROM tasks ORDER BY created_at DESC LIMIT 15;") {
+                    if let Ok(rows) = stmt.query_map([], |r| {
+                        Ok(serde_json::json!({
+                            "id": r.get::<_, String>(0)?,
+                            "title": r.get::<_, String>(1)?,
+                            "status": r.get::<_, String>(2)?,
+                            "priority": r.get::<_, i32>(3)?,
+                            "assignee": r.get::<_, Option<String>>(4)?
+                        }))
+                    }) {
+                        for r in rows.flatten() {
+                            tasks.push(r);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "target_id": target_id,
+        "tasks": tasks,
+        "events": []
+    }))
+    .into_response()
 }
 
-async fn hierarchy_wiki_articles_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+async fn hierarchy_wiki_articles_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
@@ -2271,8 +2746,14 @@ async fn hierarchy_wiki_articles_handler(State(state): State<AppState>, headers:
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                    let title = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-                    articles.push(serde_json::json!({ "title": title, "path": path.display().to_string() }));
+                    let title = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    articles.push(
+                        serde_json::json!({ "title": title, "path": path.display().to_string() }),
+                    );
                 }
             }
         }
@@ -2306,25 +2787,19 @@ async fn hierarchy_wiki_article_post_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
-    let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    let title = payload
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled");
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let dir = state.data_dir.join("wiki");
     let _ = std::fs::create_dir_all(&dir);
     let p = dir.join(format!("{title}.md"));
     let _ = std::fs::write(p, content);
     Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-async fn harnesses_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
-    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
-        return unauthorized().into_response();
-    }
-    Json(serde_json::json!({
-        "harnesses": [
-            { "name": "local", "status": "active", "type": "process" },
-            { "name": "haos-edge", "status": "active", "type": "rust-daemon" }
-        ]
-    })).into_response()
 }
 
 async fn overview_handler(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
@@ -2336,5 +2811,75 @@ async fn overview_handler(State(state): State<AppState>, headers: HeaderMap) -> 
         "system": "HAOS Native Edge",
         "runtime": "Rust Tokio + Axum",
         "state": state_payload
-    })).into_response()
+    }))
+    .into_response()
+}
+
+async fn hierarchy_command_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
+        return unauthorized().into_response();
+    }
+    let target_id = payload
+        .get("target_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let command = payload
+        .get("command")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if target_id.is_empty() || command.is_empty() {
+        return Json(serde_json::json!({ "ok": false, "error": "target_id_and_command_required" }))
+            .into_response();
+    }
+
+    let kanban_path = state.data_dir.join("kanban.db");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let task_id = format!("t_{:x}", now % 0xffffffff);
+    let title = format!("Comando para {target_id}");
+
+    if kanban_path.exists() {
+        if let Ok(conn) = rusqlite::Connection::open(&kanban_path) {
+            let _ = conn.execute(
+                "INSERT INTO tasks (id, title, body, status, priority, assignee, created_at, started_at)
+                 VALUES (?1, ?2, ?3, 'in_progress', 85, ?4, ?5, ?5)",
+                rusqlite::params![task_id, title, command, target_id, now],
+            );
+        }
+    }
+
+    // Registra evento no events.db
+    let events_path = state.data_dir.join("events.db");
+    if events_path.exists() {
+        if let Ok(conn) = rusqlite::Connection::open(&events_path) {
+            let trace_id = format!("tr_{:x}", now);
+            let p_str = serde_json::json!({
+                "target_id": target_id,
+                "command": command,
+                "task_id": task_id
+            })
+            .to_string();
+            let _ = conn.execute(
+                "INSERT INTO events (name, timestamp, trace_id, payload) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params!["agent_hierarchy.commanded", now as f64, trace_id, p_str],
+            );
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "target_id": target_id,
+        "task_id": task_id
+    }))
+    .into_response()
 }

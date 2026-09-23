@@ -2,10 +2,10 @@
 //! Handles A2A (Agent-to-Agent), ACP (Agent Client Protocol), and ANP/ADP envelopes,
 //! signature verification, and zero-allocation cross-protocol bridging.
 
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
@@ -91,7 +91,10 @@ impl ProtocolEnvelope {
             !sig.is_empty()
         } else {
             // Mensagens internas locais não exigem assinatura se trust_boundary <= LocalSecure
-            matches!(self.trust_boundary, TrustBoundary::Kernel | TrustBoundary::LocalSecure)
+            matches!(
+                self.trust_boundary,
+                TrustBoundary::Kernel | TrustBoundary::LocalSecure
+            )
         }
     }
 }
@@ -100,14 +103,20 @@ impl ProtocolEnvelope {
 pub struct FastCrossProtocolBridge;
 
 impl FastCrossProtocolBridge {
-    pub fn acp_to_internal(acp_event: serde_json::Value, sender: &str, recipient: &str) -> ProtocolEnvelope {
-        let method = acp_event.get("method")
+    pub fn acp_to_internal(
+        acp_event: serde_json::Value,
+        sender: &str,
+        recipient: &str,
+    ) -> ProtocolEnvelope {
+        let method = acp_event
+            .get("method")
             .or_else(|| acp_event.get("type"))
             .and_then(|v| v.as_str())
             .unwrap_or("acp.event")
             .to_string();
 
-        let payload = acp_event.get("params")
+        let payload = acp_event
+            .get("params")
             .or_else(|| acp_event.get("payload"))
             .cloned()
             .unwrap_or_else(|| acp_event.clone());
@@ -136,17 +145,18 @@ impl FastCrossProtocolBridge {
         let mut a2a_payload = serde_json::Map::new();
         a2a_payload.insert("role".to_string(), serde_json::json!("user"));
 
-        let parts = vec![
-            serde_json::json!({
-                "kind": "text",
-                "text": envelope.payload.to_string()
-            })
-        ];
+        let parts = vec![serde_json::json!({
+            "kind": "text",
+            "text": envelope.payload.to_string()
+        })];
         a2a_payload.insert("parts".to_string(), serde_json::Value::Array(parts));
 
         let mut metadata = envelope.metadata.clone();
         metadata.insert("origin_protocol".to_string(), serde_json::json!("INTERNAL"));
-        metadata.insert("bridged_at".to_string(), serde_json::json!(current_timestamp()));
+        metadata.insert(
+            "bridged_at".to_string(),
+            serde_json::json!(current_timestamp()),
+        );
 
         let mut bridged = ProtocolEnvelope {
             protocol_type: ProtocolType::A2a,
@@ -163,7 +173,11 @@ impl FastCrossProtocolBridge {
         bridged
     }
 
-    pub fn a2a_to_anp(envelope: &ProtocolEnvelope, did_sender: &str, did_recipient: &str) -> ProtocolEnvelope {
+    pub fn a2a_to_anp(
+        envelope: &ProtocolEnvelope,
+        did_sender: &str,
+        did_recipient: &str,
+    ) -> ProtocolEnvelope {
         let mut anp_body = serde_json::Map::new();
         anp_body.insert("action".to_string(), serde_json::json!("anp.message.send"));
         anp_body.insert("content".to_string(), envelope.payload.clone());
@@ -171,7 +185,10 @@ impl FastCrossProtocolBridge {
         let mut anp_meta = serde_json::Map::new();
         anp_meta.insert("source_did".to_string(), serde_json::json!(did_sender));
         anp_meta.insert("target_did".to_string(), serde_json::json!(did_recipient));
-        anp_meta.insert("timestamp".to_string(), serde_json::json!(current_timestamp()));
+        anp_meta.insert(
+            "timestamp".to_string(),
+            serde_json::json!(current_timestamp()),
+        );
 
         let mut anp_wire = serde_json::Map::new();
         anp_wire.insert("meta".to_string(), serde_json::Value::Object(anp_meta));

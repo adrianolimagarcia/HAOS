@@ -28,7 +28,8 @@ se perca e fechar lacunas acionáveis com testes.
 | Backpressure / provider concurrency | `audits/backpressure.md` | 🟢 fechada | `execution/backpressure.py` (`ConcurrencyGuard`/`BackpressureController`) |
 | Review pipeline / anti-anchoring | `audits/review-pipeline.md` | 🟢 fechada (isolamento anti-anchoring + AcceptanceEngine) | `tasks/review_pipeline.py`, `tasks/acceptance.py`; veredito persistido via KanbanAdapter |
 | DSH lifecycle / replay | `audits/dsh-lifecycle-replay.md` | 🟢 fechada (estados FAILED/STOPPED + eventos + seq + replay_fold) | `extensions/registry.py` (FAILED, subscribe, state_history, activate_with_deps, stop, deactivate cascade), `observability/replay.py` (`replay_fold` + `on_unknown`) |
-| GasTown roles / team | `audits/gastown-roles.md` | 🟢 fechada (port) | `execution/team.py` (`TeamSpec`/`TeamRole`/`TeamResolver`), posturas `supervisor`/`refinery`, `tests/platform/execution/test_team.py` (9 invariantes) |
+A antiga especificação TeamSpec/TeamResolver e seu papel `mayor` foram removidos; a topologia viva do painel usa The Eye → Orquestrador → workers.
+
 | Agno typed contracts | `audits/agno-contracts.md` | 🟢 fechada (input/output schema por fronteira) | `execution/contracts.py`, `tasks/spec.py` (`task_contract`), gate no `dispatcher.py`, `tests/platform/execution/test_contracts.py` |
 | DeerFlow research worker | `audits/deerflow-worker.md` | 🟢 fechada (port pure + fetcher out-of-process) | `capabilities/research/{worker,fetcher,models,aggregate}.py`, `tests/platform/capabilities/` |
 

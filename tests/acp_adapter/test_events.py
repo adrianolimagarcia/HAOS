@@ -56,7 +56,13 @@ class TestToolProgressCallback:
         with patch("acp_adapter.events.asyncio.run_coroutine_threadsafe") as mock_rcts:
             future = MagicMock(spec=Future)
             future.result.return_value = None
-            mock_rcts.return_value = future
+
+            def consume_submitted(coro, _loop):
+                # The scheduler is mocked here; close the coroutine it would own.
+                coro.close()
+                return future
+
+            mock_rcts.side_effect = consume_submitted
 
             cb("tool.started", "terminal", "$ ls -la", {"command": "ls -la"})
 
@@ -83,7 +89,11 @@ class TestToolProgressCallback:
         with patch("acp_adapter.events.asyncio.run_coroutine_threadsafe") as mock_rcts:
             future = MagicMock(spec=Future)
             future.result.return_value = None
-            mock_rcts.return_value = future
+            def consume_submitted(coro, _loop):
+                coro.close()
+                return future
+
+            mock_rcts.side_effect = consume_submitted
 
             progress_cb("tool.started", "terminal", "$ ls", {"command": "ls"})
             progress_cb("tool.started", "terminal", "$ pwd", {"command": "pwd"})
@@ -119,7 +129,11 @@ class TestStepCallback:
         with patch("acp_adapter.events.asyncio.run_coroutine_threadsafe") as mock_rcts:
             future = MagicMock(spec=Future)
             future.result.return_value = None
-            mock_rcts.return_value = future
+            def consume_submitted(coro, _loop):
+                coro.close()
+                return future
+
+            mock_rcts.side_effect = consume_submitted
 
             cb(1, [{"name": "terminal", "result": "success"}])
 
@@ -137,7 +151,11 @@ class TestStepCallback:
         cb = make_step_cb(mock_conn, "session-1", event_loop_fixture, {"terminal": deque(["tc-f"])}, {})
         with patch("acp_adapter.events.asyncio.run_coroutine_threadsafe") as mock_rcts, \
              patch("acp_adapter.events.build_tool_complete") as mock_btc:
-            mock_rcts.return_value = MagicMock(spec=Future)
+            def consume_submitted(coro, _loop):
+                coro.close()
+                return MagicMock(spec=Future)
+
+            mock_rcts.side_effect = consume_submitted
             cb(1, [{"name": "terminal", "result": raw}])
         mock_btc.assert_called_once_with("tc-f", "terminal", result=expected, function_args=None, snapshot=None)
 
@@ -154,7 +172,11 @@ class TestStepCallback:
              patch("acp_adapter.events.build_tool_complete") as mock_btc:
             future = MagicMock(spec=Future)
             future.result.return_value = None
-            mock_rcts.return_value = future
+            def consume_submitted(coro, _loop):
+                coro.close()
+                return future
+
+            mock_rcts.side_effect = consume_submitted
 
             # Provide a result string in the tool info dict
             cb(1, [{"name": "terminal", "result": '{"output": "hello"}'}])

@@ -1,10 +1,10 @@
 //! Fast native file engine for tools (search_files, read_file, patch)
 //! Ultra-fast ripgrep-like search and streaming I/O with Tokio/mmap.
 
-use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use walkdir::WalkDir;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use walkdir::WalkDir;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchMatch {
@@ -96,15 +96,22 @@ impl FastFileEngine {
         })
     }
 
-    pub fn read_file(path: &Path, offset: Option<usize>, limit: Option<usize>) -> Result<serde_json::Value, String> {
+    pub fn read_file(
+        path: &Path,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> Result<serde_json::Value, String> {
         if !path.exists() {
             return Err(format!("File does not exist: {}", path.display()));
         }
 
-        let metadata = path.metadata().map_err(|e| format!("Failed to read metadata: {e}"))?;
+        let metadata = path
+            .metadata()
+            .map_err(|e| format!("Failed to read metadata: {e}"))?;
         let file_size = metadata.len();
 
-        let content = std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
 

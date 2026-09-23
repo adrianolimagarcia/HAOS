@@ -160,9 +160,7 @@ pub fn create_session(data_dir: &Path, remember: bool) -> std::io::Result<(Strin
         .mode(0o600)
         .open(sessions_dir(data_dir).join(&token))?;
     writeln!(f, "{}", remember)?;
-    let mut cookie = format!(
-        "{COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/"
-    );
+    let mut cookie = format!("{COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/");
     if remember {
         cookie.push_str(&format!(
             "; Max-Age={}; Expires={}",
@@ -190,7 +188,13 @@ fn http_date(age_secs: u64) -> String {
     let wd = ((days + 4) % 7) as usize;
     format!(
         "{}, {:02} {} {} {:02}:{:02}:{:02} GMT",
-        WKD[wd], d, MON[(m - 1) as usize], y, hh, mm, ss
+        WKD[wd],
+        d,
+        MON[(m - 1) as usize],
+        y,
+        hh,
+        mm,
+        ss
     )
 }
 
@@ -208,7 +212,10 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 }
 
 pub fn session_valid(data_dir: &Path, cookie_header: Option<&str>) -> bool {
-    if std::env::var("HAOS_NO_AUTH").map(|v| v == "1" || v.to_lowercase() == "true").unwrap_or(false) {
+    if std::env::var("HAOS_NO_AUTH")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false)
+    {
         return true;
     }
     if !password_is_set(data_dir) {

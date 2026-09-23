@@ -1,7 +1,7 @@
 """Canonical Architecture Contracts v0.1 (Frozen Schemas).
 
 Defines schema-versioned frozen data structures for all core HAOS primitives:
-TaskSpec, TaskRun, TaskResult, AssignmentSpec, TeamSpec, ModelProfile,
+TaskSpec, TaskRun, TaskResult, AssignmentSpec, ModelProfile,
 CapabilitySpec, ContextPackage, MemoryItem, ArtifactSpec.
 """
 

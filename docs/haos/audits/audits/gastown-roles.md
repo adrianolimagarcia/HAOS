@@ -79,10 +79,16 @@ deve tornar essa tabela **explícita e validável**.
 | Registro no índice de auditorias | `docs/haos/audits/README.md:25` | Este relatório |
 | **Wiring de produção** (dispatcher/SpawnResolver consultando time; execução do DAG de gates) | `team.py` só é importado por testes hoje | **Lacuna aberta** |
 
-## 5. Recomendações
+## Status após remoção
+
+Este relatório histórico descreve a auditoria original do GasTown; o contrato legado
+`TeamSpec`/`TeamRole`/`TeamResolver`, o módulo `execution/team.py` e o papel `mayor`
+foram removidos do HAOS. A execução atual usa o Team Graph vivo do control plane,
+com raiz The Eye. GraphRAG e os grafos de memória permanecem independentes.
+
+## Recomendações históricas (não aplicáveis ao runtime atual)
 
 1. **Conectar o time à resolução**: no `SpawnResolver`/dispatcher, resolver
-   `TaskSpec.team_id` via `TeamResolver.binding_for` antes de montar o `AssignmentSpec`
    (postura/perfil/lane herdados; precedência já implementada em `binding_for`).
 2. **Executar a ordem de gates**: orquestrar os `ReviewStage`s segundo o DAG — downstream
    só transita para `ready` após veredito do upstream (estado `review`/`request_review`

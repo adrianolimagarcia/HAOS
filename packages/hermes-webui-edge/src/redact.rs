@@ -35,36 +35,61 @@ pub fn redact_text(text: &str) -> String {
         return String::new();
     }
 
-    // 1. Bearer / Auth Headers
-    let text1 = AUTH_HDR_RE.replace_all(text, |caps: &regex::Captures| {
-        format!("{}{}", &caps[1], mask_token(&caps[2]))
-    });
+    let mut current = text.to_string();
 
-    // 2. Private Keys
-    let text2 = PRIVKEY_RE.replace_all(&text1, "[REDACTED PRIVATE KEY]");
+    // 1. Bearer / Auth Headers (cheap prefilter)
+    if current.contains("Authorization") || current.contains("authorization") {
+        current = AUTH_HDR_RE.replace_all(&current, |caps: &regex::Captures| {
+            format!("{}{}", &caps[1], mask_token(&caps[2]))
+        }).into_owned();
+    }
 
-    // 3. Known Credential Prefixes
-    let text3 = CRED_RE.replace_all(&text2, |caps: &regex::Captures| {
-        mask_token(&caps[0])
-    });
+    // 2. Private Keys (cheap prefilter)
+    if current.contains("BEGIN") && current.contains("PRIVATE KEY") {
+        current = PRIVKEY_RE.replace_all(&current, "[REDACTED PRIVATE KEY]").into_owned();
+    }
 
-    // 4. Embedded AWS
-    let text4 = EMBEDDED_AWS_RE.replace_all(&text3, |caps: &regex::Captures| {
-        mask_token(&caps[0])
-    });
+    // 3. Known Credential Prefixes (cheap prefilter)
+    const CRED_MARKERS: &[&str] = &[
+        "ghp_", "github_pat_", "glpat-", "sk-", "xox", "discordapp.com",
+        "hooks.slack.com", "SG.", "key-", "AKIA", "sq0atp-", "sq0csp-",
+        "access_token$", "hf_", "np_", "pplx-", "openrouter-", "dop_v1_",
+        "doo_v1_", "am_", "sk_", "tvly-", "exa_", "gsk_", "syt_", "retaindb_",
+        "hsk-", "mem0_", "brv_"
+    ];
+    if CRED_MARKERS.iter().any(|m| current.contains(m)) {
+        current = CRED_RE.replace_all(&current, |caps: &regex::Captures| {
+            mask_token(&caps[0])
+        }).into_owned();
+    }
 
-    // 5. ENV assignments
-    let text5 = ENV_RE_UNQUOTED.replace_all(&text4, |caps: &regex::Captures| {
-        let key = &caps[1];
-        let raw_val = &caps[2];
-        if raw_val.chars().any(|c| c.is_alphanumeric()) {
-            format!("{key}={}", mask_token(raw_val))
-        } else {
-            caps[0].to_string()
+    // 4. Embedded AWS (cheap prefilter)
+    if current.contains("AKIA") {
+        current = EMBEDDED_AWS_RE.replace_all(&current, |caps: &regex::Captures| {
+            mask_token(&caps[0])
+        }).into_owned();
+    }
+
+    // 5. ENV assignments (requires '=' AND credential keywords)
+    if current.contains('=') {
+        const ENV_MARKERS: &[&str] = &[
+            "KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "AUTH",
+            "key", "token", "secret", "password", "passwd", "credential", "auth",
+        ];
+        if ENV_MARKERS.iter().any(|m| current.contains(m)) {
+            current = ENV_RE_UNQUOTED.replace_all(&current, |caps: &regex::Captures| {
+                let key = &caps[1];
+                let raw_val = &caps[2];
+                if raw_val.chars().any(|c| c.is_alphanumeric()) {
+                    format!("{key}={}", mask_token(raw_val))
+                } else {
+                    caps[0].to_string()
+                }
+            }).into_owned();
         }
-    });
+    }
 
-    text5.into_owned()
+    current
 }
 
 pub fn redact_value(val: &mut serde_json::Value) {

@@ -1,0 +1,115 @@
+commit aaaf588d3c9aca7971a88aef70ecf3242b7e8a4f
+Author:     HAOS verification <haos-verification@localhost>
+AuthorDate: Tue Sep 22 02:07:46 2026 -0300
+Commit:     HAOS verification <haos-verification@localhost>
+CommitDate: Tue Sep 22 02:07:46 2026 -0300
+
+    docs: record HAOS compatibility audit
+
+diff --git a/docs/haos-compatibility-audit-20260922.md b/docs/haos-compatibility-audit-20260922.md
+new file mode 100644
+index 00000000..e0fd31cb
+--- /dev/null
++++ b/docs/haos-compatibility-audit-20260922.md
+@@ -0,0 +1,101 @@
++# HAOS WebUI Compatibility Audit
++
++Date: 2026-09-22
++Branch: `haos-compat-verification-20260922`
++Repository: `/media/DADOS_1TB/Projetos/HAOS-WEBUI`
++
++## Result
++
++No production-code fix was applied. The verified WebUI behavior is compatible with the
++current standalone Python WebUI service when it is launched with the HAOS Agent virtual
++environment. The audit found deployment/integration blockers that require explicit
++HAOS wiring rather than a safe local code change.
++
++## Prioritized findings
++
++### P0 — HAOS port/topology contract is not implemented by this repository
++
++Evidence:
++
++- `api/config.py` defines the WebUI service default as `127.0.0.1:8787`.
++- A repository-wide Python search found no `8786` reference and no upstream proxy
++  route to a separate Python backend.
++- SSE and API routes are handled locally by `api/routes.py` (`/api/chat/stream`,
++  `/api/sessions/events`, and related routes).
++
++Impact: if HAOS expects this WebUI to be a client/front end for the HAOS Python
++backend on `127.0.0.1:8786`, that topology is not supported by the current WebUI.
++The WebUI must either remain the service bound on `:8787` or receive a separately
++designed adapter/proxy contract. I did not invent that contract or modify the
++production service.
++
++### P1 — Reverse-proxy forwarded-host trust is opt-in and exact
++
++Evidence:
++
++- CSRF/origin validation compares the browser origin with `Host` by default.
++- `X-Forwarded-Host` and `X-Real-Host` are considered only when
++  `HERMES_WEBUI_TRUST_FORWARDED_HOST` is truthy.
++- Explicit cross-origin access requires exact scheme/host/port entries in
++  `HERMES_WEBUI_ALLOWED_ORIGINS`; malformed entries are ignored.
++- `tests/test_cors_preflight_allowlist.py` verifies no wildcard CORS and exact
++  allowlisting; the targeted suite passed.
++
++Impact: an HAOS edge/proxy deployment must set the forwarded-host trust flag and,
++when the browser origin differs from the upstream Host, configure the exact allowed
++origin. Enabling forwarded headers without a trusted proxy boundary would weaken
++origin checks, so no default was changed.
++
++### P1 — Runtime is source-coupled to Hermes Agent modules
++
++Evidence:
++
++- `scripts/audit_agent_source_dependencies.py` reports 7 dependency classes and
++  248 findings, including direct imports of `hermes_cli.*`, `agent.*`, `hermes_state`,
++  and `hermes_constants`.
++- With `HERMES_WEBUI_AGENT_DIR=/usr/local/lib/haos-agent` and the HAOS Agent venv,
++  `api.config._AGENT_DIR` resolved to `/usr/local/lib/haos-agent` and
++  `run_agent.__file__` resolved to `/usr/local/lib/haos-agent/run_agent.py`.
++- Importing the same runtime with the WebUI-created `.venv` failed because that
++  environment lacks the Agent's `requests` dependency. The supported launcher path
++  selects the Agent venv; direct launches must follow the documented requirement.
++
++Impact: an HAOS deployment must preserve the Agent source/module boundary and use
++the Agent venv (or install the complete compatible dependency set). A standalone
++WebUI container without the Agent source/dependencies is not currently compatible.
++
++### P2 — SSE headers are proxy-aware, but end-to-end proxy delivery was not verified
++
++Evidence:
++
++- Stream handlers emit `text/event-stream`, `Cache-Control: no-cache`, and
++  `X-Accel-Buffering: no`.
++- Several legacy/short-lived streams emit `Connection: close`; long-lived paths
++  explicitly omit it where required by the source comments.
++- Unit coverage includes `tests/test_approval_sse.py`; the targeted suite passed.
++- No live HAOS edge process was restarted or modified, so delivery through the
++  optional Rust edge on `:8787` is unverified.
++
++Impact: verify buffering, idle timeouts, disconnect propagation, and auth-cookie
++forwarding through the actual HAOS edge before production rollout.
++
++## Verification evidence
++
++- `python3 -m compileall -q server.py bootstrap.py api`: passed.
++- `node --check static/*.js`: passed for every static JavaScript file.
++- `./scripts/test.sh --collect-only -q`: 16,074 tests collected.
++- Focused integration/runtime slice: 248 passed in 28.68s.
++- Isolated server smoke with temporary `HERMES_HOME`, temporary
++  `HERMES_WEBUI_STATE_DIR`, port `18987`, and HAOS Agent directory:
++  `/health` returned HTTP 200 with a JSON health payload; process exited 0 after
++  termination.
++- Full `./scripts/test.sh -q`: started 16,074 tests but was terminated after the
++  tool's bounded wait window while still running; it showed failures before
++  termination. Those failures were not diagnosed and are not claimed as a full-suite
++  pass.
++
++## Files changed
++
++- This report only: `docs/haos-compatibility-audit-20260922.md`
++- No production source, service unit, HAOS runtime state, or HERMES-TURBO file was
++  modified.

@@ -19,6 +19,7 @@ from hermes.platform.webui.settings import (
     apply_to_guard, default_settings, load_settings, reset_settings, save_settings,
 )
 from hermes.platform.webui.standalone import HAOSStandaloneState, make_standalone_server
+from hermes.platform.ui.views import task_list_projection
 from hermes.platform.execution.backpressure import ConcurrencyGuard
 from hermes.platform.capabilities.lsp import unified_intelligence as _lsp
 
@@ -137,6 +138,17 @@ class TestStandaloneServer(unittest.TestCase):
         finally:
             replay.event_store.close()
 
+    def test_metrics_and_memory_endpoints(self):
+        self._get("/api/state")
+        metrics = json.loads(self._get("/api/metrics"))
+        self.assertGreaterEqual(metrics["routes"]["/api/state"]["count"], 1)
+        self.assertIn("p95", metrics["routes"]["/api/state"]["latency_ms"])
+        self.assertIn("python", metrics["routes"]["/api/state"]["upstream"])
+        memory = json.loads(self._get("/api/status/memory"))
+        self.assertTrue(memory["procfs"])
+        self.assertTrue(any(p["pid"] for p in memory["processes"])
+                        )
+
     def test_index_and_state(self):
         html = self._get("/")
         self.assertIn("HAOS Standalone", html)
@@ -149,10 +161,16 @@ class TestStandaloneServer(unittest.TestCase):
         self.assertEqual(payload["meta"]["mode"], "standalone")
         # ConcurrencyGuard configurado => providers presentes com limites
         self.assertGreaterEqual(len(payload["concurrency"]["providers"]), 1)
-        # Team Graph & Control Plane Overview vinculados ao estado canônico
-        self.assertIn("team_graph", payload)
+        # The retired graph projection is absent; the control overview remains.
+        self.assertNotIn("team_graph", payload)
         self.assertIn("control_overview", payload)
-        self.assertEqual(payload["team_graph"]["role"], "mayor")
+
+    def test_retired_team_graph_routes_are_not_served(self):
+        import urllib.error
+        for path in ("/api/team-graph", "/api/controlplane/team_graph"):
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                self._get(path)
+            self.assertEqual(ctx.exception.code, 404)
 
     def test_hierarchy_command_persists_target_binding(self):
         created = self._post("/api/agent-hierarchy", {
@@ -169,39 +187,6 @@ class TestStandaloneServer(unittest.TestCase):
         self.assertEqual(spec.get("model_profile"), "coding-primary")
         self.assertIn("master", spec.get("required_agents", []))
 
-    def test_team_graph_and_controlplane_endpoints(self):
-        # 1. GET /api/team-graph
-        tg = json.loads(self._get("/api/team-graph"))
-        self.assertEqual(tg["role"], "mayor")
-        self.assertIn("children", tg)
-        self.assertGreaterEqual(len(tg["children"]), 1)
-
-        # 2. GET /api/controlplane/team_graph (ADR-006 canonical)
-        tg_cp = json.loads(self._get("/api/controlplane/team_graph"))
-        self.assertEqual(tg_cp["node_id"], tg["node_id"])
-
-        # 3. GET /api/controlplane/overview (ADR-006 canonical)
-        cp_ov = json.loads(self._get("/api/controlplane/overview"))
-        self.assertIn("total_missions", cp_ov)
-        self.assertIn("active_workers", cp_ov)
-
-        # 4. POST /api/intervene
-        res1 = self._post("/api/intervene", {
-            "target_id": "specialist-coder-01",
-            "action": "steer",
-            "reason": "Refactor into clean modules",
-        })
-        self.assertTrue(res1["success"])
-        self.assertEqual(self.state.control_plane.get_pending_intervention("specialist-coder-01"), "steer")
-
-        # 5. POST /api/controlplane/intervene (ADR-006 canonical)
-        res2 = self._post("/api/controlplane/intervene", {
-            "target_id": "specialist-reviewer-01",
-            "action": "pause",
-            "reason": "Wait for tests",
-        })
-        self.assertTrue(res2["success"])
-        self.assertEqual(self.state.control_plane.get_pending_intervention("specialist-reviewer-01"), "pause")
 
     def test_console_creates_task_and_dispatch(self):
         resp = self._post("/api/console", {"message": "Validar ordenação estável do módulo X"})
@@ -261,6 +246,28 @@ class TestStandaloneServer(unittest.TestCase):
         tl = json.loads(self._get("/api/timeline"))
         self.assertIn("timeline", tl)
         self.assertIsInstance(tl["timeline"], list)
+
+    def test_task_detail_preserves_report_while_list_projection_drops_it(self):
+        report_file = self.dir / "fixture-report.md"
+        report = "# Real fixture report\n" + ("evidence\n" * 2000)
+        report_file.write_text(report, encoding="utf-8")
+
+        class FakeKanban:
+            def get_task(self, task_id):
+                return {"id": task_id, "title": "fixture", "goal": str(report_file),
+                        "spec": {"goal": str(report_file)}, "result": {}}
+
+            def list_run_events(self, task_id):
+                return []
+
+        original = self.state.kanban
+        self.state.kanban = FakeKanban()
+        try:
+            detail = self.state.get_task_details("fixture")
+            self.assertEqual(detail["report_content"], report)
+            self.assertNotIn("report_content", task_list_projection(detail))
+        finally:
+            self.state.kanban = original
 
     def test_settings_endpoints(self):
         res = self._post("/api/settings", {"max_global_concurrency": 11})

@@ -328,9 +328,7 @@ fn check_command_fast(cmd: &str) -> serde_json::Value {
 
     // Regras estritas de segurança em Rust nativo (nanosegundos)
     // 1. Bloqueio de comandos destrutivos perigosos de sistema
-    let destructive_patterns = [
-        "rm -rf /",
-        "rm -rf /*",
+    let fixed_destructive_patterns = [
         ":(){ :|:& };:",
         "mkfs.",
         "dd if=/dev/zero of=/dev/sd",
@@ -339,9 +337,54 @@ fn check_command_fast(cmd: &str) -> serde_json::Value {
         "chmod -R 777 /",
     ];
 
-    for pattern in &destructive_patterns {
+    let mut matched_destructive_pattern: Option<String> = None;
+
+    for pattern in &fixed_destructive_patterns {
         if trimmed.contains(pattern) {
-            // Anti-Looping State Persistence: rastreia tentativas consecutivas no arquivo de lock/shm
+            matched_destructive_pattern = Some(pattern.to_string());
+            break;
+        }
+    }
+
+    // Validação segura e precisa de rm recursivo na raiz do sistema
+    // Não deve bloquear subdiretórios legítimos como /media/... ou /tmp/...
+    if matched_destructive_pattern.is_none() {
+        let words: Vec<&str> = trimmed.split_whitespace().collect();
+        for (i, w) in words.iter().enumerate() {
+            let base_cmd = w.rsplit('/').next().unwrap_or(w);
+            if base_cmd == "rm" {
+                let mut has_recursive = false;
+                for arg in &words[i + 1..] {
+                    if *arg == "&&" || *arg == "||" || *arg == ";" || *arg == "|" || *arg == "&" {
+                        break;
+                    }
+                    if arg.starts_with('-') && !arg.starts_with("--") {
+                        if arg.contains('r') || arg.contains('R') {
+                            has_recursive = true;
+                        }
+                    } else if *arg == "--recursive" || *arg == "-r" || *arg == "-R" {
+                        has_recursive = true;
+                    } else if has_recursive {
+                        let target = arg.trim_matches(|c| c == '\'' || c == '"');
+                        let is_root = matches!(
+                            target,
+                            "/" | "/*" | "//" | "/." | "/./" | "/.." | "/../" | "/etc" | "/boot" | "/bin" | "/usr" | "/var"
+                        );
+                        if is_root {
+                            matched_destructive_pattern = Some(format!("rm -rf {target}"));
+                            break;
+                        }
+                    }
+                }
+                if matched_destructive_pattern.is_some() {
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(pattern) = matched_destructive_pattern {
+        // Anti-Looping State Persistence: rastreia tentativas consecutivas no arquivo de lock/shm
             let state_dir = std::env::var("HAOS_HOME")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|_| std::path::PathBuf::from("/root/.haos"));
@@ -396,7 +439,6 @@ fn check_command_fast(cmd: &str) -> serde_json::Value {
                 "attempts": attempts,
                 "loop_blocked": is_terminal_loop
             });
-        }
     }
 
     // Se o comando for permitido, limpa o arquivo de recusa para resetar a contagem
@@ -889,4 +931,28 @@ fn ok(
 }
 fn err(id: serde_json::Value, code: &str, message: &str) -> Response {
     error(id, code, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_command_fast_safety() {
+        let safe_cmd = "rm -rf /media/DADOS_1TB/Projetos/HAOS-WEBUI-haos-audit && git status";
+        let res_safe = check_command_fast(safe_cmd);
+        assert_eq!(res_safe["allowed"], true);
+
+        let root_cmd = "rm -rf /";
+        let res_root = check_command_fast(root_cmd);
+        assert_eq!(res_root["allowed"], false);
+
+        let root_glob = "rm -rf /*";
+        let res_glob = check_command_fast(root_glob);
+        assert_eq!(res_glob["allowed"], false);
+
+        let etc_cmd = "rm -rf /etc";
+        let res_etc = check_command_fast(etc_cmd);
+        assert_eq!(res_etc["allowed"], false);
+    }
 }

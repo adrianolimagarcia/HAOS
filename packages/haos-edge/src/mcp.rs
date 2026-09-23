@@ -340,8 +340,11 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
                     if results.is_empty() {
                         return (format!("Nenhum resultado encontrado para: {q}"), false);
                     }
-                    let mut out = format!("# Resultados da busca para: '{q}' ({})\n\n", results.len());
-                    for (i, (doc_path, header_path, anchor, content)) in results.into_iter().enumerate() {
+                    let mut out =
+                        format!("# Resultados da busca para: '{q}' ({})\n\n", results.len());
+                    for (i, (doc_path, header_path, anchor, content)) in
+                        results.into_iter().enumerate()
+                    {
                         out.push_str(&format!(
                             "### [{}] {}\n- **Arquivo:** {}\n- **Âncora:** {}\n\n```text\n{}\n```\n\n",
                             i + 1, header_path, doc_path, anchor, content.trim()
@@ -363,30 +366,47 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
                 "recent_tasks_count": state.get("taskboard").and_then(|t| t.get("tasks")).and_then(|t| t.as_array()).map(|a| a.len()).unwrap_or(0),
                 "events_count": state.get("events").and_then(|e| e.as_array()).map(|a| a.len()).unwrap_or(0),
             });
-            (serde_json::to_string_pretty(&facts).unwrap_or_default(), false)
+            (
+                serde_json::to_string_pretty(&facts).unwrap_or_default(),
+                false,
+            )
         }
-        "haos_tasks_list" => {
-            match DbHelper::get_tasks() {
-                Ok(tasks) => (serde_json::to_string_pretty(&tasks).unwrap_or_default(), false),
-                Err(e) => (format!("Erro ao ler tarefas: {e}"), true),
-            }
-        }
+        "haos_tasks_list" => match DbHelper::get_tasks() {
+            Ok(tasks) => (
+                serde_json::to_string_pretty(&tasks).unwrap_or_default(),
+                false,
+            ),
+            Err(e) => (format!("Erro ao ler tarefas: {e}"), true),
+        },
         "haos_blast_radius" => {
             let root_dir = std::env::current_dir().unwrap_or_default();
             let files: Vec<String> = args
                 .get("files")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let symbols: Vec<String> = args
                 .get("symbols")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let max_depth = args.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
 
-            let res = crate::blast_analyzer::FastAstAnalyzer::calculate_impact(&root_dir, &files, &symbols, max_depth);
-            (serde_json::to_string_pretty(&res).unwrap_or_default(), false)
+            let res = crate::blast_analyzer::FastAstAnalyzer::calculate_impact(
+                &root_dir, &files, &symbols, max_depth,
+            );
+            (
+                serde_json::to_string_pretty(&res).unwrap_or_default(),
+                false,
+            )
         }
         "haos_event_publish" => {
             let evt_name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -411,20 +431,29 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
                         .map(|d| d.as_secs_f64())
                         .unwrap_or(0.0),
                 ),
+                seq: None,
             };
             let mut list = vec![event];
             crate::event_hub::EventHub::flush_batch(&db_path, &mut list);
-            (serde_json::json!({ "published": true, "event": evt_name }).to_string(), false)
+            (
+                serde_json::json!({ "published": true, "event": evt_name }).to_string(),
+                false,
+            )
         }
         "recall" => {
-            let pergunta = args.get("pergunta").and_then(|v| v.as_str()).unwrap_or("").trim();
+            let pergunta = args
+                .get("pergunta")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
             if pergunta.is_empty() {
                 return ("ERRO: pergunta vazia.".to_string(), true);
             }
-            let base_dir = "/run/media/adriano/e681b5ac-a4fb-44d4-aebf-9d6584065787/hermes/graphrag-lite";
+            let base_dir =
+                "/run/media/adriano/e681b5ac-a4fb-44d4-aebf-9d6584065787/hermes/graphrag-lite";
             let venv_py = format!("{base_dir}/.venv/bin/python");
             let query_py = format!("{base_dir}/query.py");
-            
+
             let mut cmd = std::process::Command::new(&venv_py);
             cmd.arg(&query_py)
                 .arg(pergunta)
@@ -448,7 +477,9 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
                             let k_clean = k.strip_prefix("export ").unwrap_or(k).trim();
                             let v_clean = v.trim().trim_matches('\'').trim_matches('"');
                             cmd.env(k_clean, v_clean);
-                            if k_clean == "HERMES_CUSTOM_API_A6API_COM_API_KEY" || k_clean == "A6_API_KEY" {
+                            if k_clean == "HERMES_CUSTOM_API_A6API_COM_API_KEY"
+                                || k_clean == "A6_API_KEY"
+                            {
                                 cmd.env("A6_API_KEY", v_clean);
                                 cmd.env("HERMES_CUSTOM_API_A6API_COM_API_KEY", v_clean);
                             }
@@ -470,14 +501,8 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
                 Err(e) => (format!("Falha ao invocar GraphRAG backend: {e}"), true),
             }
         }
-        "medium_read"
-        | "perplexity_ask"
-        | "perplexity_models"
-        | "chatgpt_read"
-        | "chatgpt_ask"
-        | "chatgpt_models"
-        | "haos_direct_status"
-        | "reddit_read" => {
+        "medium_read" | "perplexity_ask" | "perplexity_models" | "chatgpt_read" | "chatgpt_ask"
+        | "chatgpt_models" | "haos_direct_status" | "reddit_read" => {
             let py_bin = "/usr/local/lib/haos-agent/venv/bin/python";
             let server_script = "/root/.haos/mcp/haos-direct/server.py";
             let arg_str = serde_json::to_string(&args).unwrap_or_else(|_| "{}".to_string());
@@ -493,8 +518,15 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
                 Ok(out) => {
                     let raw = String::from_utf8_lossy(&out.stdout);
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                        let res = parsed.get("result").and_then(|r| r.as_str()).unwrap_or("").to_string();
-                        let is_err = parsed.get("isError").and_then(|e| e.as_bool()).unwrap_or(false);
+                        let res = parsed
+                            .get("result")
+                            .and_then(|r| r.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let is_err = parsed
+                            .get("isError")
+                            .and_then(|e| e.as_bool())
+                            .unwrap_or(false);
                         (res, is_err)
                     } else {
                         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
@@ -509,11 +541,18 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
             }
         }
         "haos_web_scrape" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("").trim();
+            let url = args
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
             if url.is_empty() {
                 return ("Erro: parametro 'url' obrigatorio".to_string(), true);
             }
-            let timeout_secs = args.get("timeout_seconds").and_then(|v| v.as_u64()).unwrap_or(30);
+            let timeout_secs = args
+                .get("timeout_seconds")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(30);
             let client = reqwest::blocking::Client::builder()
                 .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
                 .timeout(std::time::Duration::from_secs(timeout_secs))

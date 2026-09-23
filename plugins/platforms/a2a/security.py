@@ -198,11 +198,57 @@ def is_safe_callback_url(url: str, *, localhost_mode: Optional[bool] = None) -> 
     return True
 
 
-def audit(direction: str, peer: str, task_id: str, summary: str) -> None:
+def audit(
+    direction: str,
+    peer: str,
+    task_id: str,
+    summary: str,
+    *,
+    prov: Optional[dict] = None,
+    session_id: Optional[str] = None,
+    caller: Optional[str] = None,
+    used: Optional[list[str]] = None,
+) -> None:
     """Append an audit record (direction: inbound | outbound | push). Never raises."""
     try:
         from hermes_constants import get_hermes_home
-        rec = {"ts": time.time(), "direction": direction, "peer": peer, "task_id": task_id, "summary": (summary or "")[:500]}
+        rec: dict = {
+            "ts": time.time(),
+            "direction": direction,
+            "peer": peer,
+            "task_id": task_id,
+            "summary": (summary or "")[:500],
+        }
+
+        # Build or attach PROV-O provenance block if provided or inferrable from parameters
+        if prov is not None:
+            if isinstance(prov, dict):
+                rec["prov"] = dict(prov)
+        elif session_id is not None or caller is not None or used is not None:
+            prov_block: dict = {}
+            if session_id:
+                sid = session_id if session_id.startswith("session:") else f"session:{session_id}"
+                prov_block["wasGeneratedBy"] = sid
+            else:
+                prov_block["wasGeneratedBy"] = "session:unknown"
+
+            if caller:
+                ident = caller if caller.startswith("agent:") or caller.startswith("user:") else f"agent:{caller}"
+                prov_block["wasAssociatedWith"] = ident
+            else:
+                agent_name = os.getenv("HERMES_AGENT_ID") or os.getenv("HAOS_NODE_NAME") or "agent:cachyos"
+                if not (agent_name.startswith("agent:") or agent_name.startswith("user:")):
+                    agent_name = f"agent:{agent_name}"
+                prov_block["wasAssociatedWith"] = agent_name
+
+            if used is not None:
+                prov_block["used"] = list(used)
+            elif task_id:
+                tid = task_id if task_id.startswith("task:") else f"task:{task_id}"
+                prov_block["used"] = [tid]
+
+            rec["prov"] = prov_block
+
         get_hermes_home().mkdir(parents=True, exist_ok=True)
         with (get_hermes_home() / "a2a_audit.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
