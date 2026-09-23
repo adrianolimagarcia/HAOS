@@ -9,6 +9,7 @@
 //! Rota pública: `/api/login` `/api/logout` `/login` `/health` `/static`.
 //! Todo o resto (terminal PTY, tasks, SPA) exige sessão válida.
 
+use axum::http::{header, HeaderMap};
 use hmac::{Hmac, Mac};
 use rand::RngCore;
 use sha2::Sha256;
@@ -133,7 +134,36 @@ pub fn verify_password(data_dir: &Path, password: &str) -> bool {
     }
 }
 
-// ---------------------------------------------------------------- sessions
+// ---------------------------------------------------------------- shared internal auth gate
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthError {
+    MissingCredentials,
+    InvalidCredentials,
+}
+
+/// Authenticate a request against this explicitly bound profile directory.
+/// This gate never resolves a home or opens a database.
+pub fn authenticate_request(data_dir: &Path, headers: &HeaderMap) -> Result<(), AuthError> {
+    if !password_is_set(data_dir) {
+        return Err(AuthError::InvalidCredentials);
+    }
+    let cookie = headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok());
+    if cookie.is_none() {
+        return Err(AuthError::MissingCredentials);
+    }
+    if session_valid_strict(data_dir, cookie) {
+        Ok(())
+    } else {
+        Err(AuthError::InvalidCredentials)
+    }
+}
+
+fn session_valid_strict(data_dir: &Path, cookie_header: Option<&str>) -> bool {
+    extract_cookie(cookie_header).is_some_and(|token| sessions_dir(data_dir).join(token).is_file())
+}
+
 fn sessions_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("sessions")
 }
@@ -222,10 +252,7 @@ pub fn session_valid(data_dir: &Path, cookie_header: Option<&str>) -> bool {
         // Sem senha configurada no nó, permite acesso transparente (compativel com rede confiavel)
         return true;
     }
-    match extract_cookie(cookie_header) {
-        Some(token) => sessions_dir(data_dir).join(token).is_file(),
-        None => false,
-    }
+    session_valid_strict(data_dir, cookie_header)
 }
 
 pub fn destroy_session(data_dir: &Path, cookie_header: Option<&str>) {
@@ -249,7 +276,50 @@ pub fn clear_cookie() -> String {
     format!("{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
 }
 
-// ---------------------------------------------------------------- login page
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_or_invalid_credentials_are_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let headers = HeaderMap::new();
+        assert_eq!(
+            authenticate_request(dir.path(), &headers),
+            Err(AuthError::InvalidCredentials)
+        );
+        write_passwd(dir.path(), "correct").unwrap();
+        assert_eq!(
+            authenticate_request(dir.path(), &headers),
+            Err(AuthError::MissingCredentials)
+        );
+        let mut invalid = HeaderMap::new();
+        invalid.insert(
+            header::COOKIE,
+            "haos_session=not-a-session".parse().unwrap(),
+        );
+        assert_eq!(
+            authenticate_request(dir.path(), &invalid),
+            Err(AuthError::InvalidCredentials)
+        );
+    }
+}
+
+#[cfg(test)]
+mod auth_tests {
+    use super::*;
+
+    #[test]
+    fn valid_session_is_accepted_by_shared_gate() {
+        let dir = tempfile::tempdir().unwrap();
+        write_passwd(dir.path(), "correct").unwrap();
+        let (_token, cookie) = create_session(dir.path(), false).unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(header::COOKIE, cookie.parse().unwrap());
+        assert_eq!(authenticate_request(dir.path(), &headers), Ok(()));
+    }
+}
+
 pub const LOGIN_PAGE: &str = r#"<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>

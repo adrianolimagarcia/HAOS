@@ -10,8 +10,8 @@ use crate::idempotency::IdempotencyEngine;
 use crate::loop_detector::LoopDetector;
 use crate::pty::PtyManager;
 use crate::system_one::{DecisionRecord, SystemOneEngine};
-use crate::worktree_engine::NativeWorktreeEngine;
 use crate::worker_snapshot;
+use crate::worktree_engine::NativeWorktreeEngine;
 use axum::extract::{Path as AxPath, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{sse::Event, Html, IntoResponse, Json, Sse};
@@ -40,6 +40,7 @@ pub struct AppState {
     pub transport_ingress: Arc<crate::transport_ingress::TransportIngress>,
     pub static_dir: PathBuf,
     pub data_dir: PathBuf,
+    pub profile: String,
     pub upstream_url: Option<String>,
     pub gateway_upstream_url: Option<String>,
     pub http_client: reqwest::Client,
@@ -150,10 +151,9 @@ pub async fn run_server(
     static_path: Option<PathBuf>,
     upstream: Option<String>,
     gateway_upstream: Option<String>,
+    data_dir: PathBuf,
+    profile: String,
 ) -> Result<(), String> {
-    let data_dir = PathBuf::from(
-        std::env::var("HAOS_DATA_DIR").unwrap_or_else(|_| "/tmp/haos_shared_data".into()),
-    );
     let lock_path = data_dir.join(format!("controlplane_{port}.lock"));
     let _ = std::fs::create_dir_all(&data_dir);
 
@@ -218,6 +218,7 @@ pub async fn run_server(
         transport_ingress,
         static_dir: static_dir.clone(),
         data_dir: data_dir.clone(),
+        profile,
         upstream_url: upstream_url.clone(),
         gateway_upstream_url: gateway_upstream_url.clone(),
         http_client,

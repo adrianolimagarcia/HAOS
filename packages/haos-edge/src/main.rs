@@ -11,6 +11,7 @@ pub mod idempotency;
 pub mod loop_detector;
 mod mcp;
 pub mod okf;
+mod profile;
 pub mod protocols;
 mod pty;
 mod server;
@@ -66,6 +67,14 @@ enum Commands {
 
         #[arg(long)]
         gateway_upstream: Option<String>,
+
+        /// Explicit profile identity; required for server startup.
+        #[arg(long)]
+        profile: String,
+
+        /// Explicit profile data directory; required for server startup.
+        #[arg(long)]
+        data_dir: PathBuf,
     },
 
     /// Fast diagnostics of HAOS environment and persistence
@@ -255,9 +264,27 @@ async fn main() {
             static_dir,
             upstream,
             gateway_upstream,
+            profile,
+            data_dir,
         }) => {
-            if let Err(e) =
-                server::run_server(port, &host, static_dir, upstream, gateway_upstream).await
+            let resolved = match profile::resolve_profile_data_dir(Some(&profile), Some(&data_dir))
+            {
+                Ok(binding) => binding,
+                Err(error) => {
+                    eprintln!("✗ Invalid explicit profile binding: {error:?}");
+                    std::process::exit(2);
+                }
+            };
+            if let Err(e) = server::run_server(
+                port,
+                &host,
+                static_dir,
+                upstream,
+                gateway_upstream,
+                resolved.data_dir().to_path_buf(),
+                resolved.profile().to_owned(),
+            )
+            .await
             {
                 eprintln!("✗ Server error: {e}");
                 std::process::exit(1);
@@ -905,7 +932,10 @@ fn exec_with_args(binary: &PathBuf, args: &[String]) -> ! {
     match status {
         Ok(status) => std::process::exit(status.code().unwrap_or(1)),
         Err(error) => {
-            eprintln!("✗ failed to start Rust PROV runtime {}: {error}", binary.display());
+            eprintln!(
+                "✗ failed to start Rust PROV runtime {}: {error}",
+                binary.display()
+            );
             std::process::exit(1);
         }
     }
