@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import re
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,11 @@ class TestProvenienciaEval(unittest.TestCase):
             f"Evaluator falhou no ambiente real:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}",
         )
         self.assertIn("PROV-O EVAL DETERMINÍSTICO: PASS", res.stdout)
-        self.assertIn("15/15 [100% conformes]", res.stdout)
+        m = re.search(r"ADRs inspecionados:\s*(\d+)/(\d+)\s*\[100% conformes\]", res.stdout)
+        assert m is not None, f"contagem conforme ausente em: {res.stdout}"
+        conformes, total = int(m.group(1)), int(m.group(2))
+        self.assertGreaterEqual(total, 15)
+        self.assertEqual(conformes, total)
 
     def test_eval_runner_passes_with_proveniencia_tag(self):
         """O runner da suite de evals do HAOS passa executando o caso proveniencia-schema."""
