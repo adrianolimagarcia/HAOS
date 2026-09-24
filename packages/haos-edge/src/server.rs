@@ -700,7 +700,7 @@ async fn worker_snapshots_handler(
     if !auth::session_valid(&state.data_dir, cookie_from(&headers)) {
         return unauthorized().into_response();
     }
-    let profile = query.get("profile").map(String::as_str);
+    let profile = Some(state.profile.as_str());
     let now = query
         .get("now")
         .and_then(|value| value.parse::<i64>().ok())
@@ -714,6 +714,7 @@ async fn worker_snapshots_handler(
     match worker_snapshot::read_snapshots(&db_path, profile, now, max_idle_seconds) {
         Ok(snapshots) => Json(serde_json::json!({
             "ok": true,
+            "profile": state.profile,
             "db": db_path,
             "snapshots": snapshots,
         }))
