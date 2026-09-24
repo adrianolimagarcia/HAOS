@@ -12,6 +12,8 @@ use crate::pty::PtyManager;
 use crate::system_one::{DecisionRecord, SystemOneEngine};
 use crate::worker_snapshot;
 use crate::worktree_engine::NativeWorktreeEngine;
+use crate::writer_envelope::WriterBinding;
+use crate::writer_executor::{WriterError, WriterExecutor};
 use axum::extract::{Path as AxPath, Query, State};
 use axum::http::Request;
 use axum::http::{header, HeaderMap, StatusCode};
@@ -43,9 +45,13 @@ pub struct AppState {
     pub static_dir: PathBuf,
     pub data_dir: PathBuf,
     pub profile: String,
+    pub observer_only: bool,
     pub upstream_url: Option<String>,
     pub gateway_upstream_url: Option<String>,
     pub http_client: reqwest::Client,
+    /// Present only when the explicit rust writer mode is selected. Python remains the default.
+    pub writer_executor: Option<Arc<WriterExecutor>>,
+    pub writer_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -155,6 +161,8 @@ pub async fn run_server(
     gateway_upstream: Option<String>,
     data_dir: PathBuf,
     profile: String,
+    observer_only: bool,
+    writer_mode: String,
 ) -> Result<(), String> {
     let lock_path = data_dir.join(format!("controlplane_{port}.lock"));
     let _ = std::fs::create_dir_all(&data_dir);
@@ -200,7 +208,33 @@ pub async fn run_server(
         .map_err(|e| format!("Failed to create reqwest client: {e}"))?;
 
     let pty_manager = Arc::new(PtyManager::new());
-    let event_hub = Arc::new(EventHub::new(data_dir.join("events.db")));
+    let rust_writer = match writer_mode.as_str() {
+        "python" | "shadow" => false,
+        "rust" => true,
+        _ => return Err("writer mode must be python, shadow, or rust".to_string()),
+    };
+    let effective_observer_only = observer_only || rust_writer;
+    let writer_token = if rust_writer {
+        Some(
+            std::env::var("HAOS_RUST_WRITER_TOKEN")
+                .map_err(|_| "rust writer mode requires HAOS_RUST_WRITER_TOKEN".to_string())?,
+        )
+    } else {
+        None
+    };
+    let writer_executor = if rust_writer {
+        Some(Arc::new(
+            WriterExecutor::open(&data_dir, &profile)
+                .map_err(|e| format!("failed to acquire rust writer: {e}"))?,
+        ))
+    } else {
+        None
+    };
+    let event_hub = if effective_observer_only {
+        Arc::new(EventHub::new_observer(data_dir.join("events.db")))
+    } else {
+        Arc::new(EventHub::new(data_dir.join("events.db")))
+    };
     let cancel_registry = Arc::new(CancelRegistry::new());
     let loop_detectors = Arc::new(TokioMutex::new(HashMap::new()));
     let system_one = Arc::new(SystemOneEngine::new(&data_dir));
@@ -221,21 +255,22 @@ pub async fn run_server(
         static_dir: static_dir.clone(),
         data_dir: data_dir.clone(),
         profile,
+        observer_only: effective_observer_only,
         upstream_url: upstream_url.clone(),
         gateway_upstream_url: gateway_upstream_url.clone(),
         http_client,
+        writer_executor,
+        writer_token,
     };
 
-    // Background WAL auto-checkpoint thread every 5 minutes
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(300)).await;
-            DbHelper::checkpoint_all_dbs();
-        }
-    });
+    // The observer owns no writer/checkpointer. Python remains the sole SQLite writer.
 
     let app = Router::new()
         .route("/health", get(health_handler))
+        .route(
+            "/internal/rust-writer/v2/operations",
+            post(rust_writer_handler),
+        )
         .route("/login", get(login_page_handler))
         .route("/api/login", post(login_handler))
         .route("/api/logout", post(logout_handler))
@@ -420,31 +455,32 @@ pub async fn run_server(
     println!("============================================================");
 
     // Watchdog em background para reabertura de locks de workers órfãos/mortos (Frente 3)
-    let watchdog_data_dir = data_dir.clone();
-    tokio::spawn(async move {
-        let kanban_db = watchdog_data_dir.join("kanban.db");
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            if kanban_db.exists() {
-                if let Ok(conn) = rusqlite::Connection::open_with_flags(
-                    &kanban_db,
-                    rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-                        | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                ) {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                    // Reseta tarefas em RUNNING cujo lease expirou há mais de 30s
-                    let _ = conn.execute(
-                        "UPDATE tasks SET status = 'ready', claim_lock = NULL WHERE status = 'running' AND claim_expires IS NOT NULL AND claim_expires < ?1",
-                        rusqlite::params![now - 30],
-                    );
+    if !observer_only {
+        let watchdog_data_dir = data_dir.clone();
+        tokio::spawn(async move {
+            let kanban_db = watchdog_data_dir.join("kanban.db");
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                if kanban_db.exists() {
+                    if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                        &kanban_db,
+                        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                    ) {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64;
+                        let _ = conn.execute(
+                            "UPDATE tasks SET status = 'ready', claim_lock = NULL WHERE status = 'running' AND claim_expires IS NOT NULL AND claim_expires < ?1",
+                            rusqlite::params![now - 30],
+                        );
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -466,11 +502,76 @@ async fn health_handler() -> Json<serde_json::Value> {
     }))
 }
 
+/// The internal writer has an independent bearer-token boundary; WebUI cookies never authorize it.
+async fn rust_writer_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(envelope): Json<serde_json::Value>,
+) -> Response {
+    let expected = match state.writer_token.as_deref() {
+        Some(token) => token,
+        None => return writer_error(StatusCode::FORBIDDEN, "forbidden"),
+    };
+    let expected_header = format!("Bearer {expected}");
+    if headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        != Some(expected_header.as_str())
+    {
+        return writer_error(StatusCode::UNAUTHORIZED, "unauthenticated");
+    }
+    let executor = match state.writer_executor.as_deref() {
+        Some(executor) => executor,
+        None => return writer_error(StatusCode::FORBIDDEN, "forbidden"),
+    };
+    let binding = match WriterBinding::new(&state.profile, state.data_dir.to_string_lossy()) {
+        Ok(binding) => binding,
+        Err(_) => return writer_error(StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+    };
+    let request = match crate::writer_envelope::validate_envelope(&envelope, &binding) {
+        Ok(request) => request,
+        Err(error) => return writer_error(StatusCode::BAD_REQUEST, error.code()),
+    };
+    match executor.execute(&request) {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"ok": true, "result": result})),
+        )
+            .into_response(),
+        Err(error) => writer_executor_error(error),
+    }
+}
+
+fn writer_error(status: StatusCode, code: &str) -> Response {
+    (
+        status,
+        Json(serde_json::json!({"ok": false, "error": {"code": code}})),
+    )
+        .into_response()
+}
+
+fn writer_executor_error(error: WriterError) -> Response {
+    let (status, code) = match error {
+        WriterError::InvalidBinding => (StatusCode::FORBIDDEN, "profile_mismatch"),
+        WriterError::SchemaMismatch => (StatusCode::INTERNAL_SERVER_ERROR, "schema_mismatch"),
+        WriterError::Timeout => (StatusCode::REQUEST_TIMEOUT, "timeout"),
+        WriterError::Busy => (StatusCode::CONFLICT, "busy"),
+        WriterError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+        WriterError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
+        WriterError::IdempotencyConflict => (StatusCode::CONFLICT, "idempotency_conflict"),
+        WriterError::InvalidPayload => (StatusCode::BAD_REQUEST, "invalid_request"),
+        WriterError::UnsupportedOperation(_) => (StatusCode::BAD_REQUEST, "unknown_operation"),
+        WriterError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable"),
+    };
+    writer_error(status, code)
+}
+
 // ------------------------------------------------------------ auth
 fn is_public_path(path: &str) -> bool {
     matches!(path, "/health" | "/login" | "/api/login" | "/api/logout")
         || path == "/static"
         || path.starts_with("/static/")
+        || path == "/internal/rust-writer/v2/operations"
 }
 
 async fn authenticate_middleware(
@@ -909,6 +1010,18 @@ async fn event_ingest_handler(
     State(state): State<AppState>,
     Json(event): Json<PlatformEvent>,
 ) -> impl IntoResponse {
+    if state.observer_only {
+        return (
+            StatusCode::METHOD_NOT_ALLOWED,
+            Json(serde_json::json!({
+                "ok": false,
+                "error": "observer_read_only",
+                "contract_version": "haos-edge.readonly-sse.v1",
+                "profile": state.profile,
+            })),
+        )
+            .into_response();
+    }
     match state.event_hub.publish(event) {
         Ok(_) => Json(serde_json::json!({ "ok": true, "ingested": true })).into_response(),
         Err(e) => (
@@ -943,6 +1056,8 @@ async fn event_stream_handler(
             &db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         ) {
+            let _ = conn.busy_timeout(Duration::from_secs(2));
+            let _ = conn.execute_batch("PRAGMA query_only=ON;");
             if let Ok(mut stmt) = conn.prepare(
                 "SELECT event_id, seq, name, trace_id, correlation_id, causation_id, trust_level, schema_version, timestamp, payload FROM events WHERE seq > ?1 ORDER BY seq LIMIT 101",
             ) {
@@ -977,7 +1092,12 @@ async fn event_stream_handler(
         (Vec::new(), false)
     };
     let stream = async_stream::stream! {
-        let snapshot = serde_json::json!({"type":"snapshot","last_seq":last_seq});
+        let snapshot = serde_json::json!({
+            "contract_version": "haos-edge.readonly-sse.v1",
+            "profile": state.profile,
+            "type":"snapshot",
+            "last_seq":last_seq
+        });
         yield Ok::<Event, axum::Error>(Event::default().event("snapshot").id(last_seq.to_string()).json_data(snapshot).unwrap());
         for row in replay { let id = row.seq.unwrap_or(0).to_string(); yield Ok(Event::default().event("event").id(id).json_data(row).unwrap()); }
         if replay_limit_exceeded { yield Ok(Event::default().event("resync").data("replay_limit_exceeded")); }
@@ -2090,11 +2210,14 @@ async fn sessions_fast_handler(
         }
     }
 
-    Json(serde_json::json!({
+    let response = Json(serde_json::json!({
+        "contract_version": "haos-edge.readonly-sse.v1",
+        "profile": state.profile,
         "ok": true,
         "count": sessions.len(),
         "sessions": sessions
-    }))
+    }));
+    response
 }
 
 // 10. Fast FTS & Lexical Session Search em Rust Nativo (Frente 1)
