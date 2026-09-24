@@ -13,8 +13,10 @@ use crate::system_one::{DecisionRecord, SystemOneEngine};
 use crate::worker_snapshot;
 use crate::worktree_engine::NativeWorktreeEngine;
 use axum::extract::{Path as AxPath, Query, State};
+use axum::http::Request;
 use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::{sse::Event, Html, IntoResponse, Json, Sse};
+use axum::middleware::{self, Next};
+use axum::response::{sse::Event, Html, IntoResponse, Json, Response, Sse};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -392,6 +394,10 @@ pub async fn run_server(
         .route("/config", get(index_handler))
         .nest_service("/static", ServeDir::new(&static_dir))
         .fallback(proxy_fallback_handler)
+        .layer(middleware::from_fn_with_state(
+            data_dir.clone(),
+            authenticate_middleware,
+        ))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -461,6 +467,26 @@ async fn health_handler() -> Json<serde_json::Value> {
 }
 
 // ------------------------------------------------------------ auth
+fn is_public_path(path: &str) -> bool {
+    matches!(path, "/health" | "/login" | "/api/login" | "/api/logout")
+        || path == "/static"
+        || path.starts_with("/static/")
+}
+
+async fn authenticate_middleware(
+    State(data_dir): State<PathBuf>,
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    if is_public_path(request.uri().path())
+        || auth::authenticate_request(&data_dir, request.headers()).is_ok()
+    {
+        next.run(request).await
+    } else {
+        unauthorized().into_response()
+    }
+}
+
 fn cookie_from(headers: &HeaderMap) -> Option<&str> {
     headers.get(header::COOKIE).and_then(|v| v.to_str().ok())
 }

@@ -3,6 +3,7 @@ pub mod okf;
 pub mod profile;
 pub mod worker_snapshot;
 pub mod writer_envelope;
+pub mod writer_executor;
 pub mod writer_lock;
 
 use compactor::{ChatMessage, ContextCompactor};
