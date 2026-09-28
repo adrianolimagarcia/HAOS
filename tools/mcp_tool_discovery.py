@@ -47,6 +47,62 @@ def _connect_cooldown_active(server_name: str) -> bool:
 def _enabled(cfg: dict) -> bool:
     return _parse_boolish(cfg.get("enabled", True), default=True)
 
+def _owner_scope_home() -> Optional[Path]:
+    """The profile home whose secret scope MCP credential reads must resolve under, or None for a
+    single-profile process (scope key ``None``).
+
+    The owner is the profile the connection is keyed under (``_mcp_registry_scope()``), never the
+    ambient one, so a served profile is never handed another profile's token (#111151). A scope the
+    caller already bound is rebuilt rather than trusted: a bound mapping is a snapshot, and the
+    gateway's boot-time one is taken before the profile's external secret source may have answered
+    (#119092) — the rebuild retries that hydration (cached once it succeeds)."""
+    scope_key = _core._mcp_registry_scope()
+    if scope_key is None:
+        return None
+    from agent.secret_scope import current_secret_scope_home
+    return Path(current_secret_scope_home() or scope_key)
+
+
+async def _install_owner_secret_scope():
+    """Bind the connection OWNER's profile secret scope when the caller has none; else None.
+
+    ``MCPServerTask.start`` ensure_futures the run task, which copies THIS context, so one
+    binding covers transport bring-up (``_build_safe_env`` stdio child env) and every later
+    revival inside that task; unscoped, those ``get_secret`` reads fail closed under multiplexing
+    and the server parks with zero tools (#113746). ``${VAR}`` refs are interpolated earlier, at
+    config load, under :func:`_owner_secret_scope`.
+    """
+    from agent.secret_scope import build_profile_secret_scope, set_secret_scope
+    home = _owner_scope_home()
+    if home is None:
+        return None
+    from hermes_cli.env_loader import hydrate_profile_secret_sources
+    # Off-loop: an external source runs a helper subprocess (once per home, then cached).
+    await asyncio.to_thread(hydrate_profile_secret_sources, home)
+    return set_secret_scope(build_profile_secret_scope(home), profile_home=str(home))
+
+
+@contextmanager
+def _owner_secret_scope():
+    """Sync twin of :func:`_install_owner_secret_scope` for the config load in the caller's thread.
+
+    ``_load_mcp_config`` interpolates ``${VAR}`` header/URL refs through ``get_secret`` and swallows
+    the resulting ``UnscopedSecretError`` into ``{}``, so an unscoped discover / reconcile / status /
+    probe for a routed profile saw ZERO servers — stdio siblings included — before the connect-site
+    binding could ever run (#113746). Same owner rule; scope key ``None`` binds nothing."""
+    from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
+    home = _owner_scope_home()
+    if home is None:
+        yield
+        return
+    from hermes_cli.env_loader import hydrate_profile_secret_sources
+    hydrate_profile_secret_sources(home)
+    token = set_secret_scope(build_profile_secret_scope(home), profile_home=str(home))
+    try:
+        yield
+    finally:
+        reset_secret_scope(token)
+
 
 async def _connect_server(name: str, config: dict) -> _core.MCPServerTask:
     """Create an MCPServerTask, start it, return once ready (tear down with ``server.shutdown()``
@@ -58,12 +114,11 @@ async def _connect_server(name: str, config: dict) -> _core.MCPServerTask:
     # The run task copies this context: don't retain the discovery closure for its life.
     claim_token = _core._connect_server_claim.set(None) if claim is not None else None
     try:
-        # Config loading may have happened before an external secret source was
-        # hydrated for this owner (multiplex startup). Unresolved placeholders
-        # deliberately survive interpolation, so render them again now that the
-        # owning profile's scope is installed instead of retrying a frozen
-        #  header forever.
-        config = _config._interpolate_env_vars(config)
+        scope_token = await _install_owner_secret_scope()
+        # The config was rendered at load time (a lazy server's at boot): re-render under the
+        # owner's fresh scope so a ref left literal before its secret source answered resolves
+        # now, and refuse to send one that still does not.
+        config = _config._require_rendered_remote(name, _config._interpolate_env_vars(config))
         await server.start(config)
     except asyncio.CancelledError:
         raise  # start() already reaps server._task; shutdown() here could swallow the cancel
