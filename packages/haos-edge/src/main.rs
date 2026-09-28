@@ -79,6 +79,10 @@ enum Commands {
         #[arg(long)]
         data_dir: PathBuf,
 
+        /// Additional explicitly configured read-only session databases (repeatable).
+        #[arg(long = "sessions-db")]
+        sessions_dbs: Vec<PathBuf>,
+
         /// Start without any Rust SQLite/event writer.
         #[arg(long, default_value_t = false)]
         observer_only: bool,
@@ -279,6 +283,7 @@ async fn main() {
             data_dir,
             observer_only,
             writer_mode,
+            sessions_dbs,
         }) => {
             let resolved = match profile::resolve_profile_data_dir(Some(&profile), Some(&data_dir))
             {
@@ -298,6 +303,7 @@ async fn main() {
                 resolved.profile().to_owned(),
                 observer_only,
                 writer_mode,
+                sessions_dbs,
             )
             .await
             {

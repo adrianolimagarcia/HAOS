@@ -26,6 +26,8 @@ pub struct PlatformEvent {
     pub schema_version: Option<i64>,
     #[serde(default)]
     pub timestamp: Option<f64>,
+    #[serde(default)]
+    pub seq: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -36,9 +38,20 @@ pub struct EventHub {
 
 impl EventHub {
     pub fn new(db_path: PathBuf) -> Self {
+        Self::build(db_path, true)
+    }
+
+    /// Builds an in-memory event broadcaster without starting a SQLite writer.
+    pub fn new_observer(db_path: PathBuf) -> Self {
+        Self::build(db_path, false)
+    }
+
+    fn build(db_path: PathBuf, start_writer: bool) -> Self {
         let (sender, _) = broadcast::channel(2048);
         let hub = Self { sender, db_path };
-        hub.spawn_writer_task();
+        if start_writer {
+            hub.spawn_writer_task();
+        }
         hub
     }
 

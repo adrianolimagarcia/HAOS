@@ -53,6 +53,7 @@ impl TransportIngress {
             trust_level: Some("transport_ingress".to_string()),
             schema_version: Some(1),
             timestamp: Some(payload.timestamp),
+            seq: None,
         };
 
         self.event_hub.publish(event).map_err(|e| format!("Failed to publish inbound message: {e}"))?;
@@ -121,6 +122,7 @@ impl TransportIngress {
                                             trust_level: Some("transport_ingress".to_string()),
                                             schema_version: Some(1),
                                             timestamp: Some(now),
+                                            seq: None,
                                         };
 
                                         let _ = hub.publish(event);

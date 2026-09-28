@@ -411,6 +411,7 @@ fn call_tool(name: &str, args: Value) -> (String, bool) {
                         .map(|d| d.as_secs_f64())
                         .unwrap_or(0.0),
                 ),
+                seq: None,
             };
             let mut list = vec![event];
             crate::event_hub::EventHub::flush_batch(&db_path, &mut list);
