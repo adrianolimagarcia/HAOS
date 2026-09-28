@@ -24,6 +24,9 @@ pub mod transport_ingress;
 pub mod vector_search;
 pub mod worker_snapshot;
 pub mod worktree_engine;
+pub mod writer_envelope;
+pub mod writer_executor;
+pub mod writer_lock;
 
 use clap::{Parser, Subcommand};
 use db::DbHelper;
@@ -69,13 +72,25 @@ enum Commands {
         #[arg(long)]
         gateway_upstream: Option<String>,
 
-        /// Explicit profile identity; defaults to "default".
-        #[arg(long, default_value = "default")]
+        /// Explicit profile identity; required for server startup.
+        #[arg(long)]
         profile: String,
 
-        /// Explicit profile data directory.
+        /// Explicit profile data directory; required for server startup.
         #[arg(long)]
-        data_dir: Option<PathBuf>,
+        data_dir: PathBuf,
+
+        /// Additional explicitly configured read-only session databases (repeatable).
+        #[arg(long = "sessions-db")]
+        sessions_dbs: Vec<PathBuf>,
+
+        /// Start without any Rust SQLite/event writer.
+        #[arg(long, default_value_t = false)]
+        observer_only: bool,
+
+        /// State writer authority. Python is the safe default; rust requires an explicit token.
+        #[arg(long, default_value = "python", value_parser = ["python", "shadow", "rust"])]
+        writer_mode: String,
     },
 
     /// Fast diagnostics of HAOS environment and persistence
@@ -267,20 +282,11 @@ async fn main() {
             gateway_upstream,
             profile,
             data_dir,
+            observer_only,
+            writer_mode,
+            sessions_dbs,
         }) => {
-            let actual_profile = if profile.is_empty() || profile == "default" {
-                std::env::var("HAOS_PROFILE").unwrap_or_else(|_| "default".to_string())
-            } else {
-                profile
-            };
-            let actual_data_dir = data_dir.unwrap_or_else(|| {
-                std::env::var("HAOS_DATA_DIR")
-                    .or_else(|_| std::env::var("HAOS_HOME"))
-                    .or_else(|_| std::env::var("HERMES_HOME"))
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| PathBuf::from("/root/.haos"))
-            });
-            let resolved = match profile::resolve_profile_data_dir(Some(&actual_profile), Some(&actual_data_dir))
+            let resolved = match profile::resolve_profile_data_dir(Some(&profile), Some(&data_dir))
             {
                 Ok(binding) => binding,
                 Err(error) => {
@@ -296,6 +302,9 @@ async fn main() {
                 gateway_upstream,
                 resolved.data_dir().to_path_buf(),
                 resolved.profile().to_owned(),
+                observer_only,
+                writer_mode,
+                sessions_dbs,
             )
             .await
             {

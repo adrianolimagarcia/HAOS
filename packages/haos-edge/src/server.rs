@@ -12,6 +12,8 @@ use crate::pty::PtyManager;
 use crate::system_one::{DecisionRecord, SystemOneEngine};
 use crate::worker_snapshot;
 use crate::worktree_engine::NativeWorktreeEngine;
+use crate::writer_envelope::WriterBinding;
+use crate::writer_executor::{WriterError, WriterExecutor};
 use axum::extract::{Path as AxPath, Query, State};
 use axum::http::Request;
 use axum::http::{header, HeaderMap, StatusCode};
@@ -42,10 +44,15 @@ pub struct AppState {
     pub transport_ingress: Arc<crate::transport_ingress::TransportIngress>,
     pub static_dir: PathBuf,
     pub data_dir: PathBuf,
+    pub sessions_dbs: Vec<PathBuf>,
     pub profile: String,
+    pub observer_only: bool,
     pub upstream_url: Option<String>,
     pub gateway_upstream_url: Option<String>,
     pub http_client: reqwest::Client,
+    /// Present only when the explicit rust writer mode is selected. Python remains the default.
+    pub writer_executor: Option<Arc<WriterExecutor>>,
+    pub writer_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -155,22 +162,35 @@ pub async fn run_server(
     gateway_upstream: Option<String>,
     data_dir: PathBuf,
     profile: String,
+    observer_only: bool,
+    writer_mode: String,
+    sessions_dbs: Vec<PathBuf>,
 ) -> Result<(), String> {
-    let lock_path = data_dir.join(format!("controlplane_{port}.lock"));
-    let _ = std::fs::create_dir_all(&data_dir);
+    let primary_db = data_dir.join("state.db");
+    let mut seen_session_dbs = std::collections::HashSet::new();
+    seen_session_dbs.insert(primary_db.canonicalize().unwrap_or(primary_db.clone()));
+    let sessions_dbs = sessions_dbs
+        .into_iter()
+        .filter_map(|path| path.canonicalize().ok())
+        .filter(|path| path.is_file() && seen_session_dbs.insert(path.clone()))
+        .collect::<Vec<_>>();
+    if !observer_only {
+        let _ = std::fs::create_dir_all(&data_dir);
 
-    let lock_file =
-        File::create(&lock_path).map_err(|e| format!("Failed to create lock file: {e}"))?;
-    unsafe {
-        let fd = std::os::fd::AsRawFd::as_raw_fd(&lock_file);
-        if libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) != 0 {
-            return Err(format!(
-                "Control plane is already running on port {port} (locked by another process)"
-            ));
+        let lock_path = data_dir.join(format!("controlplane_{port}.lock"));
+        let lock_file =
+            File::create(&lock_path).map_err(|e| format!("Failed to create lock file: {e}"))?;
+        unsafe {
+            let fd = std::os::fd::AsRawFd::as_raw_fd(&lock_file);
+            if libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) != 0 {
+                return Err(format!(
+                    "Control plane is already running on port {port} (locked by another process)"
+                ));
+            }
         }
+        auth::ensure_sessions_dir(&data_dir)
+            .map_err(|e| format!("Failed to init sessions dir: {e}"))?;
     }
-    auth::ensure_sessions_dir(&data_dir)
-        .map_err(|e| format!("Failed to init sessions dir: {e}"))?;
 
     // Resolve static files directory
     let static_dir = if let Some(p) = static_path {
@@ -200,11 +220,44 @@ pub async fn run_server(
         .map_err(|e| format!("Failed to create reqwest client: {e}"))?;
 
     let pty_manager = Arc::new(PtyManager::new());
-    let event_hub = Arc::new(EventHub::new(data_dir.join("events.db")));
+    let rust_writer = match writer_mode.as_str() {
+        "python" | "shadow" => false,
+        "rust" => true,
+        _ => return Err("writer mode must be python, shadow, or rust".to_string()),
+    };
+    let effective_observer_only = observer_only;
+    let writer_token = if rust_writer {
+        Some(std::env::var("HAOS_RUST_WRITER_TOKEN").map_err(|_| {
+            "rust writer mode requires HAOS_RUST_WRITER_TOKEN".to_string()
+        })?)
+    } else {
+        None
+    };
+    let writer_executor = if rust_writer {
+        Some(Arc::new(
+            WriterExecutor::open(&data_dir, &profile)
+                .map_err(|e| format!("failed to acquire rust writer: {e}"))?,
+        ))
+    } else {
+        None
+    };
+    let event_hub = if effective_observer_only || rust_writer {
+        Arc::new(EventHub::new_observer(data_dir.join("events.db")))
+    } else {
+        Arc::new(EventHub::new(data_dir.join("events.db")))
+    };
     let cancel_registry = Arc::new(CancelRegistry::new());
     let loop_detectors = Arc::new(TokioMutex::new(HashMap::new()));
-    let system_one = Arc::new(SystemOneEngine::new(&data_dir));
-    let idempotency = Arc::new(IdempotencyEngine::new(&data_dir));
+    let system_one = Arc::new(if effective_observer_only {
+        SystemOneEngine::new_uninitialized(&data_dir)
+    } else {
+        SystemOneEngine::new(&data_dir)
+    });
+    let idempotency = Arc::new(if effective_observer_only {
+        IdempotencyEngine::new_uninitialized(&data_dir)
+    } else {
+        IdempotencyEngine::new(&data_dir)
+    });
     let cron_ledger = Arc::new(CronLedgerEngine::new(&data_dir));
     let transport_ingress = Arc::new(crate::transport_ingress::TransportIngress::new(
         (*event_hub).clone(),
@@ -220,22 +273,46 @@ pub async fn run_server(
         transport_ingress,
         static_dir: static_dir.clone(),
         data_dir: data_dir.clone(),
+        sessions_dbs: sessions_dbs.clone(),
         profile,
+        observer_only: effective_observer_only,
         upstream_url: upstream_url.clone(),
         gateway_upstream_url: gateway_upstream_url.clone(),
         http_client,
+        writer_executor,
+        writer_token,
     };
 
-    // Background WAL auto-checkpoint thread every 5 minutes
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(300)).await;
-            DbHelper::checkpoint_all_dbs();
-        }
-    });
+    // The observer owns no writer/checkpointer. Python remains the sole SQLite writer.
 
-    let app = Router::new()
+    let app = if effective_observer_only {
+        let mut observer = Router::new()
+            .route("/health", get(health_handler))
+            .route("/login", get(login_page_handler))
+            .route("/api/login", post(login_handler))
+            .route("/api/logout", post(logout_handler))
+            .route("/api/sessions/fast", get(sessions_fast_handler))
+            .route("/api/events/stream", get(event_stream_handler))
+            .nest_service("/static", ServeDir::new(&static_dir))
+            .layer(middleware::from_fn_with_state(
+                data_dir.clone(),
+                authenticate_middleware,
+            ))
+            .layer(CorsLayer::permissive());
+        if rust_writer {
+            observer = observer.route(
+                "/internal/rust-writer/v2/operations",
+                post(rust_writer_handler),
+            );
+        }
+        observer
+    } else {
+        Router::new()
         .route("/health", get(health_handler))
+        .route(
+            "/internal/rust-writer/v2/operations",
+            post(rust_writer_handler),
+        )
         .route("/login", get(login_page_handler))
         .route("/api/login", post(login_handler))
         .route("/api/logout", post(logout_handler))
@@ -408,7 +485,9 @@ pub async fn run_server(
             authenticate_middleware,
         ))
         .layer(CorsLayer::permissive())
-        .with_state(state);
+    };
+
+    let app = app.with_state(state);
 
     let resolved_host = resolve_bind_host(host);
     let addr: SocketAddr = format!("{resolved_host}:{port}")
@@ -429,31 +508,32 @@ pub async fn run_server(
     println!("============================================================");
 
     // Watchdog em background para reabertura de locks de workers órfãos/mortos (Frente 3)
-    let watchdog_data_dir = data_dir.clone();
-    tokio::spawn(async move {
-        let kanban_db = watchdog_data_dir.join("kanban.db");
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            if kanban_db.exists() {
-                if let Ok(conn) = rusqlite::Connection::open_with_flags(
-                    &kanban_db,
-                    rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
-                        | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                ) {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                    // Reseta tarefas em RUNNING cujo lease expirou há mais de 30s
-                    let _ = conn.execute(
-                        "UPDATE tasks SET status = 'ready', claim_lock = NULL WHERE status = 'running' AND claim_expires IS NOT NULL AND claim_expires < ?1",
-                        rusqlite::params![now - 30],
-                    );
+    if !observer_only {
+        let watchdog_data_dir = data_dir.clone();
+        tokio::spawn(async move {
+            let kanban_db = watchdog_data_dir.join("kanban.db");
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                if kanban_db.exists() {
+                    if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                        &kanban_db,
+                        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                    ) {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64;
+                        let _ = conn.execute(
+                            "UPDATE tasks SET status = 'ready', claim_lock = NULL WHERE status = 'running' AND claim_expires IS NOT NULL AND claim_expires < ?1",
+                            rusqlite::params![now - 30],
+                        );
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -466,13 +546,82 @@ pub async fn run_server(
     Ok(())
 }
 
-async fn health_handler() -> Json<serde_json::Value> {
+async fn health_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
-        "status": "healthy",
-        "service": "haos-edge-rust",
-        "runtime": "tokio+axum",
-        "version": "0.1.0"
+        "contract_version": "haos-edge.readonly-sse.v1",
+        "profile": state.profile,
+        "schema_version": 1,
+        "data": {
+            "status": "healthy",
+            "service": "haos-edge-rust",
+            "runtime": "tokio+axum",
+            "version": "0.1.0"
+        }
     }))
+}
+
+/// The internal writer has an independent bearer-token boundary; WebUI cookies never authorize it.
+async fn rust_writer_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(envelope): Json<serde_json::Value>,
+) -> Response {
+    let expected = match state.writer_token.as_deref() {
+        Some(token) => token,
+        None => return writer_error(StatusCode::FORBIDDEN, "forbidden"),
+    };
+    let expected_header = format!("Bearer {expected}");
+    if headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        != Some(expected_header.as_str())
+    {
+        return writer_error(StatusCode::UNAUTHORIZED, "unauthenticated");
+    }
+    let executor = match state.writer_executor.as_deref() {
+        Some(executor) => executor,
+        None => return writer_error(StatusCode::FORBIDDEN, "forbidden"),
+    };
+    let binding = match WriterBinding::new(&state.profile, state.data_dir.to_string_lossy()) {
+        Ok(binding) => binding,
+        Err(_) => return writer_error(StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+    };
+    let request = match crate::writer_envelope::validate_envelope(&envelope, &binding) {
+        Ok(request) => request,
+        Err(error) => return writer_error(StatusCode::BAD_REQUEST, error.code()),
+    };
+    match executor.execute(&request) {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"ok": true, "result": result})),
+        )
+            .into_response(),
+        Err(error) => writer_executor_error(error),
+    }
+}
+
+fn writer_error(status: StatusCode, code: &str) -> Response {
+    (
+        status,
+        Json(serde_json::json!({"ok": false, "error": {"code": code}})),
+    )
+        .into_response()
+}
+
+fn writer_executor_error(error: WriterError) -> Response {
+    let (status, code) = match error {
+        WriterError::InvalidBinding => (StatusCode::FORBIDDEN, "profile_mismatch"),
+        WriterError::SchemaMismatch => (StatusCode::INTERNAL_SERVER_ERROR, "schema_mismatch"),
+        WriterError::Timeout => (StatusCode::REQUEST_TIMEOUT, "timeout"),
+        WriterError::Busy => (StatusCode::CONFLICT, "busy"),
+        WriterError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+        WriterError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
+        WriterError::IdempotencyConflict => (StatusCode::CONFLICT, "idempotency_conflict"),
+        WriterError::InvalidPayload => (StatusCode::BAD_REQUEST, "invalid_request"),
+        WriterError::UnsupportedOperation(_) => (StatusCode::BAD_REQUEST, "unknown_operation"),
+        WriterError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "storage_unavailable"),
+    };
+    writer_error(status, code)
 }
 
 // ------------------------------------------------------------ auth
@@ -484,6 +633,7 @@ fn is_public_path(path: &str) -> bool {
         || path == "/api/raggraph/query"
         || path == "/api/raggraph/index"
         || path == "/api/raggraph/index-memories"
+        || path == "/internal/rust-writer/v2/operations"
 }
 
 async fn authenticate_middleware(
@@ -996,6 +1146,7 @@ async fn raggraph_lineage_handler(
     }
 }
 
+
 async fn transport_inbound_handler(
     State(state): State<AppState>,
     Json(payload): Json<crate::transport_ingress::InboundMessagePayload>,
@@ -1016,6 +1167,18 @@ async fn event_ingest_handler(
     State(state): State<AppState>,
     Json(event): Json<PlatformEvent>,
 ) -> impl IntoResponse {
+    if state.observer_only {
+        return (
+            StatusCode::METHOD_NOT_ALLOWED,
+            Json(serde_json::json!({
+                "ok": false,
+                "error": "observer_read_only",
+                "contract_version": "haos-edge.readonly-sse.v1",
+                "profile": state.profile,
+            })),
+        )
+            .into_response();
+    }
     match state.event_hub.publish(event) {
         Ok(_) => Json(serde_json::json!({ "ok": true, "ingested": true })).into_response(),
         Err(e) => (
@@ -1050,6 +1213,8 @@ async fn event_stream_handler(
             &db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         ) {
+            let _ = conn.busy_timeout(Duration::from_secs(2));
+            let _ = conn.execute_batch("PRAGMA query_only=ON;");
             if let Ok(mut stmt) = conn.prepare(
                 "SELECT event_id, seq, name, trace_id, correlation_id, causation_id, trust_level, schema_version, timestamp, payload FROM events WHERE seq > ?1 ORDER BY seq LIMIT 101",
             ) {
@@ -1084,29 +1249,86 @@ async fn event_stream_handler(
         (Vec::new(), false)
     };
     let stream = async_stream::stream! {
-        let snapshot = serde_json::json!({"type":"snapshot","last_seq":last_seq});
+        let snapshot = serde_json::json!({
+            "contract_version": "haos-edge.readonly-sse.v1",
+            "profile": state.profile,
+            "schema_version": 1,
+            "data": {
+                "type":"snapshot",
+                "last_seq":last_seq
+            }
+        });
         yield Ok::<Event, axum::Error>(Event::default().event("snapshot").id(last_seq.to_string()).json_data(snapshot).unwrap());
-        for row in replay { let id = row.seq.unwrap_or(0).to_string(); yield Ok(Event::default().event("event").id(id).json_data(row).unwrap()); }
-        if replay_limit_exceeded { yield Ok(Event::default().event("resync").data("replay_limit_exceeded")); }
+        for row in replay {
+            let id = row.seq.unwrap_or(0).to_string();
+            let data = serde_json::json!({
+                "contract_version": "haos-edge.readonly-sse.v1",
+                "profile": state.profile,
+                "schema_version": 1,
+                "data": row,
+            });
+            yield Ok(Event::default().event("event").id(id).json_data(data).unwrap());
+        }
+        if replay_limit_exceeded {
+            let data = serde_json::json!({
+                "contract_version": "haos-edge.readonly-sse.v1",
+                "profile": state.profile,
+                "schema_version": 1,
+                "data": {"reason": "replay_limit_exceeded"},
+            });
+            yield Ok(Event::default().event("resync").json_data(data).unwrap());
+            return;
+        }
         let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
         loop {
             tokio::select! {
                 result = rx.recv() => match result {
-                    Ok(evt) => { let id = evt.seq.unwrap_or(0).to_string(); yield Ok(Event::default().event("event").id(id).json_data(evt).unwrap()); },
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => { yield Ok(Event::default().event("resync").data("stream_lagged")); break; },
+                    Ok(evt) => {
+                        let id = evt.seq.unwrap_or(0).to_string();
+                        let data = serde_json::json!({
+                            "contract_version": "haos-edge.readonly-sse.v1",
+                            "profile": state.profile,
+                            "schema_version": 1,
+                            "data": evt,
+                        });
+                        yield Ok(Event::default().event("event").id(id).json_data(data).unwrap());
+                    },
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let data = serde_json::json!({
+                            "contract_version": "haos-edge.readonly-sse.v1",
+                            "profile": state.profile,
+                            "schema_version": 1,
+                            "data": {"reason": "stream_lagged"},
+                        });
+                        yield Ok(Event::default().event("resync").json_data(data).unwrap());
+                        break;
+                    },
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 },
                 _ = heartbeat.tick() => yield Ok(Event::default().comment("heartbeat")),
             }
         }
     };
-    Sse::new(stream)
+    let mut response = Sse::new(stream)
         .keep_alive(
             axum::response::sse::KeepAlive::new()
                 .interval(Duration::from_secs(15))
                 .text("heartbeat"),
         )
-        .into_response()
+        .into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("text/event-stream"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-cache, no-transform"),
+    );
+    response.headers_mut().insert(
+        header::HeaderName::from_static("x-accel-buffering"),
+        axum::http::HeaderValue::from_static("no"),
+    );
+    response
 }
 
 // 3. Token & Context Hasher (SHA-256 SIMD / Rolling Prefixes)
@@ -1655,6 +1877,7 @@ async fn civ_events_handler(
         "events": events,
     }))
 }
+
 
 // 5. Blast Radius AST Analysis
 #[derive(Deserialize)]
@@ -2337,59 +2560,152 @@ async fn timeline_fast_handler(
 }
 
 // 9. Fast Sessions Reader em Rust Nativo (state.db bypass de lock)
+//
+// Paridade com o fallback Python `standalone.py::_sessions_list`: agrega as DBs explícitas
+// (`--sessions-db`) preservando a ordem, deduplica caminhos por realpath e IDs pela primeira
+// ocorrência, aplica LIMIT 30 por banco, deriva título da primeira mensagem do usuário quando
+// ausente, formata timestamps no fuso local e corta o resultado final em 40 itens.
+
+fn format_local_timestamp(ts: Option<f64>) -> String {
+    let Some(ts) = ts else { return String::new() };
+    let secs = ts.floor() as i64;
+    if secs == 0 {
+        return String::new();
+    }
+    extern "C" {
+        fn tzset();
+        fn localtime_r(timep: *const libc::time_t, tm: *mut libc::tm) -> *mut libc::tm;
+    }
+    let raw = secs as libc::time_t;
+    let mut tm_val: libc::tm = unsafe {
+        tzset();
+        std::mem::zeroed()
+    };
+    let ptr = unsafe { localtime_r(&raw, &mut tm_val) };
+    if !ptr.is_null() {
+        let y = tm_val.tm_year as i64 + 1900;
+        let m = tm_val.tm_mon as i64 + 1;
+        let d = tm_val.tm_mday as i64;
+        let hh = tm_val.tm_hour as i64;
+        let mm = tm_val.tm_min as i64;
+        let ss = tm_val.tm_sec as i64;
+        return format!("{y:04}-{m:02}-{d:02} {hh:02}:{mm:02}:{ss:02}");
+    }
+    String::new()
+}
+
+fn derive_title(raw_title: Option<String>, sid: &str, conn: &rusqlite::Connection) -> String {
+    if let Some(ref title) = raw_title {
+        if !title.trim().is_empty() {
+            return title.clone();
+        }
+    }
+    let first_msg: Option<String> = conn
+        .prepare(
+            "SELECT content FROM messages WHERE session_id = ?1 AND role = 'user' \
+             ORDER BY id ASC LIMIT 1",
+        )
+        .and_then(|mut stmt| stmt.query_row([sid], |row| row.get::<_, Option<String>>(0)))
+        .ok()
+        .flatten();
+    if let Some(content) = first_msg {
+        let stripped = content.trim();
+        if !stripped.is_empty() {
+            let chars: Vec<char> = stripped.chars().collect();
+            if chars.len() > 80 {
+                let head: String = chars[..80].iter().collect();
+                return format!("{head}…");
+            }
+            return stripped.to_owned();
+        }
+    }
+    format!("Session {sid}")
+}
+
 async fn sessions_fast_handler(
     State(state): State<AppState>,
     Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let limit: usize = params
+    let limit_per_db: usize = params
         .get("limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(30);
 
-    let state_db = state.data_dir.join("state.db");
-    if !state_db.exists() {
-        return Json(serde_json::json!({ "ok": true, "sessions": [], "count": 0 }));
-    }
-
-    let Ok(conn) = rusqlite::Connection::open_with_flags(
-        &state_db,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) else {
-        return Json(serde_json::json!({ "ok": false, "error": "failed_open_state_db" }));
-    };
-
-    let mut stmt = match conn.prepare(
-        "SELECT id, title, started_at, last_activity_at FROM sessions \
-         ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ?1",
-    ) {
-        Ok(s) => s,
-        Err(e) => return Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
-    };
-
-    let session_iter = stmt.query_map([limit as i64], |row| {
-        let id: String = row.get(0)?;
-        let title: Option<String> = row.get(1)?;
-        let started_at: Option<f64> = row.get(2)?;
-        let last_activity_at: Option<f64> = row.get(3)?;
-        Ok(serde_json::json!({
-            "id": id,
-            "title": title.unwrap_or_else(|| "Sem título".to_string()),
-            "started_at": started_at.unwrap_or(0.0),
-            "last_activity_at": last_activity_at.unwrap_or(started_at.unwrap_or(0.0)),
-        }))
-    });
-
-    let mut sessions = Vec::new();
-    if let Ok(iter) = session_iter {
-        for s in iter.flatten() {
-            sessions.push(s);
+    // Candidate list mirrors the fallback's ordering: the profile primary DB first, then
+    // explicit --sessions-db entries. Paths are deduped by canonical form and only existing
+    // files participate.
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    let mut seen_paths = std::collections::HashSet::new();
+    for path in std::iter::once(&state.data_dir.join("state.db")).chain(state.sessions_dbs.iter()) {
+        if !path.exists() {
+            continue;
+        }
+        let resolved = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if seen_paths.insert(resolved) {
+            candidates.push(path.clone());
         }
     }
 
+    let mut results: Vec<(f64, serde_json::Value)> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for db_file in &candidates {
+        let Ok(conn) = rusqlite::Connection::open_with_flags(
+            db_file,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) else {
+            continue;
+        };
+        let rows: Vec<(String, Option<String>, Option<f64>, Option<f64>)> = match conn.prepare(
+            "SELECT id, title, started_at, last_activity_at FROM sessions \
+             ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ?1",
+        ) {
+            Ok(mut stmt) => stmt
+                .query_map([limit_per_db as i64], |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                    ))
+                })
+                .map(|iter| iter.flatten().collect())
+                .unwrap_or_default(),
+            Err(_) => continue,
+        };
+        for (sid, raw_title, started_raw, activity_raw) in rows {
+            if !seen_ids.insert(sid.clone()) {
+                continue;
+            }
+            let started_ts = started_raw.unwrap_or(0.0);
+            let updated_ts = activity_raw.filter(|v| *v != 0.0).unwrap_or(started_ts);
+            let title = derive_title(raw_title, &sid, &conn);
+            results.push((
+                updated_ts,
+                serde_json::json!({
+                    "session_id": sid,
+                    "title": title,
+                    "started_at": format_local_timestamp(if started_ts != 0.0 { Some(started_ts) } else { None }),
+                    "updated_at": format_local_timestamp(if updated_ts != 0.0 { Some(updated_ts) } else { None }),
+                    "updated_ts": updated_ts,
+                    "db": db_file.display().to_string(),
+                }),
+            ));
+        }
+    }
+
+    // Stable sort descending by updated_ts, exactly like the reference's results.sort().
+    results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let sessions: Vec<serde_json::Value> =
+        results.into_iter().take(40).map(|(_, row)| row).collect();
+
     Json(serde_json::json!({
-        "ok": true,
-        "count": sessions.len(),
-        "sessions": sessions
+        "contract_version": "haos-edge.readonly-sse.v1",
+        "profile": state.profile,
+        "schema_version": 1,
+        "data": {
+            "count": sessions.len(),
+            "sessions": sessions
+        }
     }))
 }
 
