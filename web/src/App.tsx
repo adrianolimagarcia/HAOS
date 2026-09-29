@@ -28,6 +28,7 @@ import {
   Code,
   Cpu,
   Database,
+  GitBranch,
   Download,
   Eye,
   FolderOpen,
@@ -84,6 +85,7 @@ const FilesPage = lazy(() => import("@/pages/FilesPage"));
 const SessionsPage = lazy(() => import("@/pages/SessionsPage"));
 const LogsPage = lazy(() => import("@/pages/LogsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
+const CivilizationPage = lazy(() => import("@/pages/CivilizationPage"));
 const ModelsPage = lazy(() => import("@/pages/ModelsPage"));
 const CronPage = lazy(() => import("@/pages/CronPage"));
 const ProfilesPage = lazy(() => import("@/pages/ProfilesPage"));
@@ -159,6 +161,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/sessions": SessionsPage,
   "/files": FilesPage,
   "/analytics": AnalyticsPage,
+  "/civilization": CivilizationPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
   "/cron": CronPage,
@@ -192,6 +195,7 @@ const BUILTIN_NAV_REST: NavItem[] = [
     icon: MessageSquare,
   },
   { path: "/files", label: "Files", icon: FolderOpen },
+  { path: "/civilization", label: "Civilization", icon: GitBranch },
   {
     path: "/analytics",
     labelKey: "analytics",

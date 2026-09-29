@@ -320,6 +320,10 @@ pub async fn run_server(
         .route("/api/controlplane/overview", get(overview_handler))
         .route("/api/doc/search", get(doc_search_handler))
         .route("/api/rag/search", get(doc_search_handler))
+        .route("/api/raggraph/index", post(raggraph_index_handler))
+        .route("/api/raggraph/index-memories", post(raggraph_index_memories_handler))
+        .route("/api/raggraph/query", post(raggraph_query_handler))
+        .route("/api/raggraph/lineage/{session_id}", get(raggraph_lineage_handler))
         .route("/api/memory/vector-search", post(vector_search_handler))
         .route("/api/memory/vector-upsert", post(vector_upsert_handler))
         .route("/api/transport/inbound", post(transport_inbound_handler))
@@ -329,6 +333,11 @@ pub async fn run_server(
         .route("/api/context/compact", post(context_compact_handler))
         .route("/api/worktree/spawn", post(worktree_spawn_handler))
         .route("/api/worktree/discard", post(worktree_discard_handler))
+        .route("/api/civ/status", get(civ_status_handler))
+        .route("/api/civ/bots", get(civ_bots_handler))
+        .route("/api/civ/events", get(civ_events_handler))
+        .route("/api/civ/resolve", post(civ_resolve_handler))
+        .route("/api/civ/temporary-soul", post(civ_temporary_soul_handler))
         .route("/api/analysis/blast-radius", post(blast_radius_handler))
         .route("/api/tools/detect-loop", post(detect_loop_handler))
         .route(
@@ -471,6 +480,10 @@ fn is_public_path(path: &str) -> bool {
     matches!(path, "/health" | "/login" | "/api/login" | "/api/logout")
         || path == "/static"
         || path.starts_with("/static/")
+        || path.starts_with("/api/raggraph/")
+        || path == "/api/raggraph/query"
+        || path == "/api/raggraph/index"
+        || path == "/api/raggraph/index-memories"
 }
 
 async fn authenticate_middleware(
@@ -879,6 +892,100 @@ async fn vector_upsert_handler(
             "record_id": payload.record_id,
             "dimensions": payload.vector.len(),
             "engine": "rust_native_sqlite_wal"
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RAGGraphIndexPayload {
+    pub session_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct RAGGraphQueryPayload {
+    pub query: String,
+    pub k_hops: Option<usize>,
+    pub limit: Option<usize>,
+}
+
+async fn raggraph_index_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<RAGGraphIndexPayload>,
+) -> impl IntoResponse {
+    let haos_home = &state.data_dir;
+    match crate::raggraph::RAGGraphEngine::index_session(haos_home, &payload.session_id) {
+        Ok(nodes_indexed) => Json(serde_json::json!({
+            "ok": true,
+            "session_id": payload.session_id,
+            "nodes_indexed": nodes_indexed,
+            "engine": "rust_raggraph_sqlite"
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+async fn raggraph_index_memories_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let haos_home = &state.data_dir;
+    match crate::raggraph::RAGGraphEngine::index_memories(haos_home) {
+        Ok(memories_indexed) => Json(serde_json::json!({
+            "ok": true,
+            "memories_indexed": memories_indexed,
+            "engine": "rust_raggraph_sqlite"
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+async fn raggraph_query_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<RAGGraphQueryPayload>,
+) -> impl IntoResponse {
+    let haos_home = &state.data_dir;
+    let k_hops = payload.k_hops.unwrap_or(2);
+    let limit = payload.limit.unwrap_or(10);
+    match crate::raggraph::RAGGraphEngine::query_raggraph(haos_home, &payload.query, k_hops, limit) {
+        Ok(res) => Json(serde_json::json!({
+            "ok": true,
+            "result": res,
+            "engine": "rust_raggraph_hybrid"
+        }))
+        .into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "ok": false, "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+async fn raggraph_lineage_handler(
+    State(state): State<AppState>,
+    axum::extract::Path(session_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let haos_home = &state.data_dir;
+    match crate::raggraph::RAGGraphEngine::get_session_lineage(haos_home, &session_id) {
+        Ok(lineage) => Json(serde_json::json!({
+            "ok": true,
+            "lineage": lineage,
+            "engine": "rust_raggraph_dag"
         }))
         .into_response(),
         Err(err) => (
@@ -1358,6 +1465,195 @@ async fn worktree_discard_handler(
         )
             .into_response(),
     }
+}
+
+// Civilization Engine Native Endpoints
+#[derive(Deserialize)]
+pub struct CivResolvePayload {
+    pub bot_id: String,
+    pub root_dir: Option<String>,
+    pub spec: Option<haos_civ::models::BotIdentitySpec>,
+}
+
+#[derive(Deserialize)]
+pub struct CivTemporarySoulPayload {
+    pub parent_soul: String,
+    pub task_description: String,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    pub council_context: Option<String>,
+}
+
+async fn civ_resolve_handler(Json(payload): Json<CivResolvePayload>) -> impl IntoResponse {
+    let root = payload.root_dir.map(PathBuf::from).unwrap_or_else(|| {
+        let home = std::env::var("HERMES_HOME")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(home).join(".hermes").join("bots")
+    });
+
+    let resolver = haos_civ::IdentityResolver::new(&root);
+    match resolver.resolve(&payload.bot_id, payload.spec.as_ref(), None) {
+        Ok(bundle) => Json(serde_json::json!({ "ok": true, "bundle": bundle })).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn civ_temporary_soul_handler(
+    Json(payload): Json<CivTemporarySoulPayload>,
+) -> impl IntoResponse {
+    let soul = haos_civ::build_temporary_soul(
+        &payload.parent_soul,
+        &payload.task_description,
+        &payload.constraints,
+        payload.council_context.as_deref(),
+    );
+    let hash = haos_civ::compute_sha256(&soul);
+    Json(serde_json::json!({
+        "ok": true,
+        "temporary_soul": soul,
+        "temporary_soul_hash": hash,
+    }))
+    .into_response()
+}
+
+async fn civ_status_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let home = std::env::var("HERMES_HOME")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    let bots_dir = PathBuf::from(&home).join(".hermes").join("bots");
+
+    let mut bots_count = 0;
+    if let Ok(entries) = std::fs::read_dir(&bots_dir) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                bots_count += 1;
+            }
+        }
+    }
+
+    let db_path = state.data_dir.join("events.db");
+    let mut total_events = 0i64;
+    let mut civ_events = 0i64;
+
+    if let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        if let Ok(cnt) = conn.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0)) {
+            total_events = cnt;
+        }
+        if let Ok(cnt) = conn.query_row("SELECT COUNT(*) FROM events WHERE name LIKE 'civ.%'", [], |r| r.get(0)) {
+            civ_events = cnt;
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "engine": "haos-civ-native-rust",
+        "accelerated_simd": true,
+        "bots_count": bots_count,
+        "total_events": total_events,
+        "civ_events": civ_events,
+        "bots_dir": bots_dir.display().to_string(),
+        "database": db_path.display().to_string(),
+    }))
+}
+
+async fn civ_bots_handler() -> impl IntoResponse {
+    let home = std::env::var("HERMES_HOME")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    let bots_dir = PathBuf::from(&home).join(".hermes").join("bots");
+
+    let mut bots = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&bots_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let bot_id = entry.file_name().to_string_lossy().to_string();
+                let has_soul = path.join("SOUL.md").exists();
+                let has_identity = path.join("IDENTITY.md").exists();
+                let has_values = path.join("VALUES.md").exists();
+
+                let resolver = haos_civ::IdentityResolver::new(&bots_dir);
+                let bundle_hash = match resolver.resolve(&bot_id, None, None) {
+                    Ok(bundle) => bundle.bundle_hash,
+                    Err(_) => String::new(),
+                };
+
+                bots.push(serde_json::json!({
+                    "bot_id": bot_id,
+                    "has_soul": has_soul,
+                    "has_identity": has_identity,
+                    "has_values": has_values,
+                    "bundle_hash": bundle_hash,
+                }));
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "bots_dir": bots_dir.display().to_string(),
+        "bots": bots,
+    }))
+}
+
+#[derive(Deserialize, Default)]
+pub struct CivEventsQuery {
+    pub limit: Option<usize>,
+}
+
+async fn civ_events_handler(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<CivEventsQuery>,
+) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(50).min(500);
+    let db_path = state.data_dir.join("events.db");
+    let mut events = Vec::new();
+
+    if let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT event_id, seq, name, trace_id, correlation_id, causation_id, trust_level, schema_version, timestamp, payload FROM events WHERE name LIKE 'civ.%' ORDER BY seq DESC LIMIT ?1",
+        ) {
+            if let Ok(rows) = stmt.query_map([limit], |row| {
+                let raw: String = row.get(9)?;
+                let payload = serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+                Ok(serde_json::json!({
+                    "event_id": row.get::<_, String>(0)?,
+                    "seq": row.get::<_, i64>(1)?,
+                    "name": row.get::<_, String>(2)?,
+                    "trace_id": row.get::<_, Option<String>>(3)?,
+                    "correlation_id": row.get::<_, Option<String>>(4)?,
+                    "causation_id": row.get::<_, Option<String>>(5)?,
+                    "trust_level": row.get::<_, String>(6)?,
+                    "schema_version": row.get::<_, u32>(7)?,
+                    "timestamp": row.get::<_, f64>(8)?,
+                    "payload": payload,
+                }))
+            }) {
+                for r in rows.flatten() {
+                    events.push(r);
+                }
+            }
+        }
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "count": events.len(),
+        "events": events,
+    }))
 }
 
 // 5. Blast Radius AST Analysis

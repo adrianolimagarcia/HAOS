@@ -393,6 +393,7 @@ from hermes_cli.subcommands.vault import build_vault_parser
 from hermes_cli.subcommands.moa import build_moa_parser
 from hermes_cli.subcommands.fallback import build_fallback_parser
 from hermes_cli.subcommands.worktree import build_worktree_parser
+from hermes_cli.subcommands.civ import build_civ_parser
 from hermes_cli.subcommands.browser import build_browser_parser
 from hermes_cli.subcommands.secrets import build_secrets_parser
 from hermes_cli.subcommands.egress import build_egress_parser
@@ -1794,6 +1795,9 @@ def cmd_chat(args):
     # --source: tag session source for filtering (e.g. 'tool' for integrations)
     if getattr(args, "source", None):
         os.environ["HERMES_SESSION_SOURCE"] = args.source
+    # --bot-id: bind civilization bot identity
+    if getattr(args, "bot_id", None):
+        os.environ["HERMES_BOT_ID"] = str(args.bot_id)
     # --ultrawork / -u: OmO-inspired autonomous execution mode
     if getattr(args, "ultrawork", False):
         os.environ["HAOS_ULTRAWORK_MODE"] = "1"
@@ -3323,6 +3327,7 @@ def _build_cli_parser():
     build_moa_parser(subparsers)
     build_fallback_parser(subparsers)
     build_worktree_parser(subparsers)
+    build_civ_parser(subparsers)
     build_browser_parser(subparsers)
     build_secrets_parser(subparsers)
     # OUTBOUND egress firewall; ``haos proxy`` (gateway group) is the INBOUND one.

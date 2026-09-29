@@ -625,9 +625,17 @@ def _context_files_part(agent: Any, ctx_len: Optional[int], soul_loaded: bool) -
     if agent.skip_context_files:
         return []
     launch_artifact = getattr(agent, "_context_cwd_is_launch_artifact", False)
+    extra_kw = {}
+    bot_id = getattr(agent, "bot_id", None)
+    if bot_id:
+        extra_kw["bot_id"] = bot_id
+    bundle = getattr(agent, "identity_bundle", None)
+    if bundle:
+        extra_kw["identity_bundle"] = bundle
     return [_pb.build_context_files_prompt(
         cwd=None if launch_artifact else resolve_context_cwd(), skip_soul=soul_loaded, context_length=ctx_len,
-        allow_install_tree_fallback=agent.platform in ("cli", "tui"), home_override=_agent_home(agent))]
+        allow_install_tree_fallback=agent.platform in ("cli", "tui"), home_override=_agent_home(agent),
+        **extra_kw)]
 
 
 def _join_tier(parts: List[Optional[str]]) -> str:

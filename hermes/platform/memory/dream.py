@@ -33,7 +33,7 @@ from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, nonintera
 from hermes.platform.context.memory.candidate import MemoryCandidate
 from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
 from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
-from hermes.platform.memory.instincts import InstinctStore
+from hermes.platform.memory.instincts import InstinctStore, is_prompt_envelope, INITIAL_CONFIDENCE
 from hermes.platform.memory.reconciler import MemoryReconciler
 
 logger = logging.getLogger(__name__)
@@ -368,6 +368,14 @@ class DreamConsolidator:
             if len(lesson) <= 15:
                 continue
 
+            # Filtro anti-contaminação (auditoria 2026-09-29): o preview bruto da
+            # sessão pode começar com scaffolding de prompt (envelope A2A, listing
+            # de skills, system note). Isso não é lição — descarta ANTES de virar
+            # instinto ou candidato de staging. Determinístico, sem LLM.
+            if is_prompt_envelope(lesson):
+                logger.debug("Skipped envelope text in dream extraction (session %s)", sid)
+                continue
+
             session_uri = f"session://{sid}"
             key = candidate_key(lesson)
 
@@ -389,7 +397,9 @@ class DreamConsolidator:
                     project_scope=INSTINCT_PROJECT_SCOPE,
                     tags=["dream-distilled"],
                 )
-                confidence = instinct.confidence
+                # record_instinct retorna None só para envelope — já filtrado
+                # acima; o guard é defesa em profundidade, não caminho esperado.
+                confidence = instinct.confidence if instinct is not None else INITIAL_CONFIDENCE
             else:
                 # Dry-run: prevê a confiança do próximo reforço sem escrever nada.
                 confidence = self.instinct_store.peek_confidence(

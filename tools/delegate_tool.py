@@ -163,6 +163,7 @@ def _build_child_agent(
     max_iterations: int,
     task_count: int,
     parent_agent,
+    bot_id: Optional[str] = None,
     # Credential overrides from delegation config
     override_provider: Optional[str] = None,
     override_base_url: Optional[str] = None,
@@ -245,6 +246,7 @@ def _build_child_agent(
                     if child_progress_cb else None
                 ),
                 session_db=child_session_db, parent_session_id=parent_sid, request_overrides=request_overrides,
+                bot_id=bot_id,
                 tool_progress_callback=child_progress_cb,
                 iteration_budget=None,  # fresh budget per subagent
             )
@@ -344,6 +346,16 @@ def _run_single_child(
 
         duration = run.elapsed()
         entry = _build_result_entry(child, result, task_index, duration, schema)
+        if getattr(child, "_civ_task", None):
+            entry["civilization"] = {
+                "bot_id": child._civ_task.get("bot_id"), "leaf_id": child._civ_task.get("leaf_id"),
+                "identity_version": child._civ_task.get("identity_version"),
+            }
+            try:
+                from hermes.platform.civilization.delegation import record_task_result
+                record_task_result(child._civ_task, entry)
+            except Exception:
+                logger.debug("Could not record civilization completion", exc_info=True)
         run.append_sibling_write_reminder(entry)
         run.account_background_processes(entry)
         run.emit_complete(result, entry, duration)
@@ -353,8 +365,19 @@ def _run_single_child(
         _late_pending_steer = run.close_steering()
         logging.exception(f"[subagent-{task_index}] failed")
         # Entry status "error" (contract), progress event status "failed" (UI vocabulary).
+        failure_entry = _fabricated_entry(task_index, "error", str(exc), child, run.elapsed())
+        if getattr(child, "_civ_task", None):
+            failure_entry["civilization"] = {
+                "bot_id": child._civ_task.get("bot_id"), "leaf_id": child._civ_task.get("leaf_id"),
+                "identity_version": child._civ_task.get("identity_version"),
+            }
+            try:
+                from hermes.platform.civilization.delegation import record_task_result
+                record_task_result(child._civ_task, failure_entry)
+            except Exception:
+                logger.debug("Could not record civilization failure", exc_info=True)
         return run.finish_failed(
-            _fabricated_entry(task_index, "error", str(exc), child, run.elapsed()), _late_pending_steer,
+            failure_entry, _late_pending_steer,
             preview=str(exc), summary=str(exc), status="failed",
         )
     finally:
@@ -381,22 +404,29 @@ def _build_children(
     children = []
     for i, t in enumerate(task_list):
         _task_schema = task_schemas[i] if i < len(task_schemas) else None
-        _child_context = t.get("context")
+        civ_task = dict(t)
+        try:
+            from hermes.platform.civilization.delegation import route_task
+            civ_task = route_task(civ_task)
+        except Exception as exc:
+            return [], f"Civilization routing failed for task {i}: {exc}"
+        task_list[i] = civ_task
+        _child_context = civ_task.get("context")
         if _task_schema is not None:
             _child_context = append_output_contract(_child_context, _task_schema)
         try:
             child = _build_child_preserving_parent_tools(
-                task_index=i, goal=t["goal"], context=_child_context,
+                task_index=i, goal=civ_task["goal"], context=_child_context,
                 toolsets=None,  # always inherit the parent's toolsets
                 model=creds["model"], max_iterations=max_iterations, task_count=len(task_list),
-                parent_agent=parent_agent, role=_normalize_role(t.get("role") or top_role), **overrides,
+                parent_agent=parent_agent, role=_normalize_role(civ_task.get("role") or top_role), bot_id=civ_task.get("bot_id"), **overrides,
             )
         except ValueError as exc:
             return [], str(exc)
         if _task_schema is not None:
             with _quiet("Could not attach output schema to child %d", i):
                 child._delegate_output_schema = _task_schema
-        # Validated per-task images; absent on image-less tasks, which keep the text-only goal turn.
+        child._civ_task = civ_task
         _t_images = task_images[i] if task_images and i < len(task_images) else None
         if _t_images:
             with _quiet("Could not attach images to child %d", i):
@@ -412,7 +442,7 @@ def _build_children(
             _ident_ref = getattr(child, "_progress_identity_ref", None)
             if isinstance(_ident_ref, dict):
                 _ident_ref["delegation_id"] = live_deleg_id
-        children.append((i, t, child))
+        children.append((i, civ_task, child))
     return children, None
 
 

@@ -433,14 +433,16 @@ class HermesCliLaneWorker(LaneWorker):
         cmd = [self.hermes_command or "haos"]
         if self.profile:
             cmd += ["-p", self.profile]
-        cmd += ["--cli", "--accept-hooks"]
+        cmd += ["--cli"]
+        cmd += ["chat", "--source", "haos", "--accept-hooks"]
         # Console/chat do control plane: o spec carrega yolo_mode e o worker
         # nasce sem portão de aprovação — o filho é headless, um prompt de
         # aprovação ali trava a missão para sempre. A hardline blocklist do
         # kernel continua valendo (não é bypassável nem sob --yolo).
         if spec.get("yolo_mode"):
             cmd += ["--yolo"]
-        cmd += ["chat", "--source", "haos"]
+        if spec.get("bot_id"):
+            cmd += ["--bot-id", str(spec["bot_id"])]
         # Respeita o modelo configurado no spec quando especificado,
         # resolvendo via ExactModelFailoverRouter se disponível ou por postura
         model = spec.get("model_profile") or spec.get("model_profile_preferred")
@@ -611,6 +613,8 @@ class HermesCliLaneWorker(LaneWorker):
                 env["HAOS_DATA_DIR"] = os.environ["HAOS_DATA_DIR"]
         env["TERMINAL_CWD"] = str(workspace.resolve())
         env["HAOS_TASK_ID"] = task_id
+        if spec.get("bot_id"):
+            env["HERMES_BOT_ID"] = str(spec["bot_id"])
         max_runtime = spec.get("max_runtime_minutes")
         if max_runtime:
             env["TERMINAL_TIMEOUT"] = str(int(max_runtime) * 60)

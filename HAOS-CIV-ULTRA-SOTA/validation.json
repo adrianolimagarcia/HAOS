@@ -1,0 +1,12 @@
+{
+  "markdown_documents": 99,
+  "total_files_excluding_manifest": 104,
+  "min_markdown_bytes": 2510,
+  "max_markdown_bytes": 36376,
+  "total_markdown_bytes": 482056,
+  "under_1000": 0,
+  "under_2500": 0,
+  "local_links_checked": 259,
+  "broken_local_links": 0,
+  "canonical_readme": "haos-civ/README.md"
+}

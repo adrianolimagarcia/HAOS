@@ -118,6 +118,9 @@ class TaskSpec:
     preferred_agents: List[str] = field(default_factory=list)
     model_profile_preferred: Optional[str] = None
 
+    # Civilization bot identity binding
+    bot_id: Optional[str] = None
+
     # A4 — forma de execução pedida pelo autor (valores validados em
     # execution/classify.py): none | persistent | orchestrator.
     # none = heurística histórica; persistent = agente residente;

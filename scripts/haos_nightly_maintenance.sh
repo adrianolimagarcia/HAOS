@@ -139,6 +139,26 @@ else
     echo "--> 4. Drift dev <-> deploy: ⊘ pulado (sem ponteiro haos_dev_source ou fonte indisponivel)"
 fi
 
+# --- 5. eval suite (sinal, não gate) -----------------------------------------
+# A eval suite é registrada aqui como SINAL noturno: falha de caso vai para o
+# log do nightly mas NÃO aborta os demais passos nem vira FAILED (o gate da
+# suite continua sendo rodar `runner.py` manualmente — exit code = nº de falhas).
+# Saída JSON em <home>/evals/data/latest-run.json para consulta posterior.
+EVALS_DIR="${HAOS_HOME}/evals"
+EVAL_RUNNER="${EVALS_DIR}/runner.py"
+if [ -n "${PY:-}" ] && [ -f "${EVAL_RUNNER}" ]; then
+    echo "--> 5. Eval suite (--json; sinal, não gate)"
+    mkdir -p "${EVALS_DIR}/data"
+    if "$PY" "$EVAL_RUNNER" --json > "${EVALS_DIR}/data/latest-run.json" 2>"${EVALS_DIR}/data/latest-run.err"; then
+        echo "    ✓ eval suite: 0 falhas (JSON em data/latest-run.json)"
+    else
+        EVAL_RC=$?
+        echo "    ⚠ eval suite: $EVAL_RC falha(s) (sinal; não aborta o nightly) — JSON em data/latest-run.json, stderr em data/latest-run.err"
+    fi
+else
+    echo "--> 5. Eval suite: ⊘ pulado (python ou ${EVAL_RUNNER} ausente)"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
     echo "=== [Nightly Maintenance concluída com sucesso] ==="
 else

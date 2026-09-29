@@ -14,6 +14,7 @@ pub mod okf;
 mod profile;
 pub mod protocols;
 mod pty;
+pub mod raggraph;
 mod server;
 pub mod stt_engine;
 pub mod subagent_engine;
@@ -68,13 +69,13 @@ enum Commands {
         #[arg(long)]
         gateway_upstream: Option<String>,
 
-        /// Explicit profile identity; required for server startup.
-        #[arg(long)]
+        /// Explicit profile identity; defaults to "default".
+        #[arg(long, default_value = "default")]
         profile: String,
 
-        /// Explicit profile data directory; required for server startup.
+        /// Explicit profile data directory.
         #[arg(long)]
-        data_dir: PathBuf,
+        data_dir: Option<PathBuf>,
     },
 
     /// Fast diagnostics of HAOS environment and persistence
@@ -267,7 +268,19 @@ async fn main() {
             profile,
             data_dir,
         }) => {
-            let resolved = match profile::resolve_profile_data_dir(Some(&profile), Some(&data_dir))
+            let actual_profile = if profile.is_empty() || profile == "default" {
+                std::env::var("HAOS_PROFILE").unwrap_or_else(|_| "default".to_string())
+            } else {
+                profile
+            };
+            let actual_data_dir = data_dir.unwrap_or_else(|| {
+                std::env::var("HAOS_DATA_DIR")
+                    .or_else(|_| std::env::var("HAOS_HOME"))
+                    .or_else(|_| std::env::var("HERMES_HOME"))
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::from("/root/.haos"))
+            });
+            let resolved = match profile::resolve_profile_data_dir(Some(&actual_profile), Some(&actual_data_dir))
             {
                 Ok(binding) => binding,
                 Err(error) => {

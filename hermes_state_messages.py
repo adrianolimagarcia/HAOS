@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import time
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from agent.context_compressor import _DB_PERSISTED_MARKER as _DB_PERSISTED_MARKER_KEY, split_user_originated_turn
@@ -42,6 +43,15 @@ _SET_COUNTERS_SQL = "UPDATE sessions SET message_count = ?, tool_call_count = ?"
 _RESET_COUNTERS_SQL = "UPDATE sessions SET message_count = 0, tool_call_count = 0 WHERE id = ?"
 _SET_DISPLAY_META_SQL = "UPDATE messages SET display_metadata = ? WHERE id = ?"
 _ARCHIVE_ACTIVE_SQL = "UPDATE messages SET active = 0, compacted = 1 WHERE session_id = ? AND active = 1"
+# Stale memory-context cleanup: the fenced injection compose_user_api_content appends
+# after "\n\n" — non-greedy up to the closing fence, tolerant of the separator.
+_STALE_MEMORY_CONTEXT_RE = re.compile(r"\n{0,2}<memory-context>.*?</memory-context>", re.DOTALL)
+# Bounded rows per prune pass: a heavy session's first cleanup walks thousands of
+# historic rows, chunked so one stamp never holds the persist lock long.
+_STALE_MEMORY_CONTEXT_LIMIT = 2000
+# Reconcile gate: small stored-vs-active drift between counter bumps is normal
+# (archived tail, in-flight append) — only material divergence is corrected.
+_SESSION_MESSAGE_COUNT_GAP = 50
 _INVALID = object()  # _json_or sentinel where the fallback must be distinguishable from JSON null
 
 
@@ -681,6 +691,101 @@ class SessionMessagesMixin:
             "UPDATE messages SET api_content = ? WHERE id = ? AND session_id = ? "
             "AND role = 'user' AND active = 1 AND content IS ?",
             (_scrub_surrogates(api_content), row_id, session_id, self._encode_content(content)))
+
+    def prune_stale_memory_context(
+        self, session_id: str, keep_row_id: Optional[int] = None, *,
+        limit: Optional[int] = None,
+    ) -> int:
+        """Strip stale ``<memory-context>`` fences from OLDER user rows' ``api_content``.
+
+        The current turn's sidecar must keep the exact bytes it replayed (byte-stable
+        prompt cache, #6757), but every EARLIER user row in the session carries its own
+        copy of the same injected block, replayed on every later turn — the cascade that
+        inflated ``api_content`` to ~95% memory fences. Called right after the stamp
+        writes the live sidecar: the stamped row is exempt (``keep_row_id``; the newest
+        active user row stands in for positional stamps), and any older row whose
+        sidecar still embeds a fence gets it removed. Rows whose stripped sidecar then
+        equals their transcript content are set NULL — the canonical "no sidecar" form
+        (``session_persistence`` drops ``api_content == content`` at insert).
+
+        Bounded to ``_STALE_MEMORY_CONTEXT_LIMIT`` rows per pass (``limit``
+        overrides; converges over turns) and defensive against concurrent writers: the UPDATE re-matches the
+        exact ``api_content`` bytes read. Best-effort — callers wrap in
+        ``suppress(Exception)``; returns the number of rows changed.
+        """
+        if not session_id:
+            return 0
+        if isinstance(keep_row_id, int) and not isinstance(keep_row_id, bool) and keep_row_id > 0:
+            boundary_sql, boundary_params = "id < ?", (keep_row_id,)
+        else:
+            boundary_sql, boundary_params = (
+                "id < COALESCE((SELECT MAX(id) FROM messages "
+                "WHERE session_id = ? AND role = 'user' AND active = 1), 0)",
+                (session_id,),
+            )
+        _limit = _STALE_MEMORY_CONTEXT_LIMIT
+        if isinstance(limit, int) and not isinstance(limit, bool) and limit > 0:
+            _limit = limit
+        rows = self._read_all(
+            "SELECT id, content, api_content FROM messages WHERE session_id = ? "
+            "AND active = 1 AND role = 'user' AND " + boundary_sql + " "
+            "AND api_content LIKE '%<memory-context>%' LIMIT ?",
+            (session_id, *boundary_params, _limit),
+        )
+        updated = 0
+        for row in rows:
+            api_content = row["api_content"]
+            if not isinstance(api_content, str) or "<memory-context>" not in api_content:
+                continue
+            stripped = _STALE_MEMORY_CONTEXT_RE.sub("", api_content)
+            if stripped == api_content:
+                continue
+            content = self._decode_content(row["content"])
+            new_api_content = None if isinstance(content, str) and stripped == content else stripped
+            updated += self._write_rowcount(
+                "UPDATE messages SET api_content = ? WHERE id = ? AND session_id = ? "
+                "AND active = 1 AND role = 'user' AND api_content IS ?",
+                (new_api_content, int(row["id"]), session_id, api_content),
+            )
+        if updated:
+            logger.debug(
+                "pruned stale <memory-context> from %d user row(s) session=%s", updated, session_id,
+            )
+        return updated
+
+    def reconcile_session_message_counts(self, *, gap: int = _SESSION_MESSAGE_COUNT_GAP) -> int:
+        """One bounded pass realigning ``sessions.message_count`` with truth.
+
+        Canonical semantics (``archive_and_compact`` docstring): the counter is the
+        session's ACTIVE transcript count, and every writer resets to
+        ``_active_transcript_counts`` — but the incremental bump
+        (``message_count = message_count + inc``) only ADDS, so any increment whose
+        insert later vanished (rollback, delete, hot loop without a surviving row)
+        leaves the stored value permanently inflated: observed
+        ``message_count = 8,392,043`` against 76,239 rows (1,356 active). The
+        sidebar, pagination and watcher fingerprints all read the stored counter.
+
+        SQL-only (one ``GROUP BY session_id`` over the active-prefix index): sessions
+        whose stored count diverges from ``COUNT(*) WHERE active = 1`` by more than
+        *gap* are rewritten to the active count; sessions with no active rows keep
+        whatever they hold (the sidecar may be the only copy of their history);
+        ``tool_call_count`` is intentionally untouched — it is a SUM of per-message
+        call counts, not a row count. Returns the number of sessions corrected.
+        """
+        updated = self._write_rowcount(
+            "WITH actual AS ("
+            "  SELECT session_id AS sid, COUNT(*) AS n FROM messages "
+            "  WHERE active = 1 GROUP BY session_id"
+            ") "
+            "UPDATE sessions SET message_count = (SELECT n FROM actual WHERE sid = sessions.id) "
+            "WHERE (SELECT n FROM actual WHERE sid = sessions.id) > 0 "
+            "  AND ABS(COALESCE(message_count, 0) - (SELECT n FROM actual WHERE sid = sessions.id)) > ?",
+            (gap,),
+        )
+        if updated:
+            logger.info("reconciled message_count for %d session(s) diverging from active rows by > %d",
+                        updated, gap)
+        return updated
 
     def _display_dedupe_key(self, row) -> Tuple[Any, ...]:
         """Historical display identity, including normalized live content from user handoff carriers."""

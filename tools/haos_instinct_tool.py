@@ -35,6 +35,11 @@ def instincts_tool(
         if not rule or not rule.strip():
             return json.dumps({"success": False, "error": "Rule text cannot be empty."}, ensure_ascii=False)
         instinct = store.record_instinct(rule, category=category, project_scope=project_scope)
+        if instinct is None:
+            return json.dumps({
+                "success": False,
+                "error": "Rule text contains prompt-envelope scaffolding (e.g. '[A2A inbound', '[IMPORTANT:', '[System note') and was rejected. Record the learning rule itself, without the envelope.",
+            }, ensure_ascii=False)
         return json.dumps({
             "success": True,
             "action": "record",

@@ -833,6 +833,16 @@ def _stamp_api_content_sidecar(
                 # Compacted copies carry no row id; positional is safe only because
                 # archive_and_compact just made this message the newest active user row.
                 _db.set_latest_user_api_content(agent.session_id, durable_content, _api_content)
+            # Cascade cleanup: the stamp above refreshed the LIVE sidecar, but every
+            # older user row in this session still replays its own copy of the same
+            # <memory-context> injection. Prune those stale fences now (bounded,
+            # row-guarded, best-effort) so the durable replay prefix stops compounding
+            # one block per turn. The row just stamped keeps its exact bytes.
+            if hasattr(_db, "prune_stale_memory_context"):
+                with suppress(Exception):
+                    _db.prune_stale_memory_context(
+                        agent.session_id, _row_id if isinstance(_row_id, int) else None,
+                    )
         except Exception:
             logger.warning("api_content backfill failed for session=%s", agent.session_id or "none", exc_info=True)
 
