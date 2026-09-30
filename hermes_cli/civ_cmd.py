@@ -130,6 +130,14 @@ def cmd_civ(args) -> int:
         return _action_curator_run(mgrs, args, as_json)
     elif action == "graph":
         return _action_graph(mgrs, as_json)
+    elif action == "simulate":
+        return _action_simulate(mgrs, args, as_json)
+    elif action == "reputation":
+        return _action_reputation(mgrs, args, as_json)
+    elif action == "kernel-trace":
+        return _action_kernel_trace(mgrs, args, as_json)
+    elif action == "memory-provenance":
+        return _action_memory_provenance(mgrs, args, as_json)
     else:
         print(f"Unknown action: {action}")
         return 1
@@ -471,3 +479,135 @@ def _action_graph(mgrs: Dict[str, Any], as_json: bool) -> int:
         print(f"Event Cursor: {graph['cursor']}")
     return 0
 
+
+def _action_simulate(mgrs: Dict[str, Any], args: Any, as_json: bool) -> int:
+    from hermes.platform.kernel.simulation import SimulationEngine
+    from hermes.platform.kernel.digital_twin import ProjectDigitalTwin
+    import os
+
+    task = getattr(args, "task", "")
+    target_files = getattr(args, "target_files", None) or []
+    workspace_root = os.getcwd()
+
+    digital_twin = ProjectDigitalTwin(root_dir=workspace_root)
+    engine = SimulationEngine(digital_twin=digital_twin)
+    report = engine.simulate(task_prompt=task, target_files=target_files)
+
+    if as_json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print("=== Civilization 3.0 Simulation Report ===")
+        print(f"Simulation ID:     {report.simulation_id}")
+        print(f"Risk Level:        {report.risk_level}")
+        print(f"Policy Status:     {report.policy_status}")
+        print(f"Estimated Cost:    ${report.estimated_cost_usd:.4f}")
+        print(f"Estimated Tokens:  {report.estimated_tokens}")
+        print(f"Duration:          {report.duration_ms:.2f} ms")
+        print(f"Predicted Steps ({len(report.predicted_steps)}):")
+        for step in report.predicted_steps:
+            print(f"  - {step}")
+        print(f"Blast Radius:")
+        print(f"  - Target files:    {len(report.blast_radius.target_files)}")
+        print(f"  - Dependent files: {len(report.blast_radius.affected_dependents)}")
+        print(f"  - Tests to run:    {len(report.blast_radius.associated_tests)}")
+        print(f"  - Total impacted:  {report.blast_radius.total_impacted_files}")
+        print(f"  - Risk score:      {report.blast_radius.risk_score:.2f}")
+        print(f"  - Council req:     {report.blast_radius.requires_council_approval}")
+    return 0
+
+
+def _action_reputation(mgrs: Dict[str, Any], args: Any, as_json: bool) -> int:
+    from hermes.platform.kernel.reputation import AgentReputationEngine
+    from hermes.platform.kernel.contract import ToolRiskTier
+
+    agent_id = getattr(args, "agent_id", None)
+    engine = AgentReputationEngine(event_store=mgrs.get("store"))
+
+    # Seed engine with existing bots if empty
+    if mgrs.get("bots"):
+        for bot in mgrs["bots"].list():
+            b_id = getattr(bot, "id", None) or bot.get("id")
+            b_domain = getattr(bot, "domain", "general") or (bot.get("domain") if isinstance(bot, dict) else "general")
+            engine.get_or_create(agent_id=b_id, domain=b_domain)
+
+    if agent_id:
+        record = engine.get_or_create(agent_id=agent_id)
+        if as_json:
+            print(json.dumps(record.to_dict(), indent=2))
+        else:
+            print(f"=== Agent Reputation: {record.agent_id} ===")
+            print(f"Role:            {record.role}")
+            print(f"Domain:          {record.domain}")
+            print(f"Trust Score:     {record.trust_score:.4f}")
+            print(f"Can Critical:    {record.can_execute_risk_tier(ToolRiskTier.CRITICAL)}")
+            print(f"Tasks Total:     {record.total_tasks}")
+            print(f"Successes:       {record.successes}")
+            print(f"Failures:        {record.failures}")
+            print(f"Rollbacks:       {record.rollbacks}")
+            print(f"Success Rate:    {record.success_rate:.2%}")
+            print(f"Rollback Rate:   {record.rollback_rate:.2%}")
+            print(f"Avg Cost USD:    ${record.avg_cost_usd:.4f}")
+    else:
+        records = engine.list_all()
+        if as_json:
+            print(json.dumps([r.to_dict() for r in records], indent=2))
+        else:
+            print(f"=== Agent Reputations ({len(records)} registered) ===")
+            for r in records:
+                print(f"- {r.agent_id} ({r.role} / {r.domain}): trust={r.trust_score:.2f} successes={r.successes} rollbacks={r.rollbacks}")
+    return 0
+
+
+def _action_kernel_trace(mgrs: Dict[str, Any], args: Any, as_json: bool) -> int:
+    from hermes.platform.kernel.tracer import DistributedKernelTracer
+
+    trace_id = getattr(args, "trace_id", None)
+    if not trace_id:
+        print("Error: --trace-id is required")
+        return 1
+
+    tracer = DistributedKernelTracer()
+    spans = tracer.get_trace(trace_id)
+    if not spans:
+        print(f"Trace {trace_id} not found.")
+        return 1
+
+    if as_json:
+        print(json.dumps([s.to_dict() for s in spans], indent=2))
+    else:
+        print(f"=== Kernel Trace: {trace_id} ({len(spans)} spans) ===")
+        tree = tracer.render_trace_tree(trace_id)
+        print(tree)
+    return 0
+
+
+def _action_memory_provenance(mgrs: Dict[str, Any], args: Any, as_json: bool) -> int:
+    from hermes.platform.kernel.memory import TieredMemoryArchitecture
+
+    memory_id = getattr(args, "memory_id", None)
+    if not memory_id:
+        print("Error: --memory-id is required")
+        return 1
+
+    mem_arch = TieredMemoryArchitecture()
+    prov = mem_arch.dump_provenance(memory_id)
+    if not prov:
+        print(f"Memory item {memory_id} not found.")
+        return 1
+
+    if as_json:
+        print(json.dumps(prov, indent=2))
+    else:
+        print(f"=== Memory Record Provenance: {prov['id']} ===")
+        print(f"Scope:        {prov['scope']}")
+        print(f"Confidence:   {prov['confidence']:.4f}")
+        print(f"Source Agent: {prov['source_agent']}")
+        print(f"Task ID:      {prov['task_id']}")
+        print(f"Created:      {prov['created']}")
+        print(f"Parent ID:    {prov.get('parent_id') or 'None'}")
+        print(f"Signature:    {prov['signature']}")
+        print(f"Validations:  {len(prov.get('validated_by', []))}")
+        for v in prov.get("validated_by", []):
+            print(f"  * Validator: {v}")
+        print(f"Value:\n{prov['value']}")
+    return 0

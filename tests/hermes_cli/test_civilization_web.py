@@ -167,3 +167,160 @@ def test_evolution_curator_endpoints(client, homes):
     assert res_run.json()["status"] == "completed"
     assert res_run.json()["dry_run"] is True
 
+
+def test_civilization_control_plane_agents(client, homes):
+    root, other = homes
+
+    # 1. Available Models
+    res_models = client.get("/api/civilization/models/available")
+    assert res_models.status_code == 200
+    models_data = res_models.json()
+    assert "models" in models_data
+    assert len(models_data["models"]) >= 5
+    assert any(m["id"] == "deepseek-v4-flash" for m in models_data["models"])
+
+    # 2. List initial agents with model resolution
+    res_agents = client.get("/api/civilization/agents")
+    assert res_agents.status_code == 200
+    agents_data = res_agents.json()
+    assert "agents" in agents_data
+    assert len(agents_data["agents"]) >= 5
+    arch = next(a for a in agents_data["agents"] if a["id"] == "architect-001")
+    assert arch["effective_model"] == "deepseek-v4-flash"
+    assert arch["model_source"] in ("SESSION_MODEL", "GLOBAL_DEFAULT")
+
+    # 3. Constitutional Invariant: Non-PROMOTER cannot write to global_civ memory
+    illegal_payload = {
+        "id": "illegal-agent",
+        "name": "Illegal Agent",
+        "role": "builder",
+        "domain": "Testing",
+        "description": "Attempting illegal global memory write",
+        "status": "active",
+        "model": {"inherit": True},
+        "capabilities": {"allowed_tools": ["read_file"], "max_risk_tier": "LOW", "allowed_write_paths": []},
+        "memory": {"working": True, "session": True, "project": True, "domain": False, "global_civ": True},
+        "budget": {"max_tokens": 100000, "timeout_seconds": 600, "max_cost_usd": 2.0, "max_iterations": 10},
+        "policies": {"require_human_approval": [], "risk_tolerance": "CONSERVATIVE"},
+    }
+    res_illegal = client.post("/api/civilization/agents", json=illegal_payload)
+    assert res_illegal.status_code == 400
+    assert "strictly forbidden from writing to GLOBAL memory scope" in res_illegal.text
+
+    # 4. Valid Agent Creation with Agent Override
+    valid_payload = {
+        "id": "code-auditor",
+        "name": "Code Auditor",
+        "role": "critic",
+        "domain": "Security",
+        "description": "Specialized security reviewer",
+        "status": "active",
+        "model": {"inherit": False, "model_name": "claude-3-7-sonnet"},
+        "capabilities": {"allowed_tools": ["read_file", "git"], "max_risk_tier": "READ", "allowed_write_paths": []},
+        "memory": {"working": True, "session": True, "project": True, "domain": False, "global_civ": False},
+        "budget": {"max_tokens": 100000, "timeout_seconds": 600, "max_cost_usd": 2.0, "max_iterations": 10},
+        "policies": {"require_human_approval": ["merge"], "risk_tolerance": "CONSERVATIVE"},
+    }
+    res_create = client.post("/api/civilization/agents", json=valid_payload)
+    assert res_create.status_code == 200
+    created = res_create.json()
+    assert created["id"] == "code-auditor"
+    assert created["effective_model"] == "claude-3-7-sonnet"
+    assert created["model_source"] == "AGENT_OVERRIDE"
+
+    # 5. Detail endpoint
+    res_detail = client.get("/api/civilization/agents/code-auditor")
+    assert res_detail.status_code == 200
+    assert res_detail.json()["id"] == "code-auditor"
+
+    # 6. Update agent
+    valid_payload["description"] = "Updated security description"
+    res_update = client.put("/api/civilization/agents/code-auditor", json=valid_payload)
+    assert res_update.status_code == 200
+    assert res_update.json()["description"] == "Updated security description"
+
+    # 7. Duplicate agent
+    res_dup = client.post("/api/civilization/agents/code-auditor/duplicate")
+    assert res_dup.status_code == 200
+    dup_agent = res_dup.json()
+    assert dup_agent["id"] == "code-auditor-copy"
+    assert "Copy" in dup_agent["name"]
+
+    # 8. Export agent
+    res_export = client.post("/api/civilization/agents/code-auditor/export")
+    assert res_export.status_code == 200
+    assert res_export.json()["id"] == "code-auditor"
+
+    # 9. Import agent
+    imported_payload = dict(valid_payload)
+    imported_payload["id"] = "imported-bot"
+    imported_payload["name"] = "Imported Bot"
+    res_import = client.post("/api/civilization/agents/import", json=imported_payload)
+    assert res_import.status_code == 200
+    assert res_import.json()["id"] == "imported-bot"
+
+
+def test_civilization_mission_center(client, homes):
+    # 1. List Missions
+    res_missions = client.get("/api/civilization/missions")
+    assert res_missions.status_code == 200
+    missions_list = res_missions.json()["missions"]
+    assert len(missions_list) >= 1
+    m0 = missions_list[0]
+    mission_id = m0["id"]
+
+    # 2. Get Mission Detail
+    res_detail = client.get(f"/api/civilization/missions/{mission_id}")
+    assert res_detail.status_code == 200
+    assert res_detail.json()["id"] == mission_id
+
+    # 3. Simulate Mission (Dry-Run via SimulationEngine)
+    res_sim = client.post(f"/api/civilization/missions/{mission_id}/simulate")
+    assert res_sim.status_code == 200
+    sim_data = res_sim.json()
+    assert "simulation_id" in sim_data
+    assert "estimated_tokens" in sim_data
+    assert "estimated_cost_usd" in sim_data
+    assert "blast_radius" in sim_data
+    assert "predicted_steps" in sim_data
+
+    # 4. Start Mission
+    res_start = client.post(f"/api/civilization/missions/{mission_id}/start")
+    assert res_start.status_code == 200
+    assert res_start.json()["status"] == "RUNNING"
+
+    # 5. Pause Mission
+    res_pause = client.post(f"/api/civilization/missions/{mission_id}/pause")
+    assert res_pause.status_code == 200
+    assert res_pause.json()["status"] == "PAUSED"
+
+    # 6. Resume Mission
+    res_resume = client.post(f"/api/civilization/missions/{mission_id}/resume")
+    assert res_resume.status_code == 200
+    assert res_resume.json()["status"] == "RUNNING"
+
+    # 7. Get Timeline Events
+    res_events = client.get(f"/api/civilization/missions/{mission_id}/events")
+    assert res_events.status_code == 200
+    assert len(res_events.json()["events"]) >= 3
+
+    # 8. Create Custom Mission
+    new_mission_payload = {
+        "title": "Build Realtime WebSocket Gateway",
+        "goal": "Implement asynchronous WebSocket bridge with heartbeats.",
+        "agents": ["architect-001", "builder-002"],
+    }
+    res_create_m = client.post("/api/civilization/missions", json=new_mission_payload)
+    assert res_create_m.status_code == 200
+    new_m = res_create_m.json()
+    assert new_m["title"] == "Build Realtime WebSocket Gateway"
+    assert new_m["status"] == "DRAFT"
+
+    # 9. Record Human Approval Decision
+    res_appr = client.post("/api/civilization/approvals/appr-123/decision", json={
+        "approved": True,
+        "reason": "Reviewed code and test coverage looks great."
+    })
+    assert res_appr.status_code == 200
+    assert res_appr.json()["status"] == "recorded"
+    assert res_appr.json()["approved"] is True

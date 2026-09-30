@@ -66,3 +66,620 @@
 @media(max-width:1000px){.civ-columns{grid-template-columns:1fr}.civ-tree{min-height:300px;max-height:650px}.civ-rail{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.civ-shell{padding:22px 16px}.civ-heading{align-items:flex-start;flex-direction:column}.civ-heading h1{font-size:2.6rem}.civ-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.civ-metric{min-height:110px}.civ-rail{grid-template-columns:1fr}.civ-footer{flex-direction:column}}
 @media(prefers-reduced-motion:reduce){.civ-node{transition:none}.civ-node:hover{transform:none}}
+
+/* ==========================================================================
+   Liquid Glass Neumorphic System — Control Plane, Mission Center & 2D Office
+   ========================================================================== */
+
+/* Top Navigation Pills */
+.civ-nav-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(14, 23, 38, 0.65);
+  border: 1px solid var(--line);
+  padding: 6px;
+  border-radius: 18px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.4), inset -1px -1px 2px rgba(255, 255, 255, 0.05);
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
+
+.civ-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.civ-tab-btn:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.civ-tab-btn.is-active {
+  color: #a2f2eb;
+  background: rgba(72, 175, 189, 0.22);
+  border-color: rgba(101, 224, 195, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+/* Agent Studio Grid & Cards */
+.civ-agent-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.civ-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.civ-agent-card {
+  padding: 20px;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 250px;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.civ-agent-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(142, 229, 215, 0.4);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+}
+
+.civ-agent-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.civ-agent-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.civ-role-badge {
+  font-size: 0.64rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.civ-role-planner { background: rgba(96, 165, 250, 0.2); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.35); }
+.civ-role-builder { background: rgba(52, 211, 153, 0.2); color: #6ee7b7; border: 1px solid rgba(52, 211, 153, 0.35); }
+.civ-role-critic { background: rgba(248, 113, 113, 0.2); color: #fca5a5; border: 1px solid rgba(248, 113, 113, 0.35); }
+.civ-role-validator { background: rgba(251, 191, 36, 0.2); color: #fde68a; border: 1px solid rgba(251, 191, 36, 0.35); }
+.civ-role-promoter { background: rgba(192, 132, 252, 0.2); color: #d8b4fe; border: 1px solid rgba(192, 132, 252, 0.35); }
+.civ-role-security { background: rgba(236, 72, 153, 0.2); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.35); }
+
+.civ-model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  color: #c9e4ed;
+}
+
+.civ-model-pill.is-override {
+  background: rgba(101, 224, 195, 0.12);
+  border-color: rgba(101, 224, 195, 0.35);
+  color: #a2f2eb;
+}
+
+.civ-agent-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  margin-top: 14px;
+}
+
+.civ-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.civ-btn-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+  padding: 6px 11px;
+  border-radius: 9px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.civ-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.civ-btn-primary {
+  border: 1px solid rgba(101, 224, 195, 0.6);
+  background: linear-gradient(135deg, rgba(53, 142, 156, 0.65) 0%, rgba(35, 117, 131, 0.8) 100%);
+  color: #e6fffb;
+  padding: 8px 16px;
+  border-radius: 11px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.25);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.civ-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(53, 142, 156, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.35);
+}
+
+.civ-btn-primary:active {
+  transform: scale(0.98);
+}
+
+/* Neumorphic Modal Backdrop & Dialog */
+.civ-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(4, 9, 18, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.civ-modal-dialog {
+  width: 100%;
+  max-width: 760px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(16, 26, 44, 0.92);
+  border: 1px solid rgba(213, 232, 255, 0.2);
+  border-radius: 24px;
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.6), inset 0 1px 2px rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.civ-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.civ-modal-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 12px 24px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.civ-modal-tab {
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.77rem;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.civ-modal-tab.is-active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(213, 232, 255, 0.2);
+  color: var(--ink);
+}
+
+.civ-modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  display: grid;
+  gap: 18px;
+}
+
+.civ-form-group {
+  display: grid;
+  gap: 7px;
+}
+
+.civ-form-group label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #c0d8e8;
+  letter-spacing: 0.02em;
+}
+
+.civ-input, .civ-select, .civ-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(9, 15, 28, 0.65);
+  box-shadow: inset 1px 2px 4px rgba(0, 0, 0, 0.5), inset -1px -1px 2px rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.83rem;
+  outline: none;
+  transition: border-color 0.18s;
+}
+
+.civ-input:focus, .civ-select:focus, .civ-textarea:focus {
+  border-color: #65e0c3;
+  box-shadow: inset 1px 2px 4px rgba(0, 0, 0, 0.5), 0 0 10px rgba(101, 224, 195, 0.25);
+}
+
+/* Model Cascade Resolution Box */
+.civ-cascade-box {
+  padding: 14px 18px;
+  background: rgba(14, 24, 40, 0.6);
+  border: 1px dashed rgba(101, 224, 195, 0.4);
+  border-radius: 14px;
+  display: grid;
+  gap: 8px;
+  font-size: 0.78rem;
+}
+
+.civ-cascade-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Mission Center & DAG Flow */
+.civ-mission-banner {
+  padding: 18px 22px;
+  border-radius: 18px;
+  background: rgba(11, 21, 37, 0.6);
+  border: 1px solid var(--line);
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.civ-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  margin-top: 10px;
+}
+
+.civ-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8 0%, #34d399 100%);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.civ-dag-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  overflow-x: auto;
+}
+
+.civ-dag-step {
+  padding: 16px;
+  border-radius: 16px;
+  min-width: 180px;
+  background: rgba(16, 26, 44, 0.7);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+}
+
+.civ-dag-step.is-done {
+  border-color: rgba(52, 211, 153, 0.5);
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.15);
+}
+
+.civ-dag-arrow {
+  color: var(--muted);
+  flex: none;
+}
+
+/* Simulation Modal / Flight Simulator */
+.civ-sim-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.civ-sim-stat {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(10, 18, 32, 0.55);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+}
+
+.civ-sim-stat small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.civ-sim-stat strong {
+  font-size: 1.3rem;
+  color: var(--ink);
+}
+
+/* 2D Robot Office Simulation Floor */
+.civ-office-floor {
+  position: relative;
+  width: 100%;
+  min-height: 480px;
+  background: radial-gradient(circle at 50% 50%, rgba(20, 36, 60, 0.7) 0%, rgba(9, 15, 26, 0.95) 100%);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8), 0 24px 48px rgba(0, 0, 0, 0.4);
+  padding: 24px;
+}
+
+.civ-office-grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  pointer-events: none;
+}
+
+.civ-office-stations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  position: relative;
+  z-index: 2;
+}
+
+.civ-station-desk {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(15, 24, 42, 0.75);
+  border: 1px solid rgba(213, 232, 255, 0.12);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  transition: transform 0.2s;
+}
+
+.civ-station-desk:hover {
+  transform: translateY(-2px);
+  border-color: rgba(101, 224, 195, 0.35);
+}
+
+.civ-robot-figure {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(46, 80, 116, 0.7) 0%, rgba(26, 48, 74, 0.9) 100%);
+  border: 2px solid rgba(142, 229, 215, 0.4);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  position: relative;
+}
+
+.civ-robot-figure.is-working {
+  animation: civRobotWork 1.8s ease-in-out infinite alternate;
+  border-color: #65e0c3;
+  box-shadow: 0 0 16px rgba(101, 224, 195, 0.45);
+}
+
+@keyframes civRobotWork {
+  0% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-4px) scale(1.02); }
+  100% { transform: translateY(0px) scale(1); }
+}
+
+.civ-robot-bubble {
+  position: absolute;
+  top: -24px;
+  right: -24px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(14, 22, 38, 0.9);
+  border: 1px solid var(--line);
+  color: #8de9e8;
+  white-space: nowrap;
+}
+
+/* ── Civilization constellation 3D (graph view) ───────────────────────── */
+
+.civ-constellation {
+  position: relative;
+  width: 100%;
+  /* Fit the viewport instead of pushing the page into a long scroll. */
+  height: clamp(320px, 62vh, 660px);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: rgba(2, 6, 16, 0.9);
+  /* Own the gestures so the wheel over the canvas never scrolls the page. */
+  overscroll-behavior: contain;
+}
+
+.civ-constellation-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+}
+.civ-constellation-canvas:active { cursor: grabbing; }
+.civ-constellation-canvas:focus-visible { box-shadow: inset 0 0 0 2px rgba(145, 214, 229, 0.7); }
+
+.civ-constellation-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(6, 12, 24, 0.72);
+  border: 1px solid var(--line);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media (max-width: 720px) { .civ-constellation-hint { display: none; } }
+
+.civ-constellation-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(6, 12, 24, 0.72);
+  border: 1px solid var(--line);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  pointer-events: none;
+}
+.civ-legend-item { display: flex; align-items: center; gap: 6px; }
+.civ-legend-item i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+.civ-constellation-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.civ-constellation-controls button {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(6, 12, 24, 0.78);
+  color: var(--ink);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.civ-constellation-controls button:hover { background: rgba(101, 224, 195, 0.16); border-color: #65e0c3; }
+
+/* ── Graph view layout ────────────────────────────────────────────────────
+   minmax(0,1fr) is required: a bare 1fr track floors at min-content, and the
+   long agent ids below never wrap, which otherwise forces the whole grid
+   wider than the viewport and pushes the page into a horizontal scroll. */
+
+.civ-graph-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+
+.civ-graph-stage {
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 16px;
+  padding: 10px;
+  border: 1px solid var(--line);
+}
+
+.civ-graph-links-title {
+  margin: 18px 4px 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.civ-graph-links {
+  max-height: 180px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.civ-graph-link {
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.civ-graph-link span { min-width: 0; overflow-wrap: anywhere; }
+.civ-graph-link code { overflow-wrap: anywhere; }
+.civ-graph-link strong { color: #91d6e5; flex: none; }
+
+@media (max-width: 980px) {
+  .civ-graph-layout { grid-template-columns: minmax(0, 1fr); }
+}

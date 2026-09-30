@@ -2,6 +2,7 @@ pub mod compactor;
 pub mod okf;
 pub mod profile;
 pub mod raggraph;
+pub mod vector_search;
 pub mod worker_snapshot;
 pub mod writer_envelope;
 pub mod writer_executor;
@@ -344,6 +345,130 @@ pub extern "C" fn vector_engine_search_buffered(
             json_bytes.len(),
         );
         *out_buf.add(json_bytes.len()) = 0; // null-terminator
+    }
+
+    json_bytes.len() as c_int
+}
+
+/// Upsert de vetor com suporte nativo a Parent-Child (Hierárquico) e Score de Confiança.
+#[no_mangle]
+pub extern "C" fn vector_engine_upsert_parent_child(
+    db_path_cstr: *const c_char,
+    record_id_cstr: *const c_char,
+    model_version_cstr: *const c_char,
+    vector_ptr: *const c_float,
+    vector_len: c_int,
+    parent_id_cstr: *const c_char,
+    confidence: c_float,
+    text_snippet_cstr: *const c_char,
+    parent_content_cstr: *const c_char,
+) -> c_int {
+    if db_path_cstr.is_null()
+        || record_id_cstr.is_null()
+        || model_version_cstr.is_null()
+        || vector_ptr.is_null()
+        || vector_len <= 0
+    {
+        return -1;
+    }
+
+    let db_path = unsafe { CStr::from_ptr(db_path_cstr).to_string_lossy() };
+    let record_id = unsafe { CStr::from_ptr(record_id_cstr).to_string_lossy() };
+    let model_version = unsafe { CStr::from_ptr(model_version_cstr).to_string_lossy() };
+    let vector = unsafe { std::slice::from_raw_parts(vector_ptr, vector_len as usize) };
+
+    let parent_id = if !parent_id_cstr.is_null() {
+        Some(unsafe { CStr::from_ptr(parent_id_cstr).to_string_lossy() })
+    } else {
+        None
+    };
+
+    let text_snippet = if !text_snippet_cstr.is_null() {
+        Some(unsafe { CStr::from_ptr(text_snippet_cstr).to_string_lossy() })
+    } else {
+        None
+    };
+
+    let parent_content = if !parent_content_cstr.is_null() {
+        Some(unsafe { CStr::from_ptr(parent_content_cstr).to_string_lossy() })
+    } else {
+        None
+    };
+
+    let p = Path::new(&*db_path);
+    match vector_search::NativeVectorEngine::upsert_parent_child_vector(
+        p,
+        &*record_id,
+        &*model_version,
+        vector,
+        parent_id.as_deref(),
+        confidence,
+        text_snippet.as_deref(),
+        parent_content.as_deref(),
+    ) {
+        Ok(_) => 0,
+        Err(_) => -2,
+    }
+}
+
+/// Busca vetorial hierárquica Parent-Child ponderada por confiança (SIMD AVX2).
+/// Busca vetorialmente no vetor do Child e devolve o contexto expandido do Parent.
+#[no_mangle]
+pub extern "C" fn vector_engine_search_parent_child_buffered(
+    db_path_cstr: *const c_char,
+    model_version_cstr: *const c_char,
+    query_ptr: *const c_float,
+    query_len: c_int,
+    limit: c_int,
+    min_confidence: c_float,
+    deduplicate_parent: c_int,
+    out_buf: *mut c_char,
+    out_buf_cap: c_int,
+) -> c_int {
+    if db_path_cstr.is_null()
+        || model_version_cstr.is_null()
+        || query_ptr.is_null()
+        || query_len <= 0
+        || limit <= 0
+        || out_buf.is_null()
+        || out_buf_cap <= 1
+    {
+        return -1;
+    }
+
+    let db_path = unsafe { CStr::from_ptr(db_path_cstr).to_string_lossy() };
+    let model_version = unsafe { CStr::from_ptr(model_version_cstr).to_string_lossy() };
+    let query_vector = unsafe { std::slice::from_raw_parts(query_ptr, query_len as usize) };
+    let p = Path::new(&*db_path);
+
+    let res = match vector_search::NativeVectorEngine::search_parent_child_vectors(
+        p,
+        query_vector,
+        &*model_version,
+        limit as usize,
+        min_confidence,
+        deduplicate_parent != 0,
+    ) {
+        Ok(r) => r,
+        Err(_) => return -2,
+    };
+
+    let json_bytes = match serde_json::to_vec(&res) {
+        Ok(b) => b,
+        Err(_) => return -3,
+    };
+
+    if json_bytes.len() >= (out_buf_cap as usize) {
+        return -4;
+    }
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            json_bytes.as_ptr() as *const c_char,
+            out_buf,
+            json_bytes.len(),
+        );
+        *out_buf.add(json_bytes.len()) = 0;
     }
 
     json_bytes.len() as c_int
@@ -1057,6 +1182,55 @@ mod tests {
         assert_eq!(fts_parsed[0]["record_id"], "rec1");
 
         let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn test_parent_child_c_abi_functions() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("c_abi_vectors.db");
+        let c_db_path = std::ffi::CString::new(db_path.to_str().unwrap()).unwrap();
+        let c_model = std::ffi::CString::new("model_v1").unwrap();
+
+        // 1. Upsert Parent-Child via C-ABI
+        let vec_data = vec![0.5f32, 0.5, 0.5, 0.5];
+        let c_rec_id = std::ffi::CString::new("child_c_abi").unwrap();
+        let c_parent_id = std::ffi::CString::new("parent_note_1").unwrap();
+        let c_snippet = std::ffi::CString::new("Fato filho").unwrap();
+        let c_parent_content = std::ffi::CString::new("Documento pai completo").unwrap();
+
+        let up_ret = vector_engine_upsert_parent_child(
+            c_db_path.as_ptr(),
+            c_rec_id.as_ptr(),
+            c_model.as_ptr(),
+            vec_data.as_ptr(),
+            vec_data.len() as c_int,
+            c_parent_id.as_ptr(),
+            0.95,
+            c_snippet.as_ptr(),
+            c_parent_content.as_ptr(),
+        );
+        assert_eq!(up_ret, 0);
+
+        // 2. Search Parent-Child via C-ABI
+        let mut buf = vec![0u8; 4096];
+        let q_vec = vec![0.5f32, 0.5, 0.5, 0.5];
+        let s_ret = vector_engine_search_parent_child_buffered(
+            c_db_path.as_ptr(),
+            c_model.as_ptr(),
+            q_vec.as_ptr(),
+            q_vec.len() as c_int,
+            5,
+            0.5,
+            1, // dedup
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() as c_int,
+        );
+        assert!(s_ret > 0);
+        let parsed: Vec<serde_json::Value> = serde_json::from_slice(&buf[..s_ret as usize]).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0]["record_id"], "child_c_abi");
+        assert_eq!(parsed[0]["parent_id"], "parent_note_1");
+        assert_eq!(parsed[0]["parent_content"], "Documento pai completo");
     }
 }
 

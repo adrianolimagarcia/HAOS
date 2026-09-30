@@ -107,6 +107,27 @@ def build_civ_parser(subparsers) -> None:
     civ_graph = civ_subparsers.add_parser("graph", help="Project civilization graph DAG (nodes and edges)")
     civ_graph.add_argument("--json", action="store_true", help="Output as JSON")
 
+    # haos civ simulate
+    civ_sim = civ_subparsers.add_parser("simulate", help="Run zero-mutation dry-run task simulation (Digital Twin & Blast Radius)")
+    civ_sim.add_argument("--task", required=True, help="Task prompt or description to simulate")
+    civ_sim.add_argument("--target-files", nargs="*", help="Optional target file paths")
+    civ_sim.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # haos civ reputation
+    civ_rep = civ_subparsers.add_parser("reputation", help="Inspect agent trust scores and reputation metrics")
+    civ_rep.add_argument("--agent-id", help="Optional specific agent ID")
+    civ_rep.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # haos civ kernel-trace
+    civ_tr = civ_subparsers.add_parser("kernel-trace", help="Inspect distributed kernel execution traces")
+    civ_tr.add_argument("--trace-id", required=True, help="Trace ID to inspect")
+    civ_tr.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # haos civ memory-provenance
+    civ_prov = civ_subparsers.add_parser("memory-provenance", help="Inspect memory provenance and validation chain")
+    civ_prov.add_argument("--memory-id", required=True, help="Memory item ID to inspect")
+    civ_prov.add_argument("--json", action="store_true", help="Output as JSON")
+
     def _dispatch_civ(args):
         from hermes_cli.civ_cmd import cmd_civ
 

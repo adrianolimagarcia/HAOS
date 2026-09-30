@@ -53,6 +53,30 @@ def is_prompt_envelope(text: str) -> bool:
     return any(marker in text for marker in ENVELOPE_MARKERS)
 
 
+def calculate_initial_confidence(rule: str, category: str = "workflow") -> float:
+    """Calcula a confiança inicial calibrada por evidência.
+
+    Fatos técnicos verificáveis e decisões de arquitetura começam com alta confiança
+    (0.85 a 0.95), promovendo automaticamente sem precisar de repetição cega.
+    Lições operacionais comuns começam no padrão 0.30 e sobem por reforço.
+    """
+    text = rule.strip().lower()
+
+    # Perguntas, mensagens de saudação ou scaffolding
+    if text.endswith("?") or text.startswith(("olá", "ola", "bom dia", "por favor", "responda", "###")):
+        return INITIAL_CONFIDENCE
+
+    # Decisões arquiteturais, convenções canônicas e ADRs
+    if any(k in text for k in ("adr-", "arquitetura:", "decisão aceita", "decisao aceita")):
+        return 0.95
+
+    # Fatos técnicos concretos verificados com portas/ips/serviços explícitos
+    if any(k in text for k in ("porta 127.0.0.1:", "systemd service", "proxy socks5 ativo")):
+        return 0.85
+
+    return INITIAL_CONFIDENCE
+
+
 @dataclass
 class Instinct:
     id: str
@@ -143,6 +167,7 @@ class InstinctStore:
         category: str = "workflow",
         project_scope: str = "global",
         tags: Optional[List[str]] = None,
+        initial_confidence: Optional[float] = None,
     ) -> Optional[Instinct]:
         """Create or reinforce an atomic instinct.
 
@@ -164,11 +189,17 @@ class InstinctStore:
             if tags:
                 instinct.tags = list(set(instinct.tags + tags))
         else:
+            base_conf = (
+                initial_confidence
+                if initial_confidence is not None
+                else calculate_initial_confidence(rule, category)
+            )
             instinct = Instinct(
                 id=instinct_id,
                 rule=rule.strip(),
                 category=category,
                 project_scope=project_scope,
+                confidence=base_conf,
                 tags=tags or [],
             )
             instincts[instinct_id] = instinct

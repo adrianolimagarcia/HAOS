@@ -1154,6 +1154,46 @@ fn extract_memory_session_edges(
             }
         }
 
+        // Causal relationships (Hindsight TEMPR/CARA model): caused_by, corrected_by, supports, derived_from
+        let causal_mappings = [
+            ("caused_by", "CAUSED_BY"),
+            ("corrected_by", "CORRECTED_BY"),
+            ("supports", "SUPPORTS"),
+            ("derived_from", "DERIVED_FROM"),
+        ];
+
+        for (field_key, rel_type) in causal_mappings {
+            if let Some(val) = meta.get(field_key) {
+                let targets: Vec<String> = if let Some(s) = val.as_str() {
+                    vec![s.to_string()]
+                } else if let Some(arr) = val.as_array() {
+                    arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                } else {
+                    vec![]
+                };
+
+                for t in targets {
+                    let clean = t.trim().to_string();
+                    if !clean.is_empty() {
+                        let target_id = if clean.starts_with("session:") || clean.starts_with("memory:") || clean.starts_with("adr:") {
+                            clean.clone()
+                        } else {
+                            format!("session:{clean}")
+                        };
+                        if seen.insert((target_id.clone(), rel_type.to_string())) {
+                            edges.push(GraphEdge {
+                                source_id: mem_node_id.to_string(),
+                                target_id,
+                                edge_type: rel_type.to_string(),
+                                weight: 1.0,
+                                metadata_json: "{}".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // Tags dentro do JSON de metadados
         if let Some(tags_val) = meta.get("tags") {
             if let Some(arr) = tags_val.as_array() {
@@ -1351,9 +1391,9 @@ mod tests {
                 PRIMARY KEY(record_id, superseded_id)
             );
             INSERT INTO memory_records VALUES (
-                'rec_01', 'log_01', 1, 'project', 'fact', 'active',
+                'rec_01', 'log_01', 1, 'project', 'world_fact', 'active',
                 'Fabric canonical memory record with fast vector indexing',
-                'hash1', 1.0, '[{\"session_id\": \"sess_alpha\"}]', '{\"title\": \"Fabric Fact\"}',
+                'hash1', 1.0, '[{\"session_id\": \"sess_alpha\"}]', '{\"title\": \"Fabric Fact\", \"caused_by\": \"adr:ADR-001\"}',
                 120.0, NULL, '[]', 120.0
             );
             INSERT INTO memory_records VALUES (
@@ -1420,6 +1460,15 @@ mod tests {
             )
             .expect("SUPERSEDES edge must exist");
         assert_eq!(sup_edges_count, 1);
+
+        let caused_edges_count: i64 = rag_conn
+            .query_row(
+                "SELECT COUNT(*) FROM haos_graph_edges WHERE source_id = 'memory:rec_01' AND target_id = 'adr:ADR-001' AND edge_type = 'CAUSED_BY';",
+                [],
+                |r| r.get(0),
+            )
+            .expect("CAUSED_BY edge must exist");
+        assert_eq!(caused_edges_count, 1);
 
         // 8. Testar query_raggraph hybrid search encontrando a memória
         let query_res = RAGGraphEngine::query_raggraph(haos_home, "vector", 2, 5).unwrap();

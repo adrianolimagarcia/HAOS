@@ -15,7 +15,7 @@ import os
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,9 @@ def terminal_env(name: str, default: str = "") -> str:
     return default if value is None else str(value)
 
 
+_PROFILE_TERMINAL_SCOPE_CACHE: Dict[Tuple[str, Optional[Tuple[Tuple[str, str], ...]]], Tuple[Tuple[int, int], Dict[str, str]]] = {}
+
+
 def build_profile_terminal_scope(
     hermes_home: "Any", *, env_overlay: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Build the COMPLETE effective ``TERMINAL_*`` policy for a profile home.
@@ -102,10 +105,30 @@ def build_profile_terminal_scope(
     closes. It sits where the process env sits in the standalone bridge — explicit YAML keys
     still win (``apply_terminal_config_to_env``).
     """
+    home = Path(hermes_home)
+    env_path = home / ".env"
+    config_path = home / "config.yaml"
+
+    try:
+        env_mtime = env_path.stat().st_mtime_ns if env_path.exists() else -1
+    except OSError:
+        env_mtime = -2
+    try:
+        cfg_mtime = config_path.stat().st_mtime_ns if config_path.exists() else -1
+    except OSError:
+        cfg_mtime = -2
+
+    cache_key = (
+        str(home.resolve()),
+        tuple(sorted(env_overlay.items())) if env_overlay else None,
+    )
+    cached = _PROFILE_TERMINAL_SCOPE_CACHE.get(cache_key)
+    if cached is not None and cached[0] == (env_mtime, cfg_mtime) and env_mtime >= 0 and cfg_mtime >= 0:
+        return dict(cached[1])
+
     from hermes_cli.config import TERMINAL_CONFIG_ENV_MAP, _terminal_env_value
     from hermes_cli.config_defaults import DEFAULT_CONFIG
 
-    home = Path(hermes_home)
     scope: Dict[str, str] = {}
 
     def _apply(mapping: Dict[str, Any]) -> None:
@@ -154,6 +177,8 @@ def build_profile_terminal_scope(
         if isinstance(raw_terminal, dict):
             _apply(raw_terminal)
     _resolve_scope_cwd_placeholder(scope)
+    if env_mtime >= 0 and cfg_mtime >= 0:
+        _PROFILE_TERMINAL_SCOPE_CACHE[cache_key] = ((env_mtime, cfg_mtime), dict(scope))
     return scope
 
 

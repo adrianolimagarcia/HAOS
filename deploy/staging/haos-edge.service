@@ -1,0 +1,33 @@
+[Unit]
+Description=HAOS WebUI Edge reverse proxy (staging)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=haos
+Group=haos
+EnvironmentFile=/etc/haos/haos-edge.env
+ExecStart=/usr/local/bin/haos-edge
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+KillSignal=SIGTERM
+
+# The proxy should not need to write the application or source trees.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
+MemoryMax=256M
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

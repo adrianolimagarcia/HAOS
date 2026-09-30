@@ -1,0 +1,324 @@
+/* ObsidianGraphView.css — Authentic Obsidian Graph View Styling */
+
+.obs-graph-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 550px;
+  overflow: hidden;
+  background-color: #0d0e15;
+  border-radius: 18px;
+  user-select: none;
+  isolation: isolate;
+}
+
+.obs-graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  outline: none;
+}
+
+.obs-graph-canvas:active {
+  cursor: grabbing;
+}
+
+/* Floating Obsidian Controls Panel (Left) */
+.obs-control-panel {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 250px;
+  max-height: calc(100% - 28px);
+  background: rgba(18, 19, 28, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), inset 0 1px rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.obs-control-panel.is-collapsed {
+  width: auto;
+}
+
+.obs-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.obs-panel-toggle {
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 0;
+  letter-spacing: -0.01em;
+}
+
+.obs-panel-toggle:hover {
+  color: #ffffff;
+}
+
+.obs-btn-icon {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #94a3b8;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.obs-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.obs-panel-body {
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Accordion sections */
+.obs-accordion-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obs-section-header {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.obs-section-header:hover {
+  color: #e2e8f0;
+}
+
+/* Groups List */
+.obs-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.obs-group-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.obs-group-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.obs-group-item.is-disabled {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.obs-group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.obs-group-name {
+  font-size: 0.73rem;
+  color: #e2e8f0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.obs-group-count {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Settings sliders and rows */
+.obs-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.obs-setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.obs-label-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.obs-setting-row label,
+.obs-label-group label {
+  font-size: 0.72rem;
+  color: #cbd5e1;
+}
+
+.obs-label-group span {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.obs-toggle-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 32px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s ease;
+}
+
+.obs-toggle-checkbox:checked {
+  background: #a855f7;
+}
+
+.obs-toggle-checkbox::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s ease;
+}
+
+.obs-toggle-checkbox:checked::before {
+  transform: translateX(14px);
+}
+
+.obs-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.obs-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #c084fc;
+  box-shadow: 0 0 6px #c084fc;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.obs-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.obs-animate-btn {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 550;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.obs-animate-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.obs-animate-btn.is-active {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.45);
+  color: #f3e8ff;
+}
+
+/* Floating HUD hint at bottom */
+.obs-hud-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(13, 14, 21, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 5px 14px;
+  color: #94a3b8;
+  font-size: 0.7rem;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+}

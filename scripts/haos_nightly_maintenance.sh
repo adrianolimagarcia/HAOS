@@ -159,6 +159,25 @@ else
     echo "--> 5. Eval suite: ⊘ pulado (python ou ${EVAL_RUNNER} ausente)"
 fi
 
+# --- 6. TTL staging (sinal, não gate) ----------------------------------------
+# Candidatos pending sem reforço (confidence < 0.5) e sem sighting há mais de
+# 90 dias saem do índice ativo do staging para o arquivo append-only
+# (pending_candidates.archive.jsonl) — NADA é deletado (invariante "decaimento
+# nunca deleta"). Como no passo 5, falha vai para o log mas NÃO incrementa
+# FAILED: o gate do TTL é o teste de contrato em tests/scripts/, não o nightly.
+STAGING_TTL="${SCRIPT_DIR}/staging_ttl.py"
+[ -f "${STAGING_TTL}" ] || STAGING_TTL="${AGENT_DIR}/scripts/staging_ttl.py"
+echo "--> 6. TTL staging (sinal, não gate)"
+if [ -n "${PY:-}" ] && [ -f "${STAGING_TTL}" ]; then
+    if "$PY" "${STAGING_TTL}" --apply; then
+        echo "    ✓ TTL staging aplicado"
+    else
+        echo "    ⚠ TTL staging falhou (sinal; não aborta o nightly)"
+    fi
+else
+    echo "    ⊘ pulado (python ou staging_ttl.py ausente)"
+fi
+
 if [ "$FAILED" -eq 0 ]; then
     echo "=== [Nightly Maintenance concluída com sucesso] ==="
 else
