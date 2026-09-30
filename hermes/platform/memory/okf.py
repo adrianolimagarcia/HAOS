@@ -107,10 +107,15 @@ class OKFStore:
                     if data.get("ok"):
                         for item in data.get("docs", []):
                             rel_path = item["rel_path"]
+                            metadata = dict(item.get("metadata") or {})
+                            if "title" not in metadata and item.get("title"):
+                                metadata["title"] = item["title"]
+                            if "tags" not in metadata and item.get("tags"):
+                                metadata["tags"] = item["tags"]
                             doc = OKFDocument(
                                 filepath=self.bundle_dir / rel_path,
                                 relative_path=rel_path,
-                                metadata={"title": item.get("title"), "tags": item.get("tags")},
+                                metadata=metadata,
                                 body=item.get("body_preview") or "",
                             )
                             self._cache[rel_path] = doc

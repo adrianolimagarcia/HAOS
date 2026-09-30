@@ -23,12 +23,41 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+_SYSTEM_NOISE_RE = re.compile(
+    r'(?:'
+    r'\[CONTEXT COMPACTION[^\]]*\]'
+    r'|## Historical Task Snapshot'
+    r'|\[A2A inbound[^\]]*\]'
+    r'|\[IMPORTANT:[^\]]*\]'
+    r'|\[Workspace::v\d+:[^\]]*\]'
+    r'|\[System note:[^\]]*\]'
+    r'|\[Observation masked:[^\]]*\]'
+    r'|\[OUT-OF-BAND USER MESSAGE[^\]]*\]'
+    r'|\[/OUT-OF-BAND USER MESSAGE\]'
+    r'|\[ASYNC DELEGATION[^\]]*\]'
+    r'|<memory-context>[\s\S]*?</memory-context>'
+    r')\s*',
+    re.IGNORECASE,
+)
+
+
+def _sanitize_session_preview(text: str) -> str:
+    """Remove known scaffolding while retaining ordinary bracketed/tagged prose."""
+    if not text:
+        return ""
+    cleaned = _SYSTEM_NOISE_RE.sub("", text)
+    return " ".join(line.strip() for line in cleaned.splitlines() if line.strip()).strip()
+
+
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
 from hermes.platform.context.memory.candidate import MemoryCandidate
 from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
@@ -345,12 +374,16 @@ class DreamConsolidator:
 
             # Check if this session generated key operational decisions or learnings
             preview = (s.get("preview") or "").strip()
+            preview = _sanitize_session_preview(preview)
             if not preview:
                 try:
                     msgs = db.get_messages(sid)
                     for m in msgs:
-                        if m.get("content"):
-                            preview += m.get("content")[:200] + " "
+                        content = _sanitize_session_preview(m.get("content") or "")
+                        if content:
+                            preview += content[:200] + " "
+                            if len(preview) >= 300:
+                                break
                     preview = preview.strip()
                 except Exception:
                     pass
