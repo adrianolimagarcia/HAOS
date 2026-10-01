@@ -1055,6 +1055,17 @@ class GatewayStartupMixin:
                         "No adapter for '%s' -- is the plugin installed? "
                         "(platform is enabled in config.yaml but no plugin registered it)", platform.value,
                     )
+                # Queue it so the reconnect watcher heals it once the plugin registers (a plugin load
+                # can fail transiently); flag it so the unserved enabled platform is visible meanwhile.
+                self._update_platform_runtime_status(
+                    platform.value, platform_state="retrying", error_code="adapter_unavailable",
+                    error_message=(
+                        f"No adapter available for enabled {platform.value}; check the plugin, "
+                        "dependencies, and credentials. Retrying in the background."
+                    ),
+                    needs_attention=True,
+                )
+                self._failed_platforms[platform] = self._startup_retry_entry(platform, None, platform_config)
                 continue
             # Under multiplexing the default profile needs the same whole-handler runtime scope as a
             # secondary (authorization and prompt rendering run before the agent-turn scope).
