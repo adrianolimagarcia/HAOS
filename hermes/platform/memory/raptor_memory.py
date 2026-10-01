@@ -50,11 +50,39 @@ def _tokens(text: str) -> set:
     return set(_TOKEN_RE.findall((text or "").lower()))
 
 
-def jaccard_similarity(a: str, b: str) -> float:
-    ta, tb = _tokens(a), _tokens(b)
+# FTS5's unicode61 tokenizer splits on '_' (connector punctuation), but our
+# _TOKEN_RE keeps it inside tokens — "foo_bar" would index as two terms and a
+# query for it could miss. Mapping '_' to a character unicode61 treats as
+# alphanumeric (µ, category Ll) and _TOKEN_RE can never emit makes the FTS
+# term set an EXACT image of our token set: same splits, no misses. The
+# space-joined pre-tokenized blob keeps one term per token regardless.
+_FTS_SAFE = "µ"
+
+
+def _fts_form(tokens: Iterable[str]) -> str:
+    """Token list -> FTS5-safe document (underscore folded, space-joined)."""
+    return " ".join(t.replace("_", _FTS_SAFE) for t in tokens)
+
+
+def _fts_query(q: set) -> str:
+    """Token set -> MATCH expression OR'ing every (quoted) term."""
+    return " OR ".join('"{}"'.format(t.replace("_", _FTS_SAFE)) for t in sorted(q))
+
+
+def _jaccard_sets(ta: set, tb: set) -> float:
+    """Jaccard over pre-computed token sets.
+
+    Split out of ``jaccard_similarity`` so callers that compare one text
+    against many can tokenize each side once instead of per pair (the
+    clustering hot loop did exactly that).
+    """
     if not ta or not tb:
         return 0.0
     return len(ta & tb) / len(ta | tb)
+
+
+def jaccard_similarity(a: str, b: str) -> float:
+    return _jaccard_sets(_tokens(a), _tokens(b))
 
 
 @dataclass
@@ -164,10 +192,18 @@ class RaptorTreeBuilder:
 
         Seed order = input order (stable); a node joins the first cluster whose
         representative is similar enough and not full; otherwise it seeds a new
-        cluster. Representative = first member (its own summary). This is
-        O(n·clusters), not O(n²) merges — the tree is a retrieval index, not a
-        phylogenetic study.
+        cluster. Representative = first member (its own summary).
+
+        With the default lexical similarity the pass is pruned through an
+        inverted index over the cluster representatives' tokens: a pair
+        sharing no token has Jaccard exactly 0.0, and 0.0 can never win the
+        strict ``sim > best_sim`` comparison nor clear the (positive)
+        threshold — so skipping those pairs changes no assignment, only the
+        cost. A custom ``similarity_fn`` may score token-disjoint pairs above
+        0 (embeddings do), so it keeps the exact previous full-scan loop.
         """
+        if self.similarity is jaccard_similarity:
+            return self._cluster_pruned(nodes)
         clusters: List[List[RaptorNode]] = []
         for node in nodes:
             best = -1
@@ -181,6 +217,36 @@ class RaptorTreeBuilder:
                 clusters[best].append(node)
             else:
                 clusters.append([node])
+        return clusters
+
+    def _cluster_pruned(self, nodes: List[RaptorNode]) -> List[List[RaptorNode]]:
+        """Inverted-index pruned clone of ``_cluster`` for the default lexical
+        similarity: same assignment, same tie-break, same output."""
+        tokens_by_id = {n.node_id: _tokens(n.summary) for n in nodes}
+        clusters: List[List[RaptorNode]] = []
+        rep_tokens: List[set] = []           # parallel to clusters
+        postings: Dict[str, List[int]] = {}  # token -> cluster indices, seed order
+        for node in nodes:
+            tn = tokens_by_id[node.node_id]
+            candidates: set = set()
+            for tok in tn:
+                lst = postings.get(tok)
+                if lst:
+                    candidates.update(lst)
+            best = -1
+            best_sim = 0.0
+            for ci in sorted(candidates):
+                sim = _jaccard_sets(tn, rep_tokens[ci])
+                if sim > best_sim:
+                    best_sim, best = sim, ci
+            if best >= 0 and best_sim >= self.cluster_threshold \
+                    and len(clusters[best]) < self.max_cluster_size:
+                clusters[best].append(node)
+            else:
+                clusters.append([node])
+                rep_tokens.append(tn)
+                for tok in tn:
+                    postings.setdefault(tok, []).append(len(clusters) - 1)
         return clusters
 
 
@@ -224,6 +290,26 @@ class RaptorStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS raptor_level ON raptor_nodes(corpus_id, level)"
             )
+            # Exact candidate filter for retrieve(): an inverted index over
+            # OUR OWN tokenization (see _fts_form), plus the scorer's length
+            # normalization stored next to it. A node scores > 0 only if it
+            # shares >= 1 token with the query, so the MATCH output is
+            # exactly the set the old full scan scored — no regex runs at
+            # query time. Best-effort: on a SQLite without FTS5 the table is
+            # absent and retrieve() falls back to the full scan (same
+            # results, slower).
+            try:
+                cols = [r[1] for r in conn.execute(
+                    "PRAGMA table_info(raptor_nodes_fts)")]
+                if cols and "toks" not in cols:
+                    conn.execute("DROP TABLE raptor_nodes_fts")
+                conn.execute(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS raptor_nodes_fts "
+                    "USING fts5(node_id UNINDEXED, corpus_id UNINDEXED, "
+                    "toks, text_len UNINDEXED)"
+                )
+            except sqlite3.OperationalError:
+                pass
 
     def put_tree(self, nodes: Iterable[RaptorNode], corpus_id: str) -> int:
         rows = [
@@ -240,7 +326,65 @@ class RaptorStore:
                 "INSERT OR REPLACE INTO raptor_nodes VALUES "
                 "(?,?,?,?,?,?,?,?,?,?)", rows,
             )
+            try:
+                conn.execute(
+                    "DELETE FROM raptor_nodes_fts WHERE corpus_id = ?", (corpus_id,))
+                conn.executemany(
+                    "INSERT INTO raptor_nodes_fts VALUES (?,?,?,?)",
+                    [(r[0], r[8],
+                      _fts_form(sorted(_tokens(r[2] + " " + r[3]))),
+                      len(_tokens(r[2])))
+                     for r in rows],
+                )
+            except sqlite3.OperationalError:
+                pass  # no FTS5: retrieve() uses the full scan
         return len(rows)
+
+    def _scored_candidates(
+        self, corpus_id: str, q: set
+    ) -> Optional[List[Tuple[str, set, int]]]:
+        """(node_id, query∩node tokens, text_token_count), or None = no index.
+
+        The FTS index stores our own tokenization (see _fts_form), so a MATCH
+        over the query terms returns EXACTLY the nodes sharing >= 1 token —
+        the same set the old full scan scored (zero-overlap nodes scored 0
+        and were dropped). None means "no usable index" (legacy DB, or a
+        SQLite built without FTS5) and the caller falls back to the exact
+        old scan.
+        """
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT node_id, toks, text_len FROM raptor_nodes_fts "
+                    "WHERE corpus_id = ? AND raptor_nodes_fts MATCH ?",
+                    (corpus_id, _fts_query(q)),
+                ).fetchall()
+                if not rows:
+                    known = conn.execute(
+                        "SELECT 1 FROM raptor_nodes_fts WHERE corpus_id = ? LIMIT 1",
+                        (corpus_id,),
+                    ).fetchone()
+                    if not known:
+                        return None  # corpus written before the index existed
+                    return []
+                qs = {t.replace("_", _FTS_SAFE) for t in q}
+                return [(r["node_id"], qs & set(r["toks"].split()), r["text_len"])
+                        for r in rows]
+        except sqlite3.OperationalError:
+            return None
+
+    def _scan_candidates(
+        self, corpus_id: str, q: set
+    ) -> List[Tuple[str, set, int]]:
+        """Exact old path: tokenize every node (used when no FTS index)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT node_id, text, summary FROM raptor_nodes "
+                "WHERE corpus_id = ?",
+                (corpus_id,),
+            ).fetchall()
+        return [(r["node_id"], q & _tokens(r["text"] + " " + r["summary"]),
+                 len(_tokens(r["text"]))) for r in rows]
 
     def _row_to_node(self, r: sqlite3.Row) -> RaptorNode:
         return RaptorNode(
@@ -278,18 +422,31 @@ class RaptorStore:
         q = _tokens(query)
         if not q:
             return []
-        scored: List[Tuple[float, RaptorNode]] = []
-        for node in self.all_nodes(corpus_id):
-            overlap = len(q & _tokens(node.text + " " + node.summary))
+        cands = self._scored_candidates(corpus_id, q)
+        if cands is None:
+            cands = self._scan_candidates(corpus_id, q)
+        scored: List[Tuple[float, str]] = []
+        for node_id, overlap_set, text_len in cands:
+            overlap = len(overlap_set)
             if overlap == 0:
                 continue
             # length-normalized (log) so a giant abstract doesn't win on bulk
-            norm = 1.0 + math.log(1.0 + len(_tokens(node.text)))
-            scored.append((overlap / norm, node))
-        scored.sort(key=lambda t: (-t[0], t[1].node_id))
+            norm = 1.0 + math.log(1.0 + text_len)
+            scored.append((overlap / norm, node_id))
+        scored.sort(key=lambda t: (-t[0], t[1]))
+        winners = scored[:k]
+        if not winners:
+            return []
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM raptor_nodes WHERE corpus_id = ? AND node_id IN "
+                f"({','.join('?' * len(winners))})",
+                [corpus_id, *[nid for _, nid in winners]],
+            ).fetchall()
+        by_id = {r["node_id"]: r for r in rows}
         out = []
-        for score, node in scored[:k]:
-            d = node.to_dict()
+        for score, nid in winners:
+            d = self._row_to_node(by_id[nid]).to_dict()
             d["score"] = round(score, 4)
             out.append(d)
         return out

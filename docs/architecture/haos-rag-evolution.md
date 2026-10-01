@@ -82,3 +82,37 @@ nunca como dependência embutida.
   `SemanticDocumentChunker` plugável em `RAGFlowStore(chunker=...)`,
   `evals/rag_recall_benchmark.py` (recall@k/MRR; corpus sintético medido:
   recall@3 1.0, MRR 1.0 — verificação de mecanismo, não claim de produção).
+
+## Sprint D — otimizações medidas (0.21.75)
+
+Gargalo real medido no corpus sintético (mesma máquina, mesma seed):
+
+| operação | antes | depois | ganho |
+|---|---|---|---|
+| `RaptorTreeBuilder.build` 1200 chunks | 2400 ms | 334 ms | 7,2× |
+| `RaptorTreeBuilder.build` 2400 chunks | 10706 ms | 1248 ms | 8,6× |
+| `RaptorStore.retrieve` 1200 chunks | 107,4 ms/query | 8,5 ms/query | 12,6× |
+
+Causa e solução (nada de linguagem nova — foi algoritmo + índice):
+
+1. **Build O(n²) → poda por índice invertido** (`_cluster_pruned`): pares sem
+   token compartilhado têm Jaccard 0.0 exato e 0.0 nunca vence o `sim >
+   best_sim` estrito nem cruza o threshold positivo — pular esses pares é
+   matematicamente inerte. ~76% dos pares descartados. Disparo por
+   identidade (`self.similarity is jaccard_similarity`): um
+   `similarity_fn` custom (embeddings podem pontuar > 0 em pares
+   token-disjuntos) mantém o loop full-scan exato de antes.
+2. **Retrieve re-tokenizava todo nó a cada query** → índice FTS5
+   (`raptor_nodes_fts`) que armazena a *nossa* tokenização (underscore
+   dobrado para `µ` — unicode61 splitaria `foo_bar` e perderia candidatos)
+   mais `text_len` (o denominador do norm). Zero regex no hot path; só os
+   top-k vencedores são materializados com JSON/âncoras.
+   Equivalência provada contra o full-scan antigo em 11 shapes de query
+   (underscore, vazio, sem-match, duplicata) + testes de contrato.
+3. Migração: DB legado com esquema antigo (`blob`) é detectado via
+   `PRAGMA table_info` e recriado; corpus sem linhas no índice cai no
+   full-scan exato (nunca retorna vazio silencioso).
+
+Rust (haos-edge) continua adiado: o ganho era algorítmico, não de
+linguagem — e a seam `similarity_fn` existe exatamente para plugar um
+kernel nativo quando o corpus passar de ~5–10k chunks com medição.
