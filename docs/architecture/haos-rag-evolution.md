@@ -244,3 +244,66 @@ provados vermelhos no base: fragmento-de-tag e tag-única falham sem o
 fix): fragmento não é evidência; tag única sem corroboração não
 responde; ≥2 tags de palavra inteira corroboram; tag hifenizada exige a
 sequência completa.
+
+---
+
+## Adendo 0.21.81 — revalidação com aliases de conteúdo e experimento IDF (refutado)
+
+### Método
+
+As 12 interceptações OKF restantes foram classificadas **abrindo o conteúdo
+dos dois lados** (doc OKF devolvido × doc gold do vault), não por título.
+Alias aceito = o doc OKF responde à query tão bem quanto o gold. Resultado
+(OBSERVED):
+
+| query | gold (vault) | alias OKF aceito | prova de conteúdo |
+|---|---|---|---|
+| qual ADR define o stack de memória | ADR-001 | `contratos/contrato-memoria-haos-nos-cachyos.md` | contrato cita ADR-001 nominalmente |
+| schema causal proveniência wasGeneratedBy | ADR-015 | `contrato-padrao-universal-licoes-okf.md` | bloco PROV-O/wasGeneratedBy no contrato |
+| teste mcp stdio communicate stdin | licao vault | `licoes/5469f1-2.md` | mesma lição destilada |
+| HAOS home /root/.haos legado | 10-Memory/project | `licoes/5469f1-3.md` | "Home em vigor é /root/.haos" |
+| vault memória OKF contrato 4 camadas | 20-Architecture | `contrato-padrao-universal-licoes-okf.md` | define as camadas |
+
+**3 aliases rejeitados por inspeção** (título parecia equivalente, conteúdo
+não): lição ZRAM não menciona a regra "/tmp nunca filesystem" (grep: 0);
+lição ouroboros/haos-edge não menciona hindsight/ADR-017 (grep: 0); lição
+build kernel Z01KD não é o runbook canônico (grep: 0 por quimera/qcacld).
+A lição do re-ranker cita ADR-005, não o ADR-002 pedido.
+
+### Números com gold expandido (aliases)
+
+| métrica | antes do fix gate | cascata strict-path | cascata + aliases |
+|---|---|---|---|
+| hit@1 | 2/39 (0.051) | 26/39 (0.667) | **31/39 (0.795)** |
+| hit@3 | 2/39 | 27/39 (0.692) | **32/39 (0.821)** |
+
+### Experimento IDF — premissa refutada, NÃO implementado
+
+A hipótese era: tags genéricas (alta frequência documental) corroboram
+interceptações erradas; exigir que ≥2 tags corroborantes sejam
+discriminativas (df abaixo de um piso) separaria as fracas das legítimas.
+Medido no bundle real (418 docs):
+
+- legítimas: `stdio`=1, `proveniencia`=3, `licoes`=1 **mas também**
+  `haos`=66, `hermes`=23, `memoria`=15 (as duas últimas corroboram o alias
+  do ADR-001);
+- fracas: `swap`=1, `zram`=3, `vram`=2, `docling`=5, `rust`=7, `recall`=2
+  — df baixo igual às legítimas.
+
+**Não existe piso de df que separe os dois grupos**: as 5 interceptações
+fracas restantes têm tags tão discriminativas quanto as legítimas. O
+qualquer threshold escolhido seria ajuste no próprio benchmark de 39
+queries (o risco de overfitting previsto no follow-up de 0.21.80). Regra
+não implementada; hipótese registrada como refutada.
+
+### Natureza dos 7 misses restantes
+
+Todos são queries cujo gold é um artefato específico do vault (ADR,
+pesquisa, runbook, diário) e o OKF responde com lição topicamente
+relacionada porém **incompleta para o que foi pedido** (ex.: a lição ZRAM
+cobre metade da decisão do ADR-010). O gate não tem como saber isso por
+tags — é limitação de profundidade de conteúdo, não bug de matching.
+Fechar esse vão exige mudança de política de recuperação (ex.: RAGFlow
+primeiro quando o query nomeia tipo de artefato ausente do bundle), que
+pede benchmark próprio maior que 39 queries. Decisão do dono pendente;
+estado atual considerado o teto honesto do design vigente.
