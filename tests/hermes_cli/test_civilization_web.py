@@ -316,7 +316,12 @@ def test_civilization_mission_center(client, homes):
     assert new_m["title"] == "Build Realtime WebSocket Gateway"
     assert new_m["status"] == "DRAFT"
 
-    # 9. Record Human Approval Decision
+    # 9. Record only an actual explicitly persisted human approval request.
+    root, _ = homes
+    with EventStore(str(root / "events.db")) as store:
+        store.append(Event(name="civ.council.approval_requested", payload={
+            "approval_id": "appr-123", "mission_id": new_m["id"], "gate": "merge",
+        }))
     res_appr = client.post("/api/civilization/approvals/appr-123/decision", json={
         "approved": True,
         "reason": "Reviewed code and test coverage looks great."
@@ -324,3 +329,88 @@ def test_civilization_mission_center(client, homes):
     assert res_appr.status_code == 200
     assert res_appr.json()["status"] == "recorded"
     assert res_appr.json()["approved"] is True
+
+
+def test_lifecycle_enforces_all_assignments_and_preserves_id(client, homes):
+    agent = client.get("/api/civilization/agents/architect-001").json()
+    changed = {**agent, "id": "renamed"}
+    assert client.put("/api/civilization/agents/architect-001", json=changed).status_code == 400
+    assert client.put("/api/civilization/agents/architect-001", json={**agent, "status": "nonsense"}).status_code == 422
+    illegal_import = {**agent, "memory": {**agent["memory"], "global_civ": True}}
+    assert client.post("/api/civilization/agents/import", json=illegal_import).status_code == 400
+    assert client.post("/api/civilization/agents/missing/lifecycle", json={"enabled": False}).status_code == 404
+    assert client.post("/api/civilization/agents/architect-001/lifecycle", json={"enabled": "false"}).status_code == 422
+    mission = client.post("/api/civilization/missions", json={
+        "title": "Workflow only", "goal": "Check guards", "agents": [],
+        "workflow": {"nodes": [{"id": "n1", "agent_id": "architect-001", "role": "planner", "action": "Plan"}]},
+    }).json()
+    url = f"/api/civilization/missions/{mission['id']}"
+    assert client.post("/api/civilization/agents/architect-001/lifecycle", json={"enabled": False}).json()["status"] == "disabled"
+    assert client.post(url + "/start").status_code == 409
+    assert client.post("/api/civilization/missions", json={"title": "disabled", "goal": "x", "agents": ["architect-001"]}).status_code == 409
+    assert client.post("/api/civilization/missions", json={"title": "disabled node", "goal": "x", "workflow": mission["workflow"]}).status_code == 409
+    assert client.post("/api/civilization/agents/architect-001/lifecycle", json={"enabled": True}).status_code == 200
+    assert client.post(url + "/start").status_code == 200
+    assert client.post(url + "/start").status_code == 409
+    assert client.post(url + "/simulate").status_code == 409
+    assert client.post(url + "/pause").status_code == 200
+    client.post("/api/civilization/agents/architect-001/lifecycle", json={"enabled": False})
+    assert client.post(url + "/resume").status_code == 409
+    assert client.get(url).json()["status"] == "PAUSED"
+    # Profile B remains independent of A's configuration changes.
+    assert client.get("/api/civilization/agents/architect-001?profile=other").json()["status"] == "active"
+    assert client.get("/api/civilization/agents/architect-001").json()["status"] == "disabled"
+
+
+def test_real_approvals_atomic_decision_and_measured_analytics(client, homes):
+    from concurrent.futures import ThreadPoolExecutor
+    root, other = homes
+    from hermes_cli import web_server
+    unauthorized = TestClient(web_server.app)
+    assert unauthorized.get("/api/civilization/approvals").status_code == 401
+    assert unauthorized.get("/api/civilization/missions/mis-001/analytics").status_code == 401
+    assert unauthorized.post("/api/civilization/agents/architect-001/lifecycle", json={"enabled": False}).status_code == 401
+    assert unauthorized.post("/api/civilization/approvals/unknown/decision", json={"approved": True}).status_code == 401
+    assert client.get("/api/civilization/approvals").json()["approvals"] == []
+    assert client.post("/api/civilization/approvals/unknown/decision", json={"approved": True}).status_code == 404
+    assert not (root / "events.db").exists()
+    mission = client.post("/api/civilization/missions", json={"title": "Measured", "goal": "x"}).json()
+    mid = mission["id"]
+    url = f"/api/civilization/missions/{mid}"
+    unmeasured = client.get(url + "/analytics").json()
+    assert unmeasured["duration_seconds"] is None
+    assert unmeasured["tokens"] is unmeasured["failures"] is unmeasured["retries"] is None
+    with EventStore(str(root / "events.db")) as store:
+        store.append(Event(name="civ.council.approval_requested", timestamp=100, payload={
+            "approval_id": "gate-a", "mission_id": mid, "agent_id": "architect-001", "gate": "merge", "private": "SECRET",
+        }))
+        store.append(Event(name="team.formed", timestamp=200, payload={"mission_id": mid}))
+        store.append(Event(name="mission.completed", timestamp=207, payload={"mission_id": mid, "status": "success"}))
+        store.append(Event(name="civ.mission.agent_state_changed", timestamp=205, payload={
+            "mission_id": mid, "node_id": "node-1", "mission_status": "RUNNING", "status": "EXECUTING", "private": "SECRET",
+        }))
+    response = client.get("/api/civilization/approvals", params={"mission_id": mid})
+    assert response.json()["approvals"][0]["approval_id"] == "gate-a"
+    assert "SECRET" not in response.text
+    assert client.get("/api/civilization/approvals?mission_id=other").json()["approvals"] == []
+    assert client.get("/api/civilization/approvals?profile=other").json()["approvals"] == []
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _: client.post("/api/civilization/approvals/gate-a/decision", json={"approved": bool(_)}), range(2)))
+    assert sorted(r.status_code for r in responses) == [200, 409]
+    assert next(r for r in responses if r.status_code == 200).json()["runtime_resumed"] is False
+    assert client.post("/api/civilization/approvals/gate-a/decision", json={"approved": False}).status_code == 409
+    assert client.get("/api/civilization/approvals").json()["approvals"] == []
+    with EventStore(str(root / "events.db")) as store:
+        assert len(store.get_all(name="civ.council.approval_decided")) == 1
+    analytics = client.get(url + "/analytics").json()
+    assert analytics["duration_seconds"] == 7
+    assert analytics["quality"] == "partial"
+    assert analytics["tokens"] is analytics["failures"] is analytics["retries"] is None
+    replay = client.get(url + "/events")
+    node = next(e for e in replay.json()["events"] if e.get("node_id") == "node-1")
+    assert node["seq"] > 0 and node["mission_status"] == "RUNNING"
+    assert node["status"] == "EXECUTING"
+    assert "SECRET" not in replay.text
+    assert not (other / "events.db").exists()
+    assert client.get(url + "/analytics?profile=other").status_code == 404
+    assert client.get(url + "/analytics").json()["duration_seconds"] == 7

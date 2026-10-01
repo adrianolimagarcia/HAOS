@@ -145,6 +145,7 @@ async def _lifespan(app: "FastAPI"):
     app.state.event_channels = {}  # dict[str, set]
     app.state.event_lock = asyncio.Lock()
     app.state.pty_active_session_files = {}  # dict[str, Path]
+    app.state.mission_supervisors = {}  # dict[str, MissionSupervisor]
     # Serializes chat-argv resolution so concurrent /api/pty connections don't
     # overlap ``npm install`` / ``npm run build``. Locks live on app.state (not
     # module globals) so they bind to the running loop, not the import-time one.
@@ -273,6 +274,13 @@ async def _lifespan(app: "FastAPI"):
         selftest_task.cancel()
         auto_archive_task.cancel()
         await PTY_REGISTRY.close_all()
+        # Shutdown background Civilization mission supervisors.
+        try:
+            from hermes_cli.web_routers.civilization import _shutdown_supervisors
+
+            _shutdown_supervisors(getattr(app.state, "mission_supervisors", None))
+        except Exception:  # noqa: BLE001
+            pass
         # Stop the managed llama-server with its parent (an orphan pins VRAM).
         try:
             from hermes_cli.local_runtime.bootstrap import shutdown_local_runtime

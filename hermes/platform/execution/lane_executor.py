@@ -112,7 +112,18 @@ class DeterministicLaneWorker(LaneWorker):
 
     name = "deterministic"
 
-    def execute(self, task_id: str, workspace: Path, spec: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(
+        self,
+        task_id: str,
+        workspace: Path,
+        spec: Dict[str, Any],
+        *,
+        cancel_event: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        if cancel_event is not None and getattr(cancel_event, "is_set", lambda: False)():
+            from hermes.platform.execution.heartbeat import LaneCancelledError
+            raise LaneCancelledError(f"deterministic worker for task '{task_id}' was cancelled")
         workspace.mkdir(parents=True, exist_ok=True)
         lane = lane_for_spec(spec)
         marker = workspace / ".haos"
@@ -281,6 +292,7 @@ class HermesCliLaneWorker(LaneWorker):
         *,
         heartbeat_fn: Optional[Callable[[str], bool]] = None,
         heartbeat_interval: float = 15.0,
+        cancel_event: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Executa o worker agêntico (detalhes na docstring da classe).
 
@@ -358,30 +370,15 @@ class HermesCliLaneWorker(LaneWorker):
                     if self.timeout_seconds is not None
                     else _env_timeout()
                 )
-                if heartbeat_fn is not None:
-                    # D3: espera com heartbeat/TTL — o control-plane que DETÉM
-                    # o claim renova enquanto o filho vive; par quebrado =>
-                    # kill + LaneError (HeartbeatLost/Deadline). Import lazy
-                    # (heartbeat.py importa LaneError deste módulo).
-                    from hermes.platform.execution.heartbeat import wait_with_heartbeat
-                    returncode = wait_with_heartbeat(
-                        proc,
-                        heartbeat_fn=lambda: heartbeat_fn(task_id),
-                        heartbeat_interval=heartbeat_interval,
-                        timeout_seconds=timeout,
-                        task_id=task_id,
-                    )
-                else:
-                    try:
-                        returncode = proc.wait(timeout=timeout)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(proc.pid, signal.SIGKILL)
-                        except (ProcessLookupError, PermissionError):
-                            pass
-                        raise LaneError(
-                            f"hermes worker for task '{task_id}' timed out"
-                        ) from None
+                from hermes.platform.execution.heartbeat import wait_with_heartbeat
+                returncode = wait_with_heartbeat(
+                    proc,
+                    heartbeat_fn=(lambda: heartbeat_fn(task_id)) if heartbeat_fn is not None else None,
+                    heartbeat_interval=heartbeat_interval,
+                    timeout_seconds=timeout,
+                    task_id=task_id,
+                    cancel_event=cancel_event,
+                )
         except FileNotFoundError as exc:
             raise LaneError(
                 f"hermes worker binary not found: {argv[0]!r}"

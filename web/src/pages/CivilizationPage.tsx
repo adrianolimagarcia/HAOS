@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AvailableModel, MissionEvent } from "@/lib/civilization-contracts";
+import { civRequest } from "@/lib/civilization-api";
+import { ModelsCatalog } from "@/components/civilization/ModelsCatalog";
+import { AgentImport, AgentLifecycle } from "@/components/civilization/AgentControls";
+import { ApprovalCenter } from "@/components/civilization/ApprovalCenter";
+import { MissionInsights } from "@/components/civilization/MissionInsights";
 import { Activity, ArrowUpRight, BookOpen, Bot, ChevronRight, Cpu, GitBranch, Network, Play, RefreshCw, RotateCcw, Save, Settings2, ShieldCheck, SlidersHorizontal, Users, X } from "lucide-react";
-import { fetchJSON } from "@/lib/api";
 import { CivConstellation } from "@/components/CivConstellation";
 import { errorMessage } from "@/lib/api-error";
 import { useProfileScope } from "@/contexts/useProfileScope";
@@ -80,8 +85,6 @@ interface AgentConfig extends BotNode {
   effective_model?: string;
   model_source?: string;
 }
-interface AvailableModel { id: string; provider: string; label: string; context_window?: number; cost_per_million_tokens?: number }
-interface MissionEvent { time: number; type: string; agent_id: string; description: string; status: string }
 interface MissionNode { id: string; agent_id: string; role: string; action: string; status: string }
 interface Mission {
   id: string;
@@ -97,7 +100,7 @@ interface Mission {
   progress_pct: number;
 }
 
-type StudioTab = "observatory" | "agents" | "missions" | "office";
+type StudioTab = "observatory" | "agents" | "models" | "missions" | "approvals" | "office";
 
 type AgentDraft = Omit<AgentConfig, "bot_id" | "version" | "bundle_hash">;
 
@@ -164,28 +167,31 @@ export default function CivilizationPage() {
   const [missionGoal, setMissionGoal] = useState("");
   const [missionTitle, setMissionTitle] = useState("");
   const [missionAgentIds, setMissionAgentIds] = useState<string[]>([]);
+  const [missionRevision, setMissionRevision] = useState(0);
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
 
-  const loadControlPlane = useCallback(async () => {
+  const scope = useRef(0);
+  const controlLoad = useRef(0);
+  const loadControlPlane = useCallback(async (signal?: AbortSignal) => {
+    const generation = scope.current;
+    const request = ++controlLoad.current;
+    const current = () => generation === scope.current && request === controlLoad.current && !signal?.aborted;
     try {
       const [agentResponse, modelResponse, missionResponse] = await Promise.all([
-        fetchJSON<{ agents: AgentConfig[]; session_model: string }>("/api/civilization/agents"),
-        fetchJSON<{ models: AvailableModel[]; session_model: string }>("/api/civilization/models/available"),
-        fetchJSON<{ missions: Mission[] }>("/api/civilization/missions"),
+        civRequest<{ agents: AgentConfig[]; session_model: string }>(profile, "agents", { signal }),
+        civRequest<{ models: AvailableModel[]; session_model: string }>(profile, "models/available", { signal }),
+        civRequest<{ missions: Mission[] }>(profile, "missions", { signal }),
       ]);
+      if (!current()) return;
       setAgents(agentResponse.agents ?? []);
       setSessionModel(agentResponse.session_model || modelResponse.session_model || "");
       setAvailableModels(modelResponse.models ?? []);
       setMissions(missionResponse.missions ?? []);
+      setMissionAgentIds(ids => ids.filter(id => agentResponse.agents.some(agent => agent.id === id && agent.status !== "disabled")));
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (current()) setError(errorMessage(cause));
     }
-  }, []);
-
-  useEffect(() => {
-    if (studioTab === "observatory") return;
-    void loadControlPlane();
-  }, [loadControlPlane, profile, studioTab, tick]);
+  }, [profile]);
 
   const selectedMission = missions.find(mission => mission.id === selectedMissionId) ?? missions[0] ?? null;
 
@@ -196,66 +202,81 @@ export default function CivilizationPage() {
 
   const saveAgent = useCallback(async () => {
     if (!agentDraft) return;
+    const generation = scope.current;
     setAgentSaving(true);
     try {
       const isExisting = agents.some(agent => agent.id === agentDraft.id);
-      const response = await fetchJSON<AgentConfig>(`/api/civilization/agents${isExisting ? `/${encodeURIComponent(agentDraft.id)}` : ""}`, {
+      const response = await civRequest<AgentConfig>(profile, `agents${isExisting ? `/${encodeURIComponent(agentDraft.id)}` : ""}`, {
         method: isExisting ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(agentDraft),
       });
+      if (generation !== scope.current) return;
       setAgents(current => isExisting ? current.map(agent => agent.id === response.id ? response : agent) : [...current, response]);
       setAgentDraft(null);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (generation === scope.current) setError(errorMessage(cause));
     } finally {
-      setAgentSaving(false);
+      if (generation === scope.current) setAgentSaving(false);
     }
-  }, [agentDraft, agents]);
+  }, [agentDraft, agents, profile]);
 
   const duplicateAgent = useCallback(async (agent: AgentConfig) => {
+    const generation = scope.current;
     try {
-      const response = await fetchJSON<AgentConfig>(`/api/civilization/agents/${encodeURIComponent(agent.id)}/duplicate`, { method: "POST" });
+      const response = await civRequest<AgentConfig>(profile, `agents/${encodeURIComponent(agent.id)}/duplicate`, { method: "POST" });
+      if (generation !== scope.current) return;
       setAgents(current => [...current, response]);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (generation === scope.current) setError(errorMessage(cause));
     }
-  }, []);
+  }, [profile]);
 
   const createMission = useCallback(async () => {
     if (!missionTitle.trim() || !missionGoal.trim()) return;
+    const generation = scope.current;
     setMissionSaving(true);
     try {
-      const response = await fetchJSON<Mission>("/api/civilization/missions", {
+      const response = await civRequest<Mission>(profile, "missions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: missionTitle, goal: missionGoal, agents: missionAgentIds }),
       });
+      if (generation !== scope.current) return;
       setMissions(current => [...current, response]);
       setSelectedMissionId(response.id);
       setMissionTitle("");
       setMissionGoal("");
       setMissionAgentIds([]);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (generation === scope.current) setError(errorMessage(cause));
     } finally {
-      setMissionSaving(false);
+      if (generation === scope.current) setMissionSaving(false);
     }
-  }, [missionAgentIds, missionGoal, missionTitle]);
+  }, [missionAgentIds, missionGoal, missionTitle, profile]);
 
   const missionAction = useCallback(async (mission: Mission, action: "simulate" | "start" | "pause" | "resume") => {
+    const generation = scope.current;
     try {
-      const response = await fetchJSON<Mission | Record<string, unknown>>(`/api/civilization/missions/${encodeURIComponent(mission.id)}/${action}`, { method: "POST" });
+      const response = await civRequest<Mission | Record<string, unknown>>(profile, `missions/${encodeURIComponent(mission.id)}/${action}`, { method: "POST" });
+      if (generation !== scope.current) return;
+      setMissionRevision(value => value + 1);
       if ("id" in response) setMissions(current => current.map(item => item.id === mission.id ? response as Mission : item));
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (generation === scope.current) setError(errorMessage(cause));
     }
-  }, []);
+  }, [profile]);
   const [activeCouncilId, setActiveCouncilId] = useState<string>("");
   const [councilMemory, setCouncilMemory] = useState<CouncilMemoryData | null>(null);
   const [memoryLoading, setMemoryLoading] = useState(false);
 
   useEffect(() => {
+    scope.current++;
+    controlLoad.current++;
+    setAgents([]); setAvailableModels([]); setSessionModel(""); setMissions([]);
+    setAgentDraft(null); setAgentSaving(false); setMissionSaving(false);
+    setSelectedMissionId(null); setMissionAgentIds([]); setMissionTitle(""); setMissionGoal("");
+    setActiveCouncilId("");
     setData(null);
     setGraphData(null);
     setSelected(null);
@@ -263,7 +284,15 @@ export default function CivilizationPage() {
     setUpdated(null);
     setError("");
     setCouncilMemory(null);
+    return () => { scope.current++; controlLoad.current++; };
   }, [profile]);
+
+  useEffect(() => {
+    if (studioTab === "observatory") return;
+    const controller = new AbortController();
+    void loadControlPlane(controller.signal);
+    return () => controller.abort();
+  }, [loadControlPlane, profile, studioTab, tick]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -273,10 +302,10 @@ export default function CivilizationPage() {
       busy = true;
       try {
         const graphPromise = Promise.resolve()
-          .then(() => fetchJSON<CivGraph>("/api/civilization/graph", { signal: controller.signal }))
+          .then(() => civRequest<CivGraph>(profile, "graph", { signal: controller.signal }))
           .catch(() => null);
         const [overviewRes, graphRes] = await Promise.all([
-          fetchJSON<Overview>("/api/civilization/overview", { signal: controller.signal }),
+          civRequest<Overview>(profile, "overview", { signal: controller.signal }),
           graphPromise,
         ]);
         if (!controller.signal.aborted) {
@@ -313,7 +342,7 @@ export default function CivilizationPage() {
     async function fetchMemory() {
       setMemoryLoading(true);
       try {
-        const res = await fetchJSON<CouncilMemoryData>(`/api/civilization/councils/${encodeURIComponent(activeCouncilId)}/memory`);
+        const res = await civRequest<CouncilMemoryData>(profile, `councils/${encodeURIComponent(activeCouncilId)}/memory`);
         if (!cancelled) setCouncilMemory(res);
       } catch (e) {
         if (!cancelled) setError(errorMessage(e));
@@ -323,7 +352,7 @@ export default function CivilizationPage() {
     }
     void fetchMemory();
     return () => { cancelled = true; };
-  }, [viewMode, activeCouncilId, tick]);
+  }, [viewMode, activeCouncilId, tick, profile]);
 
   const refresh = useCallback(() => {
     setLoading(!data);
@@ -332,18 +361,20 @@ export default function CivilizationPage() {
 
   const rebuildMemory = useCallback(async () => {
     if (!activeCouncilId) return;
+    // Capture ownership before awaiting: a late rebuild cannot mutate another profile.
+    const generation = scope.current;
     setMemoryLoading(true);
     try {
-      await fetchJSON(`/api/civilization/councils/${encodeURIComponent(activeCouncilId)}/memory/rebuild`, {
+      await civRequest(profile, `councils/${encodeURIComponent(activeCouncilId)}/memory/rebuild`, {
         method: "POST",
       });
-      setTick(v => v + 1);
+      if (generation === scope.current) setTick(v => v + 1);
     } catch (e) {
-      setError(errorMessage(e));
+      if (generation === scope.current) setError(errorMessage(e));
     } finally {
-      setMemoryLoading(false);
+      if (generation === scope.current) setMemoryLoading(false);
     }
-  }, [activeCouncilId]);
+  }, [activeCouncilId, profile]);
 
   const botIds = useMemo(() => new Set(data?.bots.map(bot => bot.bot_id) ?? []), [data]);
 
@@ -417,7 +448,9 @@ export default function CivilizationPage() {
           {([
             ["observatory", "Observatory", Activity],
             ["agents", "Agent Studio", Bot],
+            ["models", "Models", Cpu],
             ["missions", "Mission Center", GitBranch],
+            ["approvals", "Approvals", ShieldCheck],
             ["office", "2D Office", Cpu],
           ] as const).map(([tab, label, Icon]) => (
             <button key={tab} type="button" className={`civ-tab-btn ${studioTab === tab ? "is-active" : ""}`} onClick={() => setStudioTab(tab)}>
@@ -453,6 +486,7 @@ export default function CivilizationPage() {
               <div><span className="civ-kicker">CONTROL PLANE / AGENT REGISTRY</span><h2>Agent Studio</h2><p style={{ color: "var(--muted)", margin: "5px 0 0", fontSize: "0.82rem" }}>Configure bots declaratively. The kernel validates every capability and memory boundary.</p></div>
               <button type="button" className="civ-btn-primary" onClick={() => openAgentEditor()}><Bot size={16} /> New agent</button>
             </div>
+            <AgentImport key={profile} profile={profile} onChanged={() => void loadControlPlane()} />
             <div className="civ-agent-grid">
               {agents.map(agent => (
                 <article className="civ-glass civ-agent-card" key={agent.id}>
@@ -463,6 +497,7 @@ export default function CivilizationPage() {
                     <div className="civ-cascade-box" style={{ marginTop: "14px" }}><div className="civ-cascade-row"><span style={{ color: "var(--muted)" }}>Effective model</span><strong>{agent.effective_model || sessionModel}</strong></div><div className="civ-cascade-row"><span style={{ color: "var(--muted)" }}>Resolution source</span><span style={{ color: "#a2f2eb", fontSize: "0.7rem" }}>{agent.model_source || "SESSION_MODEL"}</span></div></div>
                   </div>
                   <div className="civ-agent-footer"><small style={{ color: "var(--muted)" }}>{agent.memory.project ? "Project memory" : "Session only"} · {agent.budget.max_tokens.toLocaleString()} tokens</small><div className="civ-btn-row"><button type="button" className="civ-btn-ghost" onClick={() => void duplicateAgent(agent)} title="Duplicate"><GitBranch size={13} /></button><button type="button" className="civ-btn-ghost" onClick={() => openAgentEditor(agent)}><Settings2 size={13} /> Edit</button></div></div>
+                  <AgentLifecycle key={`${profile}:${agent.id}`} agent={agent} profile={profile} onChanged={() => void loadControlPlane()} />
                 </article>
               ))}
             </div>
@@ -470,12 +505,16 @@ export default function CivilizationPage() {
           </section>
         )}
 
+        {studioTab === "approvals" && <ApprovalCenter key={profile} profile={profile} />}
+        {studioTab === "models" && <ModelsCatalog key={profile} models={availableModels} />}
         {studioTab === "missions" && (
           <section aria-label="Mission Center">
+            <button type="button" className="civ-btn-ghost" onClick={() => setStudioTab("approvals")}>Open global Approval Center</button>
+            <p className="civ-notice">Control-plane status only. Start/resume records declarative status; no agent execution is launched.</p>
             <div className="civ-agent-header"><div><span className="civ-kicker">MISSION CENTER / ORCHESTRATION</span><h2>Mission Designer</h2></div><span className="civ-model-pill"><Cpu size={13} /> Session model: {sessionModel || "—"}</span></div>
 
-                    <div className="civ-columns"><section className="civ-glass" style={{ padding: "22px" }}><div className="civ-panel-head"><div><span className="civ-kicker">NEW MISSION</span><h2>Intent and crew</h2></div><GitBranch size={18} /></div><div className="civ-form-group"><label htmlFor="mission-title">Mission title</label><input id="mission-title" className="civ-input" value={missionTitle} onChange={event => setMissionTitle(event.target.value)} placeholder="Build authentication system" /></div><div className="civ-form-group"><label htmlFor="mission-goal">Human goal</label><textarea id="mission-goal" className="civ-textarea" rows={4} value={missionGoal} onChange={event => setMissionGoal(event.target.value)} placeholder="Implement OAuth with secure token rotation" /></div><div className="civ-form-group"><label>Required agents</label><div style={{ display: "grid", gap: "7px" }}>{agents.map(agent => <label key={agent.id} style={{ display: "flex", gap: "8px", alignItems: "center", color: "var(--muted)", fontSize: "0.78rem" }}><input type="checkbox" checked={missionAgentIds.includes(agent.id)} onChange={event => setMissionAgentIds(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))} /> {agent.name} <span style={{ color: "#91d6e5" }}>({agent.role})</span></label>)}</div></div><button type="button" className="civ-btn-primary" onClick={() => void createMission()} disabled={missionSaving || !missionTitle.trim() || !missionGoal.trim()}><Save size={15} /> {missionSaving ? "Creating…" : "Create mission"}</button></section><section className="civ-glass" style={{ padding: "22px" }}><div className="civ-panel-head"><div><span className="civ-kicker">ACTIVE MISSIONS</span><h2>Execution board</h2></div><Play size={18} /></div>{missions.map(mission => <button type="button" key={mission.id} onClick={() => setSelectedMissionId(mission.id)} style={{ width: "100%", textAlign: "left", marginBottom: "10px", padding: "14px", borderRadius: "14px", border: selectedMission?.id === mission.id ? "1px solid #65e0c3" : "1px solid var(--line)", background: selectedMission?.id === mission.id ? "rgba(101,224,195,0.12)" : "rgba(255,255,255,0.04)", color: "var(--ink)", cursor: "pointer" }}><strong>{mission.title}</strong><div style={{ color: "var(--muted)", fontSize: "0.72rem", marginTop: "5px" }}>{mission.status} · {mission.agents.length} agents · {mission.progress_pct}%</div><div className="civ-progress-bar"><div className="civ-progress-fill" style={{ width: `${mission.progress_pct}%` }} /></div></button>)}{!missions.length && <div className="civ-empty">No missions created.</div>}</section></div>
-            {selectedMission && <section className="civ-glass" style={{ marginTop: "16px", padding: "22px" }}><div className="civ-panel-head"><div><span className="civ-kicker">MISSION / {selectedMission.id}</span><h2>{selectedMission.title}</h2></div><div className="civ-btn-row"><button type="button" className="civ-btn-ghost" onClick={() => void missionAction(selectedMission, "simulate")}><SlidersHorizontal size={14} /> Simulate</button><button type="button" className="civ-btn-primary" onClick={() => void missionAction(selectedMission, selectedMission.status === "PAUSED" ? "resume" : "start")}><Play size={14} /> {selectedMission.status === "PAUSED" ? "Resume" : "Start"}</button></div></div><p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>{selectedMission.goal}</p><div className="civ-dag-container">{selectedMission.workflow.nodes.map((node, index) => <div key={node.id} style={{ display: "flex", alignItems: "center", gap: "16px" }}><div className={`civ-dag-step ${node.status === "COMPLETED" ? "is-done" : ""}`}><strong>{node.action}</strong><small style={{ color: "var(--muted)" }}>{node.agent_id} · {node.status}</small></div>{index < selectedMission.workflow.nodes.length - 1 && <ChevronRight className="civ-dag-arrow" size={18} />}</div>)}</div><ol className="civ-activity" style={{ padding: 0, margin: 0 }}>{selectedMission.events.map((event, index) => <li key={`${event.time}-${index}`}><span className="civ-timeline-dot" /><div><strong>{event.description}</strong><span>{event.type} · {event.agent_id}</span></div></li>)}</ol></section>}
+                    <div className="civ-columns"><section className="civ-glass" style={{ padding: "22px" }}><div className="civ-panel-head"><div><span className="civ-kicker">NEW MISSION</span><h2>Intent and crew</h2></div><GitBranch size={18} /></div><div className="civ-form-group"><label htmlFor="mission-title">Mission title</label><input id="mission-title" className="civ-input" value={missionTitle} onChange={event => setMissionTitle(event.target.value)} placeholder="Build authentication system" /></div><div className="civ-form-group"><label htmlFor="mission-goal">Human goal</label><textarea id="mission-goal" className="civ-textarea" rows={4} value={missionGoal} onChange={event => setMissionGoal(event.target.value)} placeholder="Implement OAuth with secure token rotation" /></div><div className="civ-form-group"><label>Required agents</label><div style={{ display: "grid", gap: "7px" }}>{agents.map(agent => <label key={agent.id} style={{ display: "flex", gap: "8px", alignItems: "center", color: "var(--muted)", fontSize: "0.78rem" }}><input type="checkbox" disabled={agent.status === "disabled"} checked={missionAgentIds.includes(agent.id)} onChange={event => setMissionAgentIds(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))} /> {agent.name} <span style={{ color: "#91d6e5" }}>({agent.role})</span></label>)}</div></div><button type="button" className="civ-btn-primary" onClick={() => void createMission()} disabled={missionSaving || !missionTitle.trim() || !missionGoal.trim()}><Save size={15} /> {missionSaving ? "Creating…" : "Create mission"}</button></section><section className="civ-glass" style={{ padding: "22px" }}><div className="civ-panel-head"><div><span className="civ-kicker">ACTIVE MISSIONS</span><h2>Mission status board</h2></div><Play size={18} /></div>{missions.map(mission => <button type="button" key={mission.id} onClick={() => setSelectedMissionId(mission.id)} style={{ width: "100%", textAlign: "left", marginBottom: "10px", padding: "14px", borderRadius: "14px", border: selectedMission?.id === mission.id ? "1px solid #65e0c3" : "1px solid var(--line)", background: selectedMission?.id === mission.id ? "rgba(101,224,195,0.12)" : "rgba(255,255,255,0.04)", color: "var(--ink)", cursor: "pointer" }}><strong>{mission.title}</strong><div style={{ color: "var(--muted)", fontSize: "0.72rem", marginTop: "5px" }}>{mission.status} · {mission.agents.length} agents · {mission.progress_pct}%</div><div className="civ-progress-bar"><div className="civ-progress-fill" style={{ width: `${mission.progress_pct}%` }} /></div></button>)}{!missions.length && <div className="civ-empty">No missions created.</div>}</section></div>
+            {selectedMission && <section className="civ-glass" style={{ marginTop: "16px", padding: "22px" }}><div className="civ-panel-head"><div><span className="civ-kicker">MISSION / {selectedMission.id}</span><h2>{selectedMission.title}</h2></div><div className="civ-btn-row"><button type="button" className="civ-btn-ghost" onClick={() => void missionAction(selectedMission, "simulate")} disabled={!['DRAFT', 'READY'].includes(selectedMission.status)}><SlidersHorizontal size={14} /> Simulate</button><button type="button" className="civ-btn-primary" onClick={() => void missionAction(selectedMission, selectedMission.status === "RUNNING" ? "pause" : selectedMission.status === "PAUSED" ? "resume" : "start")} disabled={!['DRAFT', 'READY', 'RUNNING', 'PAUSED'].includes(selectedMission.status)}><Play size={14} /> {selectedMission.status === "RUNNING" ? "Pause status" : selectedMission.status === "PAUSED" ? "Resume status" : "Set started status"}</button></div></div><p style={{ color: "var(--muted)", fontSize: "0.82rem" }}>{selectedMission.goal}</p><div className="civ-dag-container">{selectedMission.workflow.nodes.map((node, index) => <div key={node.id} style={{ display: "flex", alignItems: "center", gap: "16px" }}><div className={`civ-dag-step ${node.status === "COMPLETED" ? "is-done" : ""}`}><strong>{node.action}</strong><small style={{ color: "var(--muted)" }}>{node.agent_id} · {node.status}</small></div>{index < selectedMission.workflow.nodes.length - 1 && <ChevronRight className="civ-dag-arrow" size={18} />}</div>)}</div><ol className="civ-activity" style={{ padding: 0, margin: 0 }}>{selectedMission.events.map((event, index) => <li key={`${event.time}-${index}`}><span className="civ-timeline-dot" /><div><strong>{event.description}</strong><span>{event.type} · {event.agent_id}</span></div></li>)}</ol><MissionInsights key={`${profile}:${selectedMission.id}:${missionRevision}:${tick}`} profile={profile} missionId={selectedMission.id} /></section>}
           </section>
         )}
          {studioTab === "observatory" && viewMode === "tree" && (
@@ -678,7 +717,7 @@ export default function CivilizationPage() {
          {studioTab === "office" && (
           <section aria-label="2D robot office">
             <div className="civ-agent-header"><div><span className="civ-kicker">LIVING CIVILIZATION / EVENT STREAM</span><h2>HAOS Office Floor</h2><p style={{ color: "var(--muted)", margin: "5px 0 0", fontSize: "0.82rem" }}>A visual, non-authoritative projection of agent activity. Kernel state remains the source of truth.</p></div><span className="civ-model-pill"><Activity size={13} /> Live event projection</span></div>
-            <div className="civ-office-floor"><div className="civ-office-grid-overlay" aria-hidden="true" /><div className="civ-office-stations">{(agents.length ? agents : data?.bots.map(bot => ({ ...emptyAgentDraft(), ...bot, id: bot.bot_id, role: "builder", domain: "Unknown", description: "", model: { inherit: true }, capabilities: { allowed_tools: [], max_risk_tier: "READ", allowed_write_paths: [] }, memory: { working: true, session: true, project: false, domain: false, global_civ: false }, budget: { max_tokens: 0, timeout_seconds: 0, max_cost_usd: 0, max_iterations: 0 }, policies: { require_human_approval: [], risk_tolerance: "CONSERVATIVE" } } as AgentConfig)) ?? []).map((agent, index) => <div className="civ-station-desk" key={agent.id}><div className={`civ-robot-figure ${agent.status === "active" || index % 2 === 0 ? "is-working" : ""}`}><Bot size={29} /><span className="civ-robot-bubble">{agent.status === "active" ? "working" : agent.status}</span></div><strong>{agent.name}</strong><span className={`civ-role-badge civ-role-${agent.role.toLowerCase()}`}>{agent.role}</span><small style={{ color: "var(--muted)" }}>{agent.status === "active" ? "Processing mission events…" : "Awaiting assignment"}</small><div className="civ-model-pill"><Cpu size={11} /> {agent.effective_model || sessionModel || "Inherited"}</div></div>)}{!agents.length && !data?.bots.length && <div className="civ-empty"><Bot size={34} /><strong>The office is empty</strong><span>Create agents in Agent Studio to populate the floor.</span></div>}</div></div>
+            <div className="civ-office-floor"><div className="civ-office-grid-overlay" aria-hidden="true" /><div className="civ-office-stations">{(agents.length ? agents : data?.bots.map(bot => ({ ...emptyAgentDraft(), ...bot, id: bot.bot_id, role: "builder", domain: "Unknown", description: "", model: { inherit: true }, capabilities: { allowed_tools: [], max_risk_tier: "READ", allowed_write_paths: [] }, memory: { working: true, session: true, project: false, domain: false, global_civ: false }, budget: { max_tokens: 0, timeout_seconds: 0, max_cost_usd: 0, max_iterations: 0 }, policies: { require_human_approval: [], risk_tolerance: "CONSERVATIVE" } } as AgentConfig)) ?? []).map(agent => <div className="civ-station-desk" key={agent.id}><div className="civ-robot-figure"><Bot size={29} /><span className="civ-robot-bubble">{agent.status}</span></div><strong>{agent.name}</strong><span className={`civ-role-badge civ-role-${agent.role.toLowerCase()}`}>{agent.role}</span><small style={{ color: "var(--muted)" }}>{agent.status === "disabled" ? "Disabled for missions" : "Configured; runtime activity unavailable"}</small><div className="civ-model-pill"><Cpu size={11} /> {agent.effective_model || sessionModel || "Inherited"}</div></div>)}{!agents.length && !data?.bots.length && <div className="civ-empty"><Bot size={34} /><strong>The office is empty</strong><span>Create agents in Agent Studio to populate the floor.</span></div>}</div></div>
           </section>
         )}
 
@@ -696,7 +735,7 @@ export default function CivilizationPage() {
               <div className="civ-modal-tabs">{[["identity", "Identity"], ["model", "Model"], ["capabilities", "Capabilities"], ["memory", "Memory & budget"], ["policies", "Policies"]].map(([tab, label]) => <button type="button" key={tab} className={`civ-modal-tab ${agentEditorTab === tab ? "is-active" : ""}`} onClick={() => setAgentEditorTab(tab)}>{label}</button>)}</div>
               <div className="civ-modal-body">
                 {agentEditorTab === "identity" && <><div className="civ-form-group"><label htmlFor="agent-id">Immutable ID</label><input id="agent-id" className="civ-input" value={agentDraft.id} onChange={event => setAgentDraft({ ...agentDraft, id: event.target.value })} disabled={agents.some(agent => agent.id === agentDraft.id)} /></div><div className="civ-form-group"><label htmlFor="agent-name">Display name</label><input id="agent-name" className="civ-input" value={agentDraft.name} onChange={event => setAgentDraft({ ...agentDraft, name: event.target.value })} /></div><div className="civ-form-group"><label htmlFor="agent-role">Constitutional role</label><select id="agent-role" className="civ-select" value={agentDraft.role} onChange={event => setAgentDraft({ ...agentDraft, role: event.target.value })}>{["planner", "builder", "critic", "validator", "promoter", "security"].map(role => <option key={role}>{role}</option>)}</select></div><div className="civ-form-group"><label htmlFor="agent-domain">Domain</label><input id="agent-domain" className="civ-input" value={agentDraft.domain} onChange={event => setAgentDraft({ ...agentDraft, domain: event.target.value })} /></div><div className="civ-form-group"><label htmlFor="agent-description">Description</label><textarea id="agent-description" className="civ-textarea" rows={3} value={agentDraft.description} onChange={event => setAgentDraft({ ...agentDraft, description: event.target.value })} /></div></>}
-                {agentEditorTab === "model" && <><div className="civ-form-group"><label><input type="checkbox" checked={agentDraft.model.inherit} onChange={event => setAgentDraft({ ...agentDraft, model: { ...agentDraft.model, inherit: event.target.checked } })} /> Inherit session model</label><div className="civ-cascade-box"><div className="civ-cascade-row"><span style={{ color: "var(--muted)" }}>Session model</span><strong>{sessionModel || "—"}</strong></div><div className="civ-cascade-row"><span style={{ color: "var(--muted)" }}>Effective model</span><strong>{agentDraft.model.inherit ? sessionModel || "global default" : agentDraft.model.model_name || "select an override"}</strong></div></div></div><div className="civ-form-group"><label htmlFor="agent-model">Specific model override</label><select id="agent-model" className="civ-select" value={agentDraft.model.model_name || ""} disabled={agentDraft.model.inherit} onChange={event => { const model = availableModels.find(item => item.id === event.target.value); setAgentDraft({ ...agentDraft, model: { ...agentDraft.model, inherit: false, model_name: model?.id || event.target.value, provider: model?.provider || null } }); }}><option value="">Select model</option>{availableModels.map(model => <option key={model.id} value={model.id}>{model.label || model.id} · {model.provider}</option>)}</select></div><div className="civ-form-group"><label htmlFor="agent-temperature">Temperature</label><input id="agent-temperature" className="civ-input" type="number" min="0" max="2" step="0.1" value={agentDraft.model.temperature ?? 0.2} onChange={event => setAgentDraft({ ...agentDraft, model: { ...agentDraft.model, temperature: Number(event.target.value) } })} /></div></>}
+                {agentEditorTab === "model" && <><div className="civ-form-group"><label><input type="checkbox" checked={agentDraft.model.inherit} onChange={event => setAgentDraft({ ...agentDraft, model: { ...agentDraft.model, inherit: event.target.checked } })} /> Inherit session model</label><div className="civ-cascade-box"><div className="civ-cascade-row"><span style={{ color: "var(--muted)" }}>Session model</span><strong>{sessionModel || "—"}</strong></div><div className="civ-cascade-row"><span style={{ color: "var(--muted)" }}>Effective model</span><strong>{agentDraft.model.inherit ? sessionModel || "global default" : agentDraft.model.model_name || "select an override"}</strong></div></div></div><div className="civ-form-group"><label htmlFor="agent-model">Specific model override</label><select id="agent-model" className="civ-select" value={agentDraft.model.model_name || ""} disabled={agentDraft.model.inherit} onChange={event => { const model = availableModels.find(item => item.id === event.target.value); setAgentDraft({ ...agentDraft, model: { ...agentDraft.model, inherit: false, model_name: model?.id || event.target.value, provider: model?.provider || null } }); }}><option value="">Select model</option>{availableModels.map(model => <option key={model.id} value={model.id}>{model.name || model.id} · {model.provider}</option>)}</select></div><div className="civ-form-group"><label htmlFor="agent-temperature">Temperature</label><input id="agent-temperature" className="civ-input" type="number" min="0" max="2" step="0.1" value={agentDraft.model.temperature ?? 0.2} onChange={event => setAgentDraft({ ...agentDraft, model: { ...agentDraft.model, temperature: Number(event.target.value) } })} /></div></>}
                 {agentEditorTab === "capabilities" && <><div className="civ-form-group"><label>Allowed tools</label><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>{["read_file", "terminal", "git", "filesystem", "network", "deployment"].map(tool => <label key={tool} style={{ fontSize: "0.78rem", color: "var(--muted)" }}><input type="checkbox" checked={agentDraft.capabilities.allowed_tools.includes(tool)} onChange={event => setAgentDraft({ ...agentDraft, capabilities: { ...agentDraft.capabilities, allowed_tools: event.target.checked ? [...agentDraft.capabilities.allowed_tools, tool] : agentDraft.capabilities.allowed_tools.filter(item => item !== tool) } })} /> {tool}</label>)}</div></div><div className="civ-form-group"><label htmlFor="agent-risk">Maximum risk tier</label><select id="agent-risk" className="civ-select" value={agentDraft.capabilities.max_risk_tier} onChange={event => setAgentDraft({ ...agentDraft, capabilities: { ...agentDraft.capabilities, max_risk_tier: event.target.value } })}>{["READ", "LOW", "MEDIUM", "HIGH", "CRITICAL"].map(risk => <option key={risk}>{risk}</option>)}</select></div></>}
                 {agentEditorTab === "memory" && <><div className="civ-form-group"><label>Readable memory scopes</label>{(["working", "session", "project", "domain", "global_civ"] as const).map(scope => <label key={scope} style={{ fontSize: "0.78rem", color: "var(--muted)" }}><input type="checkbox" checked={agentDraft.memory[scope]} disabled={scope === "global_civ" && agentDraft.role !== "promoter"} onChange={event => setAgentDraft({ ...agentDraft, memory: { ...agentDraft.memory, [scope]: event.target.checked } })} /> {scope === "global_civ" ? "Global civilization memory (PROMOTER only)" : scope}</label>)}</div><div className="civ-form-group"><label htmlFor="agent-tokens">Token limit</label><input id="agent-tokens" className="civ-input" type="number" value={agentDraft.budget.max_tokens} onChange={event => setAgentDraft({ ...agentDraft, budget: { ...agentDraft.budget, max_tokens: Number(event.target.value) } })} /></div><div className="civ-form-group"><label htmlFor="agent-cost">Cost limit (USD)</label><input id="agent-cost" className="civ-input" type="number" step="0.01" value={agentDraft.budget.max_cost_usd} onChange={event => setAgentDraft({ ...agentDraft, budget: { ...agentDraft.budget, max_cost_usd: Number(event.target.value) } })} /></div></>}
                 {agentEditorTab === "policies" && <><div className="civ-form-group"><label htmlFor="agent-tolerance">Risk tolerance</label><select id="agent-tolerance" className="civ-select" value={agentDraft.policies.risk_tolerance} onChange={event => setAgentDraft({ ...agentDraft, policies: { ...agentDraft.policies, risk_tolerance: event.target.value } })}><option>CONSERVATIVE</option><option>BALANCED</option><option>EXPERIMENTAL</option></select></div><div className="civ-form-group"><label>Human approval gates</label>{["merge", "deploy", "memory_promotion"].map(gate => <label key={gate} style={{ fontSize: "0.78rem", color: "var(--muted)" }}><input type="checkbox" checked={agentDraft.policies.require_human_approval.includes(gate)} onChange={event => setAgentDraft({ ...agentDraft, policies: { ...agentDraft.policies, require_human_approval: event.target.checked ? [...agentDraft.policies.require_human_approval, gate] : agentDraft.policies.require_human_approval.filter(item => item !== gate) } })} /> {gate}</label>)}</div></>}

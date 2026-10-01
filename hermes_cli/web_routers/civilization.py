@@ -2,14 +2,16 @@
 
 import json
 import logging
+import os
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from hermes_cli.web_deps import late
 from hermes_constants import get_hermes_home
@@ -24,6 +26,10 @@ from hermes.platform.evolution.bot_evolution import BotEvolutionManager
 from hermes.platform.observability.event_store import EventStore, default_event_store_path
 from hermes.platform.observability.events import Event
 from hermes.platform.society.manager import SocietyManager
+from hermes.platform.execution.mission_store import MissionStore
+from hermes.platform.execution.mission_runtime import MissionSupervisor
+from hermes.platform.tasks.kanban_adapter import KanbanAdapter
+from hermes_cli.kanban_db import kanban_db_path
 
 logger = logging.getLogger("hermes_cli.web_routers.civilization")
 
@@ -56,6 +62,12 @@ def _event_links(event):
         value = next((v for v in candidates if isinstance(v, str) and v), None)
         if value is not None:
             result[key] = value
+    for key in ("mission_id", "agent_id", "node_id", "mission_status"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            result[key] = value
+    if "node_id" in result and isinstance(payload.get("status"), str):
+        result["status"] = payload["status"]
     return result
 
 
@@ -545,7 +557,7 @@ class AgentConfigDTO(BaseModel):
     role: str = "builder"
     domain: str = "Software Engineering"
     description: str = ""
-    status: str = "active"
+    status: Literal["active", "disabled"] = "active"
     model: ModelConfigDTO = ModelConfigDTO()
     capabilities: CapabilitiesDTO = CapabilitiesDTO()
     memory: MemoryScopeDTO = MemoryScopeDTO()
@@ -559,6 +571,7 @@ class MissionWorkflowNodeDTO(BaseModel):
     role: str
     action: str
     status: str = "PENDING"
+    requires_approval: bool = False
 
 
 class MissionWorkflowEdgeDTO(BaseModel):
@@ -581,8 +594,12 @@ class MissionCreateDTO(BaseModel):
     policies: Optional[Dict[str, Any]] = None
 
 
+class AgentLifecycleDTO(BaseModel):
+    enabled: StrictBool
+
+
 class ApprovalDecisionDTO(BaseModel):
-    approved: bool
+    approved: StrictBool
     reason: str = ""
 
 
@@ -660,6 +677,115 @@ def _save_missions(missions: List[dict]) -> None:
     p.write_text(json.dumps(missions, indent=2), encoding="utf-8")
 
 
+def _mission_store() -> MissionStore:
+    home = Path(get_hermes_home()).resolve()
+    profile_key = str(home)
+    return MissionStore(kanban_db_path(), profile_key=profile_key, home_path=home)
+
+
+_supervisors: Dict[str, MissionSupervisor] = {}
+_supervisor_lock = threading.Lock()
+
+
+def _get_supervisor(request: Optional[Request] = None) -> MissionSupervisor:
+    home = Path(get_hermes_home()).resolve()
+    profile_key = str(home)
+
+    app = getattr(request, "app", None)
+    app_state = getattr(app, "state", None) if app else None
+    supervisors_map = getattr(app_state, "mission_supervisors", None) if app_state is not None else None
+    if supervisors_map is None:
+        supervisors_map = _supervisors
+
+    with _supervisor_lock:
+        if profile_key not in supervisors_map:
+            store = _mission_store()
+            adapter = KanbanAdapter(db_path=kanban_db_path())
+
+            def _default_worker_executor(spec: Any, cancel: threading.Event) -> Dict[str, Any]:
+                from hermes.platform.execution.lane_executor import (
+                    DeterministicLaneWorker,
+                    HermesCliLaneWorker,
+                )
+                import dataclasses
+                if dataclasses.is_dataclass(spec):
+                    task_dict = dataclasses.asdict(spec)
+                elif hasattr(spec, "to_dict"):
+                    task_dict = spec.to_dict()
+                elif isinstance(spec, dict):
+                    task_dict = dict(spec)
+                else:
+                    task_dict = vars(spec)
+                task_id = str(task_dict.get("id") or "task")
+                workspace_dir = home / "workspaces" / task_id
+                workspace_dir.mkdir(parents=True, exist_ok=True)
+
+                if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("CIVILIZATION_SIMULATION"):
+                    worker = DeterministicLaneWorker()
+                else:
+                    try:
+                        cli_worker = HermesCliLaneWorker()
+                        if cli_worker.available():
+                            worker = cli_worker
+                        else:
+                            worker = DeterministicLaneWorker()
+                    except Exception:
+                        worker = DeterministicLaneWorker()
+
+                res = worker.execute(
+                    task_id=task_id,
+                    workspace=workspace_dir,
+                    spec=task_dict,
+                    cancel_event=cancel,
+                )
+                if isinstance(res, dict) and "tokens" not in res:
+                    res["tokens"] = 100
+                return res
+
+            supervisor = MissionSupervisor(
+                store=store,
+                adapter=adapter,
+                executor=_default_worker_executor,
+                poll_seconds=0.1,
+                profile_key=profile_key,
+                home_path=home,
+            )
+            supervisor.recover_active_missions()
+            supervisors_map[profile_key] = supervisor
+        return supervisors_map[profile_key]
+
+
+def _shutdown_supervisors(supervisors_map: Optional[dict] = None) -> None:
+    """Stop every supervisor owned by this process and drop the references.
+
+    Both the per-app map (lifespan) and the module-level fallback map are shut
+    down before clearing: clearing without shutdown would strand live mission
+    loops holding store/adapter connections while a later _get_supervisor call
+    builds a second supervisor for the same profile (double claim risk).
+    """
+    targets = supervisors_map if supervisors_map is not None else _supervisors
+    with _supervisor_lock:
+        all_sups = list(targets.values())
+        if targets is not _supervisors:
+            all_sups.extend(_supervisors.values())
+        for sup in all_sups:
+            try:
+                sup.shutdown()
+            except Exception:
+                pass
+        targets.clear()
+        _supervisors.clear()
+
+
+def _sync_mission_store(mission: dict) -> dict:
+    """Persist the UI mission as additive canonical control metadata."""
+    return _mission_store().create_or_import(
+        str(mission["id"]), title=mission.get("title"), objective=mission.get("goal"),
+        desired_state=str(mission.get("status", "DRAFT")).lower(),
+        actual_state=str(mission.get("status", "DRAFT")).lower(), metadata=mission,
+    )
+
+
 def _maybe_append_event(name: str, payload: dict) -> None:
     store_path = default_event_store_path()
     if store_path.is_file():
@@ -722,7 +848,7 @@ def create_civilization_agent(request: Request, body: AgentConfigDTO, profile: O
     """Create a new agent enforcing constitutional invariants."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agent_dict = body.dict()
+        agent_dict = body.model_dump()
         if not agent_dict["id"].strip():
             raise HTTPException(status_code=400, detail="agent id cannot be empty")
         # Enforce Constitutional Invariant: Only PROMOTER may write to GLOBAL memory scope
@@ -751,7 +877,9 @@ def update_civilization_agent(request: Request, agent_id: str, body: AgentConfig
     """Update an existing agent configuration enforcing constitutional invariants."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agent_dict = body.dict()
+        agent_dict = body.model_dump()
+        if agent_dict["id"] != agent_id:
+            raise HTTPException(status_code=400, detail="Agent id is immutable")
         if agent_dict.get("memory", {}).get("global_civ"):
             role = str(agent_dict.get("role", "")).lower()
             if role != "promoter":
@@ -771,6 +899,33 @@ def update_civilization_agent(request: Request, agent_id: str, body: AgentConfig
         agent_dict["effective_model"] = eff_model
         agent_dict["model_source"] = source
         return agent_dict
+
+
+@router.post("/api/civilization/agents/{agent_id}/lifecycle")
+def set_agent_lifecycle(request: Request, agent_id: str, body: AgentLifecycleDTO, profile: Optional[str] = None):
+    """Enable/disable a declarative agent; this does not stop a runtime worker."""
+    _require_token(request)
+    with _config_profile_scope(profile):
+        agents = _load_agents()
+        agent = next((a for a in agents if a["id"] == agent_id), None)
+        if agent is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        agent["status"] = "active" if body.enabled else "disabled"
+        _save_agents(agents)
+        model, source = _resolve_agent_model(agent.get("model", {}), session_model=_get_session_model())
+        return {**agent, "effective_model": model, "model_source": source}
+
+
+def _validate_mission_agents(mission: dict) -> None:
+    """Check both assignment surfaces so workflow-only agents cannot bypass disabling."""
+    references = set(mission.get("agents", []))
+    references.update(n["agent_id"] for n in (mission.get("workflow") or {}).get("nodes", []))
+    agents = {a["id"]: a for a in _load_agents()}
+    for agent_id in sorted(references):
+        if agent_id not in agents:
+            raise HTTPException(status_code=400, detail=f"Unknown mission agent: {agent_id}")
+        if agents[agent_id].get("status", "active") != "active":
+            raise HTTPException(status_code=409, detail=f"Mission agent is disabled: {agent_id}")
 
 
 @router.post("/api/civilization/agents/{agent_id}/duplicate")
@@ -817,7 +972,7 @@ def import_civilization_agent(request: Request, body: AgentConfigDTO, profile: O
     """Import and validate an agent JSON specification."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agent_dict = body.dict()
+        agent_dict = body.model_dump()
         if not agent_dict["id"].strip():
             raise HTTPException(status_code=400, detail="agent id cannot be empty")
         if agent_dict.get("memory", {}).get("global_civ"):
@@ -857,7 +1012,7 @@ def create_civilization_mission(request: Request, body: MissionCreateDTO, profil
     with _config_profile_scope(profile):
         mission_id = body.id or f"mis-{uuid.uuid4().hex[:8]}"
         now = time.time()
-        workflow = body.workflow.dict() if body.workflow else {
+        workflow = body.workflow.model_dump() if body.workflow else {
             "nodes": [
                 {"id": f"node-{i+1}", "agent_id": aid, "role": "agent", "action": f"Step {i+1}", "status": "PENDING"}
                 for i, aid in enumerate(body.agents)
@@ -884,7 +1039,11 @@ def create_civilization_mission(request: Request, body: MissionCreateDTO, profil
             "created_at": now,
             "updated_at": now,
         }
+        _validate_mission_agents(mission)
         missions = _load_missions()
+        if any(m["id"] == mission_id for m in missions):
+            raise HTTPException(status_code=409, detail="Mission id already exists")
+        _sync_mission_store(mission)
         missions.append(mission)
         _save_missions(missions)
         _maybe_append_event("civ.mission.created", {"mission_id": mission_id, "title": body.title})
@@ -912,6 +1071,8 @@ def simulate_civilization_mission(request: Request, mission_id: str, profile: Op
         mission = next((m for m in missions if m["id"] == mission_id), None)
         if not mission:
             raise HTTPException(status_code=404, detail="Mission not found")
+        if mission["status"] not in ("DRAFT", "READY"):
+            raise HTTPException(status_code=409, detail="Only DRAFT/READY missions can be simulated")
         sim_engine = SimulationEngine()
         goal = mission.get("goal") or mission.get("title") or "Mission Execution"
         report = sim_engine.simulate_task(task_prompt=goal, complexity_hint="medium")
@@ -925,15 +1086,29 @@ def simulate_civilization_mission(request: Request, mission_id: str, profile: Op
 
 @router.post("/api/civilization/missions/{mission_id}/start")
 def start_civilization_mission(request: Request, mission_id: str, profile: Optional[str] = None):
-    """Transition mission to RUNNING state."""
+    """Transition mission to RUNNING state and commence supervisor execution."""
     _require_token(request)
     with _config_profile_scope(profile):
         missions = _load_missions()
         mission = next((m for m in missions if m["id"] == mission_id), None)
         if not mission:
             raise HTTPException(status_code=404, detail="Mission not found")
+        if mission["status"] not in ("DRAFT", "READY"):
+            raise HTTPException(status_code=409, detail="Only DRAFT/READY missions can be started")
+        _validate_mission_agents(mission)
+        _sync_mission_store(mission)
+
+        # Dispatch to canonical supervisor
+        sup = _get_supervisor(request)
+        sup_res = sup.start(mission)
+
         now = time.time()
         mission["status"] = "RUNNING"
+        mission["runtime_control"] = {
+            "actual_state": sup_res.get("status", "RUNNING").lower(),
+            "source": "canonical_mission_supervisor",
+            "task_ids": sup_res.get("task_ids", []),
+        }
         mission["progress_pct"] = max(mission.get("progress_pct", 0.0), 10.0)
         mission["updated_at"] = now
         events = mission.setdefault("events", [])
@@ -941,7 +1116,8 @@ def start_civilization_mission(request: Request, mission_id: str, profile: Optio
             "time": now,
             "type": "civ.mission.started",
             "agent_id": mission["agents"][0] if mission.get("agents") else "system",
-            "description": f"Mission '{mission['title']}' started execution.",
+            "mission_status": "RUNNING",
+            "description": f"Mission '{mission['title']}' dispatched to supervisor runtime.",
             "status": "in_progress",
         })
         _save_missions(missions)
@@ -951,22 +1127,30 @@ def start_civilization_mission(request: Request, mission_id: str, profile: Optio
 
 @router.post("/api/civilization/missions/{mission_id}/pause")
 def pause_civilization_mission(request: Request, mission_id: str, profile: Optional[str] = None):
-    """Pause an active mission."""
+    """Pause an active mission cooperatively."""
     _require_token(request)
     with _config_profile_scope(profile):
         missions = _load_missions()
         mission = next((m for m in missions if m["id"] == mission_id), None)
         if not mission:
             raise HTTPException(status_code=404, detail="Mission not found")
+        if mission["status"] != "RUNNING":
+            raise HTTPException(status_code=409, detail="Only RUNNING missions can be paused")
         now = time.time()
         mission["status"] = "PAUSED"
+
+        sup = _get_supervisor(request)
+        control = sup.pause(mission_id)
+
+        mission["runtime_control"] = {"desired_state": control.get("desired_state"), "source": "canonical_mission_supervisor"}
         mission["updated_at"] = now
         events = mission.setdefault("events", [])
         events.append({
             "time": now,
             "type": "civ.mission.paused",
             "agent_id": "operator",
-            "description": f"Mission '{mission['title']}' paused by operator.",
+            "mission_status": "PAUSED",
+            "description": f"Mission '{mission['title']}' paused cooperatively by operator.",
             "status": "paused",
         })
         _save_missions(missions)
@@ -983,14 +1167,23 @@ def resume_civilization_mission(request: Request, mission_id: str, profile: Opti
         mission = next((m for m in missions if m["id"] == mission_id), None)
         if not mission:
             raise HTTPException(status_code=404, detail="Mission not found")
+        if mission["status"] != "PAUSED":
+            raise HTTPException(status_code=409, detail="Only PAUSED missions can be resumed")
+        _validate_mission_agents(mission)
         now = time.time()
         mission["status"] = "RUNNING"
+
+        sup = _get_supervisor(request)
+        control = sup.resume(mission_id)
+
+        mission["runtime_control"] = {"desired_state": control.get("desired_state"), "source": "canonical_mission_supervisor"}
         mission["updated_at"] = now
         events = mission.setdefault("events", [])
         events.append({
             "time": now,
             "type": "civ.mission.resumed",
             "agent_id": "operator",
+            "mission_status": "RUNNING",
             "description": f"Mission '{mission['title']}' resumed by operator.",
             "status": "in_progress",
         })
@@ -1008,23 +1201,221 @@ def get_civilization_mission_events(request: Request, mission_id: str, profile: 
         mission = next((m for m in missions if m["id"] == mission_id), None)
         if not mission:
             raise HTTPException(status_code=404, detail="Mission not found")
-        return {"events": mission.get("events", [])}
+        events = [dict(e) for e in mission.get("events", [])]
+        store = _get_read_only_store()
+        if store:
+            for event in store.get_all():
+                if not isinstance(event.payload, dict) or event.payload.get("mission_id") != mission_id:
+                    continue
+                # Legacy JSON/store transitions have no correlation ID. Enrich the
+                # matching JSON entry rather than showing the same transition twice.
+                match = next((e for e in events if e.get("type") == event.name
+                              and "seq" not in e), None)
+                dto = _event_links(event)
+                if match is not None and event.name.startswith("civ.mission."):
+                    match.update({k: v for k, v in dto.items() if k in ("seq", "node_id", "mission_status", "status")})
+                else:
+                    events.append({**dto, "time": event.timestamp, "type": event.name,
+                                   "agent_id": dto.get("agent_id", "system"),
+                                   "description": event.name, "status": dto.get("status", "recorded")})
+        return {"events": sorted(events, key=lambda e: (e.get("time", 0), e.get("seq", 0)))}
+
+
+# No current emitter produces approval requests. This is an explicit storage
+# contract for external producers, not a synthesized gate from mission policies.
+_APPROVAL_REQUEST = "civ.council.approval_requested"
+_APPROVAL_DECISION = "civ.council.approval_decided"
+_APPROVAL_LIMITATIONS = [
+    "No approval request producer currently exists; only explicitly recorded requests are shown.",
+    "Recording a decision does not resume runtime execution.",
+]
+
+
+def _approval_projection(events) -> tuple[dict, set]:
+    requests = {}
+    decided = set()
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        approval_id = payload.get("approval_id")
+        if not isinstance(approval_id, str) or not approval_id:
+            continue
+        if event.name == _APPROVAL_DECISION:
+            decided.add(approval_id)
+        elif event.name == _APPROVAL_REQUEST and approval_id not in requests:
+            requests[approval_id] = {
+                "approval_id": approval_id, "requested_at": event.timestamp, "status": "pending",
+                **{key: payload.get(key) if isinstance(payload.get(key), str) else None
+                   for key in ("mission_id", "agent_id", "gate", "risk_class", "description")},
+            }
+    return requests, decided
+
+
+@router.get("/api/civilization/approvals")
+def get_approvals(request: Request, mission_id: Optional[str] = None, profile: Optional[str] = None):
+    _require_token(request)
+    with _config_profile_scope(profile):
+        mstore = _mission_store()
+        db_gates = mstore.list_pending_gates(mission_id=mission_id)
+
+        store = _get_read_only_store()
+        requests, decided = _approval_projection(store.get_all() if store else [])
+
+        combined = []
+        seen_ids = set()
+        for g in db_gates:
+            aid = str(g.get("gate_id") or g.get("approval_id"))
+            seen_ids.add(aid)
+            payload = g.get("payload") or {}
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
+            combined.append({
+                "approval_id": aid,
+                "mission_id": g.get("mission_id"),
+                "agent_id": g.get("requested_by") or g.get("agent_id"),
+                "gate": g.get("action") or g.get("kind") or g.get("gate"),
+                "risk_class": payload.get("risk_class") or g.get("risk_class", "normal"),
+                "description": payload.get("description") or g.get("description", ""),
+                "requested_at": g.get("created_at") or g.get("requested_at", 0),
+                "status": "pending",
+                "source": "canonical_runtime",
+            })
+
+        for aid, r in requests.items():
+            if aid not in decided and aid not in seen_ids:
+                if mission_id is None or r.get("mission_id") == mission_id:
+                    seen_ids.add(aid)
+                    combined.append(r)
+
+        return {
+            "approvals": combined,
+            "quality": "canonical_gates" if db_gates else "event_projection",
+            "limitations": [] if db_gates else _APPROVAL_LIMITATIONS,
+        }
+
+
+@router.get("/api/civilization/missions/{mission_id}/analytics")
+def get_mission_analytics(request: Request, mission_id: str, profile: Optional[str] = None):
+    """Only canonical runtime observations count; estimates and JSON demos do not."""
+    _require_token(request)
+    with _config_profile_scope(profile):
+        mstore = _mission_store()
+        try:
+            m_state = mstore.get(mission_id)
+            store_analytics = mstore.get_mission_analytics(mission_id) if m_state else None
+        except (KeyError, PermissionError):
+            m_state = None
+            store_analytics = None
+
+        store = _get_read_only_store()
+        events = [e for e in store.get_all() if isinstance(e.payload, dict)
+                  and e.payload.get("mission_id") == mission_id] if store else []
+        if not events and not any(m["id"] == mission_id for m in _load_missions()):
+            raise HTTPException(status_code=404, detail="Mission not found")
+
+        # If runtime executed tasks in MissionStore:
+        if store_analytics and store_analytics.get("tasks_total", 0) > 0:
+            duration = store_analytics.get("duration_seconds")
+            tokens = store_analytics.get("total_tokens")
+            failures = store_analytics.get("total_failures", 0)
+            retries = store_analytics.get("total_retries", 0)
+            quality = "measured" if tokens is not None else "partial"
+            return {
+                "mission_id": mission_id,
+                "duration_seconds": duration,
+                "tokens": tokens,
+                "failures": failures,
+                "retries": retries,
+                "event_count": len(events) + store_analytics.get("tasks_completed", 0),
+                "quality": quality,
+                "limitations": [] if quality == "measured" else ["Token telemetry unmeasured for executed tasks."],
+            }
+
+        starts = [e.timestamp for e in events if e.name == "team.formed"]
+        ends = [e.timestamp for e in events if e.name == "mission.completed"]
+        duration = ends[-1] - starts[0] if starts and ends and ends[-1] >= starts[0] else None
+        # team_runtime's known mission events contain no token, failure or retry
+        # measurements. Absence is unknown, NOT a measured zero.
+        return {"mission_id": mission_id, "duration_seconds": duration,
+                "tokens": None, "failures": None, "retries": None,
+                "event_count": len(events), "quality": "partial" if duration is not None else "unmeasured",
+                "limitations": ["JSON mission control is declarative, not runtime execution.",
+                                "Duration requires recorded team.formed and mission.completed events.",
+                                "Known mission emitters do not record tokens, failures or retries."]}
 
 
 @router.post("/api/civilization/approvals/{approval_id}/decision")
 def record_approval_decision(request: Request, approval_id: str, body: ApprovalDecisionDTO, profile: Optional[str] = None):
-    """Record human operator approval or rejection decision."""
+    """Durably record a decision in canonical approval gate and/or EventStore."""
     _require_token(request)
     with _config_profile_scope(profile):
-        _maybe_append_event("civ.council.approval_decided", {
-            "approval_id": approval_id,
-            "approved": body.approved,
-            "reason": body.reason,
-            "timestamp": time.time(),
-        })
-        return {
-            "status": "recorded",
-            "approval_id": approval_id,
-            "approved": body.approved,
-            "reason": body.reason,
-        }
+        mstore = _mission_store()
+        gate = mstore.get_gate(approval_id)
+
+        if gate is not None:
+            if gate.get("status") != "pending":
+                raise HTTPException(status_code=409, detail="Approval already decided")
+            decided = mstore.decide_gate(approval_id, approved=body.approved, decided_by="operator", reason=body.reason)
+            if not decided:
+                raise HTTPException(status_code=409, detail="Approval already decided")
+
+            # Append audit event to EventStore if available
+            path = default_event_store_path()
+            if path.parent.exists():
+                try:
+                    with EventStore(str(path)) as estore:
+                        event = Event(
+                            event_id=f"civilization-approval-decision:{approval_id}",
+                            name=_APPROVAL_DECISION,
+                            payload={
+                                "approval_id": approval_id,
+                                "mission_id": gate.get("mission_id"),
+                                "approved": body.approved,
+                                "reason": body.reason,
+                            },
+                        )
+                        estore.append(event)
+                except Exception:
+                    pass
+
+            # Wake supervisor to resume execution
+            try:
+                sup = _get_supervisor(request)
+                sup.wake()
+            except Exception:
+                pass
+
+            return {
+                "status": "recorded",
+                "approval_id": approval_id,
+                "approved": body.approved,
+                "reason": body.reason,
+                "runtime_resumed": bool(body.approved),
+            }
+
+        # Fallback to EventStore projection
+        path = default_event_store_path()
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Approval not found")
+        with EventStore(str(path)) as store:
+            requests, decided = _approval_projection(store.get_all())
+            if approval_id not in requests:
+                raise HTTPException(status_code=404, detail="Approval not found")
+            if approval_id in decided:
+                raise HTTPException(status_code=409, detail="Approval already decided")
+            # EventStore serializes append and enforces its event_id PK across
+            # connections/processes. A deterministic decision ID closes the race
+            # between projection and append without treating the stream as a ledger.
+            event = Event(event_id=f"civilization-approval-decision:{approval_id}",
+                          name=_APPROVAL_DECISION, payload={
+                              "approval_id": approval_id, "mission_id": requests[approval_id]["mission_id"],
+                              "approved": body.approved, "reason": body.reason,
+                          })
+            try:
+                store.append(event)
+            except sqlite3.IntegrityError as exc:
+                raise HTTPException(status_code=409, detail="Approval already decided") from exc
+        return {"status": "recorded", "approval_id": approval_id,
+                "approved": body.approved, "reason": body.reason, "runtime_resumed": False}

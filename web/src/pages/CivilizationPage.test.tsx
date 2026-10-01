@@ -42,7 +42,7 @@ describe("Civilization observatory", () => {
     expect(container!.textContent).toContain("pai não registrado: unknown");
     expect(container!.textContent).toContain("decision-a");
     expect(container!.textContent).toContain("bot.created");
-    expect(api.fetchJSON).toHaveBeenCalledWith("/api/civilization/overview", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(api.fetchJSON).toHaveBeenCalledWith("/api/civilization/overview?profile=", expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("separates an API failure from a genuinely empty event store", async () => {
