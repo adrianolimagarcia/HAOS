@@ -76,4 +76,9 @@ nunca como dependência embutida.
 - **Sprint B (commit 2)**: `raptor_memory`, `retrieval_planner` + testes.
 - **Sprint C (follow-up)**: ligar `hybrid_router.query()` ao planner; ingestão
   de docs via semantic chunker no `RAGFlowStore`; benchmark de recall/MRR em
-  `evals/`.
+  `evals/`. — **FEITO (0.21.73)**: `use_planner=True` no
+  `HybridKnowledgeRouter` (cascade fixa intacta como default; bug latente de
+  `logger` sem import corrigido),
+  `SemanticDocumentChunker` plugável em `RAGFlowStore(chunker=...)`,
+  `evals/rag_recall_benchmark.py` (recall@k/MRR; corpus sintético medido:
+  recall@3 1.0, MRR 1.0 — verificação de mecanismo, não claim de produção).

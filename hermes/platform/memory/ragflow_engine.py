@@ -287,7 +287,7 @@ class RetrievalBudget:
 class RAGFlowStore:
     """SQLite WAL-backed RAG engine with FTS5 lexical search and RRF fusion."""
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None, chunker=None):
         if db_path is None:
             from hermes_constants import get_hermes_home
             home = Path(get_hermes_home())
@@ -296,7 +296,12 @@ class RAGFlowStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self.chunker = HeaderBreadcrumbChunker()
+        # Injectable seam: any object exposing chunk_markdown(text,
+        # doc_path=..., doc_id=..., metadata=...) -> List[DocumentChunk]-like
+        # rows (e.g. hermes.platform.memory.semantic_chunker.
+        # SemanticDocumentChunker) plugs in here. Default keeps the original
+        # HeaderBreadcrumbChunker behavior byte-for-byte.
+        self.chunker = chunker or HeaderBreadcrumbChunker()
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:

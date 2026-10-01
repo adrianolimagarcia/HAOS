@@ -172,3 +172,53 @@ class SemanticChunker:
     def chunk_markdown(self, text: str, doc_path: str = "document.md",
                        doc_id: str = "") -> List[KnowledgeChunk]:
         return self.chunk_tree(parse_markdown(text, doc_path=doc_path), doc_id=doc_id)
+
+
+class SemanticDocumentChunker:
+    """Adapter: semantic chunks as ``ragflow_engine.DocumentChunk`` rows.
+
+    ``RAGFlowStore.index_document`` calls
+    ``chunker.chunk_markdown(text, doc_path=..., doc_id=..., metadata=...)``
+    and persists DocumentChunk-shaped rows. This adapter runs the typed-tree
+    semantic chunker and maps each KnowledgeChunk onto that shape, so
+    atom-safe chunking plugs into the existing store with ZERO schema change
+    (Sprint C of docs/architecture/haos-rag-evolution.md). The store's
+    ``chunker`` seam is the only touch point.
+    """
+
+    def __init__(self, chunker: Optional[SemanticChunker] = None):
+        self._chunker = chunker or SemanticChunker()
+
+    def chunk_markdown(
+        self,
+        text: str,
+        doc_path: str = "document.md",
+        doc_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> List[Any]:
+        from hermes.platform.memory.ragflow_engine import DocumentChunk
+
+        tree = parse_markdown(text, doc_path=doc_path)
+        resolved_id = doc_id or ""
+        rows = []
+        for ch in self._chunker.chunk_tree(tree, doc_id=resolved_id):
+            meta = dict(ch.metadata)
+            if metadata:
+                meta.update(metadata)
+            meta.setdefault("kinds", ch.kinds)
+            meta.setdefault("summary", ch.summary)
+            rows.append(
+                DocumentChunk(
+                    chunk_id=ch.chunk_id,
+                    doc_id=resolved_id or ch.doc_path,
+                    doc_path=ch.doc_path,
+                    breadcrumb=list(ch.breadcrumb),
+                    header_path=ch.header_path,
+                    content=ch.content,
+                    start_line=ch.start_line,
+                    end_line=ch.end_line,
+                    provenance_anchor=ch.provenance_anchor,
+                    metadata=meta,
+                )
+            )
+        return rows
