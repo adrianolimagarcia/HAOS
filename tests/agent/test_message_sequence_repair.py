@@ -1588,14 +1588,14 @@ def test_repair_decodes_sentinel_multimodal_and_skips_text_merge():
     """A multimodal turn re-inserted as its ``\x00json:`` string (e.g. after a proactive prune
     re-inserts history) must be decoded back to structured content, not glued onto an adjacent
     text turn as a giant base64 blob (#125299)."""
-    import json
-    from agent.agent_runtime_helpers import repair_message_sequence, _JSON_CONTENT_SENTINEL
+    from hermes_state import SessionDB
+    from agent.agent_runtime_helpers import repair_message_sequence
 
     parts = [
         {"type": "text", "text": "look at this"},
         {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 4000}},
     ]
-    encoded = _JSON_CONTENT_SENTINEL + json.dumps(parts)
+    encoded = SessionDB._encode_content(parts)
     messages = [
         {"role": "user", "content": encoded},
         {"role": "user", "content": "any follow-up thoughts?"},
@@ -1614,11 +1614,89 @@ def test_repair_decodes_sentinel_multimodal_and_skips_text_merge():
 def test_repair_leaves_corrupted_sentinel_content_untouched():
     """A sentinel body that no longer parses (already merged / truncated) is left as-is rather
     than crashing the pre-call repair (#125299)."""
-    from agent.agent_runtime_helpers import repair_message_sequence, _JSON_CONTENT_SENTINEL
+    from hermes_state import SessionDB
+    from agent.agent_runtime_helpers import repair_message_sequence
 
-    corrupt = _JSON_CONTENT_SENTINEL + '[{"type": "text"} EXTRA garbage'
+    corrupt = SessionDB._CONTENT_JSON_PREFIX + '[{"type": "text"} EXTRA garbage'
     messages = [{"role": "user", "content": corrupt}]
 
     repair_message_sequence(_bare_agent(), messages)
 
     assert messages[0]["content"] == corrupt
+
+
+def test_repair_decode_of_durable_sentinel_row_does_not_reappend(tmp_path):
+    """ehz0ah #125331 (blocking): decoding a *durable* sentinel row is representation-only —
+    ``SessionDB._encode_content(decoded)`` reproduces the exact ``\\x00json:`` scalar already stored —
+    so the row must KEEP its ``_db_persisted`` marker. Dropping it makes the append-only flush treat
+    the historical user turn as new (user ``_row_id`` values are never update targets in
+    ``resolve_and_repair_transcript_batch``), re-appending a duplicate user turn on the durable
+    transcript. This drives the real repair + ``_persist_session`` flush and asserts the stored row
+    count and role order do not change — a regression the content-only repair tests cannot catch."""
+    import os
+    from unittest.mock import patch
+    from hermes_state import SessionDB
+    from agent.agent_runtime_helpers import repair_message_sequence_with_cursor
+    from agent.context_compressor import _DB_PERSISTED_MARKER
+
+    parts = [
+        {"type": "text", "text": "look"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 2000}},
+    ]
+    # The stored durable scalar is exactly what _encode_content(parts) produces; a resumed row re-enters
+    # the working set as this same string (e.g. after a proactive prune re-inserts history, #124102).
+    encoded = SessionDB._encode_content(parts)
+
+    db = SessionDB(db_path=tmp_path / "t.db")
+    sid = "20260928_000000_dup"
+    db.create_session(sid, "cli", model="test/model")
+    db.append_message(session_id=sid, role="user", content=encoded)
+    db.append_message(session_id=sid, role="assistant", content="ok")
+
+    def _active_rows():
+        return db._conn.execute(
+            "SELECT role FROM messages WHERE session_id = ? AND active = 1 ORDER BY id",
+            (sid,),
+        ).fetchall()
+
+    before = [r[0] for r in _active_rows()]
+    assert before == ["user", "assistant"]
+
+    with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}):
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            api_key="test-key",
+            base_url="https://openrouter.ai/api/v1",
+            model="test/model",
+            quiet_mode=True,
+            session_db=db,
+            session_id=sid,
+            skip_context_files=True,
+            skip_memory=True,
+        )
+    agent._session_db_created = True
+    agent._last_flushed_db_idx = 2
+
+    # Live/resumed set: both durable rows carry their persistence markers; the user row arrives as its
+    # stored sentinel scalar.
+    messages = [
+        {"role": "user", "content": encoded, _DB_PERSISTED_MARKER: True},
+        {"role": "assistant", "content": "ok", _DB_PERSISTED_MARKER: True},
+    ]
+
+    repairs = repair_message_sequence_with_cursor(agent, messages)
+
+    # Decode restored the structured content but kept the durable marker (storage-equivalent): a
+    # valid user→assistant sequence needs no alternation repair, so decode adds nothing to the count.
+    assert repairs == 0
+    assert messages[0]["content"] == parts
+    assert messages[0].get(_DB_PERSISTED_MARKER) is True
+
+    # The symptom: run the persist walk twice (turn finalize + close safety-net). The append-only flush
+    # must skip the already-durable user row — no re-INSERT, row count and role order stay put.
+    agent._persist_session(messages, conversation_history=None)
+    agent._persist_session(messages, conversation_history=None)
+
+    after = [r[0] for r in _active_rows()]
+    assert after == ["user", "assistant"], f"flush changed the durable transcript: {before} -> {after}"
