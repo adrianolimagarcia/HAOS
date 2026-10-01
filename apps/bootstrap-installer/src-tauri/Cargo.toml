@@ -1,6 +1,6 @@
 [package]
 name = "hermes-bootstrap"
-version = "0.21.81"
+version = "0.21.82"
 description = "Hermes Setup — signed installer that drives scripts/install.ps1"
 authors = ["Nous Research <info@nousresearch.com>"]
 edition = "2021"

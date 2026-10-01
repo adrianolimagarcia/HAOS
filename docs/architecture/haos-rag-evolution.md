@@ -290,9 +290,9 @@ Medido no bundle real (418 docs):
 - fracas: `swap`=1, `zram`=3, `vram`=2, `docling`=5, `rust`=7, `recall`=2
   — df baixo igual às legítimas.
 
-**Não existe piso de df que separe os dois grupos**: as 5 interceptações
-fracas restantes têm tags tão discriminativas quanto as legítimas. O
-qualquer threshold escolhido seria ajuste no próprio benchmark de 39
+**Não existe piso de df que separe os dois grupos**: as 7 interceptações
+fracas restantes têm tags tão discriminativas quanto as legítimas. Qualquer
+threshold escolhido seria ajuste no próprio benchmark de 39
 queries (o risco de overfitting previsto no follow-up de 0.21.80). Regra
 não implementada; hipótese registrada como refutada.
 
