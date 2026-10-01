@@ -185,6 +185,144 @@ fn upsert_blob_internal(
     }
 }
 
+/// Upsert em lote: UMA conexão + UMA transação para N vetores.
+///
+/// Motivação (medido): o upsert por linha (`vector_engine_upsert`) abre
+/// `Connection` e comita por chamada — ~11 ms/doc em 256 dimensões, mais
+/// lento que o fallback Python commit-por-linha (2,7 ms) e ~140x mais
+/// lento que um batch python de commit único (0,08 ms/doc). Aqui o custo
+/// de fsync cai de N para 1.
+///
+/// Payload little-endian (validado integralmente antes de tocar o DB):
+/// ```text
+/// u32 count | u32 dim
+/// count vezes: u32 id_len | id_len bytes (UTF-8) | dim × f32
+/// ```
+/// Retorna 0 no sucesso; negativo: -1 args nulos/vazios, -2 open falhou,
+/// -3 payload malformado (truncado/id inválido/dim absurda), -4 transação
+/// falhou, -5 insert falhou. O blob gravado é o mesmo formato little-endian
+/// que `vector_engine_search_buffered` já lê (paridade com o upsert único).
+#[no_mangle]
+pub extern "C" fn vector_engine_upsert_batch(
+    db_path_cstr: *const c_char,
+    model_version_cstr: *const c_char,
+    payload_ptr: *const u8,
+    payload_len: c_int,
+) -> c_int {
+    if db_path_cstr.is_null() || model_version_cstr.is_null() || payload_ptr.is_null() {
+        return -1;
+    }
+    let total = payload_len as usize;
+    if total < 8 {
+        return -3;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(payload_ptr, total) };
+
+    let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+    let dim = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    if count == 0 {
+        return 0; // no-op honesto: nada a gravar
+    }
+    if dim == 0 || dim > 65536 {
+        return -3;
+    }
+    // Tamanho mínimo: header + count × (u32 id_len + dim×f32) com id vazio.
+    let min_bytes = match count.checked_mul(4 + dim * std::mem::size_of::<f32>()) {
+        Some(v) => 8usize.checked_add(v).unwrap_or(usize::MAX),
+        None => usize::MAX,
+    };
+    if total < min_bytes {
+        return -3;
+    }
+
+    let db_path = unsafe { CStr::from_ptr(db_path_cstr).to_string_lossy() };
+    let model_version = unsafe { CStr::from_ptr(model_version_cstr).to_string_lossy() };
+
+    let mut conn = match Connection::open(&*db_path) {
+        Ok(c) => c,
+        Err(_) => return -2,
+    };
+
+    let _ = conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=30000;
+         CREATE TABLE IF NOT EXISTS memory_vectors (
+             record_id TEXT NOT NULL,
+             model_version TEXT NOT NULL,
+             dimensions INTEGER NOT NULL,
+             vector_json TEXT NOT NULL,
+             updated_at REAL NOT NULL DEFAULT 0,
+             PRIMARY KEY(record_id, model_version)
+         );",
+    );
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+
+    // Parse completo antes da transação: payload inválido nunca escreve pela metade.
+    struct Row {
+        id: String,
+        vector: Vec<u8>,
+    }
+    let mut rows: Vec<Row> = Vec::with_capacity(count);
+    let mut off = 8usize;
+    let vec_bytes = dim * std::mem::size_of::<f32>();
+    for _ in 0..count {
+        if off + 4 > total {
+            return -3;
+        }
+        let id_len = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
+        off += 4;
+        if id_len == 0 || off + id_len + vec_bytes > total {
+            return -3;
+        }
+        let id = match std::str::from_utf8(&bytes[off..off + id_len]) {
+            Ok(s) => s.to_owned(),
+            Err(_) => return -3,
+        };
+        off += id_len;
+        rows.push(Row {
+            id,
+            vector: bytes[off..off + vec_bytes].to_vec(),
+        });
+        off += vec_bytes;
+    }
+
+    let tx = match conn.transaction() {
+        Ok(t) => t,
+        Err(_) => return -4,
+    };
+    {
+        let mut stmt = match tx.prepare(
+            "INSERT OR REPLACE INTO memory_vectors
+             (record_id, model_version, dimensions, vector_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        ) {
+            Ok(s) => s,
+            Err(_) => return -5,
+        };
+        for row in &rows {
+            if stmt
+                .execute(params![
+                    &row.id,
+                    &*model_version,
+                    dim as i64,
+                    &row.vector[..],
+                    now
+                ])
+                .is_err()
+            {
+                return -5;
+            }
+        }
+    }
+    match tx.commit() {
+        Ok(_) => 0,
+        Err(_) => -4,
+    }
+}
+
 /// Busca vetorial nativa com SIMD AVX2. Suporta tanto BLOB binário quanto vector_json.
 /// Preenche o buffer do chamador `out_buf` com JSON UTF-8 terminado em nulo.
 /// Retorna o tamanho dos bytes gravados, ou negativo em caso de erro.
@@ -1226,11 +1364,142 @@ mod tests {
             buf.len() as c_int,
         );
         assert!(s_ret > 0);
-        let parsed: Vec<serde_json::Value> = serde_json::from_slice(&buf[..s_ret as usize]).unwrap();
+        let parsed: Vec<serde_json::Value> =
+            serde_json::from_slice(&buf[..s_ret as usize]).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0]["record_id"], "child_c_abi");
         assert_eq!(parsed[0]["parent_id"], "parent_note_1");
         assert_eq!(parsed[0]["parent_content"], "Documento pai completo");
+    }
+
+    /// Helper: monta o payload little-endian do batch upsert.
+    fn batch_payload(dim: usize, rows: &[(&str, &[f32])]) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&(rows.len() as u32).to_le_bytes());
+        p.extend_from_slice(&(dim as u32).to_le_bytes());
+        for &(id, v) in rows {
+            p.extend_from_slice(&(id.len() as u32).to_le_bytes());
+            p.extend_from_slice(id.as_bytes());
+            for f in v {
+                p.extend_from_slice(&f.to_le_bytes());
+            }
+        }
+        p
+    }
+
+    #[test]
+    fn test_vector_engine_upsert_batch_contract() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("batch_vectors.db");
+        let c_db = std::ffi::CString::new(db_path.to_str().unwrap()).unwrap();
+        let c_model = std::ffi::CString::new("model_v1").unwrap();
+
+        // 1. Batch de 3 vetores 4-dim: sucesso e todas as linhas gravadas.
+        let payload = batch_payload(
+            4,
+            &[
+                ("b1", &[1.0, 0.0, 0.0, 0.0]),
+                ("b2", &[0.0, 1.0, 0.0, 0.0]),
+                ("b3", &[0.707, 0.707, 0.0, 0.0]),
+            ],
+        );
+        let rc = vector_engine_upsert_batch(
+            c_db.as_ptr(),
+            c_model.as_ptr(),
+            payload.as_ptr(),
+            payload.len() as c_int,
+        );
+        assert_eq!(rc, 0);
+        let conn = Connection::open(&db_path).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memory_vectors WHERE model_version='model_v1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 3, "batch deve gravar as 3 linhas numa transação");
+
+        // 2. Paridade com a busca nativa: o blob little-endian do batch é legível
+        //    pelo mesmo kernel que lê o upsert único (mesmo formato on-disk).
+        let mut buf = vec![0u8; 4096];
+        let q = vec![1.0f32, 0.0, 0.0, 0.0];
+        let s = vector_engine_search_buffered(
+            c_db.as_ptr(),
+            c_model.as_ptr(),
+            q.as_ptr(),
+            4,
+            2,
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() as c_int,
+        );
+        assert!(s > 0);
+        let parsed: Vec<String> = serde_json::from_slice(&buf[..s as usize]).unwrap();
+        assert_eq!(parsed[0], "b1");
+
+        // 3. REPLACE: reenviar b1 com outro vetor não duplica a linha.
+        let payload2 = batch_payload(4, &[("b1", &[0.0, 0.0, 1.0, 0.0])]);
+        let rc2 = vector_engine_upsert_batch(
+            c_db.as_ptr(),
+            c_model.as_ptr(),
+            payload2.as_ptr(),
+            payload2.len() as c_int,
+        );
+        assert_eq!(rc2, 0);
+        let n2: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memory_vectors WHERE record_id='b1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            n2, 1,
+            "INSERT OR REPLACE mantém 1 linha por (record_id, model)"
+        );
+
+        // 4. Payload truncado → -3 e NENHUMA linha nova (parse antes do tx).
+        let mut bad = batch_payload(4, &[("z1", &[1.0, 0.0, 0.0, 0.0])]);
+        bad.truncate(bad.len() - 2);
+        let rc3 = vector_engine_upsert_batch(
+            c_db.as_ptr(),
+            c_model.as_ptr(),
+            bad.as_ptr(),
+            bad.len() as c_int,
+        );
+        assert_eq!(rc3, -3);
+        let n3: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memory_vectors WHERE record_id='z1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n3, 0, "payload inválido não pode escrever nada");
+
+        // 5. count=0 → no-op 0; header com dim=0 → -3.
+        let empty = batch_payload(4, &[]);
+        assert_eq!(
+            vector_engine_upsert_batch(
+                c_db.as_ptr(),
+                c_model.as_ptr(),
+                empty.as_ptr(),
+                empty.len() as c_int
+            ),
+            0
+        );
+        let mut zero_dim = Vec::new();
+        zero_dim.extend_from_slice(&1u32.to_le_bytes());
+        zero_dim.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            vector_engine_upsert_batch(
+                c_db.as_ptr(),
+                c_model.as_ptr(),
+                zero_dim.as_ptr(),
+                zero_dim.len() as c_int
+            ),
+            -3
+        );
     }
 }
 
