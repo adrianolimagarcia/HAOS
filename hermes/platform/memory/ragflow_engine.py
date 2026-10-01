@@ -492,10 +492,15 @@ class RAGFlowStore:
             except Exception as exc:
                 logger.warning("FTS5 query failed (%s): %s", fts_query, exc)
 
-        # 2. Token Overlap & Semantic Breadcrumb Ranking (orçamentada — P6)
+        # 2. Token Overlap & Semantic Breadcrumb Ranking (orçamentada — P6).
+        # Sem teto oculto de janela: o ÚNICO throttle documentado é o
+        # orçamento max_candidates. Um LIMIT fixo aqui deixava os chunks fora
+        # da janela invisíveis à fusão — recall caía em silêncio conforme o
+        # corpus crescia (medido no corpus real: recall@3 0.49→1.00 com 483
+        # chunks ao remover a janela de 200; 26/39 docs-gold eram invisíveis).
         all_chunks_rows = conn.execute("""
             SELECT id, doc_path, header_path, content FROM haos_rag_chunks
-            ORDER BY created_at DESC LIMIT 200;
+            ORDER BY created_at DESC;
         """).fetchall()
 
         lexical_candidates: List[Tuple[str, float]] = []
