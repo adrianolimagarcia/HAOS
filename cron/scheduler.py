@@ -2577,11 +2577,14 @@ def run_one_job(
             claim = job.get("fire_claim")
             owner = str(claim.get("by") or "") if isinstance(claim, dict) else ""
             try:
+                from cron.unreachable_retry import is_retry_run
                 mark_job_run(
                     job["id"],
                     False,
                     error,
                     **({"expected_fire_owner": owner} if owner else {}),
+                    # A ladder re-run's occurrence already counted toward repeat.
+                    **({"ladder_rung": True} if is_retry_run(job) else {}),
                 )
             finally:
                 finish_execution(execution_id, success=False, error=error)
@@ -3114,6 +3117,10 @@ def _run_one_job_body(
                     mark_kwargs["expected_fire_owner"] = fire_owner
                 if isinstance(e, Exception):
                     mark_kwargs["delivery_error"] = delivery_error
+                from cron.unreachable_retry import is_retry_run
+                if is_retry_run(job):
+                    # A crashed ladder re-run: its occurrence already counted toward repeat.
+                    mark_kwargs["ladder_rung"] = True
                 mark_job_run(job["id"], False, _err_text, **mark_kwargs)
         except Exception as record_err:
             # Never let bookkeeping mask the original interruption.

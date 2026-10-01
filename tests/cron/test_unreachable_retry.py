@@ -72,3 +72,48 @@ def test_reaching_the_model_resets_ladder_and_oneshots_never_retry(tmp_cron_home
     assert mark_job_run(once["id"], False, "ConnectError: dns", model_unreachable=True)
     remaining = get_job(once["id"])
     assert remaining is None or remaining.get(ur.STATE_KEY) is None
+
+
+@pytest.mark.parametrize("rung_tail", ["finish", "crash"])
+def test_ladder_reruns_do_not_spend_extra_repeat_budget(tmp_cron_home, monkeypatch, rung_tail):
+    """A ladder re-run repeats an occurrence that already counted toward ``repeat``, so it must
+    not count again. Otherwise an outage that outlasts the ladder retires a finite job with zero
+    model calls, where the same outage with the ladder off costs it one run (#109990 fixed only
+    the final-run notice). Drives the tick's claim hand-off and bookkeeping tail: the claimed
+    snapshot's ``next_run_at`` has already moved to the natural slot when the run is recorded."""
+    clock = [datetime.now(timezone.utc)]
+    monkeypatch.setattr("cron.jobs._hermes_now", lambda: clock[0])
+    monkeypatch.setattr(ur, "_hermes_now", lambda: clock[0])
+    monkeypatch.setattr(sched, "finish_execution", lambda *_a, **_kw: None)
+    runs = []
+    monkeypatch.setattr(sched, "run_one_job", lambda job, **_kw: runs.append(job) or True)
+    # "crash": a rung whose run raises leaves through the crash tail, which must not count it either.
+    monkeypatch.setattr(sched, "run_job", lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(sched, "mark_execution_running", lambda *_a, **_kw: {})
+    monkeypatch.setattr(sched, "_deliver_crash_failure", lambda *_a, **_kw: (None, "suppressed"))
+    job_id = create_job("digest", "every 24h", repeat=2)["id"]
+
+    held = []
+    for _ in range(1 + len(ur.RETRY_DELAYS_SECONDS)):  # the occurrence, then every rung
+        clock[0] = datetime.fromisoformat(get_job(job_id)["next_run_at"]) + timedelta(seconds=1)
+        due = next(d for d in get_due_jobs() if d["id"] == job_id)
+        assert sched._process_due_job(dict(due, execution_id="exec"), None, None, False)
+        run = runs[-1]
+        if rung_tail == "crash" and held:
+            assert sched._run_one_job_body(run) is False
+            assert get_job(job_id)["repeat"]["completed"] == 1, "a crashed rung must not count"
+            return
+        run["_model_unreachable"] = True
+        held.append(ur.will_retry(run))
+        assert sched._finish_completed_run(
+            sched._RunDelivery(job=run, success=False, error="ConnectError: dns"),
+            run["fire_claim"]["by"], "exec")
+        assert get_job(job_id)["repeat"]["completed"] == 1, "only the occurrence itself counts"
+
+    j = get_job(job_id)
+    assert j["state"] == "scheduled" and j.get(ur.STATE_KEY) is None
+    assert datetime.fromisoformat(j["next_run_at"]) - clock[0] > timedelta(hours=23)
+    # A rung on the last slot no longer completes the job, so its notice is held as well.
+    assert held == [True, True, True, False]
+    # But a rung whose limit was edited down to the count does retire the job: send its notice.
+    assert not ur.will_retry(dict(runs[1], repeat={"times": 1, "completed": 1}))

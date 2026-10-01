@@ -36,6 +36,15 @@ if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
 logger = logging.getLogger("gateway.run")
 
 
+def _adapter_unavailable_message(platform: Platform, *, retrying: bool = True) -> str:
+    """Actionable ``adapter_unavailable`` status text, shared by startup and the reconnect watcher so
+    ``hermes status`` keeps the plugin/deps/credentials hint after the first retry."""
+    message = (
+        f"No adapter available for enabled {platform.value}; check the plugin, dependencies, and credentials."
+    )
+    return f"{message} Retrying in the background." if retrying else message
+
+
 class GatewayAdapterLifecycleMixin:
     """Adapter lifecycle: connect/teardown, fatal recovery, reconnect watcher, multiplex profiles."""
 
@@ -205,7 +214,6 @@ class GatewayAdapterLifecycleMixin:
             **({"queued_at": now} if queued else {}),
             "credential_claim": self._adapter_credential_claim(platform, adapter),
             "listener_claim": self._adapter_listener_claim(platform, adapter),
-            "inbound_dedup": inbound_dedup_caches(adapter) if adapter is not None else None,
         }
 
     def _queue_retryable_fatal_platform(self, adapter: BasePlatformAdapter) -> bool:
