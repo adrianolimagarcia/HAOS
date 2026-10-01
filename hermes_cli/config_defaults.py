@@ -1263,6 +1263,9 @@ DEFAULT_CONFIG = {
         # External memory provider plugin (empty = built-in only); only ONE at a time: "openviking",
         # "mem0", "hindsight", "holographic", "retaindb", "byterover".
         "provider": "",
+        # Opt-in: haos_hybrid_memory_query plans retrieval per query intent (retrieval_planner,
+        # incl. the RAPTOR tree step) instead of the fixed cascade. False = comportamento original.
+        "hybrid_planner": False,
     },
     # Subagent delegation — override the provider:model used by delegate_task so children run on a
     # cheaper/faster model. Uses the same runtime provider resolution as CLI/gateway startup, so
