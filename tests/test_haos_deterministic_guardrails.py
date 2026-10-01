@@ -61,6 +61,48 @@ def test_validate_shell_safety():
 
 
 def test_eval_benchmark_and_baseline_recording():
+    """A real (injected) executor's run is measured and recorded as a baseline."""
+    from hermes.platform.evals.golden_tasks import GoldenTaskResult
+
+    def real_executor(spec):
+        # Deterministic stand-in for a task runner: consumes budget, claims no
+        # assertions (grading belongs to the verifier, not the executor).
+        return GoldenTaskResult(
+            task_id=spec.id,
+            success=True,
+            tokens_consumed=min(spec.max_tokens_budget // 2, 1024),
+            duration_sec=0.5,
+            assertions_passed=0,
+            assertions_total=0,
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "baselines.db"
+        store = BaselineStore(db_path=str(db_path))
+
+        metrics = run_benchmark_and_record(
+            task_ids=["G001", "G002"],
+            label="test-ci",
+            baseline_store=store,
+            task_executor=real_executor,
+        )
+
+        assert metrics["tasks_total"] == 2
+        assert metrics["tasks_passed"] == 2
+        assert metrics["score_percent"] == 100.0
+        assert metrics["measured"] is True
+        assert metrics["baseline_recorded"] is True
+
+        # Verify baseline stored
+        latest = store.latest(suite_id="golden_tasks", label="test-ci")
+        assert latest is not None
+        assert latest["label"] == "test-ci"
+        assert latest["metrics"]["tasks_passed"] == 2
+
+
+def test_eval_mock_executor_is_not_measured_and_never_recorded():
+    """The default mock passes everything by construction — it must be labelled
+    unmeasured and refused as a baseline (a fake 100% would poison history)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "baselines.db"
         store = BaselineStore(db_path=str(db_path))
@@ -71,12 +113,9 @@ def test_eval_benchmark_and_baseline_recording():
             baseline_store=store,
         )
 
-        assert metrics["tasks_total"] == 2
-        assert metrics["tasks_passed"] == 2
-        assert metrics["score_percent"] == 100.0
+        assert metrics["measured"] is False
+        assert metrics["executor"] == "mock_default"
+        assert metrics["baseline_recorded"] is False
+        assert "baseline_refused" in metrics
+        assert store.latest(suite_id="golden_tasks", label="test-ci") is None
 
-        # Verify baseline stored
-        latest = store.latest(suite_id="golden_tasks", label="test-ci")
-        assert latest is not None
-        assert latest["label"] == "test-ci"
-        assert latest["metrics"]["tasks_passed"] == 2
