@@ -156,10 +156,43 @@ class OKFStore:
 
         self._loaded = True
 
+    @staticmethod
+    def _fold(s: str) -> str:
+        """minúsculas + acentos dobrados para ASCII (mesma dobra de _slugify)."""
+        folded = unicodedata.normalize("NFKD", s.lower())
+        return "".join(c for c in folded if not unicodedata.combining(c))
+
+    @classmethod
+    def _tokens(cls, s: str) -> set:
+        """Tokens de palavra inteira (hífen é parte do token: 'static-linking')."""
+        return set(re.findall(r"[\w\-]+", cls._fold(s)))
+
+    @classmethod
+    def _tag_evidence(cls, tag: str, q_tokens: set) -> bool:
+        """Tag casa somente como SEQUÊNCIA de palavras inteiras na query.
+
+        'file' NÃO casa com 'filesystem'; 'static-linking' casa com
+        'linkagem static-linking' mas não com 'linking' isolado.
+        """
+        tt = re.findall(r"[\w\-]+", cls._fold(tag))
+        return bool(tt) and all(tok in q_tokens for tok in tt)
+
     def find_deterministic(self, query: str) -> Optional[OKFDocument]:
         """Deterministic exact/keyword lookup against titles, tags and filenames.
-        
+
         Zero embeddings or vector math; 100% offline & reproducible.
+
+        Regra de evidência (0.21.80, validado no corpus real — ADR-014):
+        uma tag isolada não é evidência de correspondência. O gate antigo
+        aceitava `tag in query` como substring livre, e em queries longas
+        isso interceptava com documentos não relacionados ('file' ⊂
+        'filesystem', 'boot' ⊂ 'fastboot'). Agora:
+
+        - exatos de path/stem/título e título-frase dentro da query: preservados;
+        - query == tag exata: preservada (contrato do gate para consultas curtas);
+        - tag como palavra inteira: só responde sozinha se for a query inteira;
+          caso contrário exige **≥2 tags distintas** do mesmo doc casando como
+          palavras inteiras (corroboração independente).
         """
         self.load()
         q_clean = query.strip().lower()
@@ -174,11 +207,19 @@ class OKFStore:
             if q_clean == doc.title.lower():
                 return doc
 
-        # 3. Substring match in title or tag match
+        # 3. Título como frase: presente na query, ou query contida no título
         for doc in self._cache.values():
             if doc.title.lower() in q_clean or q_clean in doc.title.lower():
                 return doc
-            if any(q_clean == t or t in q_clean for t in doc.tags):
+
+        # 4. Tags: evidência corroborada (≥2) ou query == tag exata
+        q_tokens = self._tokens(q_clean)
+        for doc in self._cache.values():
+            if any(q_clean == t for t in doc.tags):
+                return doc
+        for doc in self._cache.values():
+            matched = [t for t in doc.tags if self._tag_evidence(t, q_tokens)]
+            if len(set(matched)) >= 2:
                 return doc
 
         return None
