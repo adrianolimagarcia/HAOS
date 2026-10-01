@@ -1021,6 +1021,7 @@ class GatewayStartupMixin:
         """Create + wire an adapter per enabled platform (no connects). Returns
         (aborted, enabled_platform_count, multiplex_skipped_platforms, pending_connects)."""
         from gateway.run import _platform_has_bot_credential
+        from gateway.run_adapters import _adapter_unavailable_message
         enabled_platform_count = 0
         _multiplex_on = self._multiplex_on()
         _multiplex_skipped_platforms: list[Platform] = []
@@ -1055,17 +1056,17 @@ class GatewayStartupMixin:
                         "No adapter for '%s' -- is the plugin installed? "
                         "(platform is enabled in config.yaml but no plugin registered it)", platform.value,
                     )
-                # Queue it so the reconnect watcher heals it once the plugin registers (a plugin load
-                # can fail transiently); flag it so the unserved enabled platform is visible meanwhile.
+                # Only a platform that can heal on its own is queued for the reconnect watcher; either way
+                # flag it so the unserved enabled platform is visible.
+                heals = self._adapter_may_heal(platform, platform_config)
                 self._update_platform_runtime_status(
-                    platform.value, platform_state="retrying", error_code="adapter_unavailable",
-                    error_message=(
-                        f"No adapter available for enabled {platform.value}; check the plugin, "
-                        "dependencies, and credentials. Retrying in the background."
-                    ),
+                    platform.value, platform_state="retrying" if heals else "fatal",
+                    error_code="adapter_unavailable",
+                    error_message=_adapter_unavailable_message(platform, retrying=heals),
                     needs_attention=True,
                 )
-                self._failed_platforms[platform] = self._startup_retry_entry(platform, None, platform_config)
+                if heals:
+                    self._failed_platforms[platform] = self._startup_retry_entry(platform, None, platform_config)
                 continue
             # Under multiplexing the default profile needs the same whole-handler runtime scope as a
             # secondary (authorization and prompt rendering run before the agent-turn scope).
