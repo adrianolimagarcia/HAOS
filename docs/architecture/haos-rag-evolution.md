@@ -307,3 +307,31 @@ Fechar esse vão exige mudança de política de recuperação (ex.: RAGFlow
 primeiro quando o query nomeia tipo de artefato ausente do bundle), que
 pede benchmark próprio maior que 39 queries. Decisão do dono pendente;
 estado atual considerado o teto honesto do design vigente.
+
+## Adendo 0.21.83 (2026-10-02): Benchmark de 102 queries (100% do Obsidian Vault) e Gate de Cobertura de Tags
+
+### Contexto e expansão do Benchmark para 100% do Vault
+O benchmark anterior de 39 queries cobria apenas uma fração das 102 notas do Obsidian Vault (`/root/.haos/obsidian_vault`). Expandiu-se o ground truth para cobrir a totalidade dos 102 documentos (`adrs/`: 18, `pesquisas/`: 7, `incidentes/`: 2, `curadoria/`: 26, `diario/`: 21, `10-Memory/project/`: 22, `20-Architecture/`: 3, `runbooks/`: 1, `licoes/`: 2).
+
+### Medição Baseline em 102 Queries (0.21.80/82)
+- **Cascata com Gate 0.21.80**: hit@1 = 52/102 (51.0%), hit@3 = 60/102 (58.8%).
+- **OKF Intercepts**: 35 queries interceptadas, sendo 7 aliases legítimos e **28 desvios (falsos-positivos)**.
+- **Pure RAGFlow**: hit@1 = 78/102 (76.5%), hit@3 = 91/102 (89.2%).
+
+### Causa Raiz dos 28 Desvios do OKF
+No OKF (418 documentos, a maioria lições extraídas pelo dream), pares de tags comuns como (`btrfs`, `disco`), (`rustdesk`, `cachyos`), (`kernel`, `build`), (`a2a`, `peer`), (`tailnet`, `bind`) ocorrem com frequência. Em queries longas em linguagem natural (8 a 15 palavras), qualquer query de infraestrutura continha 2 palavras que casavam como tags de alguma lição não relacionada (ex.: query sobre swapfile/zram interceptada por lição de bad-blocks no btrfs). Como o gate iterava sobre o cache e retornava no primeiro documento com ≥2 tags, gerava 28 interceptações incorretas e reduzia o recall global.
+
+### Solução: Invariante de Cobertura de Tags (Tag Coverage Gate)
+O gate determinístico do OKF agora exige que a corroboração por tags tenha evidência substancial:
+- Exatos de path/stem/título, título completo na query e tag exata: preservados;
+- Para consultas com múltiplas palavras, a correspondência de tags exige:
+  1. **≥ 2 tags distintas** casando como sequências completas de palavras inteiras;
+  2. As tags casadas devem cobrir **≥ 50% dos tokens de conteúdo** (ignorando stopwords comuns) da query.
+Dessa forma, consultas focadas na lição (ex.: `"particionamento btrfs em disco"`, cobertura 100%) continuam respondendo instantaneamente no OKF, enquanto queries longas exploratórias/específicas (ex.: `"configuracao btrfs de tmp em disco e prioridades de swapfile e zram0"`, cobertura 28%) passam para o RAGFlow, onde o algoritmo híbrido (BM25 + vetorial + RRF) encontra o documento canônico no vault.
+
+### Medição Pós-Fix (0.21.83)
+- **OKF Intercepts**: 4/102 (4 acertos, **0 desvios — 100% de precisão no gate**).
+- **hit@1**: de 52/102 (51.0%) para **78/102 (76.5%)** (+25.5 pp).
+- **hit@3**: de 60/102 (58.8%) para **90/102 (88.2%)** (+29.4 pp).
+- **Tempo médio**: 25.1 ms/query.
+

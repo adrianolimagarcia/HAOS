@@ -137,3 +137,25 @@ def test_okf_gate_tag_hifenizada_exige_sequencia_completa(temp_okf_dir: Path) ->
     # A sequência completa, corroborada por segunda tag, casa.
     found = store.find_deterministic("musl static-linking no binario final")
     assert found is not None
+
+
+def test_okf_gate_tags_sem_cobertura_minima_nao_interceptam_query_longa(temp_okf_dir: Path) -> None:
+    store = OKFStore(temp_okf_dir)
+    store.save_document(
+        title="Licao BTRFS Badblocks",
+        content="btrfs nao tem bad-block map",
+        doc_type="lesson",
+        tags=["btrfs", "disco", "particionamento"],
+    )
+    # Query longa sobre swapfile e zram: contém 'btrfs' e 'disco', mas eles cobrem
+    # apenas 2 de 7 tokens de conteúdo (28% < 50%) — o gate não deve interceptar
+    # para permitir que o RAGFlow encontre o documento certo no vault.
+    assert store.find_deterministic(
+        "configuracao btrfs de tmp em disco e prioridades de swapfile e zram0"
+    ) is None
+
+    # Consulta focada no assunto da lição: tags cobrem >= 50% dos tokens de conteúdo
+    found = store.find_deterministic("particionamento btrfs em disco")
+    assert found is not None
+    assert found.title == "Licao BTRFS Badblocks"
+

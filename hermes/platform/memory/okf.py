@@ -156,6 +156,12 @@ class OKFStore:
 
         self._loaded = True
 
+    _STOPWORDS = {
+        "de", "a", "o", "as", "os", "em", "na", "no", "nas", "nos",
+        "do", "da", "dos", "das", "por", "para", "com", "sem", "e",
+        "ou", "que", "se", "um", "uma", "uns", "umas",
+    }
+
     @staticmethod
     def _fold(s: str) -> str:
         """minúsculas + acentos dobrados para ASCII (mesma dobra de _slugify)."""
@@ -166,6 +172,11 @@ class OKFStore:
     def _tokens(cls, s: str) -> set:
         """Tokens de palavra inteira (hífen é parte do token: 'static-linking')."""
         return set(re.findall(r"[\w\-]+", cls._fold(s)))
+
+    @classmethod
+    def _content_tokens(cls, s: str) -> set:
+        """Tokens de conteúdo sem acentos e sem stopwords comuns."""
+        return cls._tokens(s) - cls._STOPWORDS
 
     @classmethod
     def _tag_evidence(cls, tag: str, q_tokens: set) -> bool:
@@ -182,17 +193,13 @@ class OKFStore:
 
         Zero embeddings or vector math; 100% offline & reproducible.
 
-        Regra de evidência (0.21.80, validado no corpus real — ADR-014):
-        uma tag isolada não é evidência de correspondência. O gate antigo
-        aceitava `tag in query` como substring livre, e em queries longas
-        isso interceptava com documentos não relacionados ('file' ⊂
-        'filesystem', 'boot' ⊂ 'fastboot'). Agora:
-
+        Regra de evidência (0.21.83, validado no corpus real de 102 docs):
         - exatos de path/stem/título e título-frase dentro da query: preservados;
         - query == tag exata: preservada (contrato do gate para consultas curtas);
-        - tag como palavra inteira: só responde sozinha se for a query inteira;
-          caso contrário exige **≥2 tags distintas** do mesmo doc casando como
-          palavras inteiras (corroboração independente).
+        - corroboração por tags: exige **≥2 tags distintas** que cubram pelo menos
+          **50% dos tokens de conteúdo** da query (evita que pares de tags genéricas
+          como 'btrfs'+'disco' interceptem queries de 10 palavras sobre swapfile/zram
+          quando o RAGFlow tem o documento exato no vault).
         """
         self.load()
         q_clean = query.strip().lower()
@@ -207,20 +214,30 @@ class OKFStore:
             if q_clean == doc.title.lower():
                 return doc
 
-        # 3. Título como frase: presente na query, ou query contida no título
+        # 3. Título como frase (com limites de comprimento para evitar falso-positivo em títulos curtos)
         for doc in self._cache.values():
-            if doc.title.lower() in q_clean or q_clean in doc.title.lower():
-                return doc
+            t_clean = doc.title.lower()
+            if len(t_clean) >= 6 and len(t_clean.split()) >= 2:
+                if t_clean in q_clean or q_clean in t_clean:
+                    return doc
 
-        # 4. Tags: evidência corroborada (≥2) ou query == tag exata
-        q_tokens = self._tokens(q_clean)
+        # 4. Tag exata (se o query inteiro for exatamente uma tag)
         for doc in self._cache.values():
             if any(q_clean == t for t in doc.tags):
                 return doc
-        for doc in self._cache.values():
-            matched = [t for t in doc.tags if self._tag_evidence(t, q_tokens)]
-            if len(set(matched)) >= 2:
-                return doc
+
+        # 5. Tags corroboradas com cobertura mínima: >= 2 tags distintas
+        # cobrindo >= 50% dos tokens de conteúdo (não-stopwords) da query
+        q_content = self._content_tokens(q_clean)
+        if len(q_content) >= 2:
+            for doc in self._cache.values():
+                matched = [t for t in doc.tags if self._tag_evidence(t, q_content)]
+                if len(set(matched)) >= 2:
+                    tag_toks = set()
+                    for t in matched:
+                        tag_toks.update(self._content_tokens(t))
+                    if len(tag_toks & q_content) / len(q_content) >= 0.50:
+                        return doc
 
         return None
 
