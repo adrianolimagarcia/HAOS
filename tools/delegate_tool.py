@@ -339,7 +339,7 @@ def _run_single_child(
             # otherwise the leaf stays "active" forever and reputation/evolution
             # never observe the failure.
             _civ = getattr(child, "_civ_task", None)
-            if _civ:
+            if isinstance(_civ, dict) and _civ.get("leaf_id") and _civ.get("bot_id"):
                 failure_entry["civilization"] = {
                     "bot_id": _civ.get("bot_id"), "leaf_id": _civ.get("leaf_id"),
                     "identity_version": _civ.get("identity_version"),
