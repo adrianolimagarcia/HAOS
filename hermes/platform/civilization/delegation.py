@@ -30,11 +30,18 @@ from hermes.platform.civilization.models import (
 from hermes.platform.council.manager import CouncilManager
 from hermes.platform.evolution.bot_evolution import (
     BotEvolutionManager,
+    EvolutionError,
     EvolutionProposal,
+    RISK_HIGH,
+    RISK_IDENTITY_CRITICAL,
     RISK_LOW,
     STATUS_APPROVED,
     STATUS_PROMOTED,
     STATUS_ROLLED_BACK,
+)
+from hermes.platform.evolution.promotion_holdout_gate import (
+    HoldoutPromotionGate,
+    default_holdout_gate,
 )
 from hermes.platform.observability.event_store import EventStore, default_event_store_path
 from hermes.platform.observability.events import Event
@@ -369,14 +376,86 @@ def record_task_result(
         logger.debug("Failed recording evolution experience: %s", exc)
 
 
+# ---------------------------------------------------------------------------
+# Promotion-route hardening (audit B1 / M5 / Council-fachada)
+# ---------------------------------------------------------------------------
+
+# M5: identity fields must not grow unboundedly by repeated appends. A patch
+# that would push a field past the cap fails closed and demands an explicit
+# replacement instead of silent accumulation.
+_IDENTITY_FIELD_CAP = 8192
+_REPLACE_MARKER = "[[REPLACE]]"
+
+# B1: risk classes that can NEVER be promoted on a self-declared evaluation —
+# they must pass through the live HoldoutPromotionGate.
+_GATE_REQUIRED_RISKS = (RISK_HIGH, RISK_IDENTITY_CRITICAL)
+
+
+def _apply_identity_patch(old_text: str, patch: Optional[str], field_name: str) -> str:
+    """Apply one proposal patch to a bundle field with a hard size cap (M5).
+
+    Default semantics is append. When the result would exceed the cap, the
+    caller must opt into replacement by prefixing the patch with the
+    [[REPLACE]] marker — an append that silently overflows is exactly the
+    unbounded-growth defect this closes.
+    """
+    if not patch:
+        return old_text
+    if patch.lstrip().startswith(_REPLACE_MARKER):
+        new_text = patch.lstrip()[len(_REPLACE_MARKER):].strip()
+    else:
+        new_text = f"{old_text}\n{patch}"
+    if len(new_text) > _IDENTITY_FIELD_CAP:
+        raise ValueError(
+            f"identity field '{field_name}' would exceed the {_IDENTITY_FIELD_CAP}-char cap "
+            f"(result: {len(new_text)} chars). Append growth is closed: prefix the patch with "
+            f"{_REPLACE_MARKER} to explicitly replace the field instead of appending."
+        )
+    return new_text
+
+
+def _normalize_evaluation(evaluation: Any) -> Dict[str, Any]:
+    """Coerce a dict/HoldoutVerdict evaluation into a plain metadata dict."""
+    if isinstance(evaluation, dict):
+        info = {k: evaluation[k] for k in ("accepted", "reason", "evidence") if k in evaluation}
+        info["accepted"] = bool(evaluation.get("accepted", False))
+    else:
+        info = {
+            "accepted": bool(getattr(evaluation, "accepted", False)),
+            "reason": str(getattr(evaluation, "reason", "")),
+        }
+    info.setdefault("reason", "")
+    return info
+
+
 def deliberate_and_promote_proposal(
     proposal_id: str,
     *,
     council_id: Optional[str] = None,
     decision_summary: str = "",
+    approver: Optional[str] = None,
+    evaluation: Any = None,
+    holdout_gate: Optional[HoldoutPromotionGate] = None,
+    baseline_root: Optional[Path] = None,
+    candidate_root: Optional[Path] = None,
     event_store: Optional[EventStore] = None,
 ) -> Dict[str, Any]:
-    """Deliberate an evolution proposal through a Council and promote to an immutable IdentityVersion."""
+    """Promote an evolution proposal to an immutable IdentityVersion — gated.
+
+    Hardening contract (audit B1/M5/Council-fachada):
+    1. ``approver`` must be a named human; empty/blank fails with PermissionError.
+    2. High / identity-critical risk proposals — or any promotion without an
+       ``evaluation`` — must pass the fail-closed HoldoutPromotionGate. A
+       rejection (including "nothing was measured") raises PermissionError.
+       Low-risk promotions may cite an accepted evaluation verdict (dict or
+       HoldoutVerdict) instead of re-running the gate.
+    3. Bundle fields are capped (see ``_apply_identity_patch``); overflow
+       requires an explicit [[REPLACE]] patch.
+    4. The Council path stays a facade (members auto-approve); it records
+       ``ratification: automated`` metadata so the facade is never mistaken
+       for real deliberation. Actual model deliberation remains an open
+       operator decision.
+    """
     store = event_store or _store()
     evo_mgr = BotEvolutionManager(store)
     id_mgr = IdentityManager(store)
@@ -392,7 +471,44 @@ def deliberate_and_promote_proposal(
     if not active_version or not active_version.bundle:
         raise ValueError(f"No active IdentityVersion for bot {bot_id}")
 
-    # Optional Council Deliberation session and decision record
+    # --- Gate 1 (B1): named human approver, fail closed ---------------------
+    if not isinstance(approver, str) or not approver.strip():
+        raise PermissionError(
+            "promotion requires named human approver: deliberate_and_promote_proposal "
+            "must be invoked with approver=<operator> for every identity promotion."
+        )
+    approver = approver.strip()
+
+    # --- Gate 2 (B1): holdout evaluation, fail closed -----------------------
+    if proposal.risk_class in _GATE_REQUIRED_RISKS or evaluation is None:
+        gate = holdout_gate or default_holdout_gate()
+        verdict = gate.evaluate(baseline_root, candidate_root)
+        gate_info = (
+            verdict.to_dict()
+            if hasattr(verdict, "to_dict")
+            else _normalize_evaluation(verdict)
+        )
+        gate_info["source"] = "holdout_gate"
+        if not gate_info.get("accepted"):
+            raise PermissionError(
+                f"promotion refused by HoldoutPromotionGate (fail-closed): "
+                f"{gate_info.get('reason', 'no reason given')}"
+            )
+    else:
+        gate_info = _normalize_evaluation(evaluation)
+        gate_info["source"] = "provided-evaluation"
+        if not gate_info["accepted"]:
+            raise PermissionError(
+                f"promotion refused: evaluation not accepted: {gate_info.get('reason', '')}"
+            )
+
+    # --- Gate 3 (M5): build the new bundle BEFORE any state mutation ---------
+    old_bundle = active_version.bundle
+    new_soul = _apply_identity_patch(old_bundle.soul, proposal.proposed_soul_patch, "soul")
+    new_identity = _apply_identity_patch(old_bundle.identity, proposal.proposed_identity_patch, "identity")
+    new_values = _apply_identity_patch(old_bundle.values, proposal.proposed_values_patch, "values")
+
+    # Optional Council Deliberation session and decision record (facade — M1)
     decision_id = None
     if council_id:
         council = council_mgr.get(council_id)
@@ -405,7 +521,13 @@ def deliberate_and_promote_proposal(
                 council_mgr.submit_position(
                     session_id=session.session_id,
                     bot_id=m,
-                    position={"vote": "APPROVE", "proposal_id": proposal_id},
+                    position={
+                        "vote": "APPROVE",
+                        "proposal_id": proposal_id,
+                        # Council-fachada: this vote is scripted, not deliberated.
+                        "ratification": "automated",
+                        "approver": approver,
+                    },
                 )
             decision = council_mgr.record_decision(
                 session_id=session.session_id,
@@ -420,24 +542,6 @@ def deliberate_and_promote_proposal(
     evo_mgr.update_status(proposal_id, STATUS_APPROVED, active_version.bundle_hash)
     evo_mgr.update_status(proposal_id, STATUS_PROMOTED, active_version.bundle_hash)
 
-    # Apply patches to build the new immutable bundle
-    old_bundle = active_version.bundle
-    new_soul = (
-        f"{old_bundle.soul}\n{proposal.proposed_soul_patch}"
-        if proposal.proposed_soul_patch
-        else old_bundle.soul
-    )
-    new_identity = (
-        f"{old_bundle.identity}\n{proposal.proposed_identity_patch}"
-        if proposal.proposed_identity_patch
-        else old_bundle.identity
-    )
-    new_values = (
-        f"{old_bundle.values}\n{proposal.proposed_values_patch}"
-        if proposal.proposed_values_patch
-        else old_bundle.values
-    )
-
     new_bundle = BotIdentityBundle(
         bot_id=bot_id,
         soul=new_soul,
@@ -447,6 +551,9 @@ def deliberate_and_promote_proposal(
             "promoted_from_proposal": proposal_id,
             "council_decision_id": decision_id,
             "promoted_at": time.time(),
+            "approver": approver,
+            "promotion_gate": gate_info,
+            "ratification": "automated" if decision_id else "direct-human",
         },
     )
 
@@ -460,6 +567,7 @@ def deliberate_and_promote_proposal(
     return {
         "proposal_id": proposal_id,
         "bot_id": bot_id,
+        "approver": approver,
         "council_decision_id": decision_id,
         "new_version_id": new_version.id,
         "new_version_number": new_version.version,
@@ -472,17 +580,51 @@ def rollback_bot_identity(
     target_version_id: str,
     *,
     reason: str = "Operator rollback",
+    proposal_id: Optional[str] = None,
     event_store: Optional[EventStore] = None,
 ) -> Dict[str, Any]:
-    """Roll back a bot identity to a previous version using a compensating version."""
+    """Roll back a bot identity to a previous version using a compensating version.
+
+    B1-low: the evolution proposal that produced the rolled-back version is
+    marked ``rolled_back`` (explicit ``proposal_id``, or discovered from the
+    pre-rollback active version's ``promoted_from_proposal`` metadata).
+    """
     store = event_store or _store()
     id_mgr = IdentityManager(store)
+    evo_mgr = BotEvolutionManager(store)
+
+    # Discover the originating proposal from the version being abandoned.
+    pre_active = id_mgr.get_active_version(bot_id)
+    linked_proposal_id = proposal_id or (
+        (pre_active.bundle.metadata or {}).get("promoted_from_proposal")
+        if pre_active and pre_active.bundle
+        else None
+    )
+
     rolled_version = id_mgr.rollback(bot_id, target_version_id=target_version_id, reason=reason)
+
+    rolled_back_proposal_id: Optional[str] = None
+    if linked_proposal_id:
+        known = {p.id: p for p in evo_mgr.get_proposals()}
+        target = known.get(linked_proposal_id)
+        if target is not None and target.status != STATUS_ROLLED_BACK:
+            try:
+                evo_mgr.update_status(
+                    linked_proposal_id, STATUS_ROLLED_BACK, rolled_version.bundle_hash
+                )
+                rolled_back_proposal_id = linked_proposal_id
+            except EvolutionError as exc:
+                logger.warning(
+                    "Rollback of bot %s could not mark proposal %s rolled_back: %s",
+                    bot_id, linked_proposal_id, exc,
+                )
+
     return {
         "bot_id": bot_id,
         "restored_from": target_version_id,
         "new_compensatory_version_id": rolled_version.id,
         "version_number": rolled_version.version,
+        "rolled_back_proposal_id": rolled_back_proposal_id,
     }
 
 

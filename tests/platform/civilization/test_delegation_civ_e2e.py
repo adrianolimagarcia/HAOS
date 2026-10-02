@@ -278,20 +278,26 @@ def test_a3_evolution_governed_promotion_and_rollback(civ_isolated_env):
         evidence_refs=[exp.id],
     )
 
-    # Deliberate and promote through Council
+    # Deliberate and promote through Council.
+    # Hardened route (audit B1): a named human approver is mandatory and a
+    # low-risk promotion must cite an accepted evaluation verdict; without
+    # these the call now fails closed with PermissionError.
     promo_result = deliberate_and_promote_proposal(
         proposal_id=prop.id,
         council_id="arch-sec-council",
         decision_summary="Council unanimously approves CRL values addition",
+        approver="operator-adriano",
+        evaluation={"accepted": True, "reason": "held-out suite passed"},
         event_store=store,
     )
 
     assert promo_result["new_version_number"] == 2
+    assert promo_result["approver"] == "operator-adriano"
     active_v2 = id_mgr.get_active_version("architect-bot")
     assert active_v2.version == 2
     assert "mandate CRL checks" in active_v2.bundle.values
 
-    # Test rollback
+    # Test rollback — B1-low: the originating proposal must be marked rolled_back
     roll_result = rollback_bot_identity(
         bot_id="architect-bot",
         target_version_id=active_v1.id,
@@ -299,9 +305,12 @@ def test_a3_evolution_governed_promotion_and_rollback(civ_isolated_env):
         event_store=store,
     )
     assert roll_result["version_number"] == 3
+    assert roll_result["rolled_back_proposal_id"] == prop.id
     active_v3 = id_mgr.get_active_version("architect-bot")
     assert active_v3.version == 3
     assert "mandate CRL checks" not in active_v3.bundle.values
+    rolled_prop = {p.id: p for p in evo_mgr.get_proposals()}[prop.id]
+    assert rolled_prop.status == "rolled_back"
 
 
 def test_r_recovery_and_reconciliation(civ_isolated_env):
