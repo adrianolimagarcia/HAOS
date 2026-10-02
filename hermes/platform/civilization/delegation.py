@@ -154,6 +154,11 @@ def route_task(
     event_store: Optional[EventStore] = None,
 ) -> Dict[str, Any]:
     """Assign a Civilization bot, enforce constitutional policy, build leaf snapshot, and persist routing."""
+    # Master kill-switch: with HAOS_CIV_ENABLED=0 the civilization layer is a
+    # no-op passthrough (no bots created, no events written, no policy applied).
+    from .feature_flags import get_feature_flags
+    if not get_feature_flags().civ_enabled:
+        return task
     store = event_store or _store()
     manager, identities = BotSpecManager(store), IdentityManager(store)
     civ_mgr = CivilizationManager(store)
@@ -162,6 +167,8 @@ def route_task(
     available = _active_bots(manager)
     task_domain = "general"
 
+    # Resolve the target bot WITHOUT creating anything yet, so a constitution
+    # denial cannot leave behind an orphan auto-created specialist bot.
     if explicit:
         if explicit not in available:
             raise ValueError(f"Civilization bot is not registered or is paused: {explicit}")
@@ -176,40 +183,48 @@ def route_task(
             bot_id, reason = candidates[0], "capability-match"
             task_domain = "security" if "security" in bot_id else "architecture"
         else:
+            bot_id, reason = None, "auto-created-specialist"
             task_domain = _slug(str(task.get("goal", "general")))
-            bot_id = _create_bot(manager, identities, task_domain, str(task.get("goal", "")))
-            reason = "auto-created-specialist"
 
-    leaf_id = task.get("leaf_id") or f"shadow-{bot_id}-{uuid.uuid4().hex[:10]}"
-    version = identities.get_active_version(bot_id)
-
-    # 1. Constitution & Policy Evaluation (Tier 4)
+    # 1. Constitution & Policy Evaluation (Tier 4) — BEFORE any bot creation.
+    # A HARD_DENY / approval-required task must be blocked before we materialize
+    # an auto-created specialist, otherwise the denial leaks a junk bot into the
+    # civilization registry.
     action = task.get("action") or "delegate_task"
     resource = task.get("resource") or str(task.get("goal", ""))
-    decision = civ_mgr.evaluate_policy(subject_bot=bot_id, action=action, resource=resource)
+    policy_subject = bot_id or f"pending-{task_domain}"
+    provisional_leaf_id = task.get("leaf_id") or f"shadow-{policy_subject}-{uuid.uuid4().hex[:10]}"
+    decision = civ_mgr.evaluate_policy(subject_bot=policy_subject, action=action, resource=resource)
     if decision.result == POLICY_RESULT_DENY:
         fail_payload = {
-            "leaf_id": leaf_id,
+            "leaf_id": provisional_leaf_id,
             "bot_id": bot_id,
             "status": "denied",
             "reason": f"denied_by_constitution:{decision.rule_id}",
             "details": decision.reason,
             "timestamp": time.time(),
         }
-        store.append(Event(name=_FAILED, payload=fail_payload, correlation_id=leaf_id))
+        store.append(Event(name=_FAILED, payload=fail_payload, correlation_id=provisional_leaf_id))
         raise PermissionError(f"Task blocked by Constitution rule '{decision.rule_id}': {decision.reason}")
 
     if decision.result == POLICY_RESULT_REQUIRE_APPROVAL and not task.get("approved"):
         fail_payload = {
-            "leaf_id": leaf_id,
+            "leaf_id": provisional_leaf_id,
             "bot_id": bot_id,
             "status": "requires_approval",
             "reason": f"approval_required_by_constitution:{decision.rule_id}",
             "details": decision.reason,
             "timestamp": time.time(),
         }
-        store.append(Event(name=_FAILED, payload=fail_payload, correlation_id=leaf_id))
+        store.append(Event(name=_FAILED, payload=fail_payload, correlation_id=provisional_leaf_id))
         raise PermissionError(f"Task requires explicit approval under rule '{decision.rule_id}': {decision.reason}")
+
+    # Cleared by the constitution: now materialize the auto-created specialist.
+    if bot_id is None:
+        bot_id = _create_bot(manager, identities, task_domain, str(task.get("goal", "")))
+
+    leaf_id = task.get("leaf_id") or f"shadow-{bot_id}-{uuid.uuid4().hex[:10]}"
+    version = identities.get_active_version(bot_id)
 
     # 2. Institutional Knowledge Query & Enrichment (Tier 4)
     try:
@@ -294,6 +309,11 @@ def record_task_result(
     bot_id = task.get("bot_id")
     summary = str(result.get("summary") or "")
 
+    # Unrouted tasks (graceful degradation when civ is off/failed) must not
+    # pollute the canonical stream with null-id terminal events.
+    if not bot_id or not leaf_id:
+        return
+
     store.append(
         Event(
             name=name,
@@ -307,9 +327,6 @@ def record_task_result(
             correlation_id=leaf_id,
         )
     )
-
-    if not bot_id or not leaf_id:
-        return
 
     domain = task.get("domain") or "general"
 

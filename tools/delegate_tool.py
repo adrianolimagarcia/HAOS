@@ -335,6 +335,18 @@ def _run_single_child(
         run.seed_workspace()
         result, failure_entry, _child_close_deferred = run.await_child()
         if failure_entry is not None:
+            # Timeout/worker-failure must still close the civilization leaf,
+            # otherwise the leaf stays "active" forever and reputation/evolution
+            # never observe the failure.
+            _civ = getattr(child, "_civ_task", None)
+            if _civ:
+                failure_entry["civilization"] = {
+                    "bot_id": _civ.get("bot_id"), "leaf_id": _civ.get("leaf_id"),
+                    "identity_version": _civ.get("identity_version"),
+                }
+                with _quiet("Could not record civilization timeout"):
+                    from hermes.platform.civilization.delegation import record_task_result
+                    record_task_result(_civ, failure_entry)
             return failure_entry
 
         schema = _validate_child_output_schema(child, result, task_index, run.child_task_id, run.relay_text)
@@ -408,8 +420,16 @@ def _build_children(
         try:
             from hermes.platform.civilization.delegation import route_task
             civ_task = route_task(civ_task)
+        except PermissionError as exc:
+            # Constitutional block is a hard, intentional denial — never swallow it.
+            return [], f"Civilization routing denied for task {i}: {exc}"
         except Exception as exc:
-            return [], f"Civilization routing failed for task {i}: {exc}"
+            # Infrastructure failure (event store, registry, etc.) must NOT abort
+            # the whole delegation. Degrade to a plain subagent without civ enrichment.
+            logger.warning(
+                "Civilization routing failed for task %d; delegating without civ enrichment: %s",
+                i, exc, exc_info=True,
+            )
         task_list[i] = civ_task
         _child_context = civ_task.get("context")
         if _task_schema is not None:

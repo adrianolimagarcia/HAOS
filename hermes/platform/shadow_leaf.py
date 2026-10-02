@@ -110,9 +110,17 @@ class ShadowLeafManager:
         with self._lock:
             ts = int(time.time())
             safe_parent = re.sub(r'[^a-zA-Z0-9_\-]+', '', parent_bot_id)
+            # Sanitize custom_leaf_id with the SAME rule as parent_bot_id: without
+            # this, "../victim" escapes shadows_root and the rmtree below deletes
+            # arbitrary directories outside the sandbox.
+            if custom_leaf_id is not None:
+                custom_leaf_id = re.sub(r'[^a-zA-Z0-9_\-]+', '', custom_leaf_id) or None
             leaf_id = custom_leaf_id or f"shadow-{safe_parent}-{ts}"
             branch_name = f"shadow/{leaf_id}"
             worktree_dir = self.shadows_root / leaf_id
+            # Defense in depth: the resolved path must stay inside the sandbox.
+            if not worktree_dir.resolve().is_relative_to(self.shadows_root):
+                raise ValueError(f"leaf_id escapes shadows_root sandbox: {custom_leaf_id!r}")
 
             # Tentativa de Aceleração Nativa em Rust via haos-edge
             spawned_by_rust = False
@@ -272,6 +280,11 @@ class ShadowLeafManager:
                 pass
 
             worktree_dir = Path(leaf.worktree_path)
+            # Sandbox guard: never rmtree/remove outside shadows_root, even if the
+            # registry was tampered with or a legacy leaf carries an escaping path.
+            if not worktree_dir.resolve().is_relative_to(self.shadows_root):
+                logger.error("discard_shadow recusado: caminho fora do sandbox: %s", worktree_dir)
+                return False
 
             # Tentativa de descarte acelerado via haos-edge
             discarded_by_rust = False

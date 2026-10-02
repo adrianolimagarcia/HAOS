@@ -101,14 +101,19 @@ def build_civ_graph(store) -> dict:
     all_events = store.get_all()
     leaves_by_id: Dict[str, Dict[str, Any]] = {}
     for ev in all_events:
-        if ev.name == "civ.leaf.spawned":
+        if ev.name in ("civ.leaf.created", "civ.leaf.spawned"):
             p = ev.payload or {}
+            # Two producers use two shapes: delegation.py emits a FLAT payload
+            # (leaf_id/bot_id/...), shadow_leaf.py emits a NESTED {"leaf": {...}}
+            # with parent_bot_id. Normalize both here.
+            if "leaf" in p and isinstance(p["leaf"], dict):
+                p = p["leaf"]
             lid = p.get("leaf_id")
             if lid:
                 leaves_by_id[lid] = {
                     "leaf_id": lid,
-                    "parent_bot_id": p.get("parent_bot_id"),
-                    "task_description": p.get("task_description", ""),
+                    "parent_bot_id": p.get("parent_bot_id") or p.get("bot_id"),
+                    "task_description": p.get("task_description", p.get("goal", "")),
                     "status": "active",
                     "council_id": p.get("council_id"),
                 }

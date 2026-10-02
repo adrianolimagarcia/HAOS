@@ -19,6 +19,12 @@ from .models import (
 
 EVENT_RELATION_ESTABLISHED = "civ.society.relationship-established"
 EVENT_REPUTATION_RECORDED = "civ.society.reputation-event-recorded"
+
+# Maximum per-event reputation delta (clamped at write time).
+_MAX_REP_DELTA = 0.5
+# Half-life of reputation evidence, in seconds (30 days). Old evidence decays
+# toward the neutral prior instead of counting forever.
+_REP_HALF_LIFE_S = 30 * 24 * 3600.0
 EVENT_ROLE_ASSIGNED = "civ.society.role-assigned"
 EVENT_COLLABORATION_RECORDED = "civ.society.collaboration-recorded"
 
@@ -81,8 +87,21 @@ class SocietyManager:
         if not subject_bot or not domain:
             raise ValueError("subject_bot and domain are required")
 
-        # Anti-self-endorsement invariant
-        if actor_bot == subject_bot and outcome == "success" and delta_hint > 0.0:
+        # Validate outcome vocabulary (prevents silent neutral events inflating evidence_count).
+        if outcome not in ("success", "failure", "neutral"):
+            raise ValueError(f"invalid outcome '{outcome}'; must be success|failure|neutral")
+
+        # Clamp delta magnitude: a single event must not saturate reputation to 0.0/1.0
+        # (prevents both self-maxing and rival reputation destruction via huge deltas).
+        try:
+            delta_hint = float(delta_hint)
+        except (TypeError, ValueError):
+            delta_hint = 0.0
+        delta_hint = max(-_MAX_REP_DELTA, min(_MAX_REP_DELTA, delta_hint))
+
+        # Anti-self-endorsement invariant. Use abs() so a disguised negative delta
+        # (which the scorer would re-add via abs) cannot bypass the gate.
+        if actor_bot == subject_bot and outcome == "success" and abs(delta_hint) > 0.0:
             raise SelfEndorsementError(
                 f"Bot '{subject_bot}' cannot self-endorse with positive reputation."
             )
@@ -133,7 +152,10 @@ class SocietyManager:
         domain_scores: Dict[str, DomainScore] = {}
         total_score = 0.0
         total_evidence = 0
-        now = time.time()
+        # Deterministic time reference: newest evidence timestamp in the log
+        # (NOT wall-clock), so event replay always yields identical state.
+        _all_ts = [ev.occurred_at for evs in domain_events.values() for ev in evs]
+        now = max(_all_ts) if _all_ts else 0.0
 
         for domain, d_events in domain_events.items():
             score = 0.5  # neutral prior
@@ -141,7 +163,12 @@ class SocietyManager:
             last_updated = 0.0
 
             for ev in d_events:
-                delta = max(0.1, abs(ev.delta_hint))
+                # Clamp at read time too: legacy events may carry unbounded deltas.
+                delta = min(_MAX_REP_DELTA, max(0.1, abs(ev.delta_hint)))
+                # Exponential time decay: evidence half-life _REP_HALF_LIFE_S.
+                age = max(0.0, now - ev.occurred_at)
+                weight = 0.5 ** (age / _REP_HALF_LIFE_S)
+                delta *= weight
                 if ev.outcome == "success":
                     score = min(1.0, score + delta)
                 elif ev.outcome == "failure":
