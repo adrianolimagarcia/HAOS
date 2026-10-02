@@ -335,3 +335,25 @@ Dessa forma, consultas focadas na lição (ex.: `"particionamento btrfs em disco
 - **hit@3**: de 60/102 (58.8%) para **90/102 (88.2%)** (+29.4 pp).
 - **Tempo médio**: 25.1 ms/query.
 
+## Adendo 0.21.90 (2026-10-02): Document-Keys (arXiv:2609.19656 Self-Index), Lexical Pass com IDF e Write-Time Gates
+
+### Contexto
+Implementação integral do `docs/haos/SELF_INDEX_PLAN.md` (Fases F0 a F5):
+1. **F0**: Harness oficial de benchmark versionado em `scripts/bench_haos_retrieval.py` com gold dataset representativo e medição de acertos/proveniência.
+2. **F1**: Passada lexical IDF-ponderada com desempate determinístico e fusão RRF ordenada `[lexical, fts, keys]`.
+3. **F2**: Exposição de proveniência (`source_paths`) em `RECONCILED_MEMORY` para eliminação de queries não-gradáveis.
+4. **F3**: Tabela `haos_rag_keys` + `haos_rag_keys_fts` com gerador determinístico de chaves discriminativas e validação por portões de especificidade e separação (T3–T9).
+5. **F4**: Portões de escrita integrados no `dream.py` (T10), garantindo fusão (merge) de lições com Jaccard ≥ 0.80 e ancoragem por fidelidade de evidência.
+
+### Resultados Medidos no Benchmark Real (170 queries / 100% Obsidian + Reconciled):
+- **hit@1**: 168/170 (98.8%)
+  - Content queries: 96/97 (99.0%)
+  - Title queries: 72/73 (98.6%)
+- **hit@3**: 169/170 (99.4%)
+  - Content queries: 97/97 (100.0%)
+  - Title queries: 72/73 (98.6%)
+- **Não-gradáveis**: 0 (100% de proveniência resolvida em todas as camadas).
+- **Latência média**: 27.5 ms/query.
+- **Distribuição de Fontes**: RAGFLOW_HYBRID: 164, OKF_CANONICAL: 5, RECONCILED_MEMORY: 1.
+
+
