@@ -97,7 +97,8 @@ def test_full_civilization_evolution_roadmap_e2e():
         cmd_id = "cmd-deploy-cluster-v2"
         objective = "Deliberate migration of persistence cluster to Kubernetes with zero downtime"
 
-        # Deliberate round 1
+        # Deliberate round 1 — mock members dissent, so the C1-hardened runner
+        # parks the session pending human approval instead of scheduling actions.
         res1 = runner.deliberate(
             council_id="infra-council",
             objective=objective,
@@ -105,9 +106,21 @@ def test_full_civilization_evolution_roadmap_e2e():
             options={"max_rounds": 3, "max_turns": 10, "max_tokens": 15000, "max_cost_usd": 2.0, "timeout_seconds": 30.0},
         )
 
-        assert res1["status"] in ("completed", "approved")
+        assert res1["status"] == "pending_human_approval"
         sess_id = res1["session_id"]
         assert res1["command_id"] == cmd_id
+
+        # Operator review: re-driving the SAME command_id with approved=True
+        # resumes the parked session and completes it (C1 resume path).
+        res_approved = runner.deliberate(
+            council_id="infra-council",
+            objective=objective,
+            command_id=cmd_id,
+            approved=True,
+            options={"max_rounds": 3, "max_turns": 10, "max_tokens": 15000, "max_cost_usd": 2.0, "timeout_seconds": 30.0},
+        )
+        assert res_approved["status"] in ("completed", "approved")
+        sess_id = res_approved["session_id"]
 
         # Deduplication check: re-running with same command_id returns idempotent cached result
         res_dedup = runner.deliberate(
@@ -116,7 +129,7 @@ def test_full_civilization_evolution_roadmap_e2e():
             command_id=cmd_id,
             options={"max_rounds": 3, "max_turns": 10, "max_tokens": 15000, "max_cost_usd": 2.0, "timeout_seconds": 30.0},
         )
-        assert res_dedup["status"] == res1["status"]
+        assert res_dedup["status"] == res_approved["status"]
         assert res_dedup["session_id"] == sess_id
 
         # Verify Session Turns recorded

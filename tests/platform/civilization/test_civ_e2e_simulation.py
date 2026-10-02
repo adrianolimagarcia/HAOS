@@ -46,7 +46,9 @@ from hermes.platform.evolution.bot_evolution import (
     RISK_MEDIUM,
     RISK_IDENTITY_CRITICAL,
     STATUS_APPROVED,
+    STATUS_CANARY,
     STATUS_PROMOTED,
+    STATUS_REVIEW,
     STATUS_ROLLED_BACK,
     StaleBaseVersionError,
 )
@@ -367,13 +369,28 @@ def test_full_civilization_lifecycle_e2e(civ_environment):
     )
     assert proposal.status == "draft"
 
-    # Update proposal status through review -> approved -> promoted
+    # Update proposal status through the governance FSM:
+    # draft -> review -> approved -> canary -> promoted
+    review_prop = evo_mgr.update_status(
+        proposal_id=proposal.id,
+        new_status=STATUS_REVIEW,
+        current_bot_version_hash=active_v1.bundle_hash,
+    )
+    assert review_prop.status == STATUS_REVIEW
+
     approved_prop = evo_mgr.update_status(
         proposal_id=proposal.id,
         new_status=STATUS_APPROVED,
         current_bot_version_hash=active_v1.bundle_hash,
     )
     assert approved_prop.status == STATUS_APPROVED
+
+    canary_prop = evo_mgr.update_status(
+        proposal_id=proposal.id,
+        new_status=STATUS_CANARY,
+        current_bot_version_hash=active_v1.bundle_hash,
+    )
+    assert canary_prop.status == STATUS_CANARY
 
     promoted_prop = evo_mgr.update_status(
         proposal_id=proposal.id,
@@ -410,6 +427,13 @@ def test_full_civilization_lifecycle_e2e(civ_environment):
         proposed_values_patch="Some stale patch",
     )
     with pytest.raises(StaleBaseVersionError):
+        # FSM: draft -> review is legal; the stale-base gate fires on the
+        # first GATE transition (review -> approved) against v2.
+        evo_mgr.update_status(
+            proposal_id=stale_proposal.id,
+            new_status=STATUS_REVIEW,
+            current_bot_version_hash=arch_v2.bundle_hash,
+        )
         evo_mgr.update_status(
             proposal_id=stale_proposal.id,
             new_status=STATUS_APPROVED,

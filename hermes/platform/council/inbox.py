@@ -31,11 +31,18 @@ class CommandInbox:
         return self.get_result(command_id) is not None
 
     def get_result(self, command_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve the persisted outcome of a previously completed command."""
+        """Retrieve the persisted outcome of a previously completed command.
+
+        Returns the LATEST completion for the command_id: a command may be
+        recorded as pending_human_approval and later completed on resume with
+        approved=True; returning the first match would pin the dedup to the
+        stale pending outcome forever.
+        """
+        latest = None
         for e in self.event_store.get_all(name=_COMMAND_COMPLETED):
             if e.payload.get("command_id") == command_id:
-                return e.payload.get("result")
-        return None
+                latest = e.payload.get("result")
+        return latest
 
     def record_received(
         self,

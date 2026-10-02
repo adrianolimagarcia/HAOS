@@ -36,7 +36,9 @@ from hermes.platform.evolution.bot_evolution import (
     RISK_IDENTITY_CRITICAL,
     RISK_LOW,
     STATUS_APPROVED,
+    STATUS_CANARY,
     STATUS_PROMOTED,
+    STATUS_REVIEW,
     STATUS_ROLLED_BACK,
 )
 from hermes.platform.evolution.promotion_holdout_gate import (
@@ -538,9 +540,22 @@ def deliberate_and_promote_proposal(
             )
             decision_id = decision.id
 
-    # Advance proposal status: approved -> promoted
-    evo_mgr.update_status(proposal_id, STATUS_APPROVED, active_version.bundle_hash)
-    evo_mgr.update_status(proposal_id, STATUS_PROMOTED, active_version.bundle_hash)
+    # Advance proposal status through the governance FSM (audit round-2 seam):
+    # draft -> review -> approved -> canary -> promoted. The governed human
+    # route walks the full chain atomically so every transition is audited;
+    # soul patches require explicit_soul_change=True plus the named approver
+    # (never auto-approved), and high/identity-critical risk requires the
+    # approver at each gate transition (enforced by BotEvolutionManager).
+    evo_mgr.update_status(proposal_id, STATUS_REVIEW, active_version.bundle_hash)
+    evo_mgr.update_status(
+        proposal_id,
+        STATUS_APPROVED,
+        active_version.bundle_hash,
+        approver=approver,
+        explicit_soul_change=bool(proposal.proposed_soul_patch),
+    )
+    evo_mgr.update_status(proposal_id, STATUS_CANARY, active_version.bundle_hash, approver=approver)
+    evo_mgr.update_status(proposal_id, STATUS_PROMOTED, active_version.bundle_hash, approver=approver)
 
     new_bundle = BotIdentityBundle(
         bot_id=bot_id,
