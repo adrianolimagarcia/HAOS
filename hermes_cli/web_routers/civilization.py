@@ -51,11 +51,17 @@ def _event_links(event):
         "civ.evolution.proposal_updated": "proposal",
     }.get(event.name)
     nested = payload.get(source) if source else None
+    if event.name == "civ.leaf.created" and not isinstance(nested, dict):
+        # delegation.route_task emits FLAT payloads (leaf fields at top level);
+        # shadow_leaf emits NESTED {"leaf": {...}}. Normalize both here.
+        nested = payload
     nested = nested if isinstance(nested, dict) else {}
+    snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
     result = {"seq": getattr(event, "seq", 0), "name": event.name, "timestamp": event.timestamp}
     for key, candidates in {
         "bot_id": (payload.get("bot_id"), nested.get("parent_bot_id"), nested.get("bot_id")),
-        "council_id": (payload.get("council_id"), nested.get("council_id"), nested.get("id") if source == "spec" else None),
+        "council_id": (payload.get("council_id"), nested.get("council_id"), snapshot.get("council_id"),
+                       nested.get("id") if source == "spec" else None),
         "leaf_id": (payload.get("leaf_id"), nested.get("leaf_id")),
         "decision_id": (payload.get("decision_id"), nested.get("id") if source == "decision" else None),
     }.items():
@@ -132,21 +138,31 @@ def _overview(store) -> dict:
     for event in all_events:
         payload = event.payload if isinstance(event.payload, dict) else {}
         if event.name == "civ.leaf.created":
+            # Two producers, two shapes: shadow_leaf.py emits NESTED
+            # {"leaf": {...}}; delegation.route_task emits FLAT payloads with
+            # leaf fields at top level and a "snapshot" sub-dict. Accept both.
             leaf = payload.get("leaf")
-            if not isinstance(leaf, dict) or not isinstance(leaf.get("leaf_id"), str):
+            if not isinstance(leaf, dict):
+                leaf = payload
+            if not isinstance(leaf.get("leaf_id"), str):
                 continue
+            snapshot = leaf.get("identity_snapshot")
+            if not isinstance(snapshot, dict):
+                snapshot = payload.get("snapshot")
+            if not isinstance(snapshot, dict):
+                snapshot = {}
             leaves[leaf["leaf_id"]] = {
                 "leaf_id": leaf["leaf_id"],
-                "parent_bot_id": leaf.get("parent_bot_id"),
-                "council_id": (leaf.get("identity_snapshot") or {}).get("council_id")
-                if isinstance(leaf.get("identity_snapshot"), dict)
-                else None,
-                "council_session_id": (leaf.get("identity_snapshot") or {}).get("council_session_id")
-                if isinstance(leaf.get("identity_snapshot"), dict)
-                else None,
+                "parent_bot_id": leaf.get("parent_bot_id") or leaf.get("bot_id"),
+                "council_id": snapshot.get("council_id")
+                if isinstance(snapshot.get("council_id"), str) else None,
+                "council_session_id": snapshot.get("council_session_id")
+                if isinstance(snapshot.get("council_session_id"), str) else None,
                 "status": "active",
             }
         elif event.name in ("civ.leaf.completed", "civ.leaf.failed"):
+            # Orphan terminal events (e.g. constitution denial before created)
+            # must be ignored, never crash the projection.
             leaf = leaves.get(payload.get("leaf_id"))
             if leaf is not None:
                 leaf["status"] = "completed" if event.name.endswith("completed") else "failed"
@@ -253,9 +269,9 @@ def get_council_memory(request: Request, council_id: str, profile: Optional[str]
         path = default_event_store_path()
         if not Path(path).is_file():
             raise HTTPException(status_code=404, detail="No event store found for profile")
-        store = EventStore(path)
-        engine = CouncilMemoryProjectionEngine(store, profile_id=profile or "default")
-        rec = engine.project_council(council_id, force_full_rebuild=False)
+        with EventStore(str(path)) as store:
+            engine = CouncilMemoryProjectionEngine(store, profile_id=profile or "default")
+            rec = engine.project_council(council_id, force_full_rebuild=False)
         content = ""
         if Path(rec.file_path).exists():
             content = Path(rec.file_path).read_text(encoding="utf-8")
@@ -273,9 +289,9 @@ def rebuild_council_memory(request: Request, council_id: str, profile: Optional[
         path = default_event_store_path()
         if not Path(path).is_file():
             raise HTTPException(status_code=404, detail="No event store found for profile")
-        store = EventStore(path)
-        engine = CouncilMemoryProjectionEngine(store, profile_id=profile or "default")
-        rec = engine.project_council(council_id, force_full_rebuild=True)
+        with EventStore(str(path)) as store:
+            engine = CouncilMemoryProjectionEngine(store, profile_id=profile or "default")
+            rec = engine.project_council(council_id, force_full_rebuild=True)
         return {
             "status": "rebuilt",
             "record": rec.to_dict(),
@@ -290,11 +306,11 @@ def get_curator_status(request: Request, profile: Optional[str] = None):
         path = default_event_store_path()
         if not Path(path).is_file():
             return {"status": "inactive", "reason": "no_event_store"}
-        store = EventStore(path)
-        id_mgr = IdentityManager(store)
-        evo_mgr = BotEvolutionManager(store)
-        curator = EvolutionCurator(store, id_mgr, evo_mgr, profile_id=profile or "default")
-        return curator.get_status()
+        with EventStore(str(path)) as store:
+            id_mgr = IdentityManager(store)
+            evo_mgr = BotEvolutionManager(store)
+            curator = EvolutionCurator(store, id_mgr, evo_mgr, profile_id=profile or "default")
+            return curator.get_status()
 
 
 class CuratorRunRequest(BaseModel):
@@ -309,11 +325,11 @@ def run_curator_cycle(request: Request, body: CuratorRunRequest, profile: Option
         path = default_event_store_path()
         if not Path(path).is_file():
             raise HTTPException(status_code=404, detail="No event store found for profile")
-        store = EventStore(path)
-        id_mgr = IdentityManager(store)
-        evo_mgr = BotEvolutionManager(store)
-        curator = EvolutionCurator(store, id_mgr, evo_mgr, profile_id=profile or "default")
-        return curator.run_cycle(dry_run=body.dry_run)
+        with EventStore(str(path)) as store:
+            id_mgr = IdentityManager(store)
+            evo_mgr = BotEvolutionManager(store)
+            curator = EvolutionCurator(store, id_mgr, evo_mgr, profile_id=profile or "default")
+            return curator.run_cycle(dry_run=body.dry_run)
 
 
 # ==============================================================================

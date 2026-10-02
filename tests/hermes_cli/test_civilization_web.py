@@ -126,6 +126,119 @@ def test_civilization_graph_projection_endpoint(client, homes):
     assert any(e["source"] == "council:council-x" and e["target"] == "bot:bot-x" for e in data["edges"])
 
 
+def test_overview_normalizes_flat_leaf_payloads(client, homes):
+    """delegation.route_task emits FLAT civ.leaf.created payloads; overview must see them."""
+    root, _ = homes
+    with EventStore(str(root / "events.db")) as store:
+        store.append(Event(name="civ.leaf.created", payload={
+            "leaf_id": "leaf-flat", "bot_id": "bot-r", "domain": "security",
+            "goal": "harden tls", "reason": "keyword match", "created_at": 1.0,
+            "snapshot": {"identity_version_id": "iv-1", "temporary_soul_hash": "hash",
+                         "council_id": "council-r", "council_session_id": "sess-r"},
+        }))
+        store.append(Event(name="civ.leaf.completed", payload={"leaf_id": "leaf-flat", "summary": "ok"}))
+        # Orphan terminal event (constitution denial before created) must not crash overview.
+        store.append(Event(name="civ.leaf.failed", payload={"leaf_id": "never-created", "error": "denied"}))
+    response = client.get("/api/civilization/overview")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["leaves"] == [{"leaf_id": "leaf-flat", "parent_bot_id": "bot-r",
+                               "council_id": "council-r", "council_session_id": "sess-r",
+                               "status": "completed"}]
+    created_links = next(e for e in body["events"] if e["name"] == "civ.leaf.created")
+    assert created_links["leaf_id"] == "leaf-flat"
+    assert created_links["bot_id"] == "bot-r"
+    assert created_links["council_id"] == "council-r"
+    # Redaction still holds: raw payload fields never cross the boundary.
+    assert "harden tls" not in response.text
+    assert "denied" not in response.text
+
+
+def test_write_endpoints_close_event_store_connections(client, homes, monkeypatch, tmp_path):
+    """Every endpoint that opens a writable EventStore must close it (no -wal leak)."""
+    root, _ = homes
+    with EventStore(str(root / "events.db")) as store:
+        council = CouncilManager(store)
+        council.register(CouncilSpec(id="c1", purpose="P", members=["bot-a"]))
+    from hermes_cli.web_routers import civilization as civ_router
+
+    opened: list = []
+    real_store = civ_router.EventStore
+
+    class TrackingStore(real_store):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            opened.append(self)
+
+    monkeypatch.setattr(civ_router, "EventStore", TrackingStore)
+    assert client.get("/api/civilization/councils/c1/memory").status_code == 200
+    assert client.post("/api/civilization/councils/c1/memory/rebuild").status_code == 200
+    assert client.get("/api/civilization/evolution/curator/status").status_code == 200
+    assert client.post("/api/civilization/evolution/curator/run", json={"dry_run": True}).status_code == 200
+    assert opened, "endpoints never opened an EventStore — test is vacuous"
+    leaked = [s for s in opened if s._conn is not None]
+    assert not leaked, f"{len(leaked)}/{len(opened)} EventStore connections left open"
+    # Closed stores checkpoint the WAL; no unbounded -wal growth after requests.
+    assert (root / "events.db-wal").stat().st_size == 0 if (root / "events.db-wal").exists() else True
+
+
+def test_civ_evolution_promote_governance_flags(monkeypatch, tmp_path, capsys):
+    """--approver/--evaluation reach deliberate_and_promote_proposal only when provided;
+    PermissionError surfaces a governance message instead of a traceback."""
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("HERMES_HOME", str(root))
+    from types import SimpleNamespace
+    import hermes.platform.civilization.delegation as delegation
+    from hermes_cli.civ_cmd import cmd_civ
+
+    captured: dict = {}
+
+    def fake_promote(proposal_id, **kwargs):
+        captured.clear()
+        captured["proposal_id"] = proposal_id
+        captured.update(kwargs)
+        return {"proposal_id": proposal_id, "bot_id": "b", "new_version_number": 2,
+                "new_version_id": "v2"}
+
+    monkeypatch.setattr(delegation, "deliberate_and_promote_proposal", fake_promote)
+    eval_file = tmp_path / "eval.json"
+    eval_file.write_text('{"score": 0.9}', encoding="utf-8")
+
+    args = SimpleNamespace(civ_action="evolution-promote", json=True, proposal_id="p1",
+                           council_id="c1", decision_summary="ok",
+                           approver="adriano", evaluation=str(eval_file))
+    assert cmd_civ(args) == 0
+    assert captured["approver"] == "adriano"
+    assert captured["evaluation"] == {"score": 0.9}
+
+    # Flags absent -> kwargs not passed at all (back-compat with old signature).
+    args_off = SimpleNamespace(civ_action="evolution-promote", json=True, proposal_id="p1",
+                               council_id=None, decision_summary="",
+                               approver=None, evaluation=None)
+    assert cmd_civ(args_off) == 0
+    assert "approver" not in captured and "evaluation" not in captured
+
+    # Governance refusal -> clear message, exit 1, no traceback.
+    def deny(proposal_id, **kwargs):
+        raise PermissionError("promotion requires an explicit approver")
+
+    monkeypatch.setattr(delegation, "deliberate_and_promote_proposal", deny)
+    assert cmd_civ(args_off) == 1
+    out = capsys.readouterr().out
+    assert "Governance refusal" in out
+    assert "--approver" in out
+    assert "Traceback" not in out
+
+    # Bad --evaluation file -> clear error, no call.
+    args_bad = SimpleNamespace(civ_action="evolution-promote", json=True, proposal_id="p1",
+                               council_id=None, decision_summary="",
+                               approver="a", evaluation=str(tmp_path / "missing.json"))
+    assert cmd_civ(args_bad) == 1
+    assert "Invalid --evaluation" in capsys.readouterr().out
+
+
 def test_council_memory_endpoints(client, homes):
     root, _ = homes
     path = root / "events.db"

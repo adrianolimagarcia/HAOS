@@ -66,18 +66,37 @@ def cmd_civ(args) -> int:
         return _action_evolution(mgrs, args, as_json)
     elif action == "evolution-promote":
         from hermes.platform.civilization.delegation import deliberate_and_promote_proposal
+        # Governance flags (optional; deliberate_and_promote_proposal enforces
+        # them when configured — absence keeps back-compat call shape).
+        extra: Dict[str, Any] = {}
+        approver = getattr(args, "approver", None)
+        if approver:
+            extra["approver"] = approver
+        evaluation_path = getattr(args, "evaluation", None)
+        if evaluation_path:
+            try:
+                with open(evaluation_path, encoding="utf-8") as fh:
+                    extra["evaluation"] = json.load(fh)
+            except (OSError, ValueError) as exc:
+                print(f"Invalid --evaluation file {evaluation_path!r}: {exc}")
+                return 1
         try:
             res = deliberate_and_promote_proposal(
                 getattr(args, "proposal_id"),
                 council_id=getattr(args, "council_id", None),
                 decision_summary=getattr(args, "decision_summary", ""),
                 event_store=mgrs["store"],
+                **extra,
             )
             if as_json:
                 print(json.dumps(res, indent=2))
             else:
                 print(f"Promoted proposal {res['proposal_id']} -> Bot {res['bot_id']} new version {res['new_version_number']} ({res['new_version_id']})")
             return 0
+        except PermissionError as exc:
+            print(f"Governance refusal: {exc}")
+            print("Hint: pass --approver <name> and --evaluation <json-file> with promotion evidence.")
+            return 1
         except Exception as exc:
             print(f"Failed to promote evolution proposal: {exc}")
             return 1

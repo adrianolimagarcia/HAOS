@@ -52,6 +52,8 @@ def build_civ_parser(subparsers) -> None:
     civ_evo_prom.add_argument("--proposal-id", required=True, help="Proposal ID to promote")
     civ_evo_prom.add_argument("--council-id", help="Optional Council ID to record deliberation")
     civ_evo_prom.add_argument("--decision-summary", default="", help="Council decision summary")
+    civ_evo_prom.add_argument("--approver", help="Explicit human approver name (governance gate)")
+    civ_evo_prom.add_argument("--evaluation", help="Path to a JSON file with promotion evaluation evidence")
     civ_evo_prom.add_argument("--json", action="store_true", help="Output as JSON")
 
     # haos civ evolution-rollback
