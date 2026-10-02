@@ -2,17 +2,30 @@
 
 Ingests ExperienceEvents from canonical EventStore, updates durable cursors,
 generates EvolutionProposals, manages single-flight profile leases, and monitors canary deployments.
+
+Security invariants (identity-poisoning hardening):
+- B5: lease acquisition is a read-modify-write critical section guarded by an
+  exclusive file lock (fcntl.flock) — no two curators can interleave and both
+  believe they hold the lease.
+- M3: canary evaluation is fail-closed — promotion requires evidence stamped
+  with the canary identity version; unstamped evidence never promotes.
+- A3: experience summaries embedded into proposals are re-sanitized
+  (defense-in-depth) and soul patches are only ever created as drafts;
+  approval requires explicit_soul_change + human approver (enforced in
+  BotEvolutionManager.update_status).
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from hermes.platform.bots.identity_manager import IdentityManager
 from hermes.platform.council.manager import CouncilManager
@@ -31,6 +44,7 @@ from hermes.platform.evolution.bot_evolution import (
     STATUS_REJECTED,
     STATUS_REVIEW,
     STATUS_ROLLED_BACK,
+    sanitize_summary,
 )
 from hermes.platform.observability.event_store import EventStore
 
@@ -94,7 +108,31 @@ class EvolutionCurator:
 
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.state_file = self.state_dir / f"curator_state_{self.profile_id}.json"
+        self.lock_file = self.state_file.with_suffix(".lock")
         self._state = self._load_state()
+
+    @contextmanager
+    def _file_lock(self, blocking: bool = True) -> Iterator[bool]:
+        """B5: exclusive advisory lock (fcntl.flock) over the curator state file.
+
+        flock is tied to the open file description, so it serializes both
+        threads in one process and separate processes. Yields True when the
+        lock was acquired (non-blocking mode may yield False).
+        """
+        fd = os.open(str(self.lock_file), os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            flags = fcntl.LOCK_EX if blocking else (fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                fcntl.flock(fd, flags)
+            except OSError:
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
     def _load_state(self) -> CuratorState:
         if self.state_file.exists():
@@ -115,29 +153,39 @@ class EvolutionCurator:
             logger.error(f"Failed to save curator state to {self.state_file}: {e}")
 
     def acquire_lease(self, ttl_seconds: float = 60.0) -> bool:
-        """Acquire a single-flight lease to prevent concurrent background runs in the same profile."""
+        """Acquire a single-flight lease to prevent concurrent background runs in the same profile.
+
+        B5: the read-modify-write of the lease is performed inside an exclusive
+        file lock, so two curators racing cannot both observe an expired/free
+        lease and both write themselves as owner.
+        """
         now = time.time()
-        # Reload state to check current lease
-        self._state = self._load_state()
-
-        if self._state.lease_owner and self._state.lease_expires_at > now:
-            if self._state.lease_owner != self.curator_id:
-                logger.info(f"Curator lease held by '{self._state.lease_owner}' until {self._state.lease_expires_at}")
+        with self._file_lock() as locked:
+            if not locked:  # pragma: no cover - blocking lock only fails on OSError
+                logger.warning("Could not take curator lease file lock; skipping acquisition.")
                 return False
+            # Reload state under the lock to check current lease
+            self._state = self._load_state()
 
-        # Acquire or renew
-        self._state.lease_owner = self.curator_id
-        self._state.lease_expires_at = now + ttl_seconds
-        self._save_state()
+            if self._state.lease_owner and self._state.lease_expires_at > now:
+                if self._state.lease_owner != self.curator_id:
+                    logger.info(f"Curator lease held by '{self._state.lease_owner}' until {self._state.lease_expires_at}")
+                    return False
+
+            # Acquire or renew
+            self._state.lease_owner = self.curator_id
+            self._state.lease_expires_at = now + ttl_seconds
+            self._save_state()
         return True
 
     def release_lease(self) -> None:
-        """Release the single-flight lease."""
-        self._state = self._load_state()
-        if self._state.lease_owner == self.curator_id:
-            self._state.lease_owner = None
-            self._state.lease_expires_at = 0.0
-            self._save_state()
+        """Release the single-flight lease (under the same exclusive file lock)."""
+        with self._file_lock():
+            self._state = self._load_state()
+            if self._state.lease_owner == self.curator_id:
+                self._state.lease_owner = None
+                self._state.lease_expires_at = 0.0
+                self._save_state()
 
     def get_status(self) -> Dict[str, Any]:
         """Return the current health and progress status of the curator."""
@@ -208,10 +256,18 @@ class EvolutionCurator:
 
             # Pattern A: Recurring domain failures -> Synthesize corrective patch
             if len(failures) >= failure_threshold:
-                failure_summaries = "; ".join(f.summary for f in failures)
+                # A3 defense-in-depth: summaries are untrusted task output; re-sanitize
+                # before embedding into rationale/soul patch even though ingestion
+                # already sanitized (events could bypass record_experience).
+                failure_summaries = "; ".join(
+                    sanitize_summary(f.summary) or "(redacted)" for f in failures
+                )
                 rationale = f"Corrective adaptation in domain '{domain}' after {len(failures)} failures: {failure_summaries}"
                 patch = f"## Domain Adaptation: {domain}\n- Enhanced verification and fallback procedures based on observed incidents.\n- Addressed: {failure_summaries}"
-                
+
+                # NOTE: this creates a DRAFT only. A soul patch is never
+                # auto-approved by the curator: approval requires
+                # explicit_soul_change=True + human approver (update_status).
                 proposals_to_create.append({
                     "bot_id": bot_id,
                     "base_version_hash": base_hash,
@@ -223,7 +279,9 @@ class EvolutionCurator:
 
             # Pattern B: Sustained excellence -> Reinforce specialization in values
             elif len(successes) >= success_threshold:
-                success_summaries = "; ".join(s.summary for s in successes)
+                success_summaries = "; ".join(
+                    sanitize_summary(s.summary) or "(redacted)" for s in successes
+                )
                 rationale = f"Excellence reinforcement in domain '{domain}' across {len(successes)} validated executions."
                 patch = f"## Core Competency: {domain}\n- Proven track record of consistent success."
 
@@ -239,7 +297,15 @@ class EvolutionCurator:
         return proposals_to_create
 
     def evaluate_canaries(self) -> Dict[str, Any]:
-        """Check proposals currently in canary status against recent performance."""
+        """Check proposals currently in canary status against recent performance.
+
+        M3 (fail-closed): promotion requires evidence that the CANARY version was
+        actually live — i.e. post-canary experiences stamped with
+        ``identity_version == proposal.base_version_hash`` (the version under
+        canary evaluation). Experiences from the OLD identity (no stamp or a
+        different stamp) prove nothing about the canary and never promote it;
+        a warning is logged instead.
+        """
         canary_proposals = [p for p in self.evo_mgr.get_proposals() if p.status == STATUS_CANARY]
         promoted = []
         rolled_back = []
@@ -251,11 +317,15 @@ class EvolutionCurator:
         # Find experiences occurred after canary proposal creation
         for prop in canary_proposals:
             post_canary_exps = []
+            canary_stamped_exps = []
             for ev in all_events:
                 if ev.name == EVENT_EXPERIENCE_RECORDED:
                     exp_dict = (ev.payload or {}).get("experience", {})
                     if exp_dict.get("bot_id") == prop.bot_id and float(exp_dict.get("occurred_at", 0)) >= prop.updated_at:
                         post_canary_exps.append(exp_dict)
+                        # Evidence the canary identity was actually serving traffic.
+                        if exp_dict.get("identity_version") == prop.base_version_hash:
+                            canary_stamped_exps.append(exp_dict)
 
             if len(post_canary_exps) >= 3:
                 failures = [e for e in post_canary_exps if not e.get("success")]
@@ -263,7 +333,16 @@ class EvolutionCurator:
                 curr_hash = active_ver.bundle_hash if active_ver else ""
 
                 if len(failures) == 0:
-                    # Canary succeeded with 100% success rate -> Promote!
+                    # M3 fail-closed: only promote with canary-stamped evidence.
+                    if len(canary_stamped_exps) < 3:
+                        logger.warning(
+                            "Canary proposal %s NOT promoted for %s: only %d/%d "
+                            "post-canary experiences carry identity_version stamp '%s' — "
+                            "no evidence the canary version was active (fail-closed).",
+                            prop.id, prop.bot_id, len(canary_stamped_exps),
+                            len(post_canary_exps), prop.base_version_hash,
+                        )
+                        continue
                     try:
                         self.evo_mgr.update_status(prop.id, STATUS_PROMOTED, curr_hash)
                         promoted.append(prop.id)
@@ -271,7 +350,9 @@ class EvolutionCurator:
                     except Exception as e:
                         logger.warning(f"Failed to promote canary proposal {prop.id}: {e}")
                 elif len(failures) >= 2:
-                    # Canary failed -> Rollback!
+                    # Canary failed -> Rollback! (rollback stays allowed even with
+                    # unstamped evidence: fail-closed means never promote, and
+                    # rolling back is the safe direction.)
                     try:
                         self.evo_mgr.update_status(prop.id, STATUS_ROLLED_BACK, curr_hash)
                         rolled_back.append(prop.id)

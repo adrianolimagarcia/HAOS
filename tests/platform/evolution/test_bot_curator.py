@@ -11,8 +11,10 @@ from hermes.platform.bots.identity_manager import IdentityManager
 from hermes.platform.evolution.bot_curator import EvolutionCurator
 from hermes.platform.evolution.bot_evolution import (
     BotEvolutionManager,
+    STATUS_APPROVED,
     STATUS_CANARY,
     STATUS_PROMOTED,
+    STATUS_REVIEW,
     STATUS_ROLLED_BACK,
 )
 from hermes.platform.observability.event_store import EventStore
@@ -138,7 +140,7 @@ def test_curator_canary_evaluation_promotes_healthy(curator_env):
 
     active_ver = id_mgr.get_active_version("worker-bot")
 
-    # Create a proposal directly and set to canary
+    # Create a proposal directly and walk the FSM to canary
     prop = evo_mgr.create_proposal(
         bot_id="worker-bot",
         base_version_hash=active_ver.bundle_hash,
@@ -146,9 +148,12 @@ def test_curator_canary_evaluation_promotes_healthy(curator_env):
         rationale="Optimize parser speed",
         proposed_values_patch="Fast parser values",
     )
+    evo_mgr.update_status(prop.id, STATUS_REVIEW, active_ver.bundle_hash)
+    evo_mgr.update_status(prop.id, STATUS_APPROVED, active_ver.bundle_hash)
     evo_mgr.update_status(prop.id, STATUS_CANARY, active_ver.bundle_hash)
 
-    # Add 3 successful post-canary experiences
+    # Add 3 successful post-canary experiences stamped with the canary
+    # identity version (M3: promotion is fail-closed without the stamp).
     time.sleep(0.01)
     for i in range(3):
         evo_mgr.record_experience(
@@ -157,6 +162,7 @@ def test_curator_canary_evaluation_promotes_healthy(curator_env):
             domain="parser",
             summary=f"Parser execution {i} succeeded",
             success=True,
+            identity_version=active_ver.bundle_hash,
         )
 
     # Curator evaluates canaries
@@ -175,13 +181,19 @@ def test_curator_canary_evaluation_rolls_back_failing(curator_env):
 
     active_ver = id_mgr.get_active_version("worker-bot")
 
-    # Create a proposal directly and set to canary
+    # Create a proposal directly and walk the FSM to canary
     prop = evo_mgr.create_proposal(
         bot_id="worker-bot",
         base_version_hash=active_ver.bundle_hash,
         risk_class="medium",
         rationale="Experimental async indexing",
         proposed_soul_patch="Async indexing soul",
+    )
+    evo_mgr.update_status(prop.id, STATUS_REVIEW, active_ver.bundle_hash)
+    # A3: soul patch approval needs explicit human sign-off
+    evo_mgr.update_status(
+        prop.id, STATUS_APPROVED, active_ver.bundle_hash,
+        approver="humano-1", explicit_soul_change=True,
     )
     evo_mgr.update_status(prop.id, STATUS_CANARY, active_ver.bundle_hash)
 

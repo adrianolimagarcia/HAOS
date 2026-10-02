@@ -2,10 +2,12 @@ import pytest
 from hermes.platform.observability.event_store import EventStore
 from hermes.platform.evolution.bot_evolution import (
     BotEvolutionManager,
+    PolicyViolationError,
     StaleBaseVersionError,
     RISK_LOW,
     RISK_IDENTITY_CRITICAL,
     STATUS_DRAFT,
+    STATUS_REVIEW,
     STATUS_APPROVED,
     STATUS_CANARY,
     STATUS_PROMOTED,
@@ -45,12 +47,22 @@ def test_proposal_lifecycle_and_stale_detection(tmp_path):
     assert prop.status == STATUS_DRAFT
     assert prop.base_version_hash == "hash-123"
 
+    # M2: FSM requires draft -> review -> approved -> canary -> promoted
+    evo.update_status(prop.id, STATUS_REVIEW, current_bot_version_hash="hash-123")
+
     # Stale version detection: current active version is hash-999
     with pytest.raises(StaleBaseVersionError):
         evo.update_status(prop.id, STATUS_APPROVED, current_bot_version_hash="hash-999")
 
-    # Correct version matches
-    approved = evo.update_status(prop.id, STATUS_APPROVED, current_bot_version_hash="hash-123")
+    # A3: a soul patch is never auto-approved — needs human approver + explicit flag
+    with pytest.raises(PolicyViolationError):
+        evo.update_status(prop.id, STATUS_APPROVED, current_bot_version_hash="hash-123")
+
+    # Correct version matches, with explicit human soul approval
+    approved = evo.update_status(
+        prop.id, STATUS_APPROVED, current_bot_version_hash="hash-123",
+        approver="humano-1", explicit_soul_change=True,
+    )
     assert approved.status == STATUS_APPROVED
 
     canary = evo.update_status(prop.id, STATUS_CANARY, current_bot_version_hash="hash-123")
