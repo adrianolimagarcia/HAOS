@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import sqlite3
 import threading
@@ -503,21 +504,73 @@ class RAGFlowStore:
             ORDER BY created_at DESC;
         """).fetchall()
 
-        lexical_candidates: List[Tuple[str, float]] = []
+        # F1 (SELF_INDEX_PLAN §Fase 1) — a passada léxica ordena por IDF, não
+        # por contagem de tokens. O base somava `matches / len(tokens)`: dois
+        # documentos com o MESMO número de tokens da query empatavam, e o
+        # empate era resolvido pela ordem SQL (`created_at DESC`) — um
+        # artefato invisível de recência, não relevância. No corpus real isso
+        # deixava o alvo atrás do vizinho errado (2 misses rank=2 no gold).
+        #
+        #   df(t) = nº de chunks avaliados que contêm t
+        #   idf(t) = log(1 + N / df(t))          (df=0 → idf=0: nunca é hit)
+        #   score(chunk) = Σ idf(hits) / Σ idf(tokens da query)
+        #
+        # Três decisões deliberadas:
+        #  1. CUSTO: o df é acumulado no MESMO laço que já materializava os
+        #     blobs (nenhum I/O extra, nenhum re-scan); a pontagem é um
+        #     segundo laço apenas sobre os candidatos com hit. O trabalho por
+        #     chunk permanece O(|tokens|). Teto do aceite: p95 ≤ baseline +10%.
+        #     MEDIDO no A/B (mesmo snapshot 555 chunks, 170q × 3 rodadas
+        #     intercaladas, n=510): p95 base 21.40 ms → F1 20.67 ms,
+        #     razão 0.966. Gate PASS com folga.
+        #  2. DESEMPATE passa a ser EXPLÍCITO: (score, posição no BM25,
+        #     doc_path, chunk_id). Antes era `created_at DESC` herdado do
+        #     sort estável. Um alvo que o BM25 considera #1 não pode perder
+        #     para um candidato mais novo só porque empatou em score.
+        #  3. CORTE mantido em `limit * 3`: alargar o fator (10/30) foi
+        #     medido neutro em hit@1 — não se "conserta" o que a medição diz
+        #     ser neutro. O que traz o alvo de volta para dentro do corte é o
+        #     item 2, não uma janela maior.
+        #
+        # O kill-switch do P6 continua sendo o ÚNICO throttle do laço: ao
+        # interromper a avaliação, ele também limita o corpus sobre o qual o
+        # df é contado (df e N são do mesmo universo — coerência intencional).
+        unique_tokens = list(dict.fromkeys(tokens))  # preserva ordem, dedupeia
+        clean_q_lower = clean_q.lower()
+        evaluated: List[Tuple[str, str, List[str], bool]] = []
+        df: Dict[str, int] = dict.fromkeys(unique_tokens, 0)
+        n_chunks = 0
         for r in all_chunks_rows:
             if not budget.consume():
                 break  # kill-switch: orçamento esgotado — para de avaliar
-            cid = r["id"]
+            n_chunks += 1
             text_blob = f"{r['doc_path']} {r['header_path']} {r['content']}".lower()
-            matches = sum(1 for t in tokens if t in text_blob)
-            if matches > 0:
-                score = matches / max(len(tokens), 1)
-                # Boost exact query phrase
-                if clean_q.lower() in text_blob:
-                    score += 1.0
-                lexical_candidates.append((cid, score))
+            hits = [t for t in unique_tokens if t in text_blob]
+            for t in hits:
+                df[t] += 1
+            if hits:
+                # Boost exact query phrase (mesma regra do base, byte-for-byte)
+                evaluated.append((r["id"], r["doc_path"], hits, clean_q_lower in text_blob))
 
-        lexical_candidates.sort(key=lambda x: x[1], reverse=True)
+        idf = {
+            t: (math.log(1.0 + n_chunks / c) if c > 0 else 0.0)
+            for t, c in df.items()
+        }
+        total_idf = max(sum(idf.values()), 1e-9)
+        bm25_pos = {cid: idx for idx, (cid, _) in enumerate(fts_ranked)}
+        bm25_absent = len(fts_ranked) + 1  # ausente do BM25 perde o desempate
+
+        scored: List[Tuple[float, int, str, str]] = []
+        for cid, doc_path, hits, has_phrase in evaluated:
+            score = sum(idf[t] for t in hits) / total_idf
+            if has_phrase:
+                score += 1.0
+            scored.append((-score, bm25_pos.get(cid, bm25_absent), doc_path, cid))
+        scored.sort()
+
+        lexical_candidates: List[Tuple[str, float]] = [
+            (cid, -neg) for neg, _, _, cid in scored
+        ]
         return fts_ranked, lexical_candidates[: limit * 3]
 
     def rank_lists(
@@ -601,8 +654,21 @@ class RAGFlowStore:
                 conn, clean_q, fts_query, tokens, limit, budget,
             )
 
-            # 3. Fuse with Reciprocal Rank Fusion
-            fused = ReciprocalRankFusion.fuse([fts_ranked, lexical_ranked], k=k_rrf)
+            # 3. Fuse with Reciprocal Rank Fusion.
+            # A ordem das listas é decisão, não acidente: o RRF soma pesos por
+            # rank; empates exatos (espelho fts#i/lex#j == fts#j/lex#i) ficam
+            # idênticos em ponto flutuante e o `sorted` estável os resolve pela
+            # ordem de inserção — i.e., pela PRIMEIRA lista. A lista léxica vai
+            # primeiro de propósito: ela carrega o boost de frase exata (+1.0),
+            # o único sinal de magnitude que sobrevive quando BM25 e léxico
+            # discordam no topo. MEDIDO (índice vivo, 555 chunks): base
+            # 166@1/168@3 → com IDF+esta ordem 167@1/168@3; recupera o
+            # diário 13-09 (empate espelho fts#1/lex#2 vs fts#2/lex#1) e a
+            # query de infra. O diário 18-09 fica em rank=2 por perda
+            # ESTRITA (0.032018 vs 0.032522), não por empate — nenhuma
+            # política de desempate o traz; isso é caso de fusão com
+            # score (P7/LinearScoreFusion), decisão reservada ao humano.
+            fused = ReciprocalRankFusion.fuse([lexical_ranked, fts_ranked], k=k_rrf)
             top_ids = [cid for cid, _ in fused[:limit]]
 
             if not top_ids:
