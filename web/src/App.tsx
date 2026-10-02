@@ -87,6 +87,7 @@ const SessionsPage = lazy(() => import("@/pages/SessionsPage"));
 const LogsPage = lazy(() => import("@/pages/LogsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/AnalyticsPage"));
 const CivilizationPage = lazy(() => import("@/pages/CivilizationPage"));
+const FrameworkPage = lazy(() => import("@/pages/FrameworkPage"));
 const MemoryGraphPage = lazy(() => import("@/pages/MemoryGraphPage"));
 const ModelsPage = lazy(() => import("@/pages/ModelsPage"));
 const CronPage = lazy(() => import("@/pages/CronPage"));
@@ -164,6 +165,7 @@ const BUILTIN_ROUTES_CORE: Record<string, ComponentType> = {
   "/files": FilesPage,
   "/analytics": AnalyticsPage,
   "/civilization": CivilizationPage,
+  "/framework": FrameworkPage,
   "/memory-graph": MemoryGraphPage,
   "/models": ModelsPage,
   "/logs": LogsPage,
@@ -199,6 +201,7 @@ const BUILTIN_NAV_REST: NavItem[] = [
   },
   { path: "/files", label: "Files", icon: FolderOpen },
   { path: "/civilization", label: "Civilization", icon: GitBranch },
+  { path: "/framework", label: "Operational Framework", icon: Activity },
   { path: "/memory-graph", label: "Graph Memory", icon: Network },
   {
     path: "/analytics",

@@ -3376,6 +3376,9 @@ def _build_cli_parser():
     from hermes_cli.haos_cmd import build_haos_parser
     build_haos_parser(subparsers)
 
+    from hermes_cli.subcommands.framework import build_framework_parser
+    build_framework_parser(subparsers)
+
     from hermes_cli.codebase_wiki import build_parser as _build_codebase_wiki_parser
     _build_codebase_wiki_parser(subparsers)
 
