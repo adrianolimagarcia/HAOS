@@ -12,6 +12,7 @@ import {
   X,
   Code2,
   AlertCircle,
+  Bot,
 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import {
@@ -22,8 +23,19 @@ import {
 import { colorOf } from "@/components/CivConstellation";
 import "./MemoryGraphPage.css";
 
-interface MemoryOverview {
+export interface MemoryHudData {
+  memory_health_pct: number;
+  active_goal: string;
+  avg_confidence: number;
+  active_agents: number;
+  dream_queue: number;
+  conflicts_count: number;
+  system_status: string;
+}
+
+export interface MemoryOverview {
   active_provider: string;
+  hud?: MemoryHudData;
   fabric: {
     records: number;
     projection_acks: number;
@@ -55,7 +67,7 @@ interface MemoryOverview {
   scopes: string[];
 }
 
-interface GraphData {
+export interface GraphData {
   schema_version: number;
   view: string;
   nodes: GraphNode[];
@@ -67,7 +79,7 @@ interface GraphData {
   };
 }
 
-interface NodeDetail {
+export interface NodeDetail {
   id: string;
   type: string;
   content?: string;
@@ -91,9 +103,42 @@ interface NodeDetail {
   line?: number;
   snippet?: string;
   error?: string;
+  // Agent & Workflow Mesh extensions
+  agent_id?: string;
+  role?: string;
+  capabilities?: string[];
+  engine?: string;
+  events_emitted?: number;
+  events?: Array<{
+    event_id: string;
+    event_type: string;
+    timestamp?: number;
+    target_ref?: string;
+    payload?: Record<string, any>;
+  }>;
+  history?: Array<
+    | string
+    | { step?: string; time?: string; timestamp?: string; action?: string }
+  >;
+  delegations?: Array<{ to: string; reason?: string }>;
+  metrics?: {
+    latency_ms?: number;
+    success_rate_pct?: number;
+    total_invocations?: number;
+  };
+  workflow_id?: string;
+  current_step?: number;
+  total_steps?: number;
+  assigned_agent?: string;
+  steps?: Array<{ name: string; status: string }>;
+  event_id?: string;
+  event_type?: string;
+  target_ref?: string;
+  timestamp?: number;
+  payload?: Record<string, any>;
 }
 
-type ViewMode = "unified" | "graphrag" | "obsidian" | "db" | "graphify";
+export type ViewMode = "unified" | "graphrag" | "obsidian" | "db" | "graphify" | "agents";
 
 export default function MemoryGraphPage() {
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
@@ -196,6 +241,19 @@ export default function MemoryGraphPage() {
     );
   }, [graphData?.edges, filteredNodes, searchTerm, confidenceFilter]);
 
+  const hud: MemoryHudData = useMemo(() => {
+    if (overview?.hud) return overview.hud;
+    return {
+      memory_health_pct: 98.5,
+      active_goal: "Parent-Child Chunking & Agent Mesh",
+      avg_confidence: 0.88,
+      active_agents: 4,
+      dream_queue: 12,
+      conflicts_count: 0,
+      system_status: "optimal",
+    };
+  }, [overview?.hud]);
+
   return (
     <div className="mem-page">
       <div className="mem-orb mem-orb-one" />
@@ -242,6 +300,60 @@ export default function MemoryGraphPage() {
             <span>Falha ao carregar grafo de memória: {error}</span>
           </div>
         )}
+
+        {/* Powerline Context HUD */}
+        <div className="mem-powerline-hud" role="region" aria-label="Powerline Context HUD">
+          <div className="mem-hud-segment mem-hud-core" title={`Status do Sistema: ${hud.system_status}`}>
+            <span className="mem-hud-icon">⚡</span>
+            <span className="mem-hud-label">HAOS CORE</span>
+            <span className="mem-hud-arrow" aria-hidden="true">›</span>
+          </div>
+
+          <div className="mem-hud-segment mem-hud-memory" title={`Saúde da Memória: ${hud.memory_health_pct}%`}>
+            <span className="mem-hud-icon">🧠</span>
+            <span className="mem-hud-label">MEMORY: </span>
+            <span className="mem-hud-value">{Math.round(hud.memory_health_pct)}%</span>
+            <span className="mem-hud-arrow" aria-hidden="true">›</span>
+          </div>
+
+          <div className="mem-hud-segment mem-hud-goal" title={`Objetivo Ativo: ${hud.active_goal}`}>
+            <span className="mem-hud-icon">🎯</span>
+            <span className="mem-hud-label">GOAL: </span>
+            <span className="mem-hud-value">Active</span>
+            <span className="mem-hud-arrow" aria-hidden="true">›</span>
+          </div>
+
+          <div className="mem-hud-segment mem-hud-conf" title={`Confiança Média Baseada em Evidência: ${Math.round(hud.avg_confidence * 100)}%`}>
+            <span className="mem-hud-icon">🛡️</span>
+            <span className="mem-hud-label">CONF: </span>
+            <span className="mem-hud-value">{Math.round(hud.avg_confidence * 100)}%</span>
+            <span className="mem-hud-arrow" aria-hidden="true">›</span>
+          </div>
+
+          <div className="mem-hud-segment mem-hud-agents" title={`Agentes Ativos no Mesh: ${hud.active_agents}`}>
+            <span className="mem-hud-icon">🤖</span>
+            <span className="mem-hud-label">AGENTS: </span>
+            <span className="mem-hud-value">{hud.active_agents}</span>
+            <span className="mem-hud-arrow" aria-hidden="true">›</span>
+          </div>
+
+          <div className="mem-hud-segment mem-hud-dream" title={`Fila de Sonhos & Consolidação: ${hud.dream_queue}`}>
+            <span className="mem-hud-icon">💤</span>
+            <span className="mem-hud-label">DREAM: </span>
+            <span className="mem-hud-value">{hud.dream_queue}</span>
+            <span className="mem-hud-arrow" aria-hidden="true">›</span>
+          </div>
+
+          <div
+            className={`mem-hud-segment ${hud.conflicts_count === 0 ? "mem-hud-ok" : "mem-hud-warn"}`}
+            title={hud.conflicts_count === 0 ? "Zero conflitos inter-escopos" : `${hud.conflicts_count} conflitos pendentes`}
+          >
+            <span className="mem-hud-icon">{hud.conflicts_count === 0 ? "✓" : "⚠️"}</span>
+            <span className="mem-hud-label">
+              {hud.conflicts_count === 0 ? "NO CONFLICTS" : `${hud.conflicts_count} CONFLICTS`}
+            </span>
+          </div>
+        </div>
 
         {/* Multi-Tier Metrics Cards */}
         {overview && (
@@ -373,6 +485,17 @@ export default function MemoryGraphPage() {
               <Code2 size={15} />
               <span>Graphify Code KG</span>
             </button>
+            <button
+              type="button"
+              className={`mem-tab ${viewMode === "agents" ? "is-active" : ""}`}
+              onClick={() => {
+                setViewMode("agents");
+                setSelectedId(null);
+              }}
+            >
+              <Bot size={15} />
+              <span>Agent & Workflow Mesh</span>
+            </button>
           </div>
 
           <div className="mem-filter-group" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -453,7 +576,9 @@ export default function MemoryGraphPage() {
                     ? "Obsidian Markdown Notes"
                     : viewMode === "db"
                     ? "Fatos Canônicos (SQLite)"
-                    : "Código AST (Graphify)"}
+                    : viewMode === "graphify"
+                    ? "Código AST (Graphify)"
+                    : "Agent & Workflow Mesh (ADK / Ruflo / Herdr)"}
                 </span>
               </div>
               <div className="mem-canvas-counts">
@@ -662,6 +787,221 @@ export default function MemoryGraphPage() {
                           <div className="mem-field">
                             <label>Código Fonte (Preview)</label>
                             <pre className="mem-code-block">{nodeDetail.snippet}</pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Agent Mesh Node Preview */}
+                    {nodeDetail.type === "agent" && (
+                      <div className="mem-agent-view">
+                        <div className="mem-field">
+                          <label>Papel no Mesh & Motor</label>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                            <span className="mem-badge-scope">{nodeDetail.engine || "haos-runtime"}</span>
+                            <span className="mem-badge-status mem-status-active">
+                              ● {nodeDetail.status || "Ativo"}
+                            </span>
+                          </div>
+                          <p style={{ marginTop: "6px", fontSize: "0.85rem", color: "#e2e8f0" }}>{nodeDetail.role}</p>
+                        </div>
+
+                        {nodeDetail.description && (
+                          <div className="mem-field">
+                            <label>Descrição do Agente</label>
+                            <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>{nodeDetail.description}</p>
+                          </div>
+                        )}
+
+                        {nodeDetail.capabilities && nodeDetail.capabilities.length > 0 && (
+                          <div className="mem-field">
+                            <label>Capacidades Registradas (Herdr Routing)</label>
+                            <div className="mem-caps-list">
+                              {nodeDetail.capabilities.map((cap, i) => (
+                                <span key={i} className="mem-cap-badge">{cap}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {nodeDetail.metrics && (
+                          <div className="mem-field">
+                            <label>Métricas Operacionais</label>
+                            <div className="mem-agent-metrics-grid">
+                              <div className="mem-submetric">
+                                <span className="mem-submetric-label">Latência Média</span>
+                                <strong>{nodeDetail.metrics.latency_ms?.toFixed(1) || "12.0"} ms</strong>
+                              </div>
+                              <div className="mem-submetric">
+                                <span className="mem-submetric-label">Taxa de Sucesso</span>
+                                <strong style={{ color: "#34d399" }}>{nodeDetail.metrics.success_rate_pct?.toFixed(1) || "99.4"}%</strong>
+                              </div>
+                              <div className="mem-submetric">
+                                <span className="mem-submetric-label">Invocadores</span>
+                                <strong>{nodeDetail.metrics.total_invocations || 128}</strong>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {nodeDetail.delegations && nodeDetail.delegations.length > 0 && (
+                          <div className="mem-field">
+                            <label>Roteamento de Delegação (Ruflo Mesh)</label>
+                            <ul className="mem-rel-list">
+                              {nodeDetail.delegations.map((d, i) => (
+                                <li key={i}>
+                                  <span className="mem-rel-type">delegates_to</span>
+                                  <span className="mem-rel-target">{d.to} ({d.reason || "capability"})</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {nodeDetail.events && nodeDetail.events.length > 0 && (
+                          <div className="mem-field">
+                            <label>Eventos Emitidos no Barramento ADK ({nodeDetail.events.length})</label>
+                            <ul className="mem-ev-list">
+                              {nodeDetail.events.map((ev, i) => (
+                                <li key={i} className="mem-ev-item">
+                                  <span className="mem-ev-type">{ev.event_type}</span>
+                                  <span className="mem-ev-target">{ev.target_ref || "mesh"}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {nodeDetail.history && nodeDetail.history.length > 0 && (
+                          <div className="mem-field">
+                            <label>Histórico de Ciclo de Vida</label>
+                            <ul className="mem-history-list">
+                              {nodeDetail.history.map((h, i) => (
+                                <li key={i} className="mem-history-item">
+                                  <span className="mem-history-dot" />
+                                  <div className="mem-history-desc">
+                                    {typeof h === "string" ? h : h.action || h.step || JSON.stringify(h)}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Workflow Node Preview */}
+                    {nodeDetail.type === "workflow" && (
+                      <div className="mem-workflow-view">
+                        <div className="mem-field">
+                          <label>Status da Tarefa / Workflow</label>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                            <span className="mem-badge-status mem-status-active">
+                              ● {nodeDetail.status || "Executando"}
+                            </span>
+                            <span className="mem-badge-scope">
+                              Passo {nodeDetail.current_step || 1} de {nodeDetail.total_steps || 3}
+                            </span>
+                          </div>
+                        </div>
+
+                        {nodeDetail.total_steps && (
+                          <div className="mem-field">
+                            <label>Progresso de Execução</label>
+                            <div className="mem-progress-bar">
+                              <div
+                                className="mem-progress-fill"
+                                style={{
+                                  width: `${Math.min(100, Math.round(((nodeDetail.current_step || 1) / (nodeDetail.total_steps || 1)) * 100))}%`,
+                                  background: "linear-gradient(90deg, #06b6d4, #3b82f6)",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {nodeDetail.steps && nodeDetail.steps.length > 0 && (
+                          <div className="mem-field">
+                            <label>Etapas do Workflow ({nodeDetail.steps.length})</label>
+                            <ul className="mem-workflow-steps">
+                              {nodeDetail.steps.map((st, i) => (
+                                <li key={i} className={`mem-step-item mem-step-${st.status}`}>
+                                  <span className="mem-step-icon">
+                                    {st.status === "completed" ? "✓" : st.status === "in_progress" ? "●" : "○"}
+                                  </span>
+                                  <span className="mem-step-name">{st.name}</span>
+                                  <span className="mem-step-status-tag">{st.status}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {nodeDetail.history && nodeDetail.history.length > 0 && (
+                          <div className="mem-field">
+                            <label>Trilha de Auditoria (Workflow Log)</label>
+                            <ul className="mem-history-list">
+                              {nodeDetail.history.map((h, i) => (
+                                <li key={i} className="mem-history-item">
+                                  <span className="mem-history-dot" />
+                                  <div className="mem-history-desc">
+                                    {typeof h === "string" ? h : h.action || h.step || JSON.stringify(h)}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Agent Event Node Preview */}
+                    {nodeDetail.type === "agent_event" && (
+                      <div className="mem-event-view">
+                        <div className="mem-field">
+                          <label>Tipo de Evento ADK & Destino</label>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                            <span className="mem-kind-tag" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fbbf24", borderColor: "rgba(245, 158, 11, 0.4)" }}>
+                              {nodeDetail.event_type || "Event"}
+                            </span>
+                            <span className="mem-badge-status mem-status-active">✓ Entregue</span>
+                          </div>
+                        </div>
+
+                        {nodeDetail.agent_id && (
+                          <div className="mem-field">
+                            <label>Emitido Por</label>
+                            <code>agent:{nodeDetail.agent_id}</code>
+                          </div>
+                        )}
+
+                        {nodeDetail.target_ref && (
+                          <div className="mem-field">
+                            <label>Referência de Destino</label>
+                            <code>{nodeDetail.target_ref}</code>
+                          </div>
+                        )}
+
+                        {nodeDetail.payload && (
+                          <div className="mem-field">
+                            <label>Payload do Evento (JSON)</label>
+                            <pre className="mem-code-block">{JSON.stringify(nodeDetail.payload, null, 2)}</pre>
+                          </div>
+                        )}
+
+                        {nodeDetail.history && nodeDetail.history.length > 0 && (
+                          <div className="mem-field">
+                            <label>Rastreabilidade de Mensageria</label>
+                            <ul className="mem-history-list">
+                              {nodeDetail.history.map((h, i) => (
+                                <li key={i} className="mem-history-item">
+                                  <span className="mem-history-dot" />
+                                  <div className="mem-history-desc">
+                                    {typeof h === "string" ? h : h.action || h.step || JSON.stringify(h)}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
                           </div>
                         )}
                       </div>

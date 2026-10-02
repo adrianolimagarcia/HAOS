@@ -13,7 +13,7 @@ use rusqlite::{params, Connection, OpenFlags};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_float, c_int};
+use std::os::raw::{c_char, c_double, c_float, c_int};
 use std::path::Path;
 
 #[derive(PartialEq)]
@@ -1624,4 +1624,54 @@ pub extern "C" fn state_engine_get_messages_buffered(
     }
 
     json_bytes.len() as c_int
+}
+
+/// Grava evento de agente nativamente no RAGGraph (SQLite em WAL mode).
+#[no_mangle]
+pub extern "C" fn raggraph_record_agent_event(
+    db_path_cstr: *const c_char,
+    event_id_cstr: *const c_char,
+    event_type_cstr: *const c_char,
+    agent_id_cstr: *const c_char,
+    payload_json_cstr: *const c_char,
+    timestamp: c_double,
+    target_ref_cstr: *const c_char,
+) -> c_int {
+    if db_path_cstr.is_null()
+        || event_id_cstr.is_null()
+        || event_type_cstr.is_null()
+        || agent_id_cstr.is_null()
+        || payload_json_cstr.is_null()
+    {
+        return -1;
+    }
+
+    let db_path = unsafe { CStr::from_ptr(db_path_cstr).to_string_lossy() };
+    let event_id = unsafe { CStr::from_ptr(event_id_cstr).to_string_lossy() };
+    let event_type = unsafe { CStr::from_ptr(event_type_cstr).to_string_lossy() };
+    let agent_id = unsafe { CStr::from_ptr(agent_id_cstr).to_string_lossy() };
+    let payload_json = unsafe { CStr::from_ptr(payload_json_cstr).to_string_lossy() };
+    let target_ref = if target_ref_cstr.is_null() {
+        None
+    } else {
+        let s = unsafe { CStr::from_ptr(target_ref_cstr).to_string_lossy() };
+        if s.is_empty() {
+            None
+        } else {
+            Some(s.to_string())
+        }
+    };
+
+    match crate::raggraph::RAGGraphEngine::record_agent_event(
+        Path::new(&*db_path),
+        &event_id,
+        &event_type,
+        &agent_id,
+        &payload_json,
+        timestamp as f64,
+        target_ref.as_deref(),
+    ) {
+        Ok(_) => 0,
+        Err(_) => -2,
+    }
 }

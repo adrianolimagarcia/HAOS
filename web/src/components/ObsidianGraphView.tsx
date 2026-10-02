@@ -64,6 +64,9 @@ const DEFAULT_GROUP_COLORS: Record<string, string> = {
   "Code: Tasks": "#ec4899",         // Pink
   "Code: Capabilities": "#06b6d4",  // Cyan
   "Code: Core": "#94a3b8",          // Slate
+  "Agent Mesh": "#06b6d4",          // Electric Cyan
+  "Agent Capabilities": "#ec4899",  // Vibrant Pink
+  "Agent Events": "#f59e0b",        // Amber
   "General": "#94a3b8",             // Slate Neutral
 };
 

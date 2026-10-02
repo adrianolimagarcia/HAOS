@@ -28,7 +28,10 @@ export type StarKind =
   | "world_fact"
   | "experience"
   | "observation"
-  | "mental_model";
+  | "mental_model"
+  | "agent"
+  | "capability"
+  | "agent_event";
 
 export interface StarNode {
   id: string;
@@ -72,6 +75,9 @@ const KIND_COLOR: Record<StarKind, [number, number, number]> = {
   experience: [244, 63, 94],   // Rose
   observation: [16, 185, 129], // Emerald
   mental_model: [139, 92, 246],// Purple
+  agent: [6, 182, 212],        // Electric Cyan
+  capability: [236, 72, 153],  // Vibrant Pink
+  agent_event: [245, 158, 11], // Amber Event
 };
 
 const KIND_RADIUS: Record<StarKind, number> = {
@@ -92,6 +98,9 @@ const KIND_RADIUS: Record<StarKind, number> = {
   experience: 8,
   observation: 9,
   mental_model: 10,
+  agent: 14,
+  capability: 10,
+  agent_event: 8,
   leaf: 6,
 };
 

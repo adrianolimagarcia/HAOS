@@ -82,6 +82,17 @@ def test_memory_overview_endpoint(client, memory_home):
     assert data["graphrag"]["entities"] == 2
     assert data["obsidian"]["total_notes"] == 1
 
+    # HUD Context Indicators
+    assert "hud" in data
+    hud = data["hud"]
+    assert hud["memory_health_pct"] >= 90.0
+    assert hud["active_goal"] == "Parent-Child Chunking & Agent Mesh"
+    assert hud["avg_confidence"] == 0.99
+    assert hud["active_agents"] >= 4
+    assert hud["dream_queue"] >= 0
+    assert hud["conflicts_count"] == 0
+    assert hud["system_status"] == "optimal"
+
 
 def test_memory_graph_views(client, memory_home):
     # Unified view
@@ -91,6 +102,8 @@ def test_memory_graph_views(client, memory_home):
     assert data["schema_version"] == 1
     assert data["counts"]["nodes"] > 0
     assert any(n["id"] == "fabric:coordinator" for n in data["nodes"])
+    assert any(n["id"] == "agent:rust_edge" for n in data["nodes"])
+    assert any(e["kind"] == "accesses_memory" for e in data["edges"])
 
     # GraphRAG view
     res_gr = client.get("/api/memory/graph?view=graphrag")
@@ -110,6 +123,20 @@ def test_memory_graph_views(client, memory_home):
     assert res_db.status_code == 200
     data_db = res_db.json()
     assert any(n["id"] == "fact:rec-1" for n in data_db["nodes"])
+
+    # Agent & Workflow Mesh view
+    res_ag = client.get("/api/memory/graph?view=agents")
+    assert res_ag.status_code == 200
+    data_ag = res_ag.json()
+    assert any(n["id"] == "agent:rust_edge" for n in data_ag["nodes"])
+    assert any(n["id"] == "agent:researcher" for n in data_ag["nodes"])
+    assert any(n["id"] == "agent:memory_curator" for n in data_ag["nodes"])
+    assert any(n["id"] == "agent:code_reviewer" for n in data_ag["nodes"])
+    assert any(n["id"] == "workflow:memory_consolidation" for n in data_ag["nodes"])
+    assert any(n["id"] == "event:ev_fact_committed" for n in data_ag["nodes"])
+    assert any(e["kind"] == "accesses_memory" for e in data_ag["edges"])
+    assert any(e["kind"] == "delegates_to" for e in data_ag["edges"])
+    assert any(e["kind"] == "emits_event" for e in data_ag["edges"])
 
 
 def test_memory_node_details(client, memory_home):
@@ -131,3 +158,33 @@ def test_memory_node_details(client, memory_home):
     assert fact_data["confidence_tier"] == "high"
     assert fact_data["parent_id"] == "note:adrs/ADR-001-fabric.md"
     assert fact_data["parent_content"] == "# Full Architecture Section"
+
+    # Agent detail
+    res_agent = client.get("/api/memory/graph/node/agent:rust_edge")
+    assert res_agent.status_code == 200
+    agent_data = res_agent.json()
+    assert agent_data["type"] == "agent"
+    assert agent_data["agent_id"] == "rust_edge"
+    assert "capabilities" in agent_data
+    assert "raggraph_wal" in agent_data["capabilities"]
+    assert "events_emitted" in agent_data
+    assert "history" in agent_data
+
+    # Workflow detail
+    res_wf = client.get("/api/memory/graph/node/workflow:memory_consolidation")
+    assert res_wf.status_code == 200
+    wf_data = res_wf.json()
+    assert wf_data["type"] == "workflow"
+    assert wf_data["workflow_id"] == "memory_consolidation"
+    assert "steps" in wf_data
+    assert len(wf_data["steps"]) == 5
+    assert wf_data["status"] == "running"
+
+    # Event detail
+    res_ev = client.get("/api/memory/graph/node/event:ev_fact_committed")
+    assert res_ev.status_code == 200
+    ev_data = res_ev.json()
+    assert ev_data["type"] == "agent_event"
+    assert ev_data["event_id"] == "ev_fact_committed"
+    assert ev_data["event_type"] == "FactCommitted"
+    assert "payload" in ev_data

@@ -168,6 +168,75 @@ describe("MemoryGraphPage", () => {
     expect(container!.textContent).toContain("holographic");
   });
 
+  it("renders Powerline Context HUD and Agent & Workflow Mesh tab", async () => {
+    api.fetchJSON.mockImplementation(async (url: string) => {
+      if (url.includes("/api/memory/graph/overview")) {
+        return {
+          active_provider: "holographic",
+          fabric: { records: 50, projection_acks: 200, outbox_pending: 0, path: "" },
+          graphrag: { entities: 100, relations: 80, communities: 5, path: "" },
+          obsidian: { total_notes: 40, folders: {}, path: "" },
+          decisions: { total: 10, path: "" },
+          graphify: { nodes: 100, edges: 200, file_count: 10, path: "" },
+          providers: [{ name: "holographic", status: "ready" }],
+          hud: {
+            memory_health_pct: 98.5,
+            active_goal: "Parent-Child Chunking & Agent Mesh",
+            avg_confidence: 0.88,
+            active_agents: 4,
+            dream_queue: 12,
+            conflicts_count: 0,
+            system_status: "optimal",
+          },
+        };
+      }
+      if (url.includes("/api/memory/graph")) {
+        return {
+          nodes: [
+            {
+              id: "agent:rust_edge",
+              label: "Rust Edge Engine",
+              kind: "agent",
+              status: "running",
+            },
+          ],
+          edges: [],
+          stats: {},
+        };
+      }
+      return {};
+    });
+
+    await renderPage();
+
+    expect(container!.textContent).toContain("HAOS CORE");
+    expect(container!.textContent).toContain("MEMORY:");
+    expect(container!.textContent).toContain("99%");
+    expect(container!.textContent).toContain("GOAL:");
+    expect(container!.textContent).toContain("Active");
+    expect(container!.textContent).toContain("CONF:");
+    expect(container!.textContent).toContain("88%");
+    expect(container!.textContent).toContain("AGENTS:");
+    expect(container!.textContent).toContain("4");
+    expect(container!.textContent).toContain("DREAM:");
+    expect(container!.textContent).toContain("12");
+    expect(container!.textContent).toContain("NO CONFLICTS");
+
+    const goalSeg = container!.querySelector(".mem-hud-goal");
+    expect(goalSeg?.getAttribute("title")).toContain("Parent-Child Chunking & Agent Mesh");
+
+    // Check Agent & Workflow Mesh tab
+    const tabs = Array.from(container!.querySelectorAll<HTMLButtonElement>("button.mem-tab"));
+    const agentTab = tabs.find((t) => t.textContent?.includes("Agent & Workflow Mesh"));
+    expect(agentTab).toBeDefined();
+
+    await act(async () => {
+      agentTab!.click();
+    });
+
+    expect(container!.textContent).toContain("Agent & Workflow Mesh (ADK / Ruflo / Herdr)");
+  });
+
   it("handles loading error gracefully and allows retry", async () => {
     api.fetchJSON.mockRejectedValue(new Error("Network failed"));
     await renderPage();

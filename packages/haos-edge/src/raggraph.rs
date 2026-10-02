@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GraphNode {
     pub node_id: String,
-    pub node_type: String, // "session", "turn", "tool_action", "concept"
+    pub node_type: String, // "session", "turn", "tool_action", "memory", "agent", "capability", "agent_event", "concept"
     pub session_id: String,
     pub label: String,
     pub content: String,
@@ -24,7 +24,7 @@ pub struct GraphNode {
 pub struct GraphEdge {
     pub source_id: String,
     pub target_id: String,
-    pub edge_type: String, // "CONTINUES", "DISPATCHED_SUBAGENT", "HAS_TURN", "FOLLOWED_BY", "INVOKES"
+    pub edge_type: String, // "CONTINUES", "DISPATCHED_SUBAGENT", "HAS_TURN", "FOLLOWED_BY", "INVOKES", "HAS_CAPABILITY", "EXECUTED_EVENT", "PRODUCED_MEMORY", "CAUSED_BY", "SUPERVISES", "ADVISES"
     pub weight: f32,
     pub metadata_json: String,
 }
@@ -49,6 +49,18 @@ pub struct RAGGraphQueryResult {
     pub query: String,
     pub count: usize,
     pub items: Vec<RAGGraphItem>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AgentDefinition {
+    pub id: String,
+    pub name: String,
+    pub role: String,
+    pub parent_id: Option<String>,
+    pub description: String,
+    pub capabilities: Vec<String>,
+    pub trust_score: f32,
+    pub status: String,
 }
 
 pub struct RAGGraphEngine;
@@ -158,6 +170,18 @@ impl RAGGraphEngine {
              );
              CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON haos_graph_edges(target_id);
              CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON haos_graph_edges(source_id);
+
+             CREATE TABLE IF NOT EXISTS haos_agent_events (
+                 event_id TEXT PRIMARY KEY,
+                 event_type TEXT NOT NULL,
+                 agent_id TEXT NOT NULL,
+                 payload_json TEXT NOT NULL,
+                 timestamp REAL NOT NULL,
+                 target_ref TEXT,
+                 created_at REAL NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_events_type ON haos_agent_events(event_type);
+             CREATE INDEX IF NOT EXISTS idx_agent_events_agent ON haos_agent_events(agent_id);
 
              CREATE VIRTUAL TABLE IF NOT EXISTS haos_graph_fts USING fts5(
                  node_id UNINDEXED,
@@ -1058,7 +1082,7 @@ impl RAGGraphEngine {
         // 5. Persistir no raggraph.db
         let tx = rag_conn.transaction().map_err(|e| e.to_string())?;
 
-        // Garantir que stubs de sessões referenciadas existam na tabela de nós
+        // Garantir que stubs de sessões, agentes ou capacidades referenciadas existam na tabela de nós
         for e in &edges {
             if e.target_id.starts_with("session:") {
                 let sid = e.target_id.trim_start_matches("session:");
@@ -1066,6 +1090,20 @@ impl RAGGraphEngine {
                     "INSERT OR IGNORE INTO haos_graph_nodes (node_id, node_type, session_id, label, content, metadata_json, created_at)
                      VALUES (?1, 'session', ?2, ?3, '', '{}', ?4);",
                     params![&e.target_id, sid, format!("Session {sid}"), 0.0],
+                );
+            } else if e.target_id.starts_with("agent:") {
+                let aid = e.target_id.trim_start_matches("agent:");
+                let _ = tx.execute(
+                    "INSERT OR IGNORE INTO haos_graph_nodes (node_id, node_type, session_id, label, content, metadata_json, created_at)
+                     VALUES (?1, 'agent', '', ?2, '', '{}', ?3);",
+                    params![&e.target_id, aid, 0.0],
+                );
+            } else if e.target_id.starts_with("capability:") {
+                let cap = e.target_id.trim_start_matches("capability:");
+                let _ = tx.execute(
+                    "INSERT OR IGNORE INTO haos_graph_nodes (node_id, node_type, session_id, label, content, metadata_json, created_at)
+                     VALUES (?1, 'capability', '', ?2, '', '{}', ?3);",
+                    params![&e.target_id, cap, 0.0],
                 );
             }
         }
@@ -1115,6 +1153,94 @@ impl RAGGraphEngine {
         tx.commit().map_err(|e| e.to_string())?;
         Ok(inserted_nodes)
     }
+
+    pub fn record_agent_event(
+        db_path: &Path,
+        event_id: &str,
+        event_type: &str,
+        agent_id: &str,
+        payload_json: &str,
+        timestamp: f64,
+        target_ref: Option<&str>,
+    ) -> Result<(), String> {
+        let parent_dir = db_path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent_dir.exists() {
+            let _ = std::fs::create_dir_all(parent_dir);
+        }
+        let conn = Connection::open(db_path)
+            .map_err(|e| format!("Failed to open raggraph.db: {e}"))?;
+
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA busy_timeout = 5000;
+
+             CREATE TABLE IF NOT EXISTS haos_agent_events (
+                 event_id TEXT PRIMARY KEY,
+                 event_type TEXT NOT NULL,
+                 agent_id TEXT NOT NULL,
+                 payload_json TEXT NOT NULL,
+                 timestamp REAL NOT NULL,
+                 target_ref TEXT,
+                 created_at REAL NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_agent_events_type ON haos_agent_events(event_type);
+             CREATE INDEX IF NOT EXISTS idx_agent_events_agent ON haos_agent_events(agent_id);
+
+             CREATE TABLE IF NOT EXISTS haos_graph_nodes (
+                 node_id TEXT PRIMARY KEY,
+                 node_type TEXT NOT NULL,
+                 session_id TEXT NOT NULL,
+                 label TEXT NOT NULL,
+                 content TEXT NOT NULL,
+                 metadata_json TEXT DEFAULT '{}',
+                 created_at REAL NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_graph_nodes_session ON haos_graph_nodes(session_id);
+             CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON haos_graph_nodes(node_type);
+
+             CREATE TABLE IF NOT EXISTS haos_graph_edges (
+                 source_id TEXT NOT NULL,
+                 target_id TEXT NOT NULL,
+                 edge_type TEXT NOT NULL,
+                 weight REAL DEFAULT 1.0,
+                 metadata_json TEXT DEFAULT '{}',
+                 PRIMARY KEY (source_id, target_id, edge_type)
+             );",
+        )
+        .map_err(|e| format!("Failed to initialize agent event tables: {e}"))?;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(timestamp);
+
+        conn.execute(
+            "INSERT OR REPLACE INTO haos_agent_events (event_id, event_type, agent_id, payload_json, timestamp, target_ref, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7);",
+            params![event_id, event_type, agent_id, payload_json, timestamp, target_ref, now],
+        )
+        .map_err(|e| format!("Failed to insert agent event: {e}"))?;
+
+        let node_id = format!("event:{event_id}");
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO haos_graph_nodes (node_id, node_type, session_id, label, content, metadata_json, created_at)
+             VALUES (?1, 'agent_event', ?2, ?3, ?4, ?5, ?6);",
+            params![node_id, agent_id, event_type, payload_json, payload_json, timestamp],
+        );
+
+        if let Some(target) = target_ref {
+            if !target.is_empty() {
+                let _ = conn.execute(
+                    "INSERT OR REPLACE INTO haos_graph_edges (source_id, target_id, edge_type, weight, metadata_json)
+                     VALUES (?1, ?2, 'REFERENCES', 1.0, '{}');",
+                    params![node_id, target],
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Extrai arestas ligando um nó de memória a sessões conhecidas a partir de metadados, tags e proveniência.
@@ -1154,6 +1280,27 @@ fn extract_memory_session_edges(
             }
         }
 
+        // Campos de agente/autoria
+        for key in ["agent_id", "agent", "author", "created_by"] {
+            if let Some(val) = meta.get(key) {
+                if let Some(s) = val.as_str() {
+                    let clean = s.trim().trim_start_matches("agent:").to_string();
+                    if !clean.is_empty() {
+                        let target_id = format!("agent:{clean}");
+                        if seen.insert((target_id.clone(), "PRODUCED_BY".to_string())) {
+                            edges.push(GraphEdge {
+                                source_id: mem_node_id.to_string(),
+                                target_id,
+                                edge_type: "PRODUCED_BY".to_string(),
+                                weight: 1.0,
+                                metadata_json: "{}".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // Causal relationships (Hindsight TEMPR/CARA model): caused_by, corrected_by, supports, derived_from
         let causal_mappings = [
             ("caused_by", "CAUSED_BY"),
@@ -1175,7 +1322,13 @@ fn extract_memory_session_edges(
                 for t in targets {
                     let clean = t.trim().to_string();
                     if !clean.is_empty() {
-                        let target_id = if clean.starts_with("session:") || clean.starts_with("memory:") || clean.starts_with("adr:") {
+                        let target_id = if clean.starts_with("session:")
+                            || clean.starts_with("memory:")
+                            || clean.starts_with("adr:")
+                            || clean.starts_with("agent:")
+                            || clean.starts_with("capability:")
+                            || clean.starts_with("event:")
+                        {
                             clean.clone()
                         } else {
                             format!("session:{clean}")

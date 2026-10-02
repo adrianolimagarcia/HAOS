@@ -144,6 +144,262 @@
   to { transform: rotate(360deg); }
 }
 
+/* Powerline Context HUD */
+.mem-powerline-hud {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 22px;
+  background: rgba(10, 15, 29, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+}
+
+.mem-hud-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  color: #ffffff;
+  font-weight: 600;
+  position: relative;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.mem-hud-arrow {
+  display: inline-block;
+  margin-left: 6px;
+  opacity: 0.65;
+  font-weight: 300;
+  user-select: none;
+}
+
+.mem-hud-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.88rem;
+}
+
+.mem-hud-label {
+  opacity: 0.85;
+  text-transform: uppercase;
+  font-size: 0.70rem;
+  letter-spacing: 0.06em;
+}
+
+.mem-hud-value {
+  font-weight: 750;
+  color: #ffffff;
+}
+
+.mem-hud-core {
+  background: linear-gradient(135deg, #1e1b4b, #312e81);
+  border-left: 3px solid #818cf8;
+}
+
+.mem-hud-memory {
+  background: linear-gradient(135deg, #064e3b, #047857);
+}
+
+.mem-hud-goal {
+  background: linear-gradient(135deg, #581c87, #7c3aed);
+}
+
+.mem-hud-conf {
+  background: linear-gradient(135deg, #0c4a6e, #0284c7);
+}
+
+.mem-hud-agents {
+  background: linear-gradient(135deg, #164e63, #0891b2);
+}
+
+.mem-hud-dream {
+  background: linear-gradient(135deg, #3730a3, #4f46e5);
+}
+
+.mem-hud-ok {
+  background: linear-gradient(135deg, #065f46, #059669);
+}
+
+.mem-hud-warn {
+  background: linear-gradient(135deg, #7f1d1d, #b91c1c);
+}
+
+/* Agent, Workflow & Event Inspector View styles */
+.mem-caps-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mem-cap-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.35);
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.mem-agent-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mem-submetric {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mem-submetric-label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mem-submetric strong {
+  font-size: 0.95rem;
+  color: #f4f7ff;
+}
+
+.mem-ev-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mem-ev-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  font-size: 0.75rem;
+}
+
+.mem-ev-type {
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.mem-ev-target {
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+.mem-workflow-steps {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mem-step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  font-size: 0.75rem;
+}
+
+.mem-step-icon {
+  font-weight: bold;
+  width: 14px;
+}
+
+.mem-step-completed {
+  border-color: rgba(52, 211, 153, 0.3);
+  color: #34d399;
+}
+
+.mem-step-completed .mem-step-name {
+  color: #d1fae5;
+}
+
+.mem-step-in_progress {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.08);
+  color: #38bdf8;
+}
+
+.mem-step-in_progress .mem-step-name {
+  color: #e0f2fe;
+}
+
+.mem-step-pending {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.mem-step-name {
+  flex: 1;
+}
+
+.mem-step-status-tag {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.mem-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mem-history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.mem-history-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.mem-history-desc {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .mem-notice {
   display: flex;
   align-items: center;
