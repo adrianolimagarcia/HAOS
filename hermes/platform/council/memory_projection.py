@@ -204,8 +204,11 @@ class CouncilMemoryProjectionEngine:
             # Council decisions
             elif ev.name in ("civ.council.decision-recorded", "agent_council.decision"):
                 rec_data = payload.get("decision") or payload.get("decision_record") or payload.get("record") or payload
-                # Check if decision belongs to this council
-                if rec_data.get("council_id") == council_id or council_id in rec_data.get("id", ""):
+                # M1 fix: match EXATO por council_id. O fallback antigo
+                # (`council_id in rec_data.get("id","")`) fazia o council 'mp'
+                # absorver decisões de 'mp2', pois ids são 'dec-{council}-{hex}'
+                # e 'mp' é substring de 'dec-mp2-...'.
+                if rec_data.get("council_id") == council_id:
                     t_str = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(ev.timestamp))
                     rec_copy = dict(rec_data)
                     rec_copy["timestamp_str"] = t_str

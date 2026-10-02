@@ -24,20 +24,27 @@ _SESSION_PAUSED = "civ.council.session-paused"
 _SESSION_ABORTED = "civ.council.session-aborted"
 _SESSION_FAILED = "civ.council.session-failed"
 
+# M6 fix: as fases 'decision_recorded' e 'action_pending' foram REMOVIDAS do
+# FSM. Elas eram inalcançáveis: nenhum produtor as emitia (debate_runner só
+# avança debate_round/synthesis/policy_check) e o replay de _DECISION_RECORDED
+# forçava phase='completed', tornando-as estados mortos que poluíam a
+# transitividade. A terminalidade de decisão é agora um único arco:
+# qualquer fase de deliberação não-terminal -> (record_decision) -> completed.
 _LEGAL_TRANSITIONS: Dict[str, set[str]] = {
     "created": {"selecting_members", "independent_analysis", "aborted", "failed"},
     "selecting_members": {"independent_analysis", "aborted", "failed"},
-    "independent_analysis": {"debate_round", "synthesis", "paused", "aborted", "failed"},
-    "debate_round": {"debate_round", "synthesis", "paused", "aborted", "failed"},
-    "synthesis": {"policy_check", "decision_recorded", "paused", "aborted", "failed"},
-    "policy_check": {"decision_recorded", "action_pending", "paused", "aborted", "failed"},
-    "decision_recorded": {"action_pending", "completed", "paused", "aborted", "failed"},
-    "action_pending": {"completed", "failed", "paused", "aborted"},
-    "paused": {"independent_analysis", "debate_round", "synthesis", "policy_check", "action_pending", "aborted", "failed"},
+    "independent_analysis": {"debate_round", "synthesis", "completed", "paused", "aborted", "failed"},
+    "debate_round": {"debate_round", "synthesis", "completed", "paused", "aborted", "failed"},
+    "synthesis": {"policy_check", "completed", "paused", "aborted", "failed"},
+    "policy_check": {"completed", "paused", "aborted", "failed"},
+    "paused": {"independent_analysis", "debate_round", "synthesis", "policy_check", "aborted", "failed"},
     "completed": set(),
     "aborted": set(),
     "failed": set(),
 }
+
+# Fases terminais: nenhuma transição de saída é permitida (A4).
+_TERMINAL_PHASES = frozenset({"completed", "aborted", "failed"})
 
 
 class CouncilManager:
@@ -361,34 +368,54 @@ class CouncilManager:
         _, sessions, _ = self._state()
         return sessions[session_id]
 
+    def _require_legal_transition(
+        self, sessions: Dict[str, CouncilSession], session_id: str, target_phase: str
+    ) -> CouncilSession:
+        """A4 fix: valida existência da sessão e legalidade da transição do FSM
+        ANTES de qualquer append. Transição ilegal → ValueError."""
+        sess = sessions.get(session_id)
+        if sess is None:
+            raise KeyError(f"CouncilSession {session_id} not found")
+        if target_phase not in _LEGAL_TRANSITIONS.get(sess.phase, set()):
+            raise ValueError(
+                f"Illegal transition from '{sess.phase}' to '{target_phase}' for session {session_id}"
+            )
+        return sess
+
     def pause_session(self, session_id: str, reason: str, correlation_id: Optional[str] = None) -> CouncilSession:
+        _, sessions, _ = self._state()
+        sess = self._require_legal_transition(sessions, session_id, "paused")
         self.event_store.append(
             Event(
                 name=_SESSION_PAUSED,
                 payload={"session_id": session_id, "reason": reason, "timestamp": time.time()},
-                correlation_id=correlation_id,
+                correlation_id=correlation_id or sess.correlation_id,
             )
         )
         _, sessions, _ = self._state()
         return sessions[session_id]
 
     def abort_session(self, session_id: str, reason: str, correlation_id: Optional[str] = None) -> CouncilSession:
+        _, sessions, _ = self._state()
+        sess = self._require_legal_transition(sessions, session_id, "aborted")
         self.event_store.append(
             Event(
                 name=_SESSION_ABORTED,
                 payload={"session_id": session_id, "reason": reason, "timestamp": time.time()},
-                correlation_id=correlation_id,
+                correlation_id=correlation_id or sess.correlation_id,
             )
         )
         _, sessions, _ = self._state()
         return sessions[session_id]
 
     def fail_session(self, session_id: str, error: str, correlation_id: Optional[str] = None) -> CouncilSession:
+        _, sessions, _ = self._state()
+        sess = self._require_legal_transition(sessions, session_id, "failed")
         self.event_store.append(
             Event(
                 name=_SESSION_FAILED,
                 payload={"session_id": session_id, "error": error, "timestamp": time.time()},
-                correlation_id=correlation_id,
+                correlation_id=correlation_id or sess.correlation_id,
             )
         )
         _, sessions, _ = self._state()
@@ -404,13 +431,30 @@ class CouncilManager:
         evidence_refs: Optional[List[str]] = None,
         correlation_id: Optional[str] = None,
     ) -> DecisionRecord:
-        """Synthesize independent positions and record the binding DecisionRecord."""
+        """Synthesize independent positions and record the binding DecisionRecord.
+
+        C3 fix: exige quórum — pelo menos metade (arredondada para cima) dos
+        membros inscritos precisa ter submetido posição. Sem quórum, levanta
+        ValueError e NENHUM evento é anexado (a sessão permanece deliberando).
+        M6 fix: a decisão materializa a terminalidade 'completed' diretamente,
+        respeitando _LEGAL_TRANSITIONS (recusada se a sessão já está terminal).
+        """
         _, sessions, _ = self._state()
         session = sessions.get(session_id)
         if session is None:
             raise KeyError(f"CouncilSession {session_id} not found")
-        if not session.positions:
-            raise ValueError(f"Cannot record decision: no positions have been submitted for session {session_id}")
+
+        # A4/M6: só decide se a sessão está em fase que permite concluir.
+        self._require_legal_transition(sessions, session_id, "completed")
+
+        required_quorum = -(-len(session.members) // 2)  # ceil(members / 2)
+        submitted = len(session.positions)
+        if submitted < required_quorum:
+            raise ValueError(
+                f"Cannot record decision: quorum not met for session {session_id} "
+                f"({submitted}/{len(session.members)} positions submitted, "
+                f"quorum requires >= {required_quorum})"
+            )
 
         decision_id = f"dec-{session.council_id}-{uuid.uuid4().hex[:8]}"
         record = DecisionRecord(

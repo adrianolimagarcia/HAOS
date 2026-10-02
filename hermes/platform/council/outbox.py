@@ -13,6 +13,13 @@ from hermes.platform.observability.events import Event
 _ACTION_INTENT_CREATED = "civ.council.action-intent-created"
 _ACTION_COMPLETED = "civ.council.action-completed"
 _ACTION_FAILED = "civ.council.action-failed"
+# C4 fix: o lease agora é um evento persistido no log append-only. O replay
+# materializa lease_owner/lease_expires_at a partir do ÚLTIMO evento de lease
+# de cada intent, e claim_lease funciona como um CAS lógico: só claima se o
+# último lease está expirado ou pertence ao próprio worker. Sem este evento,
+# claim mutava apenas a cópia em memória do replay e dois workers (A e B)
+# conseguiam claimar o mesmo intent — execução dupla de side effects.
+_ACTION_LEASE_CLAIMED = "civ.council.action-lease-claimed"
 
 
 @dataclass
@@ -60,6 +67,16 @@ class CouncilOutbox:
                 if d:
                     intent = ActionIntent.from_dict(d)
                     intents[intent.intent_id] = intent
+            elif e.name == _ACTION_LEASE_CLAIMED:
+                # C4 fix: materializa o ÚLTIMO lease reivindicado do log.
+                # O status persistido permanece 'pending' — a posse é o lease;
+                # se o worker morrer, o lease expira e o intent volta a ficar
+                # elegível para outro claim (recovery sem estado fantasma).
+                intent_id = e.payload.get("intent_id")
+                if intent_id in intents:
+                    intents[intent_id].lease_owner = e.payload.get("owner")
+                    intents[intent_id].lease_expires_at = float(e.payload.get("expires_at", 0.0))
+                    intents[intent_id].updated_at = e.payload.get("timestamp", time.time())
             elif e.name == _ACTION_COMPLETED:
                 intent_id = e.payload.get("intent_id")
                 if intent_id in intents:
@@ -116,17 +133,41 @@ class CouncilOutbox:
         ]
 
     def claim_lease(self, intent_id: str, worker_id: str, lease_seconds: float = 30.0) -> bool:
-        """Attempt to claim execution lease for an intent."""
+        """Attempt to claim execution lease for an intent.
+
+        C4 fix: o lease é persistido como evento
+        'civ.council.action-lease-claimed' {intent_id, owner, expires_at}.
+        CAS lógico: a decisão é tomada sobre o ÚLTIMO evento de lease do
+        intent no log — só claima se não há lease ativo ou se o lease ativo é
+        do próprio worker (renovação). Como a verificação lê o log (que é
+        serializado por writer no EventStore/SQLite), dois workers não podem
+        ambos claimar com sucesso no mesmo intent.
+        """
         now = time.time()
         intents = self._get_all_intents()
         intent = intents.get(intent_id)
         if not intent:
             return False
-        if intent.status != "pending" or (intent.lease_expires_at > now and intent.lease_owner != worker_id):
+        if intent.status != "pending":
             return False
+        # lease ativo de outro worker → claim recusado
+        if intent.lease_expires_at > now and intent.lease_owner != worker_id:
+            return False
+        expires_at = now + lease_seconds
+        self.event_store.append(
+            Event(
+                name=_ACTION_LEASE_CLAIMED,
+                payload={
+                    "intent_id": intent_id,
+                    "owner": worker_id,
+                    "expires_at": expires_at,
+                    "timestamp": now,
+                },
+                correlation_id=intent.session_id,
+            )
+        )
         intent.lease_owner = worker_id
-        intent.lease_expires_at = now + lease_seconds
-        intent.status = "executing"
+        intent.lease_expires_at = expires_at
         return True
 
     def mark_completed(

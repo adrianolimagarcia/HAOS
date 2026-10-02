@@ -124,3 +124,35 @@ def test_council_memory_projection_preserves_operator_override(projection_env):
 
     new_content = file_path.read_text(encoding="utf-8")
     assert "All deployments frozen on Fridays" in new_content
+
+
+def test_projection_no_cross_council_decision_leak(projection_env):
+    """M1: council 'mp' não pode absorver decisões de 'mp2' via substring no id.
+
+    Decision ids são 'dec-{council}-{hex}'; o match precisa ser por
+    rec_data['council_id'] == council_id, não por substring.
+    """
+    council_mgr = projection_env["council_mgr"]
+    engine = projection_env["engine"]
+
+    council_mgr.register(CouncilSpec(id="mp", purpose="Short-id council", members=["a1", "a2"]))
+    council_mgr.register(CouncilSpec(id="mp2", purpose="Prefixed council", members=["b1", "b2"]))
+
+    sess_mp2 = council_mgr.start_session("mp2", "Only mp2 decides")
+    council_mgr.submit_position(sess_mp2.session_id, "b1", "yes")
+    council_mgr.submit_position(sess_mp2.session_id, "b2", "yes")
+    dec_mp2 = council_mgr.record_decision(sess_mp2.session_id, "mp2 decides", "MP2 ONLY")
+
+    # o id da decisão contém 'mp' como substring — o vazamento clássico
+    assert "mp" in dec_mp2.id
+
+    rec_mp = engine.project_council("mp")
+    assert rec_mp.decisions_count == 0
+    content_mp = Path(rec_mp.file_path).read_text(encoding="utf-8")
+    assert "MP2 ONLY" not in content_mp
+    assert dec_mp2.id not in content_mp
+
+    rec_mp2 = engine.project_council("mp2")
+    assert rec_mp2.decisions_count == 1
+    content_mp2 = Path(rec_mp2.file_path).read_text(encoding="utf-8")
+    assert "MP2 ONLY" in content_mp2
