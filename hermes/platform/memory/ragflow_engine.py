@@ -53,6 +53,29 @@ class DocumentChunk:
         return f"[Doc: {self.doc_path}{header_part}]{anchor_part}\n{self.content}"
 
 
+@dataclass
+class DocumentKey:
+    """Chave de acesso a documento (Self-Index, arXiv:2609.19656).
+
+    Representa um ponto de entrada discriminativo para o documento d,
+    validado por portões antes da persistência.
+    """
+    doc_path: str
+    kind: str  # 'discriminative' | 'handle' | 'simulated' | 'manual'
+    key_text: str
+    generator: str  # 'discriminative-v1' | 'llm:<model>' | 'manual'
+    content_hash: str
+    key_id: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.key_id:
+            import hashlib
+            seed = f"{self.doc_path}|{self.kind}|{self.key_text}".encode("utf-8")
+            self.key_id = hashlib.sha1(seed).hexdigest()[:12]
+
+
 class HeaderBreadcrumbChunker:
     """Hierarchical Markdown and Document Chunker.
 
@@ -342,6 +365,29 @@ class RAGFlowStore:
                     tokenize='unicode61'
                 );
             """)
+
+            # Document-Keys table & FTS (Self-Index, arXiv:2609.19656)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS haos_rag_keys (
+                    key_id        TEXT PRIMARY KEY,
+                    doc_path      TEXT NOT NULL,
+                    kind          TEXT NOT NULL,
+                    key_text      TEXT NOT NULL,
+                    generator     TEXT NOT NULL,
+                    content_hash  TEXT NOT NULL,
+                    created_at    REAL NOT NULL,
+                    metadata_json TEXT
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_keys_doc ON haos_rag_keys(doc_path);")
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS haos_rag_keys_fts USING fts5(
+                    key_id UNINDEXED,
+                    doc_path UNINDEXED,
+                    key_text,
+                    tokenize='unicode61'
+                );
+            """)
             conn.commit()
 
     def index_document(
@@ -357,10 +403,12 @@ class RAGFlowStore:
             return 0
 
         with self._lock, self._get_connection() as conn:
-            # Remove previous chunks for this document
+            # Remove previous chunks and keys for this document
             resolved_doc_id = chunks[0].doc_id
             conn.execute("DELETE FROM haos_rag_chunks WHERE doc_path = ? OR doc_id = ?;", (doc_path, resolved_doc_id))
             conn.execute("DELETE FROM haos_rag_fts WHERE doc_path = ?;", (doc_path,))
+            conn.execute("DELETE FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,))
+            conn.execute("DELETE FROM haos_rag_keys_fts WHERE doc_path = ?;", (doc_path,))
 
             for c in chunks:
                 conn.execute("""
@@ -435,9 +483,81 @@ class RAGFlowStore:
                     continue
                 conn.execute("DELETE FROM haos_rag_fts WHERE doc_path = ?;", (doc_path,))
                 conn.execute("DELETE FROM haos_rag_chunks WHERE doc_path = ?;", (doc_path,))
+                conn.execute("DELETE FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,))
+                conn.execute("DELETE FROM haos_rag_keys_fts WHERE doc_path = ?;", (doc_path,))
                 removed.append(doc_path)
             conn.commit()
         return removed
+
+    def add_key(self, key: DocumentKey) -> str:
+        """Persiste uma chave de acesso a documento (haos_rag_keys e haos_rag_keys_fts)."""
+        with self._lock, self._get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO haos_rag_keys (
+                    key_id, doc_path, kind, key_text, generator, content_hash, created_at, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """, (
+                key.key_id,
+                key.doc_path,
+                key.kind,
+                key.key_text,
+                key.generator,
+                key.content_hash,
+                key.created_at,
+                json.dumps(key.metadata),
+            ))
+            conn.execute("""
+                INSERT INTO haos_rag_keys_fts (key_id, doc_path, key_text)
+                VALUES (?, ?, ?);
+            """, (key.key_id, key.doc_path, key.key_text))
+            conn.commit()
+        return key.key_id or ""
+
+    def get_keys_for_document(self, doc_path: str) -> List[DocumentKey]:
+        """Recupera todas as chaves associadas a um doc_path."""
+        with self._lock, self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,)
+            ).fetchall()
+            return [
+                DocumentKey(
+                    key_id=r["key_id"],
+                    doc_path=r["doc_path"],
+                    kind=r["kind"],
+                    key_text=r["key_text"],
+                    generator=r["generator"],
+                    content_hash=r["content_hash"],
+                    created_at=float(r["created_at"]),
+                    metadata=json.loads(r["metadata_json"] or "{}"),
+                )
+                for r in rows
+            ]
+
+    def remove_keys_for_document(self, doc_path: str) -> int:
+        """Remove todas as chaves associadas a um doc_path."""
+        with self._lock, self._get_connection() as conn:
+            cursor = conn.execute("DELETE FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,))
+            conn.execute("DELETE FROM haos_rag_keys_fts WHERE doc_path = ?;", (doc_path,))
+            conn.commit()
+            return cursor.rowcount
+
+    def get_all_keys(self) -> List[DocumentKey]:
+        """Recupera todas as chaves registradas no banco."""
+        with self._lock, self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM haos_rag_keys;").fetchall()
+            return [
+                DocumentKey(
+                    key_id=r["key_id"],
+                    doc_path=r["doc_path"],
+                    kind=r["kind"],
+                    key_text=r["key_text"],
+                    generator=r["generator"],
+                    content_hash=r["content_hash"],
+                    created_at=float(r["created_at"]),
+                    metadata=json.loads(r["metadata_json"] or "{}"),
+                )
+                for r in rows
+            ]
 
     @staticmethod
     def _sanitize_fts_query(query_str: str) -> str:
@@ -654,6 +774,30 @@ class RAGFlowStore:
                 conn, clean_q, fts_query, tokens, limit, budget,
             )
 
+            # 2.5 Document-Key Rank Lists (arXiv:2609.19656 Self-Index)
+            # Chaves validadas por portões geram listas adicionais de candidatos
+            # mapeados para o chunk representativo do documento (ex: primeiro chunk).
+            key_fts_ranked: List[Tuple[str, float]] = []
+            if fts_query:
+                try:
+                    key_rows = conn.execute("""
+                        SELECT doc_path, bm25(haos_rag_keys_fts) AS rank_score
+                        FROM haos_rag_keys_fts
+                        WHERE haos_rag_keys_fts MATCH ?
+                        ORDER BY rank_score ASC
+                        LIMIT ?;
+                    """, (fts_query, limit * 3)).fetchall()
+                    # Mapeia doc_path para o primeiro chunk_id do documento
+                    for kr in key_rows:
+                        c_row = conn.execute(
+                            "SELECT id FROM haos_rag_chunks WHERE doc_path = ? ORDER BY start_line ASC LIMIT 1;",
+                            (kr["doc_path"],),
+                        ).fetchone()
+                        if c_row:
+                            key_fts_ranked.append((c_row["id"], float(kr["rank_score"])))
+                except Exception as exc:
+                    logger.warning("Key FTS query failed (%s): %s", fts_query, exc)
+
             # 3. Fuse with Reciprocal Rank Fusion.
             # A ordem das listas é decisão, não acidente: o RRF soma pesos por
             # rank; empates exatos (espelho fts#i/lex#j == fts#j/lex#i) ficam
@@ -668,7 +812,10 @@ class RAGFlowStore:
             # ESTRITA (0.032018 vs 0.032522), não por empate — nenhuma
             # política de desempate o traz; isso é caso de fusão com
             # score (P7/LinearScoreFusion), decisão reservada ao humano.
-            fused = ReciprocalRankFusion.fuse([lexical_ranked, fts_ranked], k=k_rrf)
+            fuse_lists = [lexical_ranked, fts_ranked]
+            if key_fts_ranked:
+                fuse_lists.append(key_fts_ranked)
+            fused = ReciprocalRankFusion.fuse(fuse_lists, k=k_rrf)
             top_ids = [cid for cid, _ in fused[:limit]]
 
             if not top_ids:
@@ -685,3 +832,74 @@ class RAGFlowStore:
                 "limit": max_candidates,
             }
             return [chunks_by_id[cid] for cid in top_ids if cid in chunks_by_id]
+
+
+# ── Portões de Validação de Document-Keys (arXiv:2609.19656) ──────────────────
+
+def _tokenize(text: str) -> set[str]:
+    """Tokenização normalizada básica para cálculo de Jaccard e sobreposição."""
+    import unicodedata
+    folded = "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c))
+    return set(re.findall(r"[a-z0-9_]+", folded))
+
+
+def specificity_gate(store: RAGFlowStore, key: DocumentKey, top_k: int = 3) -> bool:
+    """Portão de Especificidade (T4): a chave virando query DEVE recuperar o próprio doc no top_k."""
+    res = store.hybrid_search(key.key_text, limit=top_k)
+    target_path = Path(key.doc_path).name.lower()
+    for c in res:
+        c_path = Path(c.doc_path).name.lower()
+        if c_path == target_path or c.doc_path == key.doc_path or c.doc_path.endswith(key.doc_path):
+            return True
+    return False
+
+
+def separation_gate(store: RAGFlowStore, key: DocumentKey, threshold: float = 0.8) -> bool:
+    """Portão de Separação (T5): Jaccard de tokens contra chaves de OUTROS docs deve ser < threshold."""
+    key_toks = _tokenize(key.key_text)
+    if not key_toks:
+        return False
+    all_keys = store.get_all_keys()
+    target_path = Path(key.doc_path).name.lower()
+    for other in all_keys:
+        other_path = Path(other.doc_path).name.lower()
+        if other_path == target_path or other.doc_path == key.doc_path:
+            continue
+        other_toks = _tokenize(other.key_text)
+        if not other_toks:
+            continue
+        inter = len(key_toks & other_toks)
+        union = len(key_toks | other_toks)
+        jaccard = inter / union if union > 0 else 0.0
+        if jaccard >= threshold:
+            return False
+    return True
+
+
+def generate_discriminative_keys(doc_path: str, text: str, content_hash: str = "") -> List[DocumentKey]:
+    """Gerador determinístico default de Document-Keys (discriminative-v1)."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    title = ""
+    for l in lines:
+        if l.startswith("# "):
+            title = l.lstrip("# ").strip()
+            break
+    if not title:
+        title = Path(doc_path).stem.replace("-", " ").replace("_", " ")
+
+    toks = _tokenize(text)
+    stops = {"a", "o", "as", "os", "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas",
+             "e", "ou", "que", "para", "com", "por", "um", "uma", "uns", "umas", "se", "como"}
+    filtered_toks = [t for t in sorted(toks) if t not in stops and len(t) > 2]
+    discriminative = " ".join(filtered_toks[:8])
+    key_text = f"{title} · {discriminative}".strip(" ·")
+
+    return [
+        DocumentKey(
+            doc_path=doc_path,
+            kind="discriminative",
+            key_text=key_text,
+            generator="discriminative-v1",
+            content_hash=content_hash,
+        )
+    ]
