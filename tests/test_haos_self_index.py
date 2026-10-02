@@ -220,3 +220,47 @@ def test_t9_okf_precedence_preserved_in_router(tmp_path: Path) -> None:
     res = router.query("Contrato de Autenticação")
     assert res["found"] is True
     assert res["source"] == "OKF_CANONICAL"
+
+
+def test_t10_dream_separation_gate_merges_duplicate_lesson(tmp_path: Path, monkeypatch) -> None:
+    """T10: Proposta de lição no dream com alta sobreposição (Jaccard >= 0.8) é fundida, não duplicada."""
+    import time
+    from hermes.platform.memory.dream import DreamConsolidator
+    from hermes_state import SessionDB
+
+    home = tmp_path / ".hermes"
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    def _create_session(sid: str, text: str) -> None:
+        db = SessionDB()
+        db.ensure_session(session_id=sid, source="cli", model="gemini-test")
+        db.set_session_title(sid, f"Sessao {sid}")
+        db.append_message(sid, "user", text)
+        db.append_message(sid, "assistant", "Entendido.")
+        db.close()
+
+    lesson_base = "Sempre execute o wrapper scripts run_tests sh antes de fazer commit no repo"
+    lesson_near_dup = "Sempre execute o wrapper scripts run_tests sh antes de fazer commit no repositorio"
+
+    consolidator = DreamConsolidator(hermes_home=home)
+
+    # Sessões 1..4 com lesson_base -> promove para OKF
+    for i in range(1, 5):
+        _create_session(f"20261002_base_{i:02d}", lesson_base)
+        time.sleep(0.01)
+        consolidator.run_dream(dry_run=False)
+
+    okf_files_1 = list((home / "okf").glob("lesson_*.md"))
+    assert len(okf_files_1) == 1
+
+    # Sessões 1..4 com lesson_near_dup -> sobreposição lexical alta -> merge na lição existente
+    for i in range(1, 5):
+        _create_session(f"20261002_dup_{i:02d}", lesson_near_dup)
+        time.sleep(0.01)
+        consolidator.run_dream(dry_run=False)
+
+    okf_files_2 = list((home / "okf").glob("lesson_*.md"))
+    # Não gerou segundo arquivo; fundiu no existente
+    assert len(okf_files_2) == 1
+

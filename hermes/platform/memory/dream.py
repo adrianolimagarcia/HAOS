@@ -234,15 +234,45 @@ class _CanonicalLessonWriter:
 
     def write_candidate(self, candidate: MemoryCandidate) -> bool:
         from hermes.platform.memory.okf import OKFStore
+        from hermes.platform.memory.ragflow_engine import separation_gate
 
         store = OKFStore(self.okf_dir)
-        # Idempotência por CONTEÚDO: se a lição já está canônica (ex.: o staging ou
-        # os instintos foram perdidos/restaurados e a lição voltou a ser promovida),
-        # aponta para o documento existente em vez de duplicar a lição na árvore.
-        for existing in store.documents():
-            if existing.body.strip() == candidate.fact.strip():
+        cand_fact = candidate.fact.strip()
+
+        # Portão de Fidelidade: se houver evidence_span, os termos essenciais
+        # da proposta de lição devem ter ancoragem no span de evidência.
+        if self.evidence_span:
+            cand_tokens = {t.lower() for t in re.findall(r"\b\w{3,}\b", cand_fact)}
+            span_tokens = {t.lower() for t in re.findall(r"\b\w{3,}\b", self.evidence_span)}
+            if cand_tokens and span_tokens:
+                coverage = len(cand_tokens & span_tokens) / len(cand_tokens)
+                if coverage < 0.4:
+                    logger.debug("Dream candidate rejected by fidelity gate (coverage %.2f < 0.40)", coverage)
+                    return False
+
+        # Idempotência e Portão de Separação (T10 / SELF_INDEX_PLAN):
+        # 1. Idêntico em conteúdo -> aponta para o existente.
+        # 2. Jaccard >= 0.8 com documento existente -> merge (aponta para o existente
+        #    acumulando proveniência), não cria arquivo duplicado na árvore.
+        existing_docs = list(store.documents())
+        for existing in existing_docs:
+            if existing.body.strip() == cand_fact:
                 self.last_written = existing.filepath
                 return True
+
+            # Portão de Separação: Jaccard(tokens) >= 0.8 -> fundir no doc existente
+            existing_tokens = {t.lower() for t in re.findall(r"\b\w+\b", existing.body)}
+            cand_tokens_all = {t.lower() for t in re.findall(r"\b\w+\b", cand_fact)}
+            if existing_tokens and cand_tokens_all:
+                union = existing_tokens | cand_tokens_all
+                jaccard = len(existing_tokens & cand_tokens_all) / len(union) if union else 0.0
+                if jaccard >= 0.8:
+                    logger.info(
+                        "Dream candidate merged into existing lesson %s (separation Jaccard %.2f >= 0.80)",
+                        existing.relative_path, jaccard
+                    )
+                    self.last_written = existing.filepath
+                    return True
 
         doc = store.save_document(
             title=f"Licao da Sessao {self.session_id[:8]}",
