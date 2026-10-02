@@ -35,4 +35,13 @@ def build_framework_parser(subparsers):
             child.add_argument("plan_id")
             child.add_argument("--mode", choices=["assisted", "autonomous"], default="assisted")
             child.add_argument("--approval", action="append", default=[], dest="approvals", help="Issued approval ID; repeat per step")
+    autonomy = actions.add_parser("autonomy", help="Control the opt-in bounded event worker")
+    autonomy_actions = autonomy.add_subparsers(dest="autonomy_action", required=True)
+    for action in ("status", "pause", "resume", "event", "serve"):
+        child = autonomy_actions.add_parser(action)
+        child.add_argument("--base-dir", help="Framework storage root (default: active profile home/agent)")
+        child.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+        child.set_defaults(func=cmd_framework)
+        if action == "event":
+            child.add_argument("--summary", required=True, help="Investigation description, 1..2000 characters (not commands)")
     return parser

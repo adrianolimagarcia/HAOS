@@ -131,6 +131,91 @@ async def hierarchy(profile: str | None = None):
                 "result": result.to_dict()}
 
 
+class PauseAutonomyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    paused: bool
+    confirm: Literal[True]
+
+
+class InvestigationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    summary: str = Field(min_length=1, max_length=2000, pattern=r"\S")
+
+
+class InvestigationEventRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    type: Literal["operator.investigation"]
+    source: Literal["dashboard"]
+    severity: Literal["debug", "info", "warning", "error", "critical"]
+    payload: InvestigationPayload
+
+
+def _autonomy_storage(base: Path):
+    # Include sidecars: SQLite must never follow redirected journal/WAL storage.
+    directory = base / "autonomy"
+    for name in ("", "queue.db", "queue.db-wal", "queue.db-shm", "queue.db-journal", "service.json"):
+        path = directory / name
+        if any(p.is_symlink() for p in (path, *path.parents)):
+            raise ValueError("Redirected autonomy storage")
+
+
+@router.get("/autonomy")
+def autonomy(profile: str | None = None):
+    import time
+    from hermes.platform.agent_framework.autonomy_config import AutonomyConfig
+    from hermes.platform.agent_framework.event_queue import EventQueue
+    with _framework_scope(profile) as base:
+        _autonomy_storage(base)
+        settings = AutonomyConfig.load()
+        config = {name: getattr(settings, name) for name in ("enabled", "auto_apply")}
+        queue = EventQueue.inspect(base, limit=20)
+        service = _read_record(base / "autonomy" / "service.json")
+        updated = service.get("updated_at")
+        # Heartbeat is evidence of a recent worker, never PID-only liveness.
+        if not service:
+            service = {"status": "unavailable"}
+        elif not isinstance(updated, (int, float)) or isinstance(updated, bool) or not 0 <= time.time() - updated <= 120:
+            service = {**service, "status": "stale"}
+        return {"config": config, "queue": queue, "service": service}
+
+
+def _autonomy_queue(base: Path):
+    from hermes.platform.agent_framework.autonomy_config import AutonomyConfig
+    from hermes.platform.agent_framework.event_queue import EventQueue
+    settings = AutonomyConfig.load()
+    return EventQueue(base, max_pending=settings.max_pending, cooldown_seconds=settings.cooldown_seconds)
+
+
+@router.post("/autonomy/pause")
+def pause_autonomy(body: PauseAutonomyRequest, profile: str | None = None):
+    with _framework_scope(profile) as base:
+        _autonomy_storage(base)
+        queue = _autonomy_queue(base)
+        try:
+            queue.set_pause(body.paused)
+            return {"paused": queue.get_pause()}
+        finally:
+            queue.close()
+
+
+@router.post("/autonomy/events")
+def submit_autonomy_event(body: InvestigationEventRequest, profile: str | None = None):
+    from hermes.platform.agent_framework.models import HAOSEvent
+    with _framework_scope(profile) as base:
+        _autonomy_storage(base)
+        # Observation text is untrusted input to a bounded investigation, not an action.
+        import hashlib
+        payload = body.payload.model_dump()
+        payload["issue_id"] = hashlib.sha256(payload["summary"].encode("utf-8")).hexdigest()
+        event = HAOSEvent(event_type=body.type, source=body.source, severity=body.severity,
+                          payload=payload)
+        queue = _autonomy_queue(base)
+        try:
+            return queue.submit(event)
+        finally:
+            queue.close()
+
+
 class DryRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     dry_run: Literal[True] = True

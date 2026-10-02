@@ -253,8 +253,10 @@ class ExecutorAgent:
 
     def __init__(self, policy: AgentPolicyEngine | None = None,
                  handlers: dict[str, Callable[[PlanStep], ExecutionResult]] | None = None,
-                 max_steps: int = 16, *, base_dir: Path | str | None = None):
+                 max_steps: int = 16, *, base_dir: Path | str | None = None,
+                 mutation_guard: Callable[[], bool] | None = None):
         self.policy = policy or AgentPolicyEngine()
+        self.mutation_guard = mutation_guard
         self.base_dir = Path(base_dir).resolve() if base_dir is not None else None
         self.actions = ({WorkspaceConfigUpdate.name: WorkspaceConfigUpdate(self.base_dir)} if self.base_dir else {})
         self.receipts = ReceiptStore(self.base_dir) if self.base_dir else None
@@ -286,6 +288,12 @@ class ExecutorAgent:
                 evidence = {"step_id": step.step_id, "phase": "blocked", "postcondition": False}
                 receipt["steps"].append(evidence)
                 try:
+                    # A service may have waited for this lock after pause/revocation.
+                    # Recheck its fenced authority here, not only before run_cycle.
+                    if self.mutation_guard is not None:
+                        if self.mutation_guard() is not True:
+                            raise PermissionError("Live mutation authority no longer valid")
+                        self.policy = AgentPolicyEngine(self.base_dir / "agent-policy.yaml")
                     if (action is None or not self.policy.action_grant(step, autonomous=autonomous)
                             or not self.policy.action_grant(step, autonomous=autonomous, rollback=True)):
                         raise PermissionError("Exact action and rollback policy grant required")
@@ -294,6 +302,13 @@ class ExecutorAgent:
                     before = action.capture(step)
                     evidence.update(phase="prepared", before=before, action=step.to_dict())
                     self.receipts.save(plan, receipt)
+                    if self.mutation_guard is not None:
+                        if self.mutation_guard() is not True:
+                            raise PermissionError("Live mutation authority revoked before apply")
+                        self.policy = AgentPolicyEngine(self.base_dir / "agent-policy.yaml")
+                        if not (self.policy.action_grant(step, autonomous=autonomous)
+                                and self.policy.action_grant(step, autonomous=autonomous, rollback=True)):
+                            raise PermissionError("Exact policy grant revoked before apply")
                     attempted.append((step, action, before, evidence))
                     step.status = StepStatus.RUNNING
                     action.apply(step)

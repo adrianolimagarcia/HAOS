@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useProfileScope } from "@/contexts/useProfileScope";
+import { AutonomyPanel } from "@/components/AutonomyPanel";
 import { FrameworkPlanControls } from "@/components/FrameworkPlanControls";
 import { FrameworkPanel, FrameworkRecord } from "@/components/FrameworkPanel";
 import { dryRunFramework, loadFramework, type FrameworkSnapshot } from "@/lib/framework";
@@ -42,6 +43,7 @@ function ScopedFramework({ profile }: { profile: string }) {
       </div>
     </header>
     <p className="rounded border border-border p-3 text-sm">Dry run stores plan/audit artifacts only. Explicitly confirmed grant/approval/apply is limited to the reversible framework report artifact — never host remediation. Warnings are hypotheses, not proven causes; dry-run outcomes never prove a repair.</p>
+    <AutonomyPanel key={profile} profile={profile} />
     {error && <p role="alert" className="text-destructive">{error}</p>}
     {!snapshot && !error && <p role="status">Loading framework…</p>}
     {receipt && <FrameworkPanel title="Latest dry-run receipt"><FrameworkRecord value={receipt} label="Inspect outcome and verification" /></FrameworkPanel>}

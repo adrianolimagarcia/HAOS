@@ -8,6 +8,30 @@ export interface FrameworkSnapshot {
   actions: { receipts: Array<Record<string, unknown>>; cycles: Array<Record<string, unknown>> };
 }
 
+export interface AutonomySnapshot {
+  config: { enabled: boolean; auto_apply: boolean };
+  queue: { available: boolean; paused: boolean; counts: Record<string, number>; recent_jobs: Array<Record<string, unknown>> };
+  service: { status: string; updated_at?: number; active_job_id?: string | null; last_error?: string | null };
+}
+
+export function loadAutonomy(profile: string, signal: AbortSignal): Promise<AutonomySnapshot> {
+  return frameworkRequest<AutonomySnapshot>(profile, "autonomy", { signal });
+}
+
+export function pauseAutonomy(profile: string, paused: boolean, signal: AbortSignal) {
+  return frameworkRequest<{ paused: boolean }>(profile, "autonomy/pause", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paused, confirm: true }), signal,
+  });
+}
+
+export function submitInvestigation(profile: string, summary: string, signal: AbortSignal) {
+  return frameworkRequest<{ accepted: boolean; reason: string; job_id?: string }>(profile, "autonomy/events", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "operator.investigation", source: "dashboard", severity: "info", payload: { summary } }), signal,
+  });
+}
+
 export function frameworkRequest<T>(profile: string, endpoint: string, init?: RequestInit): Promise<T> {
   // Explicit scope pins in-flight mutations even if the switcher changes meanwhile.
   return fetchJSON<T>(`/api/framework/${endpoint}?profile=${encodeURIComponent(profile || "current")}`, init);
