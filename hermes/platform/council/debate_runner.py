@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any, Dict, List, Optional
 
 from hermes.platform.civilization.manager import (
@@ -17,7 +16,7 @@ from hermes.platform.council.manager import CouncilManager
 from hermes.platform.council.member_runner import MemberRunner
 from hermes.platform.council.outbox import CouncilOutbox
 from hermes.platform.council.spec import CouncilSession, DecisionRecord
-from hermes.platform.council.synthesis import SynthesisBot, SynthesisResult
+from hermes.platform.council.synthesis import SynthesisBot, SynthesisResult, _is_blocked_verdict
 from hermes.platform.observability.event_store import EventStore
 
 logger = logging.getLogger("hermes.platform.council.debate_runner")
@@ -57,25 +56,24 @@ class CouncilDebateRunner:
         opts = options or {}
         idempotency_key = command_id or correlation_id
 
-        # 1. Inbox deduplication check
+        # 1. Inbox deduplication check. A 'pending_human_approval' outcome is
+        # NOT terminal: the operator must be able to re-drive the same
+        # command_id with approved=True after review (C1 resume path).
         if idempotency_key and self.inbox.is_processed(idempotency_key):
             cached = self.inbox.get_result(idempotency_key)
-            if cached:
+            if cached and cached.get("status") != "pending_human_approval":
                 logger.info(f"Deliberate: command {idempotency_key} already processed; returning cached result")
                 return cached
 
-        # 2. Initialize and configure hard budget
+        # 2. Resolve council and locate an existing session to resume
         council = self.council_manager.get(council_id)
         if not council:
             raise KeyError(f"Council '{council_id}' is not registered in CouncilManager")
 
-        budget_cfg = dict(council.budget or {})
-        budget_cfg.update({k: v for k, v in opts.items() if k in {
+        opts_overrides = {k: v for k, v in opts.items() if k in {
             "max_rounds", "max_turns", "max_tokens", "max_cost_usd", "timeout_seconds", "max_members"
-        }})
-        budget = CouncilBudget.from_dict(budget_cfg)
+        }}
 
-        # 3. Create or resume session
         session: Optional[CouncilSession] = None
         if idempotency_key:
             for s in self.council_manager.list_sessions(council_id):
@@ -83,7 +81,22 @@ class CouncilDebateRunner:
                     session = s
                     break
 
-        if not session:
+        # 3. Initialize budget (new session) or restore it from the session (A1:
+        # rebuilding from config on resume silently zeroed counters and the
+        # timeout clock, letting sessions run past their hard limits forever).
+        if session:
+            restored_cfg = dict(session.budget or {})
+            restored_cfg.update(opts_overrides)
+            budget = CouncilBudget.from_dict(restored_cfg)
+            # Overlay live counters materialized by event replay.
+            budget.tokens_used = max(budget.tokens_used, int(session.tokens_used or 0))
+            budget.cost_usd_used = max(budget.cost_usd_used, float(session.cost_usd or 0.0))
+            budget.rounds_used = max(budget.rounds_used, int(session.round or 0))
+            budget.turns_used = max(budget.turns_used, len(session.debate_turns or []))
+        else:
+            budget_cfg = dict(council.budget or {})
+            budget_cfg.update(opts_overrides)
+            budget = CouncilBudget.from_dict(budget_cfg)
             session = self.council_manager.start_session(
                 council_id=council_id,
                 objective=objective,
@@ -98,7 +111,7 @@ class CouncilDebateRunner:
 
         try:
             # Phase 1: selecting_members & independent analysis
-            if session.phase in ("created", "selecting_members", "independent_analysis"):
+            if session.phase in ("created", "selecting_members", "independent_analysis", "paused"):
                 members = list(session.members)
                 if len(members) < 2:
                     raise ValueError(f"Council '{council_id}' requires at least 2 members for collective deliberation")
@@ -122,7 +135,8 @@ class CouncilDebateRunner:
                     # Record actual usage
                     budget.charge(tokens=result.tokens_used, cost_usd=result.cost_usd, turns=1)
 
-                    # Submit position to canonical event store
+                    # Submit position to canonical event store (A2: this is the
+                    # single accounting point for round-0 member cost/tokens).
                     session = self.council_manager.submit_position(
                         session_id=session_id,
                         bot_id=bot_id,
@@ -135,7 +149,9 @@ class CouncilDebateRunner:
                         correlation_id=correlation_id,
                     )
 
-                    # Also record in session debate turns transcript
+                    # Also record in session debate turns transcript.
+                    # A2: transcript is a log, not a billing event — charging
+                    # here too made event replay double-count every member turn.
                     self.council_manager.record_debate_turn(
                         session_id=session_id,
                         turn_data={
@@ -145,14 +161,20 @@ class CouncilDebateRunner:
                             "dissent": result.dissent,
                             "leaf_id": result.leaf_id,
                         },
-                        cost_usd=result.cost_usd,
-                        tokens=result.tokens_used,
                         correlation_id=correlation_id,
                     )
 
+            # A3: the manager's replay only ADDS dissents (sticky — a later
+            # turn with dissent=None never clears the earlier one). Track the
+            # live dissent set locally so retracted dissents stop the loop
+            # instead of burning budget rounds on members who already converged.
+            live_dissent: Dict[str, str] = dict(session.dissent)
+
             # Phase 2: Multi-turn debate rounds if enabled and dissent or conflict exists
             max_rounds = opts.get("max_rounds", budget.max_rounds)
-            while budget.rounds_used < max_rounds - 1 and len(session.dissent) > 0:
+            # M3: was `rounds_used < max_rounds - 1`, which made max_rounds=1
+            # run zero debate rounds. Budget caps rounds_used <= max_rounds.
+            while budget.rounds_used < max_rounds and len(live_dissent) > 0:
                 try:
                     budget.advance_round()
                 except BudgetExhaustedError:
@@ -165,11 +187,13 @@ class CouncilDebateRunner:
                 # Build sanitized debate context containing previous positions
                 debate_context = {
                     "other_positions": dict(session.positions),
-                    "critiques": [f"{bot}: {diss}" for bot, diss in session.dissent.items()],
+                    "critiques": [f"{bot}: {diss}" for bot, diss in live_dissent.items()],
                     "round": current_round,
                 }
 
                 # Each member critiques and optionally updates position
+                previous_dissent = dict(live_dissent)
+                round_dissent: Dict[str, str] = {}
                 for bot_id in session.members:
                     budget.reserve(estimated_tokens=400, estimated_cost=0.004)
                     turn_res = self.member_runner.execute_member_analysis(
@@ -182,6 +206,8 @@ class CouncilDebateRunner:
                     )
                     budget.charge(tokens=turn_res.tokens_used, cost_usd=turn_res.cost_usd, turns=1)
 
+                    # A2: in debate rounds the turn record IS the accounting
+                    # point (no submit_position here), so keep the charge.
                     self.council_manager.record_debate_turn(
                         session_id=session_id,
                         turn_data={
@@ -195,27 +221,89 @@ class CouncilDebateRunner:
                         tokens=turn_res.tokens_used,
                         correlation_id=correlation_id,
                     )
+                    if turn_res.dissent:
+                        round_dissent[bot_id] = turn_res.dissent
+
+                # A3: every dissenter retracted -> nothing left to debate.
+                # Same dissidents repeating identical dissent -> further rounds
+                # are futile (starvation guard); stop either way.
+                if round_dissent == previous_dissent and round_dissent:
+                    logger.info(
+                        f"Session {session_id}: dissent unchanged after round {current_round}; stopping debate"
+                    )
+                    live_dissent = round_dissent
+                    session = self.council_manager.get_session(session_id) or session
+                    break
+                live_dissent = round_dissent
                 session = self.council_manager.get_session(session_id)
                 if not session:
                     break
+                if not live_dissent:
+                    break
+
+            if session is None:
+                raise ValueError(f"CouncilSession {session_id} vanished during deliberation")
 
             # Phase 3: Synthesis
-            if session.phase in ("independent_analysis", "debate_round", "synthesis"):
+            # C5: synthesis_result must exist for every resumable phase.
+            # 'paused' sessions previously skipped Phase 3 entirely and Phase 4
+            # crashed with UnboundLocalError -> fail_session on a healthy session.
+            synthesis_result: Optional[SynthesisResult] = None
+            if session.phase in ("independent_analysis", "debate_round", "synthesis", "paused", "policy_check"):
                 try:
                     self.council_manager.advance_phase(session_id, "synthesis")
                 except ValueError:
                     pass
 
-                synthesis_result: SynthesisResult = self.synthesis_bot.synthesize(
+                synthesis_result = self.synthesis_bot.synthesize(
                     council_id=council_id,
                     session_id=session_id,
                     objective=objective,
                     positions=session.positions,
-                    dissent_map=session.dissent,
+                    dissent_map=live_dissent,
                     debate_turns=session.debate_turns,
                     decision_mode=council.decision_mode,
                 )
                 budget.charge(tokens=synthesis_result.tokens_used, cost_usd=synthesis_result.cost_usd, turns=1)
+
+            if synthesis_result is None:
+                raise ValueError(
+                    f"Cannot resume session {session_id} from phase '{session.phase}': no synthesis result available"
+                )
+
+            # C1: Hard human-approval gate. A BLOCKED verdict or a synthesis
+            # that flags needs_human_approval must never schedule actions nor
+            # silently 'complete' the session; park it as pending approval.
+            # approved=True is the human-approval signal on resume.
+            blocked_verdict = _is_blocked_verdict(synthesis_result.decision)
+            requires_human = bool(synthesis_result.needs_human_approval) and not approved
+            if (blocked_verdict or requires_human) and not approved:
+                gate_reason = "blocked_verdict" if blocked_verdict else "needs_human_approval"
+                self.council_manager.pause_session(
+                    session_id,
+                    f"pending_human_approval: {gate_reason}",
+                    correlation_id=correlation_id,
+                )
+                pending_output = {
+                    "session_id": session_id,
+                    "council_id": council_id,
+                    "objective": objective,
+                    "command_id": idempotency_key,
+                    "status": "pending_human_approval",
+                    "decision_id": None,
+                    "decision": synthesis_result.decision,
+                    "synthesis": synthesis_result.synthesis,
+                    "confidence": synthesis_result.confidence,
+                    "participants": list(session.positions.keys()),
+                    "dissent": dict(live_dissent),
+                    "budget_usage": budget.to_dict(),
+                    "action_plan": synthesis_result.action_plan,
+                    "action_gate": "approval_required",
+                    "blocked_verdict": blocked_verdict,
+                }
+                if idempotency_key:
+                    self.inbox.record_completed(idempotency_key, pending_output, status="pending_human_approval")
+                return pending_output
 
             # Phase 4: Policy Check on Proposed Actions
             action_gate = "not_requested"

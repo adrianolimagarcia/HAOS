@@ -4,10 +4,28 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger("hermes.platform.council.synthesis")
+
+# Verdict marker consumed by the debate runner's human-approval gate (C1).
+BLOCKED_MARKER = "BLOCKED"
+
+
+def _is_blocked_verdict(decision: str) -> bool:
+    return BLOCKED_MARKER in (decision or "").upper()
+
+
+def _extract_vote(position: Any) -> str:
+    """Normalize a member position into a comparable vote token for majority tallying (C2)."""
+    if isinstance(position, dict):
+        for key in ("vote", "decision", "answer", "position"):
+            if key in position:
+                return str(position[key]).strip().lower()
+        return json.dumps(position, sort_keys=True, default=str).lower()
+    return str(position).strip().lower()
 
 
 @dataclass
@@ -87,16 +105,34 @@ class SynthesisBot:
 
         synthesis_text = "\n".join(summary_lines)
 
-        # Calculate consensus & confidence
-        if dissent_count == 0:
-            decision = f"APPROVED by full consensus: {objective}"
-            confidence = 0.95
-        elif dissent_count < participant_count / 2:
-            decision = f"APPROVED with recorded dissent: {objective}"
-            confidence = 0.80
+        # Calculate decision per configured decision_mode (C2).
+        if decision_mode == "majority":
+            # Real vote tally over explicit positions: strict majority of votes wins.
+            votes = Counter(_extract_vote(pos) for pos in positions.values())
+            total = sum(votes.values())
+            top_vote, top_count = votes.most_common(1)[0]
+            tied = sum(1 for c in votes.values() if c == top_count) > 1
+            if not tied and top_count > total / 2:
+                decision = f"APPROVED by majority ({top_count}/{total} votes): {objective}"
+                confidence = 0.75 + 0.20 * (top_count / total)
+            else:
+                decision = f"DIVIDED / BLOCKED: no majority among {total} votes: {objective}"
+                confidence = 0.50
+        elif decision_mode == "single_synthesizer":
+            # The synthesizer decides alone; dissent is recorded but cannot block.
+            decision = f"APPROVED by single synthesizer: {objective}"
+            confidence = 0.90 if dissent_count == 0 else 0.70
         else:
-            decision = f"DIVIDED / BLOCKED due to substantial dissent: {objective}"
-            confidence = 0.50
+            # consensus_with_dissent (default): dissent < half of participants approves.
+            if dissent_count == 0:
+                decision = f"APPROVED by full consensus: {objective}"
+                confidence = 0.95
+            elif dissent_count < participant_count / 2:
+                decision = f"APPROVED with recorded dissent: {objective}"
+                confidence = 0.80
+            else:
+                decision = f"DIVIDED / BLOCKED due to substantial dissent: {objective}"
+                confidence = 0.50
 
         # Action plan derived from positions
         action_plan = [
