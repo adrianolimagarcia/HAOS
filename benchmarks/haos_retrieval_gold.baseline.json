@@ -1,0 +1,45 @@
+{
+  "_comment": "Baseline AGREGADO do bench HAOS (scripts/bench_haos_retrieval.py). NUNCA conter texto de query nem caminho de documento: o gold derivado embute segredos reais do corpus (telegram id, refs a secrets/...) e o repo é público. O gold vive fora do git (benchmarks/haos_retrieval_gold.json, gitignored) e é regenerável com --build-gold. Números NÃO são comparáveis entre versões de gold.",
+  "schema": 2,
+  "measured_at": "2026-10-02",
+  "harness_version": "0.21.83",
+  "gold": {
+    "provenance": "derived (title + frase distintiva única no corpus, df de frases == 1)",
+    "n_queries_total": 170,
+    "n_queries_gradable": 169,
+    "n_docs": 97,
+    "n_docs_with_alias": 28,
+    "variants": { "title": 73, "content": 97 }
+  },
+  "index_state": {
+    "ragflow_chunks": 551,
+    "ragflow_docs": 103,
+    "note": "índice mutável; recontar antes de comparar com runs futuros"
+  },
+  "hit@1": 166,
+  "hit@3": 168,
+  "hit@1_rate": 0.9822,
+  "hit@3_rate": 0.9941,
+  "per_variant": {
+    "content": { "n": 97, "h1": 95, "h3": 97 },
+    "title": { "n": 72, "h1": 71, "h3": 71 }
+  },
+  "sources": { "RAGFLOW_HYBRID": 164, "OKF_CANONICAL": 5 },
+  "ungradeable_count": 1,
+  "miss_partition": {
+    "total@1": 3,
+    "by_variant": { "title": 1, "content": 2 },
+    "by_source": { "RAGFLOW_HYBRID": 2, "OKF_CANONICAL": 1 },
+    "target_at_rank2": 2,
+    "target_absent_from_top": 1
+  },
+  "elapsed_s": 4.83,
+  "ms_per_query": 28.6,
+  "notes": [
+    "2 misses @1/rank=2: queries content de diario/* que nascem de linhas de stats quase idênticas entre dias adjacentes — território F1 (IDF + tie-break).",
+    "1 miss @1: título de um documento de incidente interceptado por OKF_CANONICAL falso-positivo — política de roteamento por artefato, adiado.",
+    "1 não-gradável: RECONCILED_MEMORY sem path no payload — território F2 (proveniência).",
+    "3 pares byte-idênticos em curadoria/ (6 docs) ficam sem gold por design: nenhuma frase é única (df==2) e o título é ambíguo — evidência para os gates de escrita do F4, não defeito do retrieval.",
+    "ADR-019 entrou no índice desde o baseline anterior (532->551 chunks); seus 2 misses desapareceram."
+  ]
+}
