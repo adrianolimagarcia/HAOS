@@ -102,7 +102,7 @@ class HybridKnowledgeRouter:
         if not active_mems:
             return None
         top_mem = active_mems[0]
-        return {
+        payload: Dict[str, Any] = {
             "source": "RECONCILED_MEMORY",
             "deterministic": True,
             "found": True,
@@ -111,6 +111,26 @@ class HybridKnowledgeRouter:
             "status": top_mem.status,
             "content": f"[SOURCE: RECONCILED ACTIVE MEMORY ({top_mem.topic})]\n{top_mem.content}",
         }
+
+        # F2 (SELF_INDEX_PLAN): expor proveniência no payload para permitir
+        # auditoria e gradabilidade no bench gold. 392/394 registros ativos
+        # carregam metadata.slug apontando para a lição OKF geradora
+        # (licoes/<slug>.md). Nunca inventar caminhos para os sem slug.
+        meta = top_mem.metadata or {}
+        prov: Dict[str, Any] = {}
+        for k in ("slug", "source", "session_id"):
+            v = meta.get(k)
+            if v is not None and str(v).strip():
+                prov[k] = v
+        slug = meta.get("slug")
+        if isinstance(slug, str) and slug.strip():
+            candidate_rel = f"licoes/{slug.strip()}.md"
+            if (self.okf_store.bundle_dir / candidate_rel).is_file():
+                payload["source_paths"] = [candidate_rel]
+        if prov:
+            payload["provenance"] = prov
+
+        return payload
 
     def _step_okf(self, query_str: str) -> Optional[Dict[str, Any]]:
         okf_doc = self.okf_store.find_deterministic(query_str)

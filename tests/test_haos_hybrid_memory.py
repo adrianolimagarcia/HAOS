@@ -159,3 +159,71 @@ def test_okf_gate_tags_sem_cobertura_minima_nao_interceptam_query_longa(temp_okf
     assert found is not None
     assert found.title == "Licao BTRFS Badblocks"
 
+
+# ── F2: Contratos de proveniência em RECONCILED_MEMORY ──────────────────────
+
+def test_reconciled_memory_exposes_provenance_and_resolves_existing_slug(
+    temp_okf_dir: Path, tmp_path: Path
+) -> None:
+    """F2 (SELF_INDEX_PLAN): quando o registro carrega metadata.slug e a lição
+
+    OKF existe em licoes/<slug>.md, o payload expõe source_paths e provenance.
+    """
+    from hermes.platform.memory.reconciler import MemoryReconciler
+
+    # 1. Cria a lição OKF física
+    licoes_dir = temp_okf_dir / "licoes"
+    licoes_dir.mkdir(parents=True, exist_ok=True)
+    lesson_file = licoes_dir / "abc123-1.md"
+    lesson_file.write_text(
+        "---\ntitle: 'Lição Teste'\ntype: lesson\n---\nConteúdo da lição de teste.",
+        encoding="utf-8",
+    )
+
+    # 2. Reconciliador com DB isolado
+    db_path = tmp_path / "reconciled_test.db"
+    reconciler = MemoryReconciler(db_path=db_path)
+    reconciler.reconcile(
+        topic="diagnostico de gateway upstream",
+        content="Falha de upstream em proxies de API",
+        category="troubleshooting",
+        confidence=0.95,
+        metadata={"slug": "abc123-1", "source": "dream_distill_6h"},
+    )
+
+    # 3. Router consultando o tópico
+    router = HybridKnowledgeRouter(okf_dir=temp_okf_dir, reconciler=reconciler)
+    res = router.query("diagnostico de gateway upstream")
+
+    assert res["found"] is True
+    assert res["source"] == "RECONCILED_MEMORY"
+    assert res.get("source_paths") == ["licoes/abc123-1.md"]
+    assert res.get("provenance") == {
+        "slug": "abc123-1",
+        "source": "dream_distill_6h",
+    }
+
+
+def test_reconciled_memory_without_slug_does_not_fabricate_path(
+    temp_okf_dir: Path, tmp_path: Path
+) -> None:
+    """F2: registro sem slug expõe proveniência sem inventar source_paths."""
+    from hermes.platform.memory.reconciler import MemoryReconciler
+
+    db_path = tmp_path / "reconciled_noslug.db"
+    reconciler = MemoryReconciler(db_path=db_path)
+    reconciler.reconcile(
+        topic="padrao sem slug",
+        content="Conteudo generico sem lição geradora",
+        metadata={"source": "manual", "session_id": "sess_123"},
+    )
+
+    router = HybridKnowledgeRouter(okf_dir=temp_okf_dir, reconciler=reconciler)
+    res = router.query("padrao sem slug")
+
+    assert res["found"] is True
+    assert res["source"] == "RECONCILED_MEMORY"
+    assert "source_paths" not in res  # Nunca inventar campo/caminho
+    assert res.get("provenance") == {"source": "manual", "session_id": "sess_123"}
+
+

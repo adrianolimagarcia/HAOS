@@ -411,10 +411,16 @@ def paths_of(res: Dict[str, Any]) -> List[str]:
         if v:
             out.append(v)
     elif src == "RECONCILED_MEMORY":
-        raise UngradeableSource(
-            "RECONCILED_MEMORY não expõe caminho de documento — impossível "
-            f"gradar. payload keys={sorted(res.keys())}"
-        )
+        for p in res.get("source_paths") or []:
+            if p and p not in out:
+                out.append(p)
+        if not out:
+            # Sem proveniência rastreável para arquivo físico -> gap de governança
+            prov = res.get("provenance") or {}
+            raise UngradeableSource(
+                "RECONCILED_MEMORY sem source_paths resolvidos "
+                f"(memory_id={res.get('memory_id')!r}, prov={prov!r})"
+            )
     elif src in ("NONE", ""):
         return []
     else:
