@@ -1,0 +1,31 @@
+FF.F                                                                     [100%]
+=================================== FAILURES ===================================
+________ TestSessionIdForwarding.test_standard_path_forwards_session_id ________
+tests/test_dispatch_session_id.py:33: in test_standard_path_forwards_session_id
+    assert captured.get("session_id") == "sess-abc"
+E   AssertionError: assert None == 'sess-abc'
+E    +  where None = <built-in method get of dict object at 0x7fb1daaaf490>('session_id')
+E    +    where <built-in method get of dict object at 0x7fb1daaaf490> = {}.get
+------------------------------ Captured log call -------------------------------
+WARNING  model_tools:model_tools.py:984 [ANTI-LOOP] Loop infinito de ferramenta detectado! A ferramenta 'web_search' foi chamada 3 vezes consecutivas com os mesmos argumentos exatos. para ferramenta web_search
+______ TestSessionIdForwarding.test_execute_code_path_forwards_session_id ______
+tests/test_dispatch_session_id.py:47: in test_execute_code_path_forwards_session_id
+    assert captured.get("session_id") == "sess-xyz"
+E   AssertionError: assert None == 'sess-xyz'
+E    +  where None = <built-in method get of dict object at 0x7fb1d716e5d0>('session_id')
+E    +    where <built-in method get of dict object at 0x7fb1d716e5d0> = {}.get
+------------------------------ Captured log call -------------------------------
+WARNING  model_tools:model_tools.py:984 [ANTI-LOOP] Loop infinito de ferramenta detectado! A ferramenta 'execute_code' foi chamada 3 vezes consecutivas com os mesmos argumentos exatos. para ferramenta execute_code
+_____________ TestSessionIdForwarding.test_task_id_still_forwarded _____________
+tests/test_dispatch_session_id.py:75: in test_task_id_still_forwarded
+    assert captured.get("task_id") == "task-999"
+E   AssertionError: assert None == 'task-999'
+E    +  where None = <built-in method get of dict object at 0x7fb1d74b99d0>('task_id')
+E    +    where <built-in method get of dict object at 0x7fb1d74b99d0> = {}.get
+------------------------------ Captured log call -------------------------------
+WARNING  model_tools:model_tools.py:984 [ANTI-LOOP] Loop infinito de ferramenta detectado! A ferramenta 'web_search' foi chamada 3 vezes consecutivas com os mesmos argumentos exatos. para ferramenta web_search
+=========================== short test summary info ============================
+FAILED tests/test_dispatch_session_id.py::TestSessionIdForwarding::test_standard_path_forwards_session_id
+FAILED tests/test_dispatch_session_id.py::TestSessionIdForwarding::test_execute_code_path_forwards_session_id
+FAILED tests/test_dispatch_session_id.py::TestSessionIdForwarding::test_task_id_still_forwarded
+3 failed, 1 passed in 2.27s

@@ -1,0 +1,82 @@
+........F............F..............................F.........F......... [ 93%]
+.....                                                                    [100%]
+=================================== FAILURES ===================================
+_ TestDoctorToolAvailabilitySummary.test_image_gen_without_provider_reports_setup_hint_not_system_dependency _
+tests/hermes_cli/test_doctor.py:113: in test_image_gen_without_provider_reports_setup_hint_not_system_dependency
+    assert "hermes tools" in image_line and "system dependency" not in image_line and "unavailable" in image_line
+E   assert ('hermes tools' in "  ⚠ image_gen (image generation unavailable — check the provider selection and its key or SDK with 'haos tools')")
+____ test_run_doctor_termux_treats_docker_and_browser_warnings_as_expected _____
+tests/hermes_cli/test_doctor.py:439: in test_run_doctor_termux_treats_docker_and_browser_warnings_as_expected
+    assert "Termux compatibility fallbacks:" in out
+E   assert 'Termux compatibility fallbacks:' in "\n┌─────────────────────────────────────────────────────────┐\n│                 🩺 Hermes Doctor                     ...ddress:\n\n  1. Run 'hermes setup' to create .env\n\n  Tip: run 'hermes doctor --fix' to auto-fix what's possible.\n\n"
+------------------------------ Captured log call -------------------------------
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'browser-browser-use' registered browser provider: browser-use
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'browser-browserbase' registered browser provider: browserbase
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'browser-firecrawl' registered browser provider: firecrawl
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'deepinfra' registered image_gen provider: deepinfra
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'fal' registered image_gen provider: fal
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'krea' registered image_gen provider: krea
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'meta-ai-image-gen' registered image_gen provider: meta-ai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openai' registered image_gen provider: openai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openai-codex' registered image_gen provider: openai-codex
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openrouter' registered image_gen provider: openrouter
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openrouter' registered image_gen provider: nous
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'xai' registered image_gen provider: xai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'deepinfra' registered video_gen provider: deepinfra
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'fal' registered video_gen provider: fal
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openrouter' registered video_gen provider: openrouter
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'xai' registered video_gen provider: xai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-brave-free' registered web provider: brave-free
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-ddgs' registered web provider: ddgs
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-exa' registered web provider: exa
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-firecrawl' registered web provider: firecrawl
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-keenable' registered web provider: keenable
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-parallel' registered web provider: parallel
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-perplexity' registered web provider: perplexity
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-searxng' registered web provider: searxng
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-tavily' registered web provider: tavily
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-xai' registered web provider: xai
+INFO     hermes_cli.plugins:plugins.py:1327 Plugin discovery complete: 58 found, 52 enabled
+_ TestDoctorCodexCliHintPlacement.test_hint_appears_under_codex_auth_when_missing _
+tests/hermes_cli/test_doctor.py:1442: in test_hint_appears_under_codex_auth_when_missing
+    hint_idx = next(i for i, l in enumerate(lines) if self._hint_line() in l)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   StopIteration
+------------------------------ Captured log call -------------------------------
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'browser-browser-use' registered browser provider: browser-use
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'browser-browserbase' registered browser provider: browserbase
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'browser-firecrawl' registered browser provider: firecrawl
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'deepinfra' registered image_gen provider: deepinfra
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'fal' registered image_gen provider: fal
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'krea' registered image_gen provider: krea
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'meta-ai-image-gen' registered image_gen provider: meta-ai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openai' registered image_gen provider: openai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openai-codex' registered image_gen provider: openai-codex
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openrouter' registered image_gen provider: openrouter
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openrouter' registered image_gen provider: nous
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'xai' registered image_gen provider: xai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'deepinfra' registered video_gen provider: deepinfra
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'fal' registered video_gen provider: fal
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'openrouter' registered video_gen provider: openrouter
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'xai' registered video_gen provider: xai
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-brave-free' registered web provider: brave-free
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-ddgs' registered web provider: ddgs
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-exa' registered web provider: exa
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-firecrawl' registered web provider: firecrawl
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-keenable' registered web provider: keenable
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-parallel' registered web provider: parallel
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-perplexity' registered web provider: perplexity
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-searxng' registered web provider: searxng
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-tavily' registered web provider: tavily
+INFO     hermes_cli.plugins:plugins.py:382 Plugin 'web-xai' registered web provider: xai
+INFO     hermes_cli.plugins:plugins.py:1327 Plugin discovery complete: 58 found, 52 enabled
+______________ TestMacOSTCCGrants.test_warns_on_cdhash_pinned_dr _______________
+tests/hermes_cli/test_doctor.py:1647: in test_warns_on_cdhash_pinned_dr
+    assert "hermes update" in out
+E   assert 'hermes update' in "  ⚠ macOS TCC grants will reset after every update the desktop bundle's designated requirement is cdhash-pinned (pre-...sion grants. Run `haos update` to get the stable identifier-pinned signing identity, then re-grant permissions once.\n"
+=========================== short test summary info ============================
+FAILED tests/hermes_cli/test_doctor.py::TestDoctorToolAvailabilitySummary::test_image_gen_without_provider_reports_setup_hint_not_system_dependency
+FAILED tests/hermes_cli/test_doctor.py::test_run_doctor_termux_treats_docker_and_browser_warnings_as_expected
+FAILED tests/hermes_cli/test_doctor.py::TestDoctorCodexCliHintPlacement::test_hint_appears_under_codex_auth_when_missing
+FAILED tests/hermes_cli/test_doctor.py::TestMacOSTCCGrants::test_warns_on_cdhash_pinned_dr
+4 failed, 73 passed in 69.39s (0:01:09)
