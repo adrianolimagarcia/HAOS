@@ -28,6 +28,11 @@ from hermes.platform.civilization.models import (
     POLICY_RESULT_REQUIRE_APPROVAL,
 )
 from hermes.platform.council.manager import CouncilManager
+from hermes.platform.council.promotion_executor import (
+    PromotionDeliberationError,
+    real_deliberation_enabled,
+    run_promotion_deliberation,
+)
 from hermes.platform.evolution.bot_evolution import (
     BotEvolutionManager,
     EvolutionError,
@@ -441,6 +446,7 @@ def deliberate_and_promote_proposal(
     baseline_root: Optional[Path] = None,
     candidate_root: Optional[Path] = None,
     event_store: Optional[EventStore] = None,
+    member_executor: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Promote an evolution proposal to an immutable IdentityVersion — gated.
 
@@ -453,13 +459,22 @@ def deliberate_and_promote_proposal(
        HoldoutVerdict) instead of re-running the gate.
     3. Bundle fields are capped (see ``_apply_identity_patch``); overflow
        requires an explicit [[REPLACE]] patch.
-    4. The Council path stays a facade (members auto-approve); the resulting
-       DecisionRecord is explicitly stamped ``deliberation="facade"`` with
-       ``ratification: automated`` metadata and a WARNING is logged, so the
-       facade can never masquerade as real deliberation in the audit trail.
-       Actual model deliberation remains an open operator decision — see the
-       runbook in ``hermes/platform/council/debate_runner.py`` for how to wire
-       a real MemberRunner executor when that lands.
+    4. Provenance is honest by construction:
+       - RISK_HIGH / RISK_IDENTITY_CRITICAL (and no gate-off override): the
+         council conducts a REAL deliberation (one round, conservative budget)
+         via ``hermes.platform.council.promotion_executor`` using an injected
+         ``member_executor`` (LeafExecutor contract) or the configured HAOS
+         model. A non-APPROVED verdict raises PermissionError with the
+         decision_id and votes; any executor failure FAILS CLOSED — promotion
+         is refused, never degraded to the facade. The DecisionRecord is
+         stamped ``deliberation="real"``.
+       - Low/medium risk (or HAOS_CIV_REAL_DELIBERATION=0): the Council path
+         stays a declared facade (members auto-approve, WARNING/INFO logged,
+         DecisionRecord stamped ``deliberation="facade"`` with
+         ``ratification: automated`` metadata) so the facade can never
+         masquerade as real deliberation in the audit trail.
+       - Runbook for wiring a real MemberRunner executor: see the docstring
+         of ``hermes/platform/council/debate_runner.py``.
     """
     store = event_store or _store()
     evo_mgr = BotEvolutionManager(store)
@@ -513,9 +528,54 @@ def deliberate_and_promote_proposal(
     new_identity = _apply_identity_patch(old_bundle.identity, proposal.proposed_identity_patch, "identity")
     new_values = _apply_identity_patch(old_bundle.values, proposal.proposed_values_patch, "values")
 
-    # Optional Council Deliberation session and decision record (facade — M1)
+    # --- Gate 4 (Council-fachada follow-up): deliberation provenance ---------
+    # High / identity-critical risk on the human route is decided by a REAL
+    # council deliberation (unless HAOS_CIV_REAL_DELIBERATION=0). Everything
+    # else keeps the declared facade exactly as before.
     decision_id = None
-    if council_id:
+    deliberation = None
+    council_session_id = None
+    deliberation_cost: Dict[str, Any] = {}
+    if proposal.risk_class in _GATE_REQUIRED_RISKS and real_deliberation_enabled():
+        try:
+            verdict = run_promotion_deliberation(
+                council_mgr=council_mgr,
+                store=store,
+                proposal=proposal,
+                bot_id=bot_id,
+                approver=approver,
+                council_id=council_id,
+                decision_summary=decision_summary,
+                member_executor=member_executor,
+                identity_mgr=id_mgr,
+            )
+        except PromotionDeliberationError as exc:
+            # Fail-closed, inegociável: recusa a promoção, nunca degrada para fachada.
+            raise PermissionError(
+                f"promotion refused: real deliberation unavailable; refusing to "
+                f"fall back to facade: {exc}"
+            ) from exc
+        decision_id = verdict["decision_id"]
+        council_session_id = verdict["session_id"]
+        deliberation = "real"
+        deliberation_cost = {
+            "tokens_used": verdict["tokens_used"],
+            "cost_usd": verdict["cost_usd"],
+            "council_id": verdict["council_id"],
+        }
+        if not verdict["approved"]:
+            raise PermissionError(
+                f"promotion refused by real council deliberation (fail-closed): "
+                f"decision_id={decision_id} session_id={council_session_id} "
+                f"decision={verdict['decision']!r} votes={verdict['votes']}"
+            )
+    elif council_id:
+        if proposal.risk_class in _GATE_REQUIRED_RISKS:
+            logger.info(
+                "HAOS_CIV_REAL_DELIBERATION disabled: high-risk proposal %s "
+                "promoted via declared facade (council %s), not real deliberation.",
+                proposal_id, council_id,
+            )
         council = council_mgr.get(council_id)
         if council:
             session = council_mgr.start_session(
@@ -546,6 +606,8 @@ def deliberate_and_promote_proposal(
                 deliberation="facade",
             )
             decision_id = decision.id
+            council_session_id = session.session_id
+            deliberation = "facade"
 
     # Advance proposal status through the governance FSM (audit round-2 seam):
     # draft -> review -> approved -> canary -> promoted. The governed human
@@ -575,7 +637,13 @@ def deliberate_and_promote_proposal(
             "promoted_at": time.time(),
             "approver": approver,
             "promotion_gate": gate_info,
-            "ratification": "automated" if decision_id else "direct-human",
+            "deliberation": deliberation or "none",
+            "ratification": (
+                "council-deliberated" if deliberation == "real"
+                else "automated" if decision_id
+                else "direct-human"
+            ),
+            **({"deliberation_cost": deliberation_cost} if deliberation_cost else {}),
         },
     )
 
@@ -591,6 +659,8 @@ def deliberate_and_promote_proposal(
         "bot_id": bot_id,
         "approver": approver,
         "council_decision_id": decision_id,
+        "council_session_id": council_session_id,
+        "deliberation": deliberation or "none",
         "new_version_id": new_version.id,
         "new_version_number": new_version.version,
         "bundle_hash": new_version.bundle_hash,

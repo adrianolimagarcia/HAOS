@@ -40,6 +40,16 @@ from hermes.platform.observability.event_store import EventStore
 APPROVED_EVAL = {"accepted": True, "reason": "held-out suite passed", "evidence": ["ok"]}
 
 
+@pytest.fixture(autouse=True)
+def _facade_mode(monkeypatch):
+    """This suite pins the HoldoutPromotionGate/FSM contract, not deliberation
+    provenance. High-risk real deliberation (HAOS_CIV_REAL_DELIBERATION,
+    default ON) would require a council + executor here; pin the declared
+    facade so these gate tests stay focused and deterministic. Real
+    deliberation is covered in test_delegation_real_deliberation.py."""
+    monkeypatch.setenv("HAOS_CIV_REAL_DELIBERATION", "0")
+
+
 @pytest.fixture
 def store_env():
     with tempfile.TemporaryDirectory() as tmpdir:
