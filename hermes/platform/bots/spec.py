@@ -1,7 +1,6 @@
 """BotSpec and declarative trigger definitions."""
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Literal
-from .identity import BotIdentitySpec
 
 @dataclass(frozen=True)
 class BotPolicy:
@@ -48,7 +47,6 @@ class BotSpec:
     version: int = 1
     routines: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     triggers: List[TriggerSpec] = field(default_factory=list)
-    identity: Optional[BotIdentitySpec] = None
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.name.strip(): raise ValueError("BotSpec id and name are required")
         if self.version < 1: raise ValueError("BotSpec version must be positive")
@@ -57,8 +55,7 @@ class BotSpec:
     def to_dict(self) -> Dict[str, Any]: return asdict(self)
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BotSpec":
-        values = {k: data[k] for k in ("id", "name", "description", "task_defaults", "capabilities", "policy", "version", "routines", "triggers", "identity") if k in data}
+        values = {k: data[k] for k in ("id", "name", "description", "task_defaults", "capabilities", "policy", "version", "routines", "triggers") if k in data}
         if isinstance(values.get("policy"), dict): values["policy"] = BotPolicy(**values["policy"])
-        if isinstance(values.get("identity"), dict): values["identity"] = BotIdentitySpec.from_dict(values["identity"])
         values["triggers"] = [TriggerSpec.from_dict(x) if isinstance(x, dict) else x for x in values.get("triggers", [])]
         return cls(**values)

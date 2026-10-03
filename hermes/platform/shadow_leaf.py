@@ -21,10 +21,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from hermes.platform.bots.identity import LeafIdentitySnapshot
-from hermes.platform.observability.events import Event
-from hermes.platform.observability.event_store import EventStore
-
 logger = logging.getLogger(__name__)
 
 
@@ -44,28 +40,18 @@ class ShadowLeaf:
     summary: str = ""
     last_log: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
-    identity_snapshot: Optional[LeafIdentitySnapshot] = None
 
     def to_dict(self) -> dict[str, Any]:
-        res = asdict(self)
-        if self.identity_snapshot is not None:
-            res["identity_snapshot"] = self.identity_snapshot.to_dict()
-        return res
+        return asdict(self)
 
 
 class ShadowLeafManager:
     """Gerencia o ciclo de vida e a execução assíncrona das Sombras (Shadow Leafs)."""
 
-    def __init__(
-        self,
-        base_repo_dir: Path,
-        shadows_root: Optional[Path] = None,
-        event_store: Optional[EventStore] = None,
-    ):
+    def __init__(self, base_repo_dir: Path, shadows_root: Optional[Path] = None):
         self.base_repo_dir = Path(base_repo_dir).resolve()
         self.shadows_root = Path(shadows_root or "/tmp/haos-shadows").resolve()
         self.shadows_root.mkdir(parents=True, exist_ok=True)
-        self.event_store = event_store
         self._lock = threading.RLock()
         self._registry_file = self.shadows_root / "shadow_leaves_registry.json"
         self._leaves: dict[str, ShadowLeaf] = self._load_registry()
@@ -78,8 +64,6 @@ class ShadowLeafManager:
             raw = json.loads(self._registry_file.read_text(encoding="utf-8"))
             result = {}
             for k, v in raw.items():
-                if isinstance(v.get("identity_snapshot"), dict):
-                    v["identity_snapshot"] = LeafIdentitySnapshot.from_dict(v["identity_snapshot"])
                 result[k] = ShadowLeaf(**v)
             return result
         except Exception as e:
@@ -104,23 +88,14 @@ class ShadowLeafManager:
         metadata: Optional[dict[str, Any]] = None,
         executor_fn: Optional[Callable[[ShadowLeaf], None]] = None,
         run_in_background: bool = True,
-        identity_snapshot: Optional[LeafIdentitySnapshot] = None,
     ) -> ShadowLeaf:
         """Cria, isola em Git Worktree e despacha a Sombra em background para execução paralela."""
         with self._lock:
             ts = int(time.time())
             safe_parent = re.sub(r'[^a-zA-Z0-9_\-]+', '', parent_bot_id)
-            # Sanitize custom_leaf_id with the SAME rule as parent_bot_id: without
-            # this, "../victim" escapes shadows_root and the rmtree below deletes
-            # arbitrary directories outside the sandbox.
-            if custom_leaf_id is not None:
-                custom_leaf_id = re.sub(r'[^a-zA-Z0-9_\-]+', '', custom_leaf_id) or None
             leaf_id = custom_leaf_id or f"shadow-{safe_parent}-{ts}"
             branch_name = f"shadow/{leaf_id}"
             worktree_dir = self.shadows_root / leaf_id
-            # Defense in depth: the resolved path must stay inside the sandbox.
-            if not worktree_dir.resolve().is_relative_to(self.shadows_root):
-                raise ValueError(f"leaf_id escapes shadows_root sandbox: {custom_leaf_id!r}")
 
             # Tentativa de Aceleração Nativa em Rust via haos-edge
             spawned_by_rust = False
@@ -176,20 +151,9 @@ class ShadowLeafManager:
                 created_at=time.time(),
                 status="active",
                 metadata=metadata or {},
-                identity_snapshot=identity_snapshot,
             )
             self._leaves[leaf_id] = leaf
             self._save_registry()
-
-            if self.event_store is not None:
-                self.event_store.append(
-                    Event(
-                        name="civ.leaf.created",
-                        payload={"leaf": leaf.to_dict()},
-                        correlation_id=identity_snapshot.correlation_id if identity_snapshot else None,
-                        causation_id=identity_snapshot.causation_id if identity_snapshot else None,
-                    )
-                )
 
             # Execução de Subagente em Background
             target_fn = executor_fn or self._default_leaf_worker
@@ -223,14 +187,6 @@ class ShadowLeafManager:
                     leaf.status = "completed"
                 leaf.completed_at = time.time()
                 self._save_registry()
-            if self.event_store is not None:
-                self.event_store.append(
-                    Event(
-                        name="civ.leaf.completed",
-                        payload={"leaf_id": leaf.leaf_id, "summary": leaf.summary},
-                        correlation_id=leaf.identity_snapshot.correlation_id if leaf.identity_snapshot else None,
-                    )
-                )
         except Exception as exc:
             logger.exception("[ShadowLeaf %s] Falha na execução da sombra: %s", leaf.leaf_id, exc)
             with self._lock:
@@ -238,14 +194,6 @@ class ShadowLeafManager:
                 leaf.last_log = str(exc)
                 leaf.completed_at = time.time()
                 self._save_registry()
-            if self.event_store is not None:
-                self.event_store.append(
-                    Event(
-                        name="civ.leaf.failed",
-                        payload={"leaf_id": leaf.leaf_id, "error": str(exc)},
-                        correlation_id=leaf.identity_snapshot.correlation_id if leaf.identity_snapshot else None,
-                    )
-                )
 
     def list_shadows(self, parent_bot_id: Optional[str] = None) -> list[ShadowLeaf]:
         with self._lock:
@@ -280,11 +228,6 @@ class ShadowLeafManager:
                 pass
 
             worktree_dir = Path(leaf.worktree_path)
-            # Sandbox guard: never rmtree/remove outside shadows_root, even if the
-            # registry was tampered with or a legacy leaf carries an escaping path.
-            if not worktree_dir.resolve().is_relative_to(self.shadows_root):
-                logger.error("discard_shadow recusado: caminho fora do sandbox: %s", worktree_dir)
-                return False
 
             # Tentativa de descarte acelerado via haos-edge
             discarded_by_rust = False
@@ -324,40 +267,6 @@ class ShadowLeafManager:
             leaf.status = "discarded"
             self._save_registry()
             return True
-
-    def reconcile_orphaned_leaves(self, max_age_seconds: float = 3600.0) -> list[str]:
-        """Scan active leaves and reconcile any whose worker is no longer running or timed out."""
-        with self._lock:
-            reconciled = []
-            now = time.time()
-            for leaf_id, leaf in list(self._leaves.items()):
-                if leaf.status != "active":
-                    continue
-                thread = self._threads.get(leaf_id)
-                thread_alive = thread.is_alive() if thread is not None else False
-                timed_out = (now - leaf.created_at) > max_age_seconds
-                if not thread_alive or timed_out:
-                    leaf.status = "failed"
-                    leaf.completed_at = now
-                    leaf.exit_code = 1
-                    leaf.summary = "Reconciled orphaned/crashed shadow leaf"
-                    if self.event_store:
-                        self.event_store.append(
-                            Event(
-                                name="civ.leaf.failed",
-                                payload={
-                                    "leaf_id": leaf_id,
-                                    "parent_bot_id": leaf.parent_bot_id,
-                                    "reason": "orphaned_worker_reconciled",
-                                    "timestamp": now,
-                                },
-                                correlation_id=leaf_id,
-                            )
-                        )
-                    reconciled.append(leaf_id)
-            if reconciled:
-                self._save_registry()
-            return reconciled
 
     def delete_record(self, leaf_id: str) -> bool:
         with self._lock:

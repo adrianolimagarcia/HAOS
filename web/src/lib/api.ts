@@ -76,8 +76,6 @@ const PROFILE_SCOPED_PREFIXES = [
   "/api/status",
   "/api/gateway",
   "/api/analytics",
-  "/api/civilization",
-  "/api/framework",
   "/api/skills",
   "/api/tools/toolsets",
   "/api/config",

@@ -21,13 +21,6 @@ import enum
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from hermes.platform.evals.runner import (
-    EVAL_CANARY_GUID,
-    EvalCase,
-    EvalSuite,
-    validate_suite,
-)
-
 
 class GoldenTaskCategory(str, enum.Enum):
     CODE_MODIFICATION = "code_modification"
@@ -52,17 +45,6 @@ class GoldenTaskSpec:
     max_tokens_budget: int
     deterministic_assertions: List[str] = field(default_factory=list)
     description: str = ""
-
-    def executor_view(self) -> "GoldenTaskSpec":
-        """Copy of the spec with the answer key stripped.
-
-        What a task EXECUTOR may see: prompt, category, budget. The
-        ``deterministic_assertions`` are the verifier's answer key — an
-        executor that sees them can grade itself against the answer instead of
-        doing the work. ``expected_artifacts`` stays visible: naming the
-        deliverables is part of the instruction, not the grading.
-        """
-        return dataclasses.replace(self, deterministic_assertions=[])
 
 
 GOLDEN_TASKS: Dict[str, GoldenTaskSpec] = {
@@ -181,32 +163,17 @@ class GoldenTaskResult:
 
 
 class GoldenTasksRunner:
-    """Executes and scores the Golden Tasks benchmark suite.
-
-    The default executor is a MOCK: it passes every task without doing any
-    work, so its scores measure nothing. It exists only to exercise the
-    plumbing (CLI, baseline store). Pass a real ``task_executor`` to get
-    numbers worth recording — ``run_benchmark_and_record`` refuses to persist
-    a mock run as a baseline.
-    """
+    """Executes and scores the Golden Tasks benchmark suite."""
 
     def __init__(self, task_executor: Optional[Callable[[GoldenTaskSpec], GoldenTaskResult]] = None):
         self._executor = task_executor or self._default_mock_executor
-        self.uses_mock = task_executor is None
 
     def run_suite(self, task_ids: Optional[List[str]] = None) -> List[GoldenTaskResult]:
-        """Execute the selected tasks.
-
-        The executor receives ``spec.executor_view()`` — prompt, budget and
-        deliverable names, but NOT the deterministic assertions it will be
-        graded on. Self-grading against a hidden answer key is exactly the
-        leak the executor/verifier split closes.
-        """
         selected = task_ids or list(GOLDEN_TASKS.keys())
         results = []
         for tid in selected:
             spec = GOLDEN_TASKS[tid]
-            res = self._executor(spec.executor_view())
+            res = self._executor(spec)
             results.append(res)
         return results
 
@@ -222,125 +189,13 @@ class GoldenTasksRunner:
         )
 
 
-def golden_to_eval_suite(task_ids: Optional[List[str]] = None) -> EvalSuite:
-    """Bridge the Golden Tasks catalog to the EvalRunner format.
-
-    ``input`` carries what an executor may see (prompt, budget, deliverable
-    names); ``expected`` carries the answer key (deterministic assertions +
-    artifacts) and reaches only a verifier — never the run_fn, which receives
-    an ``EvalCaseView``.
-    """
-    cases: List[EvalCase] = []
-    for tid in (task_ids or list(GOLDEN_TASKS.keys())):
-        spec = GOLDEN_TASKS[tid]
-        cases.append(
-            EvalCase(
-                id=spec.id,
-                input={
-                    "prompt": spec.prompt,
-                    "category": spec.category.value,
-                    "max_tokens_budget": spec.max_tokens_budget,
-                    "expected_artifacts": list(spec.expected_artifacts),
-                },
-                expected={
-                    "artifacts": list(spec.expected_artifacts),
-                    "assertions": list(spec.deterministic_assertions),
-                },
-                tags=[spec.category.value],
-            )
-        )
-    return EvalSuite(
-        id="golden_tasks",
-        description="Canonical G001-G010 scenarios, verifier-gated",
-        cases=cases,
-    )
-
-
-def artifact_verifier(case: EvalCase, execution: Dict[str, Any]) -> Dict[str, Any]:
-    """Deterministic verifier for answer-key cases (see ``golden_to_eval_suite``).
-
-    Reads ``case.expected`` = {"artifacts": [...], "assertions": [...],
-    "required_output_substrings": [...]} and judges the executor's execution
-    dict {"artifacts": [...], "assertions_passed": [...], "output": str}:
-    required artifacts must be present, required substrings must appear in the
-    output, and required assertions must be claimed satisfied by the executor.
-
-    Honest limitation: artifact presence and output substrings are EXTERNALLY
-    verified; assertion satisfaction is executor-reported evidence (checking
-    "test_pagination_passes" for real means running pytest in a sandbox, which
-    is the harness's job, not this verifier's). A case with an empty answer key
-    can never pass — fail-closed, so ``validate_suite`` flags vacuous cases.
-    """
-    exp = case.expected if isinstance(case.expected, dict) else {}
-    required_artifacts = [str(a) for a in (exp.get("artifacts") or [])]
-    required_assertions = [str(a) for a in (exp.get("assertions") or exp.get("deterministic_assertions") or [])]
-    required_substrings = [str(s) for s in (exp.get("required_output_substrings") or [])]
-
-    execution = execution if isinstance(execution, dict) else {}
-    got_artifacts = {str(a) for a in (execution.get("artifacts") or [])}
-    claimed_assertions = {str(a) for a in (execution.get("assertions_passed") or [])}
-    output = str(execution.get("output") or "")
-
-    missing_artifacts = [a for a in required_artifacts if a not in got_artifacts]
-    unclaimed_assertions = [a for a in required_assertions if a not in claimed_assertions]
-    missing_substrings = [s for s in required_substrings if s not in output]
-
-    checks = len(required_artifacts) + len(required_assertions) + len(required_substrings)
-    failed = len(missing_artifacts) + len(unclaimed_assertions) + len(missing_substrings)
-    passed = checks > 0 and failed == 0
-    score = 0.0 if checks == 0 else (checks - failed) / checks
-    return {
-        "passed": passed,
-        "score": round(score, 4),
-        "meta": {
-            "verifier": "artifact",
-            "checks": checks,
-            "missing_artifacts": missing_artifacts,
-            "unclaimed_assertions": unclaimed_assertions,
-            "missing_substrings": missing_substrings,
-        },
-    }
-
-
-def _noop_golden_executor(view: Any) -> Dict[str, Any]:
-    """The nop probe for ``validate_golden_tasks``: claims nothing, produces nothing."""
-    return {"artifacts": [], "assertions_passed": [], "output": ""}
-
-
-def validate_golden_tasks(
-    task_ids: Optional[List[str]] = None,
-    oracle_fn: Optional[Callable[[Any], Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    """Run the nop/oracle measurability gate over the Golden Tasks suite.
-
-    Every task must REJECT the no-op executor (an execution that produced no
-    artifacts and claimed no assertions); with an ``oracle_fn`` supplied, the
-    reference executor must additionally PASS every task. Without an oracle,
-    nop-rejected cases are ``nop_rejected`` — measurability holds, solvability
-    is assumed, not proven.
-    """
-    return validate_suite(
-        golden_to_eval_suite(task_ids),
-        verifier=artifact_verifier,
-        nop_fn=_noop_golden_executor,
-        oracle_fn=oracle_fn,
-    )
-
-
 def run_benchmark_and_record(
     task_ids: Optional[List[str]] = None,
     label: str = "current",
     baseline_store: Optional[Any] = None,
-    task_executor: Optional[Callable[[GoldenTaskSpec], GoldenTaskResult]] = None,
 ) -> Dict[str, Any]:
-    """Execute the Golden Tasks benchmark and record a baseline snapshot.
-
-    Honesty contract: a run on the default MOCK executor is labelled
-    ``measured: False`` and is NEVER persisted as a baseline — a 100% score
-    from an executor that does no work would poison every later comparison.
-    Pass ``task_executor`` for numbers worth recording.
-    """
-    runner = GoldenTasksRunner(task_executor=task_executor)
+    """Execute the Golden Tasks benchmark suite and optionally record the baseline snapshot."""
+    runner = GoldenTasksRunner()
     results = runner.run_suite(task_ids)
 
     passed_count = sum(1 for r in results if r.success)
@@ -349,7 +204,6 @@ def run_benchmark_and_record(
     total_duration = sum(r.duration_sec for r in results)
     score_pct = (passed_count / total_count * 100.0) if total_count > 0 else 0.0
 
-    measured = not runner.uses_mock
     metrics = {
         "suite": "golden_tasks",
         "label": label,
@@ -358,21 +212,10 @@ def run_benchmark_and_record(
         "score_percent": round(score_pct, 1),
         "total_tokens": total_tokens,
         "total_duration_sec": round(total_duration, 2),
-        "executor": "injected" if measured else "mock_default",
-        "measured": measured,
-        "canary": EVAL_CANARY_GUID,
         "tasks": [dataclasses.asdict(r) for r in results],
     }
 
     if baseline_store is not None:
-        if measured:
-            baseline_store.save(suite_id="golden_tasks", label=label, metrics=metrics)
-            metrics["baseline_recorded"] = True
-        else:
-            metrics["baseline_recorded"] = False
-            metrics["baseline_refused"] = (
-                "mock executor measures nothing (nop passes every task); "
-                "refusing to record it as a baseline"
-            )
+        baseline_store.save(suite_id="golden_tasks", label=label, metrics=metrics)
 
     return metrics

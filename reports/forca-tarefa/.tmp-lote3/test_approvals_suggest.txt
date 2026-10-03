@@ -1,9 +1,0 @@
-..F............                                                          [100%]
-=================================== FAILURES ===================================
-____________ TestNormalizeAndGlob.test_normalize_folds_home_prefix _____________
-tests/hermes_cli/test_approvals_suggest.py:157: in test_normalize_folds_home_prefix
-    assert "~/project/file.txt" in normalized
-E   AssertionError: assert '~/project/file.txt' in 'git checkout -- /root/project/file.txt'
-=========================== short test summary info ============================
-FAILED tests/hermes_cli/test_approvals_suggest.py::TestNormalizeAndGlob::test_normalize_folds_home_prefix
-1 failed, 14 passed in 1.53s

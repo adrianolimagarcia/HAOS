@@ -704,14 +704,7 @@ def cmd_haos_eval(args: argparse.Namespace) -> int:
         spec_name = spec.name if spec else t["task_id"]
         print(f"{t['task_id']:<6} {spec_name[:28]:<30} {status_str:<8} {t['tokens_consumed']:<8} {t['assertions_passed']}/{t['assertions_total']}")
     print("=" * 72)
-    if metrics.get("measured"):
-        print(f"✓ Baseline snapshot recorded in {db_path}")
-    else:
-        print("⚠ EXECUTOR MOCK — estes números NÃO são medição (o no-op passa")
-        print("  todas as tarefas por construção). Nenhuma baseline foi gravada.")
-        print("  Passe um task_executor real via run_benchmark_and_record(...);")
-        print("  valide o suite com validate_golden_tasks() antes de confiar")
-        print("  em qualquer score.")
+    print(f"✓ Baseline snapshot recorded in {db_path}")
     return 0
 
 

@@ -151,7 +151,7 @@ class TestExactFailoverDispatcherIntegration(unittest.TestCase):
         spec_coder = {"posture": "coder", "task_id": "T-2"}
         argv_coder = worker_arch._build_argv(spec_coder)
         self.assertIn("-m", argv_coder)
-        self.assertIn(argv_coder[argv_coder.index("-m") + 1], ["deepseek-chat", "deepseek-v4-flash"])
+        self.assertEqual(argv_coder[argv_coder.index("-m") + 1], "deepseek-chat")
         self.assertIn("--provider", argv_coder)
         self.assertEqual(argv_coder[argv_coder.index("--provider") + 1], "deepseek")
 

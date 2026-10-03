@@ -569,26 +569,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "haos-civ"
-version = "0.1.0"
-dependencies = [
- "rand 0.8.8",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "haos-edge"
 version = "0.1.0"
 dependencies = [
  "async-stream",
  "axum",
  "clap",
- "haos-civ",
  "hmac",
  "libc",
  "nix",

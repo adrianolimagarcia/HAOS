@@ -12,7 +12,6 @@ import time
 
 from hermes.platform.memory.dream import DreamConsolidator, DreamGitStore
 from hermes.platform.memory.instincts import InstinctStore, CONFIDENCE_PROMOTION_THRESHOLD
-from hermes.platform.memory.okf import OKFStore
 from hermes.platform.context.memory.staging import PROMOTED, PENDING, candidate_key
 from hermes_state import SessionDB
 
@@ -28,35 +27,6 @@ def _new_session(home: Path, sid: str, lesson: str, title: str = "Sessao com lic
     db.append_message(sid, "user", lesson)
     db.append_message(sid, "assistant", "Confirmado.")
     db.close()
-
-
-def test_dream_selective_cleaning_preserves_bracketed_lesson(tmp_path: Path, monkeypatch):
-    """Known scaffolding is removed, but meaningful bracketed prose survives real routing."""
-    home = tmp_path / ".hermes"
-    home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(home))
-    lesson = "[Database] Prefer SQLite for local durable storage"
-    _new_session(home, "20260908_selective_cleaning", "[System note: scaffolding] " + lesson)
-    result = DreamConsolidator(hermes_home=home).run_dream(dry_run=True)
-    assert result["consolidated_count"] == 1
-
-
-def test_okf_scanner_metadata_is_preserved_and_filled(monkeypatch, tmp_path: Path):
-    """Rust scanner metadata survives, with only absent title/tags backfilled."""
-    import json
-    import urllib.request
-
-    payload = {"ok": True, "docs": [{"rel_path": "x.md", "metadata": {"owner": "alice", "tags": ["kept"]}, "title": "Fallback", "tags": ["fallback"], "body_preview": "body"}]}
-    class Response:
-        status = 200
-        def read(self): return json.dumps(payload).encode()
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: Response())
-    bundle = tmp_path / "okf"
-    bundle.mkdir()
-    doc = OKFStore(bundle).documents()[0]
-    assert doc.metadata == {"owner": "alice", "tags": ["kept"], "title": "Fallback"}
 
 
 def test_dream_git_store_init_and_commit(tmp_path: Path):

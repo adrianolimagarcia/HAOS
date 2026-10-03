@@ -310,36 +310,3 @@ async def get_models_analytics(
     """Return model analytics without blocking the serving event loop."""
     with corrupt_store_as_status(_session_db_path_for_profile(profile)):
         return await asyncio.to_thread(_get_models_analytics, days, profile)
-
-
-# ── Context-waste analytics ──────────────────────────────────────────────────
-
-
-def _get_waste_analytics(days: int = 30, profile: Optional[str] = None,
-                         max_sessions: int = 100):
-    """Bounded transcript scan; every figure measured or null (see agent.context_waste)."""
-    from agent.context_waste import scan_waste
-
-    db = _open_session_db_for_profile(profile, read_only=True)
-    try:
-        cutoff = time.time() - (days * 86400)
-        result = scan_waste(db._conn, cutoff=cutoff, max_sessions=max_sessions)
-        result["period_days"] = days
-        return result
-    finally:
-        db.close()
-
-
-@router.get("/api/analytics/waste")
-async def get_waste_analytics(
-    days: int = Query(30, ge=1, le=365),
-    profile: Optional[str] = None,
-    max_sessions: int = Query(100, ge=1, le=500),
-):
-    """Waste findings (user loops, retry churn, tool cascades), prompt-cache hit
-    ratios per model, and live-context occupancy availability for the profile's
-    state.db. ``max_sessions`` bounds the transcript scan per poll; ``truncated``
-    says whether the window was cut. Token figures are measured from stored rows
-    (chars/4 labelled approx) — never fabricated."""
-    with corrupt_store_as_status(_session_db_path_for_profile(profile)):
-        return await asyncio.to_thread(_get_waste_analytics, days, profile, max_sessions)

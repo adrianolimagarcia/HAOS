@@ -27,7 +27,7 @@ from hermes.platform.evals.runner import EvalCase, EvalSuite
 
 PLATFORM_REL = Path("hermes/platform")
 # Imports de topo permitidos além da stdlib (seams canônicos e o próprio HAOS).
-_ALLOWED_TOP_IMPORTS = {"hermes", "hermes_cli", "agent", "hermes_constants"}
+_ALLOWED_TOP_IMPORTS = {"hermes", "hermes_cli", "agent"}
 # Exceção DOCUMENTADA (delta 45, INTEGRATIONS §7/§8.3): `ui/dashboard_plugin/`
 # é um host adapter — só o processo do Web Dashboard oficial o importa (e o
 # dashboard JÁ depende de fastapi); nunca é importado pelo AIAgent nem por

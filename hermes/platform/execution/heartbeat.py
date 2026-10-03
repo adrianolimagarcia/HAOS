@@ -19,7 +19,7 @@ existem lá); a camada apenas conecta a liveness do filho real ao claim.
 import os
 import subprocess
 import time
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from hermes.platform.execution.lane_executor import LaneError
 
@@ -30,10 +30,6 @@ class HeartbeatLostError(LaneError):
 
 class HeartbeatDeadlineError(LaneError):
     """Prazo máximo de execução estourado; o filho foi morto."""
-
-
-class LaneCancelledError(LaneError):
-    """Execução cancelada ou pausada a pedido do operador."""
 
 
 def child_process_alive(pid: int) -> bool:
@@ -63,7 +59,6 @@ def wait_with_heartbeat(
     timeout_seconds: Optional[float] = None,
     kill_fn: Optional[Callable[[int], None]] = None,
     task_id: str = "?",
-    cancel_event: Optional[Any] = None,
 ) -> int:
     """Espera ``proc`` renovando o claim a cada intervalo (heartbeat_fn).
 
@@ -72,8 +67,6 @@ def wait_with_heartbeat(
       heartbeat (comportamento legado: só timeout).
     - ``timeout_seconds``: deadline total; None => sem limite.
     - ``kill_fn``: como matar o filho ao abortar (default killpg).
-    - ``cancel_event``: threading.Event opcional; se ativado, aborta imediatamente
-      e mata o grupo de processo.
     Devolve o returncode quando o processo termina sozinho.
     """
     if kill_fn is None:
@@ -83,41 +76,27 @@ def wait_with_heartbeat(
         None if timeout_seconds is None
         else time.monotonic() + float(timeout_seconds)
     )
-    last_heartbeat = time.monotonic()
     while True:
-        if cancel_event is not None and getattr(cancel_event, "is_set", lambda: False)():
-            _kill_and_reap(proc, kill_fn)
-            raise LaneCancelledError(
-                f"worker for task '{task_id}' was cancelled by operator; process group killed."
-            )
-
-        now = time.monotonic()
-        time_to_heartbeat = interval - (now - last_heartbeat)
-        step = max(0.05, min(0.5, time_to_heartbeat))
+        remaining = interval
         if deadline is not None:
-            remaining_deadline = deadline - now
-            if remaining_deadline <= 0:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 _kill_and_reap(proc, kill_fn)
                 raise HeartbeatDeadlineError(
                     f"worker for task '{task_id}' exceeded max runtime "
                     f"({timeout_seconds}s); process group killed."
                 )
-            step = min(step, remaining_deadline)
-
+            remaining = min(remaining, interval)
         try:
-            return proc.wait(timeout=step)
+            return proc.wait(timeout=remaining)
         except subprocess.TimeoutExpired:
             pass
-
-        now = time.monotonic()
-        if heartbeat_fn is not None and (now - last_heartbeat) >= interval:
-            if not heartbeat_fn():
-                _kill_and_reap(proc, kill_fn)
-                raise HeartbeatLostError(
-                    f"worker for task '{task_id}' lost its claim (heartbeat "
-                    f"failed); process group killed."
-                )
-            last_heartbeat = now
+        if heartbeat_fn is not None and not heartbeat_fn():
+            _kill_and_reap(proc, kill_fn)
+            raise HeartbeatLostError(
+                f"worker for task '{task_id}' lost its claim (heartbeat "
+                f"failed); process group killed."
+            )
 
 
 def _kill_and_reap(proc: "subprocess.Popen",

@@ -2160,8 +2160,6 @@ _PASSTHROUGH_PARAMS = (
     "enabled_toolsets", "disabled_toolsets",
     # Model response configuration (None = provider/model default)
     "max_tokens", "reasoning_config", "service_tier",
-    # Civilization bot identity
-    "bot_id", "identity_bundle",
 )
 # Gateway identity params stored as ``agent._<name>``. gateway_session_key is the stable
 # per-chat key (e.g. agent:main:telegram:dm:123).
@@ -2215,7 +2213,6 @@ def init_agent(
     checkpoint_max_snapshots: int = 20, checkpoint_max_total_size_mb: int = 500,
     checkpoint_max_file_size_mb: int = 10, pass_session_id: bool = False,
     requested_provider: str = None, capabilities: Optional[Dict[str, bool]] = None, cwd: Optional[str] = None,
-    bot_id: Optional[str] = None, identity_bundle: Optional[Any] = None,
 ):
     """Initialize the AI Agent (body of :meth:`AIAgent.__init__`).
 
@@ -2233,9 +2230,6 @@ def init_agent(
         load_soul_identity keeps ~/.hermes/SOUL.md as identity regardless.
     """
     _install_safe_stdio()
-
-    if not bot_id and os.environ.get("HERMES_BOT_ID"):
-        bot_id = os.environ.get("HERMES_BOT_ID")
 
     _params = locals()
     for _name in _PASSTHROUGH_PARAMS:

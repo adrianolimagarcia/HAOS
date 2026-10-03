@@ -345,8 +345,6 @@ def noninteractive_git_env(base: "Mapping[str, str] | None" = None) -> dict[str,
     for key in list(env):
         if key == "GIT_CONFIG_PARAMETERS" or key.startswith(_GIT_CONFIG_INJECT_PREFIXES):
             env.pop(key, None)
-        if key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL") and not env[key]:
-            env.pop(key, None)
     env.pop("GIT_CONFIG_COUNT", None)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull

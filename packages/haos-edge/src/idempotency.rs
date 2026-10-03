@@ -33,14 +33,6 @@ impl IdempotencyEngine {
         engine
     }
 
-    /// Creates handles without touching SQLite; observer routers never mount these endpoints.
-    pub fn new_uninitialized(data_dir: &Path) -> Self {
-        Self {
-            idemp_db: data_dir.join("runs_idempotency.db"),
-            resp_db: data_dir.join("response_store.db"),
-        }
-    }
-
     fn now_secs() -> f64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

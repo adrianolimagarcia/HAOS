@@ -11,6 +11,5 @@ members = [
     "packages/haos-review",
     "packages/haos-supervisor",
     "packages/haos-prov",
-    "packages/haos-civ",
 ]
 resolver = "2"

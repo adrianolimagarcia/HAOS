@@ -354,21 +354,3 @@ class ControlPlaneService:
 
     def get_pending_intervention(self, target_id: str) -> Optional[str]:
         return self._interventions.get(target_id)
-
-
-def _resolve_role_model_binding(
-    role: str,
-    fallback_model: Optional[str] = None,
-    fallback_provider: Optional[str] = None,
-) -> Tuple[Optional[str], Optional[str]]:
-    """Resolves model and provider for a delegation role preference."""
-    from hermes_cli.config import load_config
-
-    cfg = load_config() or {}
-    model_cfg = cfg.get("model") or {}
-    delegation_cfg = cfg.get("delegation") or {}
-    role_models = delegation_cfg.get("role_models") or {}
-
-    model = role_models.get(role) or fallback_model or model_cfg.get("default")
-    provider = model_cfg.get("provider") or fallback_provider
-    return model, provider

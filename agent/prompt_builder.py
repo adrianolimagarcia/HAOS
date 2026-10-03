@@ -1589,51 +1589,6 @@ def load_soul_md(context_length: Optional[int] = None, home_override: "Path | No
         return None
 
 
-def load_bot_identity_prompt(
-    bot_id: Optional[str] = None,
-    context_length: Optional[int] = None,
-    home_override: "Path | None" = None,
-    bundle: Optional[Any] = None,
-) -> Optional[str]:
-    """Load and format Bot identity bundle (SOUL, IDENTITY, VALUES) for pre-session prompt assembly."""
-    if bundle is None and bot_id:
-        try:
-            from hermes.platform.bots.identity_resolver import IdentityResolver
-            from hermes.platform.bots.spec import BotSpec
-            resolver = IdentityResolver(root_dir=Path(home_override) / "bots" if home_override else None)
-            spec = BotSpec(id=bot_id, name=bot_id)
-            bundle = resolver.resolve(spec)
-        except Exception as e:
-            logger.debug("Could not resolve bot identity for %s: %s", bot_id, e)
-            return None
-
-    if bundle is None:
-        return None
-
-    sections = []
-    soul = getattr(bundle, "soul", "")
-    if soul and soul.strip():
-        clean_soul = _scan_context_content(soul.strip(), "SOUL.md")
-        sections.append(f"## Soul\n\n{clean_soul}")
-    ident = getattr(bundle, "identity", "")
-    if ident and ident.strip():
-        clean_id = _scan_context_content(ident.strip(), "IDENTITY.md")
-        sections.append(f"## Identity\n\n{clean_id}")
-    vals = getattr(bundle, "values", "")
-    if vals and vals.strip():
-        clean_val = _scan_context_content(vals.strip(), "VALUES.md")
-        sections.append(f"## Values\n\n{clean_val}")
-
-    if not sections:
-        return None
-
-    b_id = getattr(bundle, "bot_id", bot_id or "bot")
-    ver = getattr(bundle, "identity_version", 1)
-    header = f"# Bot Identity: {b_id} (v{ver})"
-    full_body = header + "\n\n" + "\n\n".join(sections)
-    return _truncate_content(full_body, f"bot_{b_id}_identity", context_length=context_length)
-
-
 def _read_context_file(path: Path) -> str:
     """Stripped text of *path*; "" when missing, empty or unreadable (logged at debug)."""
     if not path.exists():
@@ -1794,7 +1749,6 @@ def _load_cursorrules(cwd_path: Path, context_length: Optional[int] = None) -> s
 def build_context_files_prompt(
     cwd: Optional[str] = None, skip_soul: bool = False, context_length: Optional[int] = None,
     allow_install_tree_fallback: bool = False, home_override: "Path | None" = None,
-    bot_id: Optional[str] = None, identity_bundle: Optional[Any] = None,
 ) -> str:
     """Discover and load context files for the system prompt (each capped, see ``_get_context_file_max_chars``).
 
@@ -1812,18 +1766,6 @@ def build_context_files_prompt(
     else:
         sections = [_load_hermes_md(cwd_path, context_length) or _load_agents_md(cwd_path, context_length)
                     or _load_claude_md(cwd_path, context_length) or _load_cursorrules(cwd_path, context_length)]
-
-    if bot_id or identity_bundle:
-        bot_section = load_bot_identity_prompt(
-            bot_id=bot_id,
-            bundle=identity_bundle,
-            context_length=context_length,
-            home_override=home_override,
-        )
-        if bot_section:
-            sections.append(bot_section)
-            skip_soul = True
-
     if not skip_soul:
         sections.append(load_soul_md(context_length, home_override=home_override))
     sections = [s for s in sections if s]

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 import sqlite3
 import threading
@@ -51,29 +50,6 @@ class DocumentChunk:
         anchor_part = f" {self.provenance_anchor}" if include_anchor else ""
         header_part = f" | {self.header_path}" if self.header_path else ""
         return f"[Doc: {self.doc_path}{header_part}]{anchor_part}\n{self.content}"
-
-
-@dataclass
-class DocumentKey:
-    """Chave de acesso a documento (Self-Index, arXiv:2609.19656).
-
-    Representa um ponto de entrada discriminativo para o documento d,
-    validado por portões antes da persistência.
-    """
-    doc_path: str
-    kind: str  # 'discriminative' | 'handle' | 'simulated' | 'manual'
-    key_text: str
-    generator: str  # 'discriminative-v1' | 'llm:<model>' | 'manual'
-    content_hash: str
-    key_id: Optional[str] = None
-    created_at: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        if not self.key_id:
-            import hashlib
-            seed = f"{self.doc_path}|{self.kind}|{self.key_text}".encode("utf-8")
-            self.key_id = hashlib.sha1(seed).hexdigest()[:12]
 
 
 class HeaderBreadcrumbChunker:
@@ -311,7 +287,7 @@ class RetrievalBudget:
 class RAGFlowStore:
     """SQLite WAL-backed RAG engine with FTS5 lexical search and RRF fusion."""
 
-    def __init__(self, db_path: Optional[Path] = None, chunker=None):
+    def __init__(self, db_path: Optional[Path] = None):
         if db_path is None:
             from hermes_constants import get_hermes_home
             home = Path(get_hermes_home())
@@ -320,12 +296,7 @@ class RAGFlowStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        # Injectable seam: any object exposing chunk_markdown(text,
-        # doc_path=..., doc_id=..., metadata=...) -> List[DocumentChunk]-like
-        # rows (e.g. hermes.platform.memory.semantic_chunker.
-        # SemanticDocumentChunker) plugs in here. Default keeps the original
-        # HeaderBreadcrumbChunker behavior byte-for-byte.
-        self.chunker = chunker or HeaderBreadcrumbChunker()
+        self.chunker = HeaderBreadcrumbChunker()
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -365,29 +336,6 @@ class RAGFlowStore:
                     tokenize='unicode61'
                 );
             """)
-
-            # Document-Keys table & FTS (Self-Index, arXiv:2609.19656)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS haos_rag_keys (
-                    key_id        TEXT PRIMARY KEY,
-                    doc_path      TEXT NOT NULL,
-                    kind          TEXT NOT NULL,
-                    key_text      TEXT NOT NULL,
-                    generator     TEXT NOT NULL,
-                    content_hash  TEXT NOT NULL,
-                    created_at    REAL NOT NULL,
-                    metadata_json TEXT
-                );
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_keys_doc ON haos_rag_keys(doc_path);")
-            conn.execute("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS haos_rag_keys_fts USING fts5(
-                    key_id UNINDEXED,
-                    doc_path UNINDEXED,
-                    key_text,
-                    tokenize='unicode61'
-                );
-            """)
             conn.commit()
 
     def index_document(
@@ -403,12 +351,10 @@ class RAGFlowStore:
             return 0
 
         with self._lock, self._get_connection() as conn:
-            # Remove previous chunks and keys for this document
+            # Remove previous chunks for this document
             resolved_doc_id = chunks[0].doc_id
             conn.execute("DELETE FROM haos_rag_chunks WHERE doc_path = ? OR doc_id = ?;", (doc_path, resolved_doc_id))
             conn.execute("DELETE FROM haos_rag_fts WHERE doc_path = ?;", (doc_path,))
-            conn.execute("DELETE FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,))
-            conn.execute("DELETE FROM haos_rag_keys_fts WHERE doc_path = ?;", (doc_path,))
 
             for c in chunks:
                 conn.execute("""
@@ -483,81 +429,9 @@ class RAGFlowStore:
                     continue
                 conn.execute("DELETE FROM haos_rag_fts WHERE doc_path = ?;", (doc_path,))
                 conn.execute("DELETE FROM haos_rag_chunks WHERE doc_path = ?;", (doc_path,))
-                conn.execute("DELETE FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,))
-                conn.execute("DELETE FROM haos_rag_keys_fts WHERE doc_path = ?;", (doc_path,))
                 removed.append(doc_path)
             conn.commit()
         return removed
-
-    def add_key(self, key: DocumentKey) -> str:
-        """Persiste uma chave de acesso a documento (haos_rag_keys e haos_rag_keys_fts)."""
-        with self._lock, self._get_connection() as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO haos_rag_keys (
-                    key_id, doc_path, kind, key_text, generator, content_hash, created_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """, (
-                key.key_id,
-                key.doc_path,
-                key.kind,
-                key.key_text,
-                key.generator,
-                key.content_hash,
-                key.created_at,
-                json.dumps(key.metadata),
-            ))
-            conn.execute("""
-                INSERT INTO haos_rag_keys_fts (key_id, doc_path, key_text)
-                VALUES (?, ?, ?);
-            """, (key.key_id, key.doc_path, key.key_text))
-            conn.commit()
-        return key.key_id or ""
-
-    def get_keys_for_document(self, doc_path: str) -> List[DocumentKey]:
-        """Recupera todas as chaves associadas a um doc_path."""
-        with self._lock, self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,)
-            ).fetchall()
-            return [
-                DocumentKey(
-                    key_id=r["key_id"],
-                    doc_path=r["doc_path"],
-                    kind=r["kind"],
-                    key_text=r["key_text"],
-                    generator=r["generator"],
-                    content_hash=r["content_hash"],
-                    created_at=float(r["created_at"]),
-                    metadata=json.loads(r["metadata_json"] or "{}"),
-                )
-                for r in rows
-            ]
-
-    def remove_keys_for_document(self, doc_path: str) -> int:
-        """Remove todas as chaves associadas a um doc_path."""
-        with self._lock, self._get_connection() as conn:
-            cursor = conn.execute("DELETE FROM haos_rag_keys WHERE doc_path = ?;", (doc_path,))
-            conn.execute("DELETE FROM haos_rag_keys_fts WHERE doc_path = ?;", (doc_path,))
-            conn.commit()
-            return cursor.rowcount
-
-    def get_all_keys(self) -> List[DocumentKey]:
-        """Recupera todas as chaves registradas no banco."""
-        with self._lock, self._get_connection() as conn:
-            rows = conn.execute("SELECT * FROM haos_rag_keys;").fetchall()
-            return [
-                DocumentKey(
-                    key_id=r["key_id"],
-                    doc_path=r["doc_path"],
-                    kind=r["kind"],
-                    key_text=r["key_text"],
-                    generator=r["generator"],
-                    content_hash=r["content_hash"],
-                    created_at=float(r["created_at"]),
-                    metadata=json.loads(r["metadata_json"] or "{}"),
-                )
-                for r in rows
-            ]
 
     @staticmethod
     def _sanitize_fts_query(query_str: str) -> str:
@@ -613,84 +487,27 @@ class RAGFlowStore:
             except Exception as exc:
                 logger.warning("FTS5 query failed (%s): %s", fts_query, exc)
 
-        # 2. Token Overlap & Semantic Breadcrumb Ranking (orçamentada — P6).
-        # Sem teto oculto de janela: o ÚNICO throttle documentado é o
-        # orçamento max_candidates. Um LIMIT fixo aqui deixava os chunks fora
-        # da janela invisíveis à fusão — recall caía em silêncio conforme o
-        # corpus crescia (medido no corpus real: recall@3 0.49→1.00 com 483
-        # chunks ao remover a janela de 200; 26/39 docs-gold eram invisíveis).
+        # 2. Token Overlap & Semantic Breadcrumb Ranking (orçamentada — P6)
         all_chunks_rows = conn.execute("""
             SELECT id, doc_path, header_path, content FROM haos_rag_chunks
-            ORDER BY created_at DESC;
+            ORDER BY created_at DESC LIMIT 200;
         """).fetchall()
 
-        # F1 (SELF_INDEX_PLAN §Fase 1) — a passada léxica ordena por IDF, não
-        # por contagem de tokens. O base somava `matches / len(tokens)`: dois
-        # documentos com o MESMO número de tokens da query empatavam, e o
-        # empate era resolvido pela ordem SQL (`created_at DESC`) — um
-        # artefato invisível de recência, não relevância. No corpus real isso
-        # deixava o alvo atrás do vizinho errado (2 misses rank=2 no gold).
-        #
-        #   df(t) = nº de chunks avaliados que contêm t
-        #   idf(t) = log(1 + N / df(t))          (df=0 → idf=0: nunca é hit)
-        #   score(chunk) = Σ idf(hits) / Σ idf(tokens da query)
-        #
-        # Três decisões deliberadas:
-        #  1. CUSTO: o df é acumulado no MESMO laço que já materializava os
-        #     blobs (nenhum I/O extra, nenhum re-scan); a pontagem é um
-        #     segundo laço apenas sobre os candidatos com hit. O trabalho por
-        #     chunk permanece O(|tokens|). Teto do aceite: p95 ≤ baseline +10%.
-        #     MEDIDO no A/B (mesmo snapshot 555 chunks, 170q × 3 rodadas
-        #     intercaladas, n=510): p95 base 21.40 ms → F1 20.67 ms,
-        #     razão 0.966. Gate PASS com folga.
-        #  2. DESEMPATE passa a ser EXPLÍCITO: (score, posição no BM25,
-        #     doc_path, chunk_id). Antes era `created_at DESC` herdado do
-        #     sort estável. Um alvo que o BM25 considera #1 não pode perder
-        #     para um candidato mais novo só porque empatou em score.
-        #  3. CORTE mantido em `limit * 3`: alargar o fator (10/30) foi
-        #     medido neutro em hit@1 — não se "conserta" o que a medição diz
-        #     ser neutro. O que traz o alvo de volta para dentro do corte é o
-        #     item 2, não uma janela maior.
-        #
-        # O kill-switch do P6 continua sendo o ÚNICO throttle do laço: ao
-        # interromper a avaliação, ele também limita o corpus sobre o qual o
-        # df é contado (df e N são do mesmo universo — coerência intencional).
-        unique_tokens = list(dict.fromkeys(tokens))  # preserva ordem, dedupeia
-        clean_q_lower = clean_q.lower()
-        evaluated: List[Tuple[str, str, List[str], bool]] = []
-        df: Dict[str, int] = dict.fromkeys(unique_tokens, 0)
-        n_chunks = 0
+        lexical_candidates: List[Tuple[str, float]] = []
         for r in all_chunks_rows:
             if not budget.consume():
                 break  # kill-switch: orçamento esgotado — para de avaliar
-            n_chunks += 1
+            cid = r["id"]
             text_blob = f"{r['doc_path']} {r['header_path']} {r['content']}".lower()
-            hits = [t for t in unique_tokens if t in text_blob]
-            for t in hits:
-                df[t] += 1
-            if hits:
-                # Boost exact query phrase (mesma regra do base, byte-for-byte)
-                evaluated.append((r["id"], r["doc_path"], hits, clean_q_lower in text_blob))
+            matches = sum(1 for t in tokens if t in text_blob)
+            if matches > 0:
+                score = matches / max(len(tokens), 1)
+                # Boost exact query phrase
+                if clean_q.lower() in text_blob:
+                    score += 1.0
+                lexical_candidates.append((cid, score))
 
-        idf = {
-            t: (math.log(1.0 + n_chunks / c) if c > 0 else 0.0)
-            for t, c in df.items()
-        }
-        total_idf = max(sum(idf.values()), 1e-9)
-        bm25_pos = {cid: idx for idx, (cid, _) in enumerate(fts_ranked)}
-        bm25_absent = len(fts_ranked) + 1  # ausente do BM25 perde o desempate
-
-        scored: List[Tuple[float, int, str, str]] = []
-        for cid, doc_path, hits, has_phrase in evaluated:
-            score = sum(idf[t] for t in hits) / total_idf
-            if has_phrase:
-                score += 1.0
-            scored.append((-score, bm25_pos.get(cid, bm25_absent), doc_path, cid))
-        scored.sort()
-
-        lexical_candidates: List[Tuple[str, float]] = [
-            (cid, -neg) for neg, _, _, cid in scored
-        ]
+        lexical_candidates.sort(key=lambda x: x[1], reverse=True)
         return fts_ranked, lexical_candidates[: limit * 3]
 
     def rank_lists(
@@ -774,48 +591,8 @@ class RAGFlowStore:
                 conn, clean_q, fts_query, tokens, limit, budget,
             )
 
-            # 2.5 Document-Key Rank Lists (arXiv:2609.19656 Self-Index)
-            # Chaves validadas por portões geram listas adicionais de candidatos
-            # mapeados para o chunk representativo do documento (ex: primeiro chunk).
-            key_fts_ranked: List[Tuple[str, float]] = []
-            if fts_query:
-                try:
-                    key_rows = conn.execute("""
-                        SELECT doc_path, bm25(haos_rag_keys_fts) AS rank_score
-                        FROM haos_rag_keys_fts
-                        WHERE haos_rag_keys_fts MATCH ?
-                        ORDER BY rank_score ASC
-                        LIMIT ?;
-                    """, (fts_query, limit * 3)).fetchall()
-                    # Mapeia doc_path para o primeiro chunk_id do documento
-                    for kr in key_rows:
-                        c_row = conn.execute(
-                            "SELECT id FROM haos_rag_chunks WHERE doc_path = ? ORDER BY start_line ASC LIMIT 1;",
-                            (kr["doc_path"],),
-                        ).fetchone()
-                        if c_row:
-                            key_fts_ranked.append((c_row["id"], float(kr["rank_score"])))
-                except Exception as exc:
-                    logger.warning("Key FTS query failed (%s): %s", fts_query, exc)
-
-            # 3. Fuse with Reciprocal Rank Fusion.
-            # A ordem das listas é decisão, não acidente: o RRF soma pesos por
-            # rank; empates exatos (espelho fts#i/lex#j == fts#j/lex#i) ficam
-            # idênticos em ponto flutuante e o `sorted` estável os resolve pela
-            # ordem de inserção — i.e., pela PRIMEIRA lista. A lista léxica vai
-            # primeiro de propósito: ela carrega o boost de frase exata (+1.0),
-            # o único sinal de magnitude que sobrevive quando BM25 e léxico
-            # discordam no topo. MEDIDO (índice vivo, 555 chunks): base
-            # 166@1/168@3 → com IDF+esta ordem 167@1/168@3; recupera o
-            # diário 13-09 (empate espelho fts#1/lex#2 vs fts#2/lex#1) e a
-            # query de infra. O diário 18-09 fica em rank=2 por perda
-            # ESTRITA (0.032018 vs 0.032522), não por empate — nenhuma
-            # política de desempate o traz; isso é caso de fusão com
-            # score (P7/LinearScoreFusion), decisão reservada ao humano.
-            fuse_lists = [lexical_ranked, fts_ranked]
-            if key_fts_ranked:
-                fuse_lists.append(key_fts_ranked)
-            fused = ReciprocalRankFusion.fuse(fuse_lists, k=k_rrf)
+            # 3. Fuse with Reciprocal Rank Fusion
+            fused = ReciprocalRankFusion.fuse([fts_ranked, lexical_ranked], k=k_rrf)
             top_ids = [cid for cid, _ in fused[:limit]]
 
             if not top_ids:
@@ -832,74 +609,3 @@ class RAGFlowStore:
                 "limit": max_candidates,
             }
             return [chunks_by_id[cid] for cid in top_ids if cid in chunks_by_id]
-
-
-# ── Portões de Validação de Document-Keys (arXiv:2609.19656) ──────────────────
-
-def _tokenize(text: str) -> set[str]:
-    """Tokenização normalizada básica para cálculo de Jaccard e sobreposição."""
-    import unicodedata
-    folded = "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c))
-    return set(re.findall(r"[a-z0-9_]+", folded))
-
-
-def specificity_gate(store: RAGFlowStore, key: DocumentKey, top_k: int = 3) -> bool:
-    """Portão de Especificidade (T4): a chave virando query DEVE recuperar o próprio doc no top_k."""
-    res = store.hybrid_search(key.key_text, limit=top_k)
-    target_path = Path(key.doc_path).name.lower()
-    for c in res:
-        c_path = Path(c.doc_path).name.lower()
-        if c_path == target_path or c.doc_path == key.doc_path or c.doc_path.endswith(key.doc_path):
-            return True
-    return False
-
-
-def separation_gate(store: RAGFlowStore, key: DocumentKey, threshold: float = 0.8) -> bool:
-    """Portão de Separação (T5): Jaccard de tokens contra chaves de OUTROS docs deve ser < threshold."""
-    key_toks = _tokenize(key.key_text)
-    if not key_toks:
-        return False
-    all_keys = store.get_all_keys()
-    target_path = Path(key.doc_path).name.lower()
-    for other in all_keys:
-        other_path = Path(other.doc_path).name.lower()
-        if other_path == target_path or other.doc_path == key.doc_path:
-            continue
-        other_toks = _tokenize(other.key_text)
-        if not other_toks:
-            continue
-        inter = len(key_toks & other_toks)
-        union = len(key_toks | other_toks)
-        jaccard = inter / union if union > 0 else 0.0
-        if jaccard >= threshold:
-            return False
-    return True
-
-
-def generate_discriminative_keys(doc_path: str, text: str, content_hash: str = "") -> List[DocumentKey]:
-    """Gerador determinístico default de Document-Keys (discriminative-v1)."""
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    title = ""
-    for l in lines:
-        if l.startswith("# "):
-            title = l.lstrip("# ").strip()
-            break
-    if not title:
-        title = Path(doc_path).stem.replace("-", " ").replace("_", " ")
-
-    toks = _tokenize(text)
-    stops = {"a", "o", "as", "os", "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas",
-             "e", "ou", "que", "para", "com", "por", "um", "uma", "uns", "umas", "se", "como"}
-    filtered_toks = [t for t in sorted(toks) if t not in stops and len(t) > 2]
-    discriminative = " ".join(filtered_toks[:8])
-    key_text = f"{title} · {discriminative}".strip(" ·")
-
-    return [
-        DocumentKey(
-            doc_path=doc_path,
-            kind="discriminative",
-            key_text=key_text,
-            generator="discriminative-v1",
-            content_hash=content_hash,
-        )
-    ]

@@ -325,10 +325,3 @@ target/
 *.bak
 *.orig
 *.save
-
-# Gold derivado do bench de recuperação (scripts/bench_haos_retrieval.py
-# --build-gold): embute TRECHOS DO CORPUS REAL como queries — títulos e
-# frases de curadoria/diário que contém credenciais, IDs de telegram e refs
-# a secrets/. O repo é público; só o harness e o baseline AGREGADO
-# (benchmarks/haos_retrieval_gold.baseline.json) são versionáveis.
-benchmarks/haos_retrieval_gold.json

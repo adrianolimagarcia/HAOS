@@ -127,7 +127,7 @@ class BotSpecManager:
                 scope, sep, ref = grant.partition("::")
                 if not sep or not SecretBroker().check_grant(scope, ref):
                     raise PermissionError("BotSpec grant policy denied submission")
-        values.update(id=values.get("id", f"bot-{uuid.uuid4().hex[:10]}"), title=values.get("title", spec.name), goal=goal, bot_id=bot_id)
+        values.update(id=values.get("id", f"bot-{uuid.uuid4().hex[:10]}"), title=values.get("title", spec.name), goal=goal)
         # Sink único de todo override (submit/submit_routine/trigger_manual/
         # submit_to_dispatcher e o corpo HTTP do dashboard): chave desconhecida
         # aqui é erro do caller, não bug interno — ValueError para as rotas

@@ -175,45 +175,6 @@ O HAOS possui uma suíte com mais de 39.000 testes com isolamento estrito de sub
 
 ---
 
-## 📊 Bench de Recuperação HAOS (gold derivado)
-
-`scripts/bench_haos_retrieval.py` mede o recall do cascade de memória de
-produção (`hybrid_router`) contra um **gold derivado do próprio corpus** —
-queries de título + frase distintiva única (df==1 sobre vault ∪ OKF), com
-filtro de ambiguidade que descarta a query (nunca escolhe alvo à mão).
-
-```bash
-# 1. Regenerar o gold a partir do corpus (escreve em --out; NUNCA commitar):
-.venv/bin/python scripts/bench_haos_retrieval.py --build-gold \
-  --vault /root/.haos/obsidian_vault --okf /root/.haos/okf \
-  --out benchmarks/haos_retrieval_gold.json
-
-# 2. Rodar o bench contra o router de produção e comparar com o baseline:
-.venv/bin/python scripts/bench_haos_retrieval.py \
-  --gold benchmarks/haos_retrieval_gold.json \
-  --baseline benchmarks/haos_retrieval_gold.baseline.json
-
-# 3. Só o relatório JSON (exit 0; sem gate de baseline):
-.venv/bin/python scripts/bench_haos_retrieval.py --gold benchmarks/haos_retrieval_gold.json --json
-```
-
-**Política de dados (o repo é público):**
-
-- `benchmarks/haos_retrieval_gold.json` — **gitignored**. O gold embute texto
-  real do corpus (inclui credenciais e IDs de conversa); é regenerável com
-  `--build-gold`, nunca versionado.
-- `benchmarks/haos_retrieval_gold.baseline.json` — **versionado, agregado
-  apenas**: contagens, taxas, partição de misses por variante/fonte. Nenhum
-  texto de query, nenhum caminho de documento. Guard:
-  `tests/evals/test_haos_retrieval_gold.py::test_baseline_is_aggregate_only`.
-- Números **não são comparáveis entre versões de gold** (182q ≠ 170q); o
-  baseline pinna `schema` + contagem de queries + estado do índice.
-
-Guardas de unidade do harness (fold, stopwords, canais de alias, ambiguidade,
-baseline): `scripts/run_tests.sh tests/evals/test_haos_retrieval_gold.py`.
-
----
-
 ## 📄 Licença
 
 Distribuído sob a licença MIT. Veja `LICENSE` para mais informações.

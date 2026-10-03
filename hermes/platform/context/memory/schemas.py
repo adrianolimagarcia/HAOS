@@ -19,19 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
 ScopeType = Literal["private", "team", "project", "global"]
-# Includes canonical kinds plus Hindsight 4-Network Logical Taxonomy (World Facts, Experiences, Observations, Mental Models)
-KnowledgeKind = Literal[
-    "adr",
-    "convention",
-    "fact",
-    "constraint",
-    "architecture",
-    "heuristic",
-    "world_fact",
-    "experience",
-    "observation",
-    "mental_model",
-]
+KnowledgeKind = Literal["adr", "convention", "fact", "constraint", "architecture", "heuristic"]
 
 
 @dataclass

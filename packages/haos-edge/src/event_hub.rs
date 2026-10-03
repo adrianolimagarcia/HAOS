@@ -40,15 +40,6 @@ pub struct EventHub {
 
 impl EventHub {
     pub fn new(db_path: PathBuf) -> Self {
-        Self::build(db_path, true)
-    }
-
-    /// Builds an in-memory event broadcaster without starting a SQLite writer.
-    pub fn new_observer(db_path: PathBuf) -> Self {
-        Self::build(db_path, false)
-    }
-
-    fn build(db_path: PathBuf, start_writer: bool) -> Self {
         let (sender, _) = broadcast::channel(2048);
         let initial_seq = std::fs::read(&db_path)
             .ok()
@@ -71,9 +62,7 @@ impl EventHub {
             db_path,
             next_seq: std::sync::Arc::new(AtomicI64::new(initial_seq)),
         };
-        if start_writer {
-            hub.spawn_writer_task();
-        }
+        hub.spawn_writer_task();
         hub
     }
 

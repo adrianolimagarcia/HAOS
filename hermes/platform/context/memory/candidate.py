@@ -37,12 +37,8 @@ class MemoryCandidate:
             self.provenance = [self.source_uri]
 
     def is_high_confidence(self) -> bool:
-        """Indica se a confiança é alta o suficiente para consolidação direta (limiar canônico 0.85)."""
+        """Indica se a confiança é alta o suficiente para consolidação direta."""
         return self.confidence >= 0.85
-
-    def is_eligible_for_auto_promotion(self) -> bool:
-        """Aprovação automática: candidatos com confiança >= 0.85 e sem formato de pergunta."""
-        return self.is_high_confidence() and not self.fact.strip().endswith("?")
 
     def to_dict(self) -> Dict[str, Any]:
         """Serializa o candidato em dicionário primitivo."""

@@ -50,21 +50,6 @@ DEFAULT_CONFIG = {
     },
     # Soft fd limit for long-running server processes; clamped to OS hard limit. 0/false/null = off.
     "runtime": {"nofile_soft_limit": 4096},
-    # Event-driven investigation is opt-in; model output never grants action authority.
-    "framework": {
-        "autonomy": {
-            "enabled": False,
-            "auto_apply": False,
-            "poll_seconds": 15,
-            "telemetry_seconds": 60,
-            "cooldown_seconds": 300,
-            "max_pending": 128,
-            "max_jobs_per_hour": 6,
-            "investigation_timeout": 90,
-            "max_output_tokens": 2048,
-            "event_patterns": ["*.failed", "*.error", "*.warning"],
-        },
-    },
     # Global active chat session cap across CLI, TUI/dashboard, and messaging. None/0 = unbounded.
     "max_concurrent_sessions": None,
     # Soft LRU cap on in-memory TUI/desktop/dashboard sessions. Above it the gateway evicts the
@@ -1278,9 +1263,6 @@ DEFAULT_CONFIG = {
         # External memory provider plugin (empty = built-in only); only ONE at a time: "openviking",
         # "mem0", "hindsight", "holographic", "retaindb", "byterover".
         "provider": "",
-        # Opt-in: haos_hybrid_memory_query plans retrieval per query intent (retrieval_planner,
-        # incl. the RAPTOR tree step) instead of the fixed cascade. False = comportamento original.
-        "hybrid_planner": False,
     },
     # Subagent delegation — override the provider:model used by delegate_task so children run on a
     # cheaper/faster model. Uses the same runtime provider resolution as CLI/gateway startup, so

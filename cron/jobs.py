@@ -1692,8 +1692,7 @@ def _compute_provider_model_snapshots(
             if normalized_base_url:
                 runtime_kwargs["explicit_base_url"] = normalized_base_url
             snap = resolve_runtime_provider(**runtime_kwargs)
-            _resolved_prov = snap.get("requested_provider") or snap.get("provider") or ""
-            provider_snapshot = str(_resolved_prov).strip().lower() or None
+            provider_snapshot = str(snap.get("provider") or "").strip().lower() or None
     if normalized_model is None:
         with contextlib.suppress(Exception):
             model_snapshot = _resolve_default_model_snapshot() or None

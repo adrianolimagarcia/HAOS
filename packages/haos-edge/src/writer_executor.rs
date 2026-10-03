@@ -158,7 +158,7 @@ impl WriterExecutor {
             if stored_fingerprint != fingerprint {
                 return Err(WriterError::IdempotencyConflict);
             }
-            return parse_stored_response(response, request);
+            return parse_stored_response(response);
         }
 
         let result = execute_operation(&tx, request, deadline)?;
@@ -187,11 +187,6 @@ fn ensure_idempotency_table(conn: &Connection) -> Result<(), WriterError> {
         .map_err(|e| match e {
             SqliteError::SqliteFailure(ref err, _) if err.code == ErrorCode::ReadOnly => {
                 WriterError::SchemaMismatch
-            }
-            SqliteError::SqliteFailure(ref err, _)
-                if err.code == ErrorCode::DatabaseBusy || err.code == ErrorCode::DatabaseLocked =>
-            {
-                WriterError::Timeout
             }
             other => WriterError::Storage(other.to_string()),
         })?;
@@ -432,15 +427,12 @@ fn load_idempotency(
     }
 }
 
-fn parse_stored_response(
-    response: String,
-    request: &ValidatedEnvelope,
-) -> Result<WriterResult, WriterError> {
+fn parse_stored_response(response: String) -> Result<WriterResult, WriterError> {
     let result: Value =
         serde_json::from_str(&response).map_err(|e| WriterError::Storage(e.to_string()))?;
     Ok(WriterResult {
-        operation: request.operation.clone(),
-        idempotency_key: request.idempotency_key.clone(),
+        operation: String::new(),
+        idempotency_key: String::new(),
         result,
     })
 }

@@ -19,7 +19,6 @@ or the HAOS spec id (``T-...``), resolved through the meta table.
 """
 
 import json
-import os
 import threading
 import time
 from pathlib import Path
@@ -255,30 +254,28 @@ class KanbanAdapter:
         task_id = self._require_resolved(task_id_or_spec)
 
         # Fast-Path Rust Ingress (haos-edge /api/kanban/claim): lock-free atômico, sub-1ms
-        edge_url = os.environ.get("HAOS_EDGE_URL")
-        if edge_url:
-            try:
-                import urllib.request, json
-                url = f"{edge_url.rstrip('/')}/api/kanban/claim"
-                payload = json.dumps({
-                    "task_id": task_id,
-                    "worker_id": worker_id,
-                    "ttl_seconds": lease_duration_sec or 300,
-                    "db_path": str(self.db_path),
-                }).encode("utf-8")
-                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-                with urllib.request.urlopen(req, timeout=0.8) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    if data.get("ok"):
-                        if not data.get("claimed"):
-                            return False
-                        run = run or TaskRun(task_id=task_id, worker_id=worker_id)
-                        run.started_at = float(time.time())
-                        self._store_run(task_id, run)
-                        self._emit_run_event(task_id, "claimed", run=run, worker_id=worker_id)
-                        return True
-            except Exception:
-                pass
+        try:
+            import urllib.request, json
+            url = "http://100.77.31.78:8788/api/kanban/claim"
+            payload = json.dumps({
+                "task_id": task_id,
+                "worker_id": worker_id,
+                "ttl_seconds": lease_duration_sec or 300,
+                "db_path": str(self.db_path),
+            }).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=0.8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok"):
+                    if not data.get("claimed"):
+                        return False
+                    run = run or TaskRun(task_id=task_id, worker_id=worker_id)
+                    run.started_at = float(time.time())
+                    self._store_run(task_id, run)
+                    self._emit_run_event(task_id, "claimed", run=run, worker_id=worker_id)
+                    return True
+        except Exception:
+            pass
 
         conn = self._connect()
         claimed = kb.claim_task(conn, task_id, claimer=worker_id, ttl_seconds=lease_duration_sec)
@@ -293,24 +290,23 @@ class KanbanAdapter:
 
     def heartbeat(self, task_id_or_spec: str, worker_id: Optional[str] = None) -> bool:
         task_id = self._require_resolved(task_id_or_spec)
-        edge_url = os.environ.get("HAOS_EDGE_URL")
-        if edge_url:
-            try:
-                import urllib.request, json
-                url = f"{edge_url.rstrip('/')}/api/kanban/heartbeat"
-                payload = json.dumps({
-                    "task_id": task_id,
-                    "worker_id": worker_id,
-                    "db_path": str(self.db_path),
-                }).encode("utf-8")
-                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-                with urllib.request.urlopen(req, timeout=1.0) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    if data.get("ok") and data.get("renewed"):
-                        self._touch_run(task_id)
-                        return True
-            except Exception:
-                pass
+        # Fast-Path Rust Ingress (haos-edge /api/kanban/heartbeat): sub-milissegundo, zero lock Python
+        try:
+            import urllib.request, json
+            url = "http://100.77.31.78:8788/api/kanban/heartbeat"
+            payload = json.dumps({
+                "task_id": task_id,
+                "worker_id": worker_id,
+                "db_path": str(self.db_path),
+            }).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("ok") and data.get("renewed"):
+                    self._touch_run(task_id)
+                    return True
+        except Exception:
+            pass
 
         conn = self._connect()
         result = kb.heartbeat_claim(conn, task_id, claimer=worker_id)
@@ -413,14 +409,10 @@ class KanbanAdapter:
         TaskResult + ended TaskRun snapshots."""
         task_id = self._require_resolved(task_id_or_spec)
         conn = self._connect()
-        run = self._load_run(task_id)
-        expected_run_id = int(run.run_id) if (run and getattr(run, "run_id", None) and str(run.run_id).isdigit()) else None
         ok = kb.complete_task(
             conn, task_id,
             result=result or summary or "",
             summary=summary or result or "",
-            expected_run_id=expected_run_id,
-            force=(expected_run_id is None),
             metadata={
                 "haos_evidence": evidence or {},
                 "haos_acceptance": acceptance or [],

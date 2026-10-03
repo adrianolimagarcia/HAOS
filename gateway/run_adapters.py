@@ -453,7 +453,7 @@ class GatewayAdapterLifecycleMixin:
         task.add_done_callback(_done)
         return task
 
-    async def _handoff_watcher(self, interval: float = 5.0, drain_timeout: float = 30.0) -> None:
+    async def _handoff_watcher(self, interval: float = 2.0, drain_timeout: float = 30.0) -> None:
         """Process pending CLI→gateway session handoffs from ``state.db``: claim atomically (pending
         → running), re-bind the home channel to the CLI session_id, dispatch a synthetic event, mark
         ``completed``/``failed``."""
