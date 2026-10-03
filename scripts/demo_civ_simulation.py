@@ -26,9 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from hermes.platform.bots.identity import (
-    BotIdentityBundle,
     BotIdentitySpec,
-    compute_bundle_hash,
     compute_sha256,
 )
 from hermes.platform.bots.identity_manager import IdentityManager
@@ -40,6 +38,7 @@ from hermes.platform.bots.native_civ import (
     native_compute_sha256,
 )
 from hermes.platform.bots.spec import BotSpec
+from hermes.platform.civilization.delegation import deliberate_and_promote_proposal
 from hermes.platform.civilization.manager import CivilizationManager
 from hermes.platform.civilization.models import (
     RULE_TYPE_ADVISORY,
@@ -49,10 +48,9 @@ from hermes.platform.civilization.models import (
 from hermes.platform.council.manager import CouncilManager
 from hermes.platform.council.spec import CouncilSpec
 from hermes.platform.evolution.bot_evolution import (
-    RISK_HIGH,
     RISK_LOW,
     STATUS_APPROVED,
-    STATUS_PROMOTED,
+    STATUS_REVIEW,
     STATUS_ROLLED_BACK,
     BotEvolutionManager,
     StaleBaseVersionError,
@@ -372,7 +370,7 @@ def main() -> int:
         )
         info("Experience Event ID", exp.id)
 
-        step("Submitting and evaluating SAFE evolution proposal...")
+        step("Submitting SAFE evolution proposal and promoting via governed route...")
         proposal = evo_mgr.create_proposal(
             bot_id="architect-bot",
             base_version_hash=active_arch.bundle_hash,
@@ -384,19 +382,24 @@ def main() -> int:
         info("Proposal ID", proposal.id)
         info("Initial Status", proposal.status)
 
-        evo_mgr.update_status(proposal.id, STATUS_APPROVED, active_arch.bundle_hash)
-        evo_mgr.update_status(proposal.id, STATUS_PROMOTED, active_arch.bundle_hash)
-
-        # Promote to v2
-        new_values = f"{arch_bundle.values}\n{proposal.proposed_values_patch}"
-        new_bundle = BotIdentityBundle(
-            soul=arch_bundle.soul,
-            identity=arch_bundle.identity,
-            values=new_values,
-            bot_id="architect-bot",
-            bundle_hash=compute_bundle_hash(arch_bundle.soul, arch_bundle.identity, new_values),
+        # Governed promotion route (audit B1/M5): requires a named human
+        # approver plus an accepted evaluation, and walks the full FSM chain
+        # draft -> review -> approved -> canary -> promoted atomically.
+        promo_result = deliberate_and_promote_proposal(
+            proposal.id,
+            council_id="arch-sec-council",
+            decision_summary="Council ratified session-ticket caching evolution.",
+            approver="demo-operator",
+            evaluation={"accepted": True, "reason": "demo holdout evaluation accepted"},
+            event_store=event_store,
         )
-        v2 = id_mgr.create_version("architect-bot", new_bundle, parent_id=active_arch.id, activate=True)
+        promoted_prop = evo_mgr.get_proposals("architect-bot")[0]
+        assert promoted_prop.status == "promoted"
+        info("FSM Chain Walked", "draft -> review -> approved -> canary -> promoted")
+        info("Approver", promo_result["approver"])
+
+        v2 = id_mgr.get_active_version("architect-bot")
+        assert v2 is not None
         info("Applied Evolution", f"ArchitectBot upgraded to v{v2.version}")
         assert v2.version == 2
 
@@ -408,8 +411,15 @@ def main() -> int:
             rationale="Stale proposal based on v1",
             proposed_values_patch="Stale patch",
         )
+        # FSM: draft -> review is legal (not a gate); the stale-base guard
+        # fires on the first gate transition (review -> approved) against v2.
+        evo_mgr.update_status(stale_prop.id, STATUS_REVIEW, v2.bundle_hash)
         try:
-            evo_mgr.update_status(stale_prop.id, STATUS_APPROVED, current_bot_version_hash=v2.bundle_hash)
+            evo_mgr.update_status(
+                stale_prop.id, STATUS_APPROVED,
+                current_bot_version_hash=v2.bundle_hash,
+                approver="demo-operator",
+            )
             raise AssertionError("Stale proposal was not rejected!")
         except StaleBaseVersionError:
             success("StaleBaseVersionError: Drift detected! Evolution rejected against superseded version.")
