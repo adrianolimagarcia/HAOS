@@ -5,10 +5,12 @@ the sole promptable payload, which prevents a stale or over-broad projection
 from bypassing scope and supersession policy.
 """
 from __future__ import annotations
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore, MemoryRecord
 from hermes.platform.context.memory.access import MemoryAccessContext
+from hermes.platform.context.memory.recency import age_days, apply_recency, is_pinned, keep_rate_from_env
 
 #: Below this a block is a provenance header with no payload left: it stops being memory and
 #: becomes prompt noise. It is also the reservation held back for each not-yet-rendered hit.
@@ -44,10 +46,12 @@ class RetrievalHit:
 class HybridMemoryRetriever:
     """Fuses FTS and optional vector ranks with weighted reciprocal-rank fusion."""
 
-    def __init__(self, store: CanonicalMemoryStore, vector_search: Optional[Callable[[str, Sequence[str], int], Sequence[str]]] = None, metrics: Optional[Any] = None) -> None:
+    def __init__(self, store: CanonicalMemoryStore, vector_search: Optional[Callable[[str, Sequence[str], int], Sequence[str]]] = None, metrics: Optional[Any] = None, keep_rate: Optional[float] = None) -> None:
         self.store = store
         self.vector_search = vector_search
         self.metrics = metrics
+        # Recency decay (absorvido do CAMEL): None -> env HAOS_MEMORY_RECENCY_KEEP_RATE.
+        self.keep_rate = keep_rate if keep_rate is not None else keep_rate_from_env()
 
     def _count(self, name: str, amount: int = 1) -> None:
         if self.metrics is not None and amount:
@@ -57,7 +61,10 @@ class HybridMemoryRetriever:
     def _rrf(rank: int, weight: float, k: int = 60) -> float:
         return weight / float(k + rank)
 
-    def retrieve(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000, access: Optional[MemoryAccessContext] = None) -> List[RetrievalHit]:
+    def retrieve(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000, access: Optional[MemoryAccessContext] = None, now: Optional[float] = None) -> List[RetrievalHit]:
+        # Um único instante por chamada: com now=None todas as idades saem do mesmo relógio,
+        # então o ranking não muda entre records por microsegundos de drift.
+        reference = time.time() if now is None else now
         scopes = tuple(dict.fromkeys(allowed_scopes))
         if not scopes or limit <= 0 or budget_chars <= 0:
             return []
@@ -93,6 +100,16 @@ class HybridMemoryRetriever:
 
         chosen: List[RetrievalHit] = []
         used = 0
+        # Recency decay (absorvido do CAMEL): a relevância RRF funde os canais e o decaimento
+        # reordena o resultado no único ponto onde isso é decidido. Pinados ficam em peso 1.0
+        # (SYSTEM do CAMEL): memória fundacional não desaparece do recall por ser antiga.
+        # `now` é injetável para o ranking ser reproduzível em teste; a função pura nunca lê relógio.
+        decayed: Dict[str, float] = {}
+        for record_id, relevance in ranks.items():
+            record = by_id[record_id]
+            decayed[record_id] = apply_recency(
+                relevance, age_days(record.valid_from, now=reference), self.keep_rate, pinned=is_pinned(record),
+            )
         # O que um hit pode ocupar de fato no prompt é, no máximo, a cota justa de um hit: o
         # render corta o que passar disso. Cobrar ``len(content)`` integral fazia um registro de
         # 60k esgotar o budget e derrubar todos os menores depois dele — justamente os que
@@ -100,7 +117,7 @@ class HybridMemoryRetriever:
         share = max(1, budget_chars // max(1, limit))
         # Same logical memory is emitted once: latest active revision wins.
         seen_logical = set()
-        for record_id, score in sorted(ranks.items(), key=lambda item: item[1], reverse=True):
+        for record_id, score in sorted(decayed.items(), key=lambda item: item[1], reverse=True):
             record = by_id[record_id]
             if record.logical_id in seen_logical:
                 continue
@@ -115,7 +132,7 @@ class HybridMemoryRetriever:
                 break
         return chosen
 
-    def format_context(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000, access: Optional[MemoryAccessContext] = None) -> str:
+    def format_context(self, query: str, allowed_scopes: Sequence[str], limit: int = 8, budget_chars: int = 6000, access: Optional[MemoryAccessContext] = None, now: Optional[float] = None) -> str:
         """Render the recalled records as one prompt-ready block, hard-capped at ``budget_chars``.
 
         The cap is a contract, not a hint. This string is appended to the user message on every
@@ -128,7 +145,7 @@ class HybridMemoryRetriever:
         marked in the text: silently cutting memory would let the model read a fragment as if it
         were the whole record, and dropping it outright would hide the most relevant hit.
         """
-        hits = self.retrieve(query, allowed_scopes, limit, budget_chars, access)
+        hits = self.retrieve(query, allowed_scopes, limit, budget_chars, access, now=now)
         if not hits:
             return ""
         blocks = [self._render(hit) for hit in hits]

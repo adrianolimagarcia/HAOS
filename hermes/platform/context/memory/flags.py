@@ -55,6 +55,11 @@ _ENV_ALIASES: Dict[str, str] = {
 _TRUTHY = frozenset({"1", "true", "yes"})
 _FALSY = frozenset({"0", "false", "no"})
 
+#: ``HAOS_MEMORY_*`` names that are real settings but not cutover stages (the
+#: recency decay reads its own value directly). Known here so the operator
+#: warning below stays a signal about genuinely-ignored names.
+_NON_STAGE_ENVS = frozenset({"HAOS_MEMORY_RECENCY_KEEP_RATE"})
+
 
 def _parse_bool(name: str, raw: str) -> bool:
     value = raw.strip().lower()
@@ -202,7 +207,7 @@ class MemoryFeatureFlags:
             if raw is not None:
                 requested[stage] = _parse_bool(env_name, raw)
         for env_name in os.environ:
-            if env_name.startswith("HAOS_MEMORY_") and env_name not in _ENV_ALIASES:
+            if env_name.startswith("HAOS_MEMORY_") and env_name not in _ENV_ALIASES and env_name not in _NON_STAGE_ENVS:
                 logger.warning(
                     "%s names no cutover stage in this build and is ignored (known: %s)",
                     env_name,
