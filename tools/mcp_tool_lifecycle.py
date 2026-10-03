@@ -261,13 +261,24 @@ def _signal_mcp_process(pid: int, sig: int, server_name: str, pgid: Optional[int
     an MCP child exits and is reaped the kernel may recycle its PID/PGID onto an unrelated
     process group; signalling the stale number would kill a stranger (observed: a recycled
     PGID landing on a desktop browser's session leader). When ``expected_start`` was captured
-    at spawn and no longer matches, skip entirely. Without a baseline (no /proc — macOS — or
-    the capture raced the child's exit) fall through to the legacy best-effort path."""
-    if expected_start is not None and _leader_start_time(pid) != expected_start:
-        logger.debug(
-            "Skip signalling MCP pid %d (%s): start-time mismatch — PID was recycled; "
-            "refusing to kill an unrelated process group.", pid, server_name)
-        return
+    at spawn and no longer matches — compared drift-tolerantly, because same-host readings
+    drift ~1 s on macOS (#117505) and exact equality skipped live, legitimately-owned servers
+    — skip entirely. Without a baseline (the capture raced the child's exit), or when the
+    current reading is unreadable (leader reaped: POSIX never reuses a PGID while a member
+    lives, so its reparented grandchildren are still ours), fall through to the legacy
+    best-effort path."""
+    if expected_start is not None:
+        current = _leader_start_time(pid)
+        if current is not None:
+            try:
+                from gateway.status import start_time_fingerprints_match
+                if not start_time_fingerprints_match(expected_start, current):
+                    logger.debug(
+                        "Skip signalling MCP pid %d (%s): start-time mismatch — PID was recycled; "
+                        "refusing to kill an unrelated process group.", pid, server_name)
+                    return
+            except (TypeError, ValueError):
+                pass  # junk fingerprints: best-effort, never break signalling
     killpg = getattr(os, "killpg", None)
     if pgid is not None and killpg is not None:
         if my_pgid is not None and pgid == my_pgid:
