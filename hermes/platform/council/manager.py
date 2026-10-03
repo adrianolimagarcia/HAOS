@@ -430,6 +430,7 @@ class CouncilManager:
         action_refs: Optional[List[str]] = None,
         evidence_refs: Optional[List[str]] = None,
         correlation_id: Optional[str] = None,
+        deliberation: Optional[str] = None,
     ) -> DecisionRecord:
         """Synthesize independent positions and record the binding DecisionRecord.
 
@@ -438,6 +439,14 @@ class CouncilManager:
         ValueError e NENHUM evento é anexado (a sessão permanece deliberando).
         M6 fix: a decisão materializa a terminalidade 'completed' diretamente,
         respeitando _LEGAL_TRANSITIONS (recusada se a sessão já está terminal).
+
+        Deliberation provenance (audit hardening): pass ``deliberation="real"``
+        ONLY when member positions were produced by an actual model executor
+        (CouncilDebateRunner derives this from ``MemberRunner.uses_mock``).
+        Omitted/None is fail-closed: the record is stamped
+        ``deliberation="facade"`` with ``ratification="automated"`` metadata and
+        a WARNING is logged, so a scripted/mock decision can never masquerade as
+        real deliberation in the audit trail.
         """
         _, sessions, _ = self._state()
         session = sessions.get(session_id)
@@ -456,6 +465,28 @@ class CouncilManager:
                 f"quorum requires >= {required_quorum})"
             )
 
+        # Fail-closed provenance: anything other than explicit "real" is facade.
+        if deliberation not in ("real", "facade"):
+            if deliberation is not None:
+                logger.warning(
+                    "record_decision: unknown deliberation provenance %r for session "
+                    "%s; coercing to 'facade' (fail-closed)",
+                    deliberation, session_id,
+                )
+            deliberation = "facade"
+
+        record_metadata: Dict[str, Any] = {}
+        if deliberation == "facade":
+            record_metadata["ratification"] = "automated"
+            logger.warning(
+                "Council decision for session %s (council %s) is recorded with "
+                "deliberation='facade': member positions were scripted or produced "
+                "by the mock MemberRunner — this is NOT real model deliberation. "
+                "See hermes/platform/council/debate_runner.py module docstring for "
+                "the runbook to wire a real model executor.",
+                session_id, session.council_id,
+            )
+
         decision_id = f"dec-{session.council_id}-{uuid.uuid4().hex[:8]}"
         record = DecisionRecord(
             id=decision_id,
@@ -472,6 +503,8 @@ class CouncilManager:
             evidence_refs=evidence_refs or list(session.evidence_refs),
             leaf_refs=list(session.leaf_runs),
             correlation_id=correlation_id or session.correlation_id,
+            deliberation=deliberation,
+            metadata=record_metadata,
         )
 
         self.event_store.append(

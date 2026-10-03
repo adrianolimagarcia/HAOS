@@ -453,10 +453,13 @@ def deliberate_and_promote_proposal(
        HoldoutVerdict) instead of re-running the gate.
     3. Bundle fields are capped (see ``_apply_identity_patch``); overflow
        requires an explicit [[REPLACE]] patch.
-    4. The Council path stays a facade (members auto-approve); it records
-       ``ratification: automated`` metadata so the facade is never mistaken
-       for real deliberation. Actual model deliberation remains an open
-       operator decision.
+    4. The Council path stays a facade (members auto-approve); the resulting
+       DecisionRecord is explicitly stamped ``deliberation="facade"`` with
+       ``ratification: automated`` metadata and a WARNING is logged, so the
+       facade can never masquerade as real deliberation in the audit trail.
+       Actual model deliberation remains an open operator decision — see the
+       runbook in ``hermes/platform/council/debate_runner.py`` for how to wire
+       a real MemberRunner executor when that lands.
     """
     store = event_store or _store()
     evo_mgr = BotEvolutionManager(store)
@@ -537,6 +540,10 @@ def deliberate_and_promote_proposal(
                 decision="APPROVED",
                 confidence=1.0,
                 action_refs=[proposal_id],
+                # Explicit provenance: no model ever saw this proposal.
+                # "facade" is also the fail-closed default in record_decision,
+                # but stating it here keeps the audit intent unmissable.
+                deliberation="facade",
             )
             decision_id = decision.id
 

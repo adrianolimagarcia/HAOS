@@ -1,4 +1,67 @@
-"""Autonomous multi-turn Council deliberation runner with durable FSM, budgets, and policy gates."""
+"""Autonomous multi-turn Council deliberation runner with durable FSM, budgets, and policy gates.
+
+Deliberation provenance — facade vs real (audit hardening)
+==========================================================
+Every ``DecisionRecord`` written through this runner carries an explicit
+``deliberation`` field: ``"real"`` or ``"facade"``.
+
+- ``facade``: member positions were produced by the deterministic mock
+  executor inside ``MemberRunner`` (``MemberRunner.uses_mock is True``) —
+  scripted text with fabricated confidence (0.85) and cost. The record also
+  gets ``metadata.ratification = "automated"`` and a WARNING is logged by
+  ``CouncilManager.record_decision``. A facade decision is an audit trail of
+  the *pipeline*, never evidence of model judgment.
+- ``real``: positions came from an actual model executor injected into
+  ``MemberRunner``.
+
+The provenance is derived automatically from ``member_runner.uses_mock`` in
+``deliberate()`` — callers cannot mislabel a mock run as real.
+
+Runbook: wiring REAL model deliberation (operator decision pending)
+===================================================================
+No model execution is implemented here by design (cost/architecture decision
+is still open). When that decision lands, real deliberation is a *one-line
+composition change* — no FSM, manager, or record format changes needed:
+
+1. Implement a ``LeafExecutor`` callable::
+
+     def model_executor(prompt: str, context: dict) -> dict:
+         # context: bot_id, council_id, session_id, objective, round,
+         #          snapshot_id, assigned_model
+         response = call_my_llm(prompt, identity=context["snapshot_id"])
+         return {
+             "position": response.text,          # required
+             "confidence": response.confidence,  # from the model, not fabricated
+             "dissent": response.dissent,        # optional str
+             "evidence_refs": [...],             # optional
+             "tokens_used": response.usage.input_tokens + response.usage.output_tokens,
+             "cost_usd": response.usage.cost,    # feeds CouncilBudget.charge
+             "model": response.model_id,         # recorded on the Leaf/audit
+         }
+
+   Contract (``hermes.platform.council.member_runner.LeafExecutor``):
+   ``(prompt: str, context: dict) -> dict``. The runner freezes each member's
+   identity into a Leaf snapshot before the call and passes ``snapshot_id`` in
+   context — use it to pin the exact IdentityVersion for reproducibility.
+   Returned ``tokens_used``/``cost_usd`` are charged against the council
+   budget, so they must be the REAL usage numbers.
+
+2. Inject it when composing the stack::
+
+     member_runner = MemberRunner(identity_provider=id_mgr, executor=model_executor)
+     runner = CouncilDebateRunner(council_manager=council_mgr, member_runner=member_runner, ...)
+
+   ``MemberRunner.uses_mock`` becomes False and every DecisionRecord from
+   ``runner.deliberate(...)`` is stamped ``deliberation="real"`` automatically.
+
+3. Do NOT fabricate provenance elsewhere: ``CouncilManager.record_decision``
+   is fail-closed — omitting ``deliberation`` (or passing anything other than
+   the literal ``"real"``) records a facade with a warning. The human
+   promotion route in ``hermes/platform/civilization/delegation.py``
+   (``deliberate_and_promote_proposal``) deliberately keeps
+   ``deliberation="facade"`` with scripted APPROVE votes until the operator
+   decides to move it onto this runner.
+"""
 
 from __future__ import annotations
 
@@ -328,6 +391,14 @@ class CouncilDebateRunner:
                             action_gate = "approval_required"
 
             # Phase 5: Decision Recorded
+            # Provenance derived from the member runner itself, never from a
+            # caller-supplied flag: mock executor => facade, real injected
+            # executor => real. Unknown runner shapes fail closed to facade.
+            deliberation = (
+                "facade"
+                if getattr(self.member_runner, "uses_mock", True)
+                else "real"
+            )
             decision_record: DecisionRecord = self.council_manager.record_decision(
                 session_id=session_id,
                 synthesis=synthesis_result.synthesis,
@@ -336,6 +407,7 @@ class CouncilDebateRunner:
                 action_refs=[item.get("action", "action") for item in synthesis_result.action_plan],
                 evidence_refs=list(session.evidence_refs),
                 correlation_id=correlation_id,
+                deliberation=deliberation,
             )
 
             # Phase 6: Action Intent Scheduling (if approved, executable, and not dry run)
@@ -359,6 +431,7 @@ class CouncilDebateRunner:
                 "decision": decision_record.decision,
                 "synthesis": decision_record.synthesis,
                 "confidence": decision_record.confidence,
+                "deliberation": decision_record.deliberation,
                 "participants": decision_record.participants,
                 "dissent": decision_record.dissent,
                 "budget_usage": budget.to_dict(),

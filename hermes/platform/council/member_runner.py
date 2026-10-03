@@ -41,10 +41,22 @@ class MemberRunner:
         executor: Optional[LeafExecutor] = None,
     ):
         self.identity_provider = identity_provider
+        # Provenance flag (audit hardening): True when no real model executor
+        # was injected and positions come from the deterministic mock below.
+        # CouncilDebateRunner maps this to DecisionRecord.deliberation
+        # ('facade' when True, 'real' when False). Confidence values emitted by
+        # the mock (e.g. 0.85) are fabricated and must never be read as
+        # evidence of model judgment.
+        self.uses_mock = executor is None
         self.executor = executor or self._default_mock_executor
 
     def _default_mock_executor(self, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Deterministic fallback executor when no external LLM runner is configured."""
+        """Deterministic fallback executor when no external LLM runner is configured.
+
+        MOCK ONLY — outputs are scripted text with fabricated confidence/cost.
+        Any DecisionRecord produced through this path is stamped
+        ``deliberation='facade'`` (see CouncilManager.record_decision).
+        """
         bot_id = context.get("bot_id", "bot")
         objective = context.get("objective", "")
         round_num = context.get("round", 0)

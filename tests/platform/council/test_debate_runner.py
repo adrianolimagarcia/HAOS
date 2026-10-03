@@ -408,3 +408,65 @@ def test_c2_single_synthesizer_mode_decides_alone():
         dissent_map={"b": "no", "c": "no"}, decision_mode="consensus_with_dissent",
     )
     assert "BLOCKED" in consensus.decision
+
+
+# ---------------------------------------------------------------------------
+# Deliberation provenance: derived from MemberRunner.uses_mock, never caller-labeled
+# ---------------------------------------------------------------------------
+
+def test_mock_runner_records_facade_provenance(temp_env):
+    """Default MemberRunner (mock executor) => DecisionRecord.deliberation='facade'."""
+    runner = temp_env["runner"]
+    res = runner.deliberate(
+        council_id="arch-sec-council",
+        objective="Provenance check on mock path",
+        command_id="cmd-prov-mock",
+    )
+    assert res["deliberation"] == "facade"
+    dec = temp_env["council_mgr"].get_decision(res["decision_id"])
+    assert dec.deliberation == "facade"
+    assert dec.metadata.get("ratification") == "automated"
+
+
+def test_real_executor_records_real_provenance(temp_env):
+    """Injected (non-mock) executor => MemberRunner.uses_mock False => 'real'."""
+    from hermes.platform.council.inbox import CommandInbox
+    from hermes.platform.council.outbox import CouncilOutbox
+    from hermes.platform.council.synthesis import SynthesisBot
+
+    store = temp_env["store"]
+
+    def model_executor(prompt, context):
+        return {
+            "position": f"[{context.get('bot_id')}] real model output",
+            "confidence": 0.7,
+            "tokens_used": 50,
+            "cost_usd": 0.0005,
+        }
+
+    member_runner = MemberRunner(
+        identity_provider=IdentityManager(store), executor=model_executor
+    )
+    assert member_runner.uses_mock is False
+    runner = CouncilDebateRunner(
+        council_manager=temp_env["council_mgr"],
+        member_runner=member_runner,
+        synthesis_bot=SynthesisBot(),
+        civ_manager=temp_env["civ_mgr"],
+        inbox=CommandInbox(store),
+        outbox=CouncilOutbox(store),
+    )
+    res = runner.deliberate(
+        council_id="arch-sec-council",
+        objective="Provenance check on real-executor path",
+        command_id="cmd-prov-real",
+    )
+    assert res["deliberation"] == "real"
+    dec = temp_env["council_mgr"].get_decision(res["decision_id"])
+    assert dec.deliberation == "real"
+    assert "ratification" not in dec.metadata
+
+
+def test_member_runner_default_uses_mock_flag(temp_env):
+    mock_runner = MemberRunner(identity_provider=IdentityManager(temp_env["store"]))
+    assert mock_runner.uses_mock is True

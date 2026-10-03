@@ -252,7 +252,8 @@ def test_rollback_without_proposal_link_is_clean(store_env):
 # Council-fachada — automated ratification recorded as metadata
 # ---------------------------------------------------------------------------
 
-def test_council_fachada_records_automated_ratification(store_env):
+def test_council_fachada_records_automated_ratification(store_env, caplog):
+    import logging
     store = store_env["store"]
     prop = _make_proposal(store_env)
     env_c = store_env["council_mgr"]
@@ -261,15 +262,22 @@ def test_council_fachada_records_automated_ratification(store_env):
         id="oversight", purpose="Evolution oversight",
         members=["architect-bot", "security-bot"],
     ))
-    res = deliberate_and_promote_proposal(
-        prop.id, council_id="oversight", approver="adriano",
-        evaluation=APPROVED_EVAL, event_store=store,
-    )
+    with caplog.at_level(logging.WARNING, logger="hermes.platform.council.manager"):
+        res = deliberate_and_promote_proposal(
+            prop.id, council_id="oversight", approver="adriano",
+            evaluation=APPROVED_EVAL, event_store=store,
+        )
     decision = env_c.get_decision(res["council_decision_id"])
     assert decision is not None
+    # Proveniência explícita: a rota humana de promoção é fachada declarada.
+    assert decision.deliberation == "facade"
+    assert decision.metadata.get("ratification") == "automated"
     positions = decision.positions
     assert positions, "council decision must carry member positions"
     for pos in positions.values():
         assert pos.get("ratification") == "automated"
     meta = store_env["id_mgr"].get_active_version("architect-bot").bundle.metadata
     assert meta["ratification"] == "automated"
+    # A fachada também fica visível no log (WARNING), não só no evento.
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("facade" in msg for msg in warnings)

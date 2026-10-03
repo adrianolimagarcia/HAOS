@@ -313,3 +313,76 @@ def test_record_decision_completes_session_from_synthesis_phase(tmp_path):
     # replay por uma instância nova preserva o mesmo resultado
     mgr2 = CouncilManager(mgr.event_store)
     assert mgr2.get_session(sess.session_id).phase == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Deliberation provenance (real|facade) — auditável por construção
+# ---------------------------------------------------------------------------
+
+def _two_member_session(tmp_path):
+    mgr = _mgr(tmp_path)
+    mgr.register(CouncilSpec(
+        id="prov-council", purpose="provenance tests",
+        members=["a", "b"],
+    ))
+    sess = mgr.start_session("prov-council", "decide")
+    mgr.submit_position(sess.session_id, "a", "pos-a")
+    mgr.submit_position(sess.session_id, "b", "pos-b")
+    return mgr, sess
+
+
+def test_record_decision_fail_closed_facade_and_warning(tmp_path, caplog):
+    """Omitir provenância grava facade + ratification=automated + WARNING."""
+    import logging
+    mgr, sess = _two_member_session(tmp_path)
+    with caplog.at_level(logging.WARNING, logger="hermes.platform.council.manager"):
+        dec = mgr.record_decision(sess.session_id, "s", "approved")
+    assert dec.deliberation == "facade"
+    assert dec.metadata.get("ratification") == "automated"
+    warnings = [rec.getMessage() for rec in caplog.records if rec.levelno >= logging.WARNING]
+    assert any("facade" in msg for msg in warnings), "fachada deve emitir warning log"
+
+
+def test_record_decision_unknown_provenance_coerced_to_facade(tmp_path, caplog):
+    import logging
+    mgr, sess = _two_member_session(tmp_path)
+    with caplog.at_level(logging.WARNING, logger="hermes.platform.council.manager"):
+        dec = mgr.record_decision(
+            sess.session_id, "s", "approved", deliberation="real-ish"
+        )
+    assert dec.deliberation == "facade"
+    assert dec.metadata.get("ratification") == "automated"
+
+
+def test_record_decision_real_provenance_no_facade_warning(tmp_path, caplog):
+    import logging
+    mgr, sess = _two_member_session(tmp_path)
+    with caplog.at_level(logging.WARNING, logger="hermes.platform.council.manager"):
+        dec = mgr.record_decision(
+            sess.session_id, "s", "approved", deliberation="real"
+        )
+    assert dec.deliberation == "real"
+    assert "ratification" not in dec.metadata
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_decision_recorded_event_carries_deliberation(tmp_path):
+    """O evento civ.council.decision-recorded deve carregar a proveniência."""
+    mgr, sess = _two_member_session(tmp_path)
+    dec = mgr.record_decision(sess.session_id, "s", "approved")
+    events = mgr.event_store.get_all(name="civ.council.decision-recorded")
+    assert events
+    payload = events[-1].payload
+    assert payload["decision"]["deliberation"] == "facade"
+    # projeção reconstrói a proveniência a partir do replay
+    mgr2 = _mgr(tmp_path)
+    assert mgr2.get_decision(dec.id).deliberation == "facade"
+
+
+def test_decision_record_invalid_deliberation_rejected():
+    from hermes.platform.council.spec import DecisionRecord
+    with pytest.raises(ValueError, match="deliberation"):
+        DecisionRecord(
+            id="dec-x", council_id="c", council_session_id="s",
+            objective="o", participants=[], deliberation="maybe",
+        )

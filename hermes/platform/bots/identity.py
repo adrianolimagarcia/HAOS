@@ -288,6 +288,12 @@ class DecisionRecord:
     confidence: float = 1.0
     action_refs: List[str] = field(default_factory=list)
     policy_verified: bool = True
+    # Deliberation provenance (audit hardening): "real" means member positions
+    # were produced by an actual model executor (MemberRunner with a non-mock
+    # LeafExecutor); "facade" means positions were scripted or produced by the
+    # deterministic mock executor and are NOT evidence of model deliberation.
+    # Fail-closed default: an unset provenance is treated as "facade".
+    deliberation: str = "facade"
     created_at: float = field(default_factory=time.time)
     correlation_id: Optional[str] = None
     schema_version: int = 1
@@ -300,6 +306,11 @@ class DecisionRecord:
             raise ValueError("council_id is required")
         if not self.council_session_id.strip():
             raise ValueError("council_session_id is required")
+        if self.deliberation not in ("real", "facade"):
+            raise ValueError(
+                f"invalid deliberation provenance: {self.deliberation!r} "
+                "(must be 'real' or 'facade')"
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -324,6 +335,7 @@ class DecisionRecord:
                 "confidence",
                 "action_refs",
                 "policy_verified",
+                "deliberation",
                 "created_at",
                 "correlation_id",
                 "schema_version",

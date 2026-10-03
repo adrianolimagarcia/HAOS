@@ -148,10 +148,25 @@ def test_decision_record():
         decision="approved",
     )
     assert rec.decision == "approved"
+    # Fail-closed provenance default: unset deliberation is treated as facade.
+    assert rec.deliberation == "facade"
     d = rec.to_dict()
     restored = DecisionRecord.from_dict(d)
     assert restored.id == rec.id
     assert restored.synthesis == rec.synthesis
+    assert restored.deliberation == "facade"
+    # Explicit real provenance round-trips too.
+    rec_real = DecisionRecord(
+        id="dec-2", council_id="arch-council", council_session_id="sess-1",
+        objective="o", participants=[], deliberation="real",
+    )
+    assert DecisionRecord.from_dict(rec_real.to_dict()).deliberation == "real"
+    # Invalid provenance values are rejected at construction.
+    with pytest.raises(ValueError, match="deliberation"):
+        DecisionRecord(
+            id="dec-3", council_id="arch-council", council_session_id="sess-1",
+            objective="o", participants=[], deliberation="true",
+        )
 
 
 def test_botspec_with_identity_roundtrip():
