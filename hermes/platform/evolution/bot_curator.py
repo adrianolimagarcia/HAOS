@@ -13,6 +13,10 @@ Security invariants (identity-poisoning hardening):
   (defense-in-depth) and soul patches are only ever created as drafts;
   approval requires explicit_soul_change + human approver (enforced in
   BotEvolutionManager.update_status).
+- CAMEL #3 (opt-in): an injected ``critique_judge`` callable runs each
+  candidate rationale through the critique-refine loop (see
+  ``hermes.platform.evolution.critique_refine``) before it becomes a draft;
+  without a judge the curator behaves exactly as before (zero regression).
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from hermes.platform.bots.identity_manager import IdentityManager
 from hermes.platform.council.manager import CouncilManager
@@ -46,9 +50,21 @@ from hermes.platform.evolution.bot_evolution import (
     STATUS_ROLLED_BACK,
     sanitize_summary,
 )
+from hermes.platform.evolution.critique_refine import (
+    EVENT_CRITIQUE_ITERATION,
+    CritiqueVerdict,
+    TraceIteration,
+    critique_refine_loop,
+    format_critique_history,
+)
 from hermes.platform.observability.event_store import EventStore
+from hermes.platform.observability.events import Event
 
 logger = logging.getLogger("hermes.platform.evolution.bot_curator")
+
+#: CAMEL #3: curator-side critique-refine budget (kept small — the curator
+#: runs in a background cycle and the judge may be an LLM call).
+CRITIQUE_MAX_ITERATIONS = 2
 
 
 @dataclass
@@ -89,6 +105,8 @@ class EvolutionCurator:
         state_dir: Optional[Path] = None,
         profile_id: str = "default",
         curator_id: Optional[str] = None,
+        critique_judge: Optional[Callable[[str], Dict[str, Any]]] = None,
+        critique_criteria: Optional[Dict[str, Any]] = None,
     ):
         self.store = event_store
         self.id_mgr = id_mgr
@@ -96,6 +114,12 @@ class EvolutionCurator:
         self.council_mgr = council_mgr
         self.profile_id = profile_id
         self.curator_id = curator_id or f"curator-{os.getpid()}-{int(time.time())}"
+        # CAMEL #3 (opt-in): when a critique judge callable is injected, every
+        # candidate proposal passes through the critique-refine loop (max
+        # CRITIQUE_MAX_ITERATIONS iterations) BEFORE becoming a draft.
+        # Default None keeps behavior byte-identical (zero regression).
+        self.critique_judge = critique_judge
+        self.critique_criteria = critique_criteria
         
         if state_dir:
             self.state_dir = Path(state_dir)
@@ -228,6 +252,56 @@ class EvolutionCurator:
 
         return new_experiences, max_seq
 
+    def _critique_candidate(self, rationale: str) -> str:
+        """CAMEL #3 (opt-in): critique-refine a candidate rationale pre-draft.
+
+        - No judge injected -> returns the rationale UNTOUCHED (zero
+          regression: byte-identical to pre-CAMEL behavior).
+        - Judge injected -> loop (max ``CRITIQUE_MAX_ITERATIONS``), best text
+          (highest score sum) wins, early stop once accepted, and the
+          rationale gains ``critique_history`` metadata (hashes + verdicts
+          only — no raw judge text in the metadata, bounded size).
+        - Judge feedback is UNTRUSTED output: sanitized (``sanitize_summary``)
+          before it can steer the refined rationale (A3 defense-in-depth).
+        - Each evaluated iteration publishes
+          ``civ.evolution.critique_iteration`` on the canonical EventStore.
+        """
+        if self.critique_judge is None:
+            return rationale
+
+        base = rationale
+
+        def generator(feedback: Optional[Dict[str, Any]]) -> str:
+            if not feedback:
+                return base
+            fb = sanitize_summary(str(feedback.get("feedback", "")))
+            if not fb:
+                return base
+            return f"{base} | refinement: {fb}"
+
+        def on_iteration(trace: TraceIteration, verdict: CritiqueVerdict) -> None:
+            self.store.append(
+                Event(
+                    name=EVENT_CRITIQUE_ITERATION,
+                    payload={
+                        "proposal_candidate_hash": trace.text_hash,
+                        "iteration": trace.iteration,
+                        "verdict": verdict.to_dict(),
+                        "accepted": verdict.accepted,
+                    },
+                )
+            )
+
+        best_text, history = critique_refine_loop(
+            generator=generator,
+            judge=self.critique_judge,
+            max_iterations=CRITIQUE_MAX_ITERATIONS,
+            thresholds=self.critique_criteria,
+            on_iteration=on_iteration,
+        )
+        meta = format_critique_history(history)
+        return f"{best_text} | {meta}" if meta else best_text
+
     def synthesize_proposals(
         self,
         experiences: List[ExperienceEvent],
@@ -263,6 +337,9 @@ class EvolutionCurator:
                     sanitize_summary(f.summary) or "(redacted)" for f in failures
                 )
                 rationale = f"Corrective adaptation in domain '{domain}' after {len(failures)} failures: {failure_summaries}"
+                # CAMEL #3 opt-in: refine the rationale before it becomes a
+                # draft (no-op when no critique_judge is injected).
+                rationale = self._critique_candidate(rationale)
                 patch = f"## Domain Adaptation: {domain}\n- Enhanced verification and fallback procedures based on observed incidents.\n- Addressed: {failure_summaries}"
 
                 # NOTE: this creates a DRAFT only. A soul patch is never
@@ -283,6 +360,8 @@ class EvolutionCurator:
                     sanitize_summary(s.summary) or "(redacted)" for s in successes
                 )
                 rationale = f"Excellence reinforcement in domain '{domain}' across {len(successes)} validated executions."
+                # CAMEL #3 opt-in (same as Pattern A; no-op without judge).
+                rationale = self._critique_candidate(rationale)
                 patch = f"## Core Competency: {domain}\n- Proven track record of consistent success."
 
                 proposals_to_create.append({
