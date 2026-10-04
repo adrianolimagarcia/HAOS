@@ -363,14 +363,15 @@ def _run_single_child(
 
         duration = run.elapsed()
         entry = _build_result_entry(child, result, task_index, duration, schema)
-        if getattr(child, "_civ_task", None):
+        _civ = getattr(child, "_civ_task", None)
+        if isinstance(_civ, dict) and _civ.get("leaf_id") and _civ.get("bot_id"):
             entry["civilization"] = {
-                "bot_id": child._civ_task.get("bot_id"), "leaf_id": child._civ_task.get("leaf_id"),
-                "identity_version": child._civ_task.get("identity_version"),
+                "bot_id": _civ.get("bot_id"), "leaf_id": _civ.get("leaf_id"),
+                "identity_version": _civ.get("identity_version"),
             }
             try:
                 from hermes.platform.civilization.delegation import record_task_result
-                record_task_result(child._civ_task, entry)
+                record_task_result(_civ, entry)
             except Exception:
                 logger.debug("Could not record civilization completion", exc_info=True)
         run.append_sibling_write_reminder(entry)
