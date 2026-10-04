@@ -13,6 +13,8 @@ import logging
 import re
 import time
 import uuid
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -60,6 +62,283 @@ _CREATED = "civ.leaf.created"
 _COMPLETED = "civ.leaf.completed"
 _FAILED = "civ.leaf.failed"
 _ROUTED = "civ.delegate.routed"
+_RECOVERY = "civ.delegate.recovery"
+
+
+# ---------------------------------------------------------------------------
+# ADR-021 — Failure-recovery taxonomy
+# ---------------------------------------------------------------------------
+
+class RecoveryStrategy(str, Enum):
+    """Named recovery vocabulary (absorbed concept from CAMEL FailureHandlingConfig).
+
+    The router SUGGESTS a strategy; the parent/agent decides whether to act on
+    it. Every suggestion is an auditable ``civ.delegate.recovery`` event.
+    ``HALT`` is the fail-closed ceiling: past ``max_retries`` the parent must
+    give up and alert instead of re-delegating in a loop.
+    """
+
+    RETRY = "retry"
+    REPLAN = "replan"
+    REASSIGN = "reassign"
+    DECOMPOSE = "decompose"
+    CREATE_WORKER = "create_worker"
+    HALT = "halt"
+
+
+@dataclass(frozen=True)
+class RecoveryPolicy:
+    """Rollout knobs for the recovery taxonomy.
+
+    ``enabled_strategies=None`` means every strategy is available; a frozenset
+    restricts the escalation ladder (strategies outside it are skipped).
+    ``halt_on_max_retries=False`` keeps escalating past the ceiling — only for
+    experiments; the default is fail-closed.
+    """
+
+    max_retries: int = 3
+    enabled_strategies: Optional[frozenset] = None
+    halt_on_max_retries: bool = True
+
+
+_DEFAULT_RECOVERY_POLICY = RecoveryPolicy()
+
+# Escalation ladder for hard failures: try again, then move to a better-reputed
+# specialist (only when one can actually be named), then rethink the plan.
+_FAILURE_LADDER = (
+    RecoveryStrategy.RETRY,
+    RecoveryStrategy.REASSIGN,
+    RecoveryStrategy.REPLAN,
+    RecoveryStrategy.DECOMPOSE,
+    RecoveryStrategy.CREATE_WORKER,
+)
+# Light failures (a DONE that revalidates as insufficient) climb a gentler ladder.
+_INSUFFICIENT_LADDER = (
+    RecoveryStrategy.RETRY,
+    RecoveryStrategy.REPLAN,
+)
+_INSUFFICIENT_MARKER = "[insufficient"
+# A completed summary shorter than this, with no registered tool evidence, is
+# treated as an unverified DONE (CAMEL's is_task_result_insufficient analogue).
+_MIN_SUFFICIENT_SUMMARY_LEN = 8
+
+
+def _recovery_enabled() -> bool:
+    from .feature_flags import get_feature_flags
+    return get_feature_flags().recovery_enabled
+
+
+def _goal_slug(goal: Any) -> str:
+    return _slug(str(goal or "general"))
+
+
+def _is_insufficient_result(result: Dict[str, Any]) -> bool:
+    """Revalidate a declared success: empty/whitespace summary, an explicit
+    '[insufficient' marker, or a stub summary with no tool evidence."""
+    summary = str(result.get("summary") or "")
+    if not summary.strip():
+        return True
+    if summary.lstrip().lower().startswith(_INSUFFICIENT_MARKER):
+        return True
+    if len(summary.strip()) < _MIN_SUFFICIENT_SUMMARY_LEN:
+        evidence = result.get("tool_trace") or result.get("tool_calls") or []
+        try:
+            has_evidence = bool(len(evidence))
+        except TypeError:
+            has_evidence = False
+        if not has_evidence:
+            return True
+    return False
+
+
+def failure_profile(
+    store: EventStore,
+    bot_id: str,
+    goal_slug: str,
+) -> Dict[str, Any]:
+    """Aggregate the failure history for (bot_id, goal_slug) by replaying the
+    append-only event stream — pure function of the log, no new state.
+
+    Counts terminal leaf events whose payload carries this bot and whose goal
+    replays to the same slug (``civ.leaf.failed`` always; ``civ.leaf.completed``
+    only when revalidated ``status='insufficient'`` — ADR-021 treats an
+    insufficient DONE as a light failure). ``last_strategy`` comes from the most
+    recent ``civ.delegate.recovery`` suggestion for the same pair.
+    """
+    count = 0
+    last_status: Optional[str] = None
+    last_strategy: Optional[str] = None
+    for event in store.get_all():
+        payload = event.payload or {}
+        name = event.name
+        if name == _FAILED:
+            if payload.get("bot_id") != bot_id:
+                continue
+            if _goal_slug(payload.get("goal") or payload.get("leaf_id", "")) != goal_slug:
+                # failed payloads may lack the goal (timeout path); fall back to
+                # the routed event's goal via correlation id.
+                if not _correlation_matches_goal(store, payload, goal_slug):
+                    continue
+            count += 1
+            last_status = "failed"
+        elif name == _COMPLETED:
+            if payload.get("bot_id") != bot_id or payload.get("status") != "insufficient":
+                continue
+            if _goal_slug(payload.get("goal") or payload.get("leaf_id", "")) != goal_slug:
+                continue
+            count += 1
+            last_status = "insufficient"
+        elif name == _RECOVERY:
+            if payload.get("bot_id") != bot_id:
+                continue
+            if _goal_slug(payload.get("goal", "")) != goal_slug:
+                continue
+            last_strategy = str(payload.get("strategy", last_strategy or "")) or last_strategy
+    return {"count": count, "last_status": last_status, "last_strategy": last_strategy}
+
+
+def _correlation_matches_goal(store: EventStore, payload: Dict[str, Any], goal_slug: str) -> bool:
+    """Resolve a goal-less failed event's slug from its routed/created twin."""
+    leaf_id = payload.get("leaf_id")
+    if not leaf_id:
+        return False
+    for event in store.get_all(_ROUTED):
+        ev_payload = event.payload or {}
+        if ev_payload.get("leaf_id") == leaf_id:
+            return _goal_slug(ev_payload.get("goal", "")) == goal_slug
+    return False
+
+
+def _next_strategy(
+    attempt: int,
+    *,
+    insufficient: bool,
+    store: EventStore,
+    task: Dict[str, Any],
+    policy: RecoveryPolicy,
+) -> tuple[RecoveryStrategy, str, Optional[str]]:
+    """Pick the ladder strategy for ``attempt`` (1-based), honouring the
+    enabled-strategy filter and the fail-closed ceiling.
+
+    Returns (strategy, reason, suggested_bot). REASSIGN consults
+    SocietyManager.select_specialists when a better-reputed specialist exists
+    in the task's domain; CREATE_WORKER relies on the constitution-guarded
+    auto-create already in route_task (no duplicated logic).
+    """
+    if policy.halt_on_max_retries and attempt >= policy.max_retries:
+        return RecoveryStrategy.HALT, "max_retries_exceeded", None
+
+    ladder = _INSUFFICIENT_LADDER if insufficient else _FAILURE_LADDER
+    enabled = policy.enabled_strategies
+    chain = [s for s in ladder if enabled is None or s in enabled]
+    if not chain:
+        return RecoveryStrategy.HALT, "no_enabled_strategies", None
+    start = min(attempt, len(chain)) - 1
+
+    suggested_bot: Optional[str] = None
+    reason = "insufficient_result" if insufficient else "delegate_failure"
+    for strategy in chain[start:]:
+        if strategy is RecoveryStrategy.REASSIGN:
+            suggested_bot = _best_specialist(store, task)
+            if suggested_bot is None:
+                # No concrete target to name — escalate to the next strategy
+                # instead of suggesting a reassignment nobody can execute.
+                continue
+            reason = "reassign_to_higher_reputation"
+        return strategy, reason, suggested_bot
+    # Every remaining option needed a target we could not name: still name the
+    # last enabled strategy (taxonomy is informative), just without a bot.
+    return chain[-1], reason, None
+
+
+def _best_specialist(store: EventStore, task: Dict[str, Any]) -> Optional[str]:
+    """Rank active bots for the task domain via SocietyManager.select_specialists.
+
+    Returns a bot other than the failing one when one exists (the reassign
+    target); None when the lookup fails or no alternative is available —
+    REASSIGN is then still named as the strategy, just without a concrete bot.
+    """
+    failing = task.get("bot_id")
+    try:
+        manager = BotSpecManager(store)
+        candidates = sorted(_active_bots(manager))
+        if not candidates:
+            return None
+        domain = task.get("domain") or "general"
+        ranked = SocietyManager(store).select_specialists(
+            candidates, domain, count=len(candidates),
+        )
+        for bot_id, _score in ranked:
+            if bot_id != failing:
+                return bot_id
+    except Exception as exc:
+        logger.debug("REASSIGN specialist lookup failed: %s", exc)
+    return None
+
+
+def suggest_recovery(
+    task: Dict[str, Any],
+    result: Dict[str, Any],
+    *,
+    store: Optional[EventStore] = None,
+    policy: Optional[RecoveryPolicy] = None,
+) -> Optional[Dict[str, Any]]:
+    """Suggest (never auto-execute) a recovery strategy for a failed or
+    insufficient delegation and persist it as ``civ.delegate.recovery``.
+
+    Called by delegate_tool AFTER record_task_result on the failure/timeout
+    paths; the suggestion is attached to the parent-visible failure entry as
+    ``civilization.recovery`` — informational, the parent decides. Returns None
+    when recovery is disabled (HAOS_CIV_RECOVERY=0), the task is unrouted, or
+    the result is a healthy success. Failures here are swallowed: recovery must
+    never break the delegation path.
+    """
+    try:
+        if not _recovery_enabled():
+            return None
+        if not isinstance(task, dict) or not isinstance(result, dict):
+            return None
+        bot_id = task.get("bot_id")
+        leaf_id = task.get("leaf_id")
+        if not bot_id or not leaf_id:
+            return None
+
+        status = str(result.get("status", "completed"))
+        insufficient = status == "completed" and _is_insufficient_result(result)
+        if status == "completed" and not insufficient:
+            return None  # healthy success: nothing to recover
+
+        store = store or _store()
+        pol = policy or _DEFAULT_RECOVERY_POLICY
+        goal_slug = _goal_slug(task.get("goal", ""))
+        profile = failure_profile(store, bot_id, goal_slug)
+        # suggest_recovery runs AFTER record_task_result, so the current
+        # failure is already in the replayed count: attempt == count. The max()
+        # guards a direct call made before any terminal event was logged.
+        attempt = max(profile["count"], 1)
+
+        strategy, reason, suggested_bot = _next_strategy(
+            attempt, insufficient=insufficient, store=store, task=task, policy=pol,
+        )
+        payload = {
+            "leaf_id": leaf_id,
+            "bot_id": bot_id,
+            "goal": task.get("goal", ""),
+            "attempt": attempt,
+            "strategy": strategy.value,
+            "reason": reason,
+            "failure_count": profile["count"],
+            "max_retries": pol.max_retries,
+            "trigger_status": "insufficient" if insufficient else status,
+            "created_at": time.time(),
+        }
+        if suggested_bot:
+            payload["suggested_bot"] = suggested_bot
+        store.append(Event(name=_RECOVERY, payload=payload, correlation_id=leaf_id))
+        return payload
+    except Exception as exc:
+        logger.debug("Recovery suggestion failed (ignored): %s", exc)
+        return None
 
 # Explicit domain mapping for explainable specialist routing.
 _DOMAINS = {
@@ -328,14 +607,25 @@ def record_task_result(
     if not bot_id or not leaf_id:
         return
 
+    # ADR-021 revalidation: a declared DONE whose summary is empty, carries the
+    # '[insufficient' marker, or is a stub without tool evidence is recorded as
+    # status='insufficient'. Deliberate choice: the leaf event KEEPS its
+    # completed name (no downgrade to civ.leaf.failed) so existing e2e consumers
+    # of the terminal-event vocabulary do not break; only the payload status and
+    # the reputation delta change (neutral 0.0 instead of +0.1). With
+    # HAOS_CIV_RECOVERY=0 this whole block is inert — byte-identical pre-ADR.
+    insufficient = success and _recovery_enabled() and _is_insufficient_result(result)
+    event_status = "insufficient" if insufficient else status
+
     store.append(
         Event(
             name=name,
             payload={
                 "leaf_id": leaf_id,
                 "bot_id": bot_id,
-                "status": status,
+                "status": event_status,
                 "summary": summary,
+                "goal": task.get("goal", ""),
                 "completed_at": time.time(),
             },
             correlation_id=leaf_id,
@@ -349,8 +639,12 @@ def record_task_result(
         society_mgr = SocietyManager(store)
         parent_bot_id = task.get("parent_bot_id")
         actor = parent_bot_id if (parent_bot_id and parent_bot_id != bot_id) else None
-        delta = 0.1 if success else -0.15
-        outcome = "success" if success else "failure"
+        if insufficient:
+            delta = 0.0
+            outcome = "neutral"
+        else:
+            delta = 0.1 if success else -0.15
+            outcome = "success" if success else "failure"
 
         society_mgr.record_reputation(
             subject_bot=bot_id,

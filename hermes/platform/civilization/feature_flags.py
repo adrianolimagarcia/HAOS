@@ -11,6 +11,8 @@ Environment variables:
   HAOS_CIV_SOCIETY_ENABLED: "1"/"0". Default: "1"
   HAOS_CIV_EVOLUTION_ENABLED: "1"/"0". Default: "1"
   HAOS_CIV_CONSTITUTION_ENABLED: "1"/"0". Default: "1"
+  HAOS_CIV_RECOVERY: "1"/"0". ADR-021 failure-recovery taxonomy (insufficient
+                       revalidation + recovery suggestions). Default: "1"
   HAOS_CIV_NATIVE_SIMD: "1"/"0". Force enable/disable native Rust SIMD bridge.
 """
 
@@ -37,6 +39,7 @@ class CivFeatureFlags:
     society_enabled: bool = field(default_factory=lambda: _env_bool("HAOS_CIV_SOCIETY_ENABLED", True))
     evolution_enabled: bool = field(default_factory=lambda: _env_bool("HAOS_CIV_EVOLUTION_ENABLED", True))
     constitution_enabled: bool = field(default_factory=lambda: _env_bool("HAOS_CIV_CONSTITUTION_ENABLED", True))
+    recovery_enabled: bool = field(default_factory=lambda: _env_bool("HAOS_CIV_RECOVERY", True))
     canary_bots: Set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
@@ -74,6 +77,9 @@ class CivFeatureFlags:
             return self.evolution_enabled
         elif feature in ("constitution", "policy", "guardrails"):
             return self.constitution_enabled
+        elif feature in ("recovery", "failure-handling"):
+            # ADR-021: failure-recovery taxonomy (suggestion + revalidation).
+            return self.recovery_enabled
         else:
             return self.civ_enabled
 
@@ -84,6 +90,7 @@ class CivFeatureFlags:
             "society_enabled": self.society_enabled,
             "evolution_enabled": self.evolution_enabled,
             "constitution_enabled": self.constitution_enabled,
+            "recovery_enabled": self.recovery_enabled,
             "canary_mode": bool(self.canary_bots),
             "canary_bots": sorted(self.canary_bots),
         }
