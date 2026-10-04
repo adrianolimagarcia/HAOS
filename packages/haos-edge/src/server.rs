@@ -2565,6 +2565,99 @@ async fn timeline_fast_handler(
 // (`--sessions-db`) preservando a ordem, deduplica caminhos por realpath e IDs pela primeira
 // ocorrência, aplica LIMIT 30 por banco, deriva título da primeira mensagem do usuário quando
 // ausente, formata timestamps no fuso local e corta o resultado final em 40 itens.
+//
+// Campos extras da projeção (extraídos da branch residual sa-2-868eca1b / commit 4f4640f7b2,
+// portados campo a campo sobre o handler atual sem regredir o envelope nem a agregação
+// multi-DB): message_count, tool_call_count, last_active (frescor via MAX(messages.timestamp)
+// combinado com last_activity_at/started_at), archived, pinned, parent_session_id,
+// profile_name e cwd. Bancos legados sem essas colunas (ou sem a tabela messages com
+// timestamp) caem na consulta canônica de 4 colunas com o shape antigo, mantendo a
+// paridade diferencial com standalone.py — exatamente o contrato coberto por
+// tests/haos_edge/test_readonly_sse_contract.py::test_session_parity_fixture_is_required.
+
+/// Colunas extras da projeção rica; presente apenas quando o banco tem o schema
+/// completo de `sessions` + `messages.timestamp` (hermes_state_common.py).
+struct SessionsFastExtras {
+    message_count: i64,
+    tool_call_count: i64,
+    last_active_raw: Option<f64>,
+    archived: bool,
+    pinned: bool,
+    parent_session_id: Option<String>,
+    profile_name: Option<String>,
+    cwd: Option<String>,
+}
+
+/// Projeção rica alinhada ao schema canônico; o ORDER BY por DB permanece idêntico ao
+/// canônico para não alterar a seleção LIMIT 30 nem a ordenação global por updated_ts.
+const SESSIONS_FAST_RICH_SQL: &str = "SELECT s.id, s.title, s.started_at, s.last_activity_at, \
+    s.message_count, s.tool_call_count, \
+    MAX(COALESCE(s.last_activity_at, s.started_at), \
+        COALESCE((SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = s.id), s.started_at)) AS last_active, \
+    s.archived, s.pinned, s.parent_session_id, s.profile_name, s.cwd \
+    FROM sessions s ORDER BY COALESCE(s.last_activity_at, s.started_at) DESC LIMIT ?1";
+
+const SESSIONS_FAST_CANONICAL_SQL: &str =
+    "SELECT id, title, started_at, last_activity_at FROM sessions \
+     ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ?1";
+
+fn sessions_fast_db_rows(
+    conn: &rusqlite::Connection,
+    limit: i64,
+) -> Vec<(
+    String,
+    Option<String>,
+    Option<f64>,
+    Option<f64>,
+    Option<SessionsFastExtras>,
+)> {
+    if let Ok(mut stmt) = conn.prepare(SESSIONS_FAST_RICH_SQL) {
+        let rows = stmt.query_map([limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<f64>>(2)?,
+                row.get::<_, Option<f64>>(3)?,
+                Some(SessionsFastExtras {
+                    message_count: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                    tool_call_count: row.get::<_, Option<i64>>(5)?.unwrap_or(0),
+                    last_active_raw: row.get::<_, Option<f64>>(6)?,
+                    archived: row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+                    pinned: row.get::<_, Option<i64>>(8)?.unwrap_or(0) != 0,
+                    parent_session_id: row.get::<_, Option<String>>(9)?,
+                    profile_name: row.get::<_, Option<String>>(10)?,
+                    cwd: row.get::<_, Option<String>>(11)?,
+                }),
+            ))
+        });
+        // SQLite só resolve nomes de coluna na EXECUÇÃO (prepare adia): um banco com
+        // schema parcial (ex.: messages sem `timestamp`) prepara OK e falha em
+        // query_map/step. Nesse caso cai na consulta canônica em vez de retornar vazio.
+        if let Ok(iter) = rows {
+            let collected: Vec<_> = iter.flatten().collect();
+            if !collected.is_empty() {
+                return collected;
+            }
+        }
+    }
+    // Schema legado: 4 colunas canônicas, sem campos extras (shape antigo preservado).
+    let Ok(mut stmt) = conn.prepare(SESSIONS_FAST_CANONICAL_SQL) else {
+        return Vec::new();
+    };
+    let rows = stmt.query_map([limit], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<f64>>(2)?,
+            row.get::<_, Option<f64>>(3)?,
+            None,
+        ))
+    });
+    match rows {
+        Ok(iter) => iter.flatten().collect(),
+        Err(_) => Vec::new(),
+    }
+}
 
 fn format_local_timestamp(ts: Option<f64>) -> String {
     let Some(ts) = ts else { return String::new() };
@@ -2622,6 +2715,106 @@ fn derive_title(raw_title: Option<String>, sid: &str, conn: &rusqlite::Connectio
     format!("Session {sid}")
 }
 
+#[cfg(test)]
+mod sessions_fast_tests {
+    use super::*;
+
+    const RICH_SCHEMA: &str = "CREATE TABLE sessions (
+        id TEXT, title TEXT, source TEXT, started_at REAL, last_activity_at REAL,
+        message_count INTEGER, tool_call_count INTEGER, archived INTEGER, hidden INTEGER,
+        pinned INTEGER, parent_session_id TEXT, profile_name TEXT, model TEXT, cwd TEXT
+    );
+    CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL);";
+
+    fn conn_with(schema: &str, inserts: &[&str]) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(schema).unwrap();
+        for sql in inserts {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn
+    }
+
+    #[test]
+    fn rich_schema_returns_extras_with_real_last_active() {
+        // last_activity_at=20 mas mensagem com timestamp=99: last_active deve ser o
+        // frescor real (99), não o updated_ts (20).
+        let conn = conn_with(
+            RICH_SCHEMA,
+            &[
+                "INSERT INTO sessions VALUES ('s1','T','cli',10.0,20.0,7,3,0,0,1,'p1','prof','m','/work');",
+                "INSERT INTO messages (session_id, role, content, timestamp) VALUES ('s1','user','oi',99.0);",
+            ],
+        );
+        let rows = sessions_fast_db_rows(&conn, 30);
+        assert_eq!(rows.len(), 1);
+        let (sid, _, _, _, extras) = &rows[0];
+        assert_eq!(sid, "s1");
+        let ex = extras.as_ref().expect("rich schema must produce extras");
+        assert_eq!(ex.message_count, 7);
+        assert_eq!(ex.tool_call_count, 3);
+        assert!(!ex.archived);
+        assert!(ex.pinned);
+        assert_eq!(ex.parent_session_id.as_deref(), Some("p1"));
+        assert_eq!(ex.profile_name.as_deref(), Some("prof"));
+        assert_eq!(ex.cwd.as_deref(), Some("/work"));
+        assert_eq!(ex.last_active_raw, Some(99.0));
+    }
+
+    #[test]
+    fn rich_schema_without_messages_falls_back_to_activity() {
+        let conn = conn_with(
+            RICH_SCHEMA,
+            &["INSERT INTO sessions VALUES ('s2',NULL,'cli',10.0,20.0,0,0,1,0,0,NULL,NULL,NULL,NULL);"],
+        );
+        let rows = sessions_fast_db_rows(&conn, 30);
+        let ex = rows[0].4.as_ref().unwrap();
+        // Sem mensagens: MAX(...) vira COALESCE(last_activity_at, started_at) = 20.
+        assert_eq!(ex.last_active_raw, Some(20.0));
+        assert!(ex.archived);
+        assert!(!ex.pinned);
+    }
+
+    #[test]
+    fn legacy_schema_without_extras_columns_falls_back_to_canonical() {
+        // Schema legado (sem message_count/archived/...): prepare da consulta rica
+        // falha e o handler mantém o shape antigo de 4 colunas, sem extras.
+        let conn = conn_with(
+            "CREATE TABLE sessions (id TEXT, title TEXT, started_at REAL, last_activity_at REAL);
+             INSERT INTO sessions VALUES ('old','T',1.0,2.0);",
+            &[],
+        );
+        let rows = sessions_fast_db_rows(&conn, 30);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "old");
+        assert!(
+            rows[0].4.is_none(),
+            "legacy schema must not fabricate extras"
+        );
+    }
+
+    #[test]
+    fn partial_schema_messages_without_timestamp_falls_back_to_canonical() {
+        // prepare() adia a resolução de nomes: messages sem `timestamp` prepara OK e
+        // falha na execução — a consulta canônica precisa assumir o lugar.
+        let conn = conn_with(
+            "CREATE TABLE sessions (
+                id TEXT, title TEXT, source TEXT, started_at REAL, last_activity_at REAL,
+                message_count INTEGER, tool_call_count INTEGER, archived INTEGER, hidden INTEGER,
+                pinned INTEGER, parent_session_id TEXT, profile_name TEXT, model TEXT, cwd TEXT);
+             CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT);
+             INSERT INTO sessions VALUES ('p1','T','cli',1.0,2.0,5,1,0,0,0,NULL,'x','m','/y');",
+            &["INSERT INTO messages (session_id, role, content) VALUES ('p1','user','oi');"],
+        );
+        let rows = sessions_fast_db_rows(&conn, 30);
+        assert_eq!(rows.len(), 1);
+        assert!(
+            rows[0].4.is_none(),
+            "execution failure on rich query must degrade to canonical shape"
+        );
+    }
+}
+
 async fn sessions_fast_handler(
     State(state): State<AppState>,
     Query(params): Query<std::collections::HashMap<String, String>>,
@@ -2655,41 +2848,46 @@ async fn sessions_fast_handler(
         ) else {
             continue;
         };
-        let rows: Vec<(String, Option<String>, Option<f64>, Option<f64>)> = match conn.prepare(
-            "SELECT id, title, started_at, last_activity_at FROM sessions \
-             ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ?1",
-        ) {
-            Ok(mut stmt) => stmt
-                .query_map([limit_per_db as i64], |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                    ))
-                })
-                .map(|iter| iter.flatten().collect())
-                .unwrap_or_default(),
-            Err(_) => continue,
-        };
-        for (sid, raw_title, started_raw, activity_raw) in rows {
+        let rows = sessions_fast_db_rows(&conn, limit_per_db as i64);
+        for (sid, raw_title, started_raw, activity_raw, extras) in rows {
             if !seen_ids.insert(sid.clone()) {
                 continue;
             }
             let started_ts = started_raw.unwrap_or(0.0);
             let updated_ts = activity_raw.filter(|v| *v != 0.0).unwrap_or(started_ts);
             let title = derive_title(raw_title, &sid, &conn);
-            results.push((
-                updated_ts,
-                serde_json::json!({
-                    "session_id": sid,
-                    "title": title,
-                    "started_at": format_local_timestamp(if started_ts != 0.0 { Some(started_ts) } else { None }),
-                    "updated_at": format_local_timestamp(if updated_ts != 0.0 { Some(updated_ts) } else { None }),
-                    "updated_ts": updated_ts,
-                    "db": db_file.display().to_string(),
-                }),
-            ));
+            let mut row = serde_json::json!({
+                "session_id": sid,
+                "title": title,
+                "started_at": format_local_timestamp(if started_ts != 0.0 { Some(started_ts) } else { None }),
+                "updated_at": format_local_timestamp(if updated_ts != 0.0 { Some(updated_ts) } else { None }),
+                "updated_ts": updated_ts,
+                "db": db_file.display().to_string(),
+            });
+            if let Some(ex) = extras {
+                // last_active: frescor real via MAX(messages.timestamp) combinado com
+                // last_activity_at/started_at; cai para updated_ts quando o banco não tem
+                // a coluna (mesma semântica do fallback Python em standalone.py).
+                let last_active_ts = ex
+                    .last_active_raw
+                    .filter(|v| *v != 0.0)
+                    .unwrap_or(updated_ts);
+                row["message_count"] = serde_json::json!(ex.message_count);
+                row["tool_call_count"] = serde_json::json!(ex.tool_call_count);
+                row["last_active"] =
+                    serde_json::json!(format_local_timestamp(if last_active_ts != 0.0 {
+                        Some(last_active_ts)
+                    } else {
+                        None
+                    }));
+                row["last_active_ts"] = serde_json::json!(last_active_ts);
+                row["archived"] = serde_json::json!(ex.archived);
+                row["pinned"] = serde_json::json!(ex.pinned);
+                row["parent_session_id"] = serde_json::json!(ex.parent_session_id);
+                row["profile_name"] = serde_json::json!(ex.profile_name);
+                row["cwd"] = serde_json::json!(ex.cwd);
+            }
+            results.push((updated_ts, row));
         }
     }
 

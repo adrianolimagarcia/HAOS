@@ -280,7 +280,15 @@ def _python_reference_sessions(candidate_dbs: list[Path]) -> list[dict[str, Any]
     fixture controls which databases participate; everything else (path dedupe, per-DB
     ``LIMIT 30``, ID dedupe across DBs, ordering, title derivation, timestamp formatting,
     field set and the final ``[:40]`` slice) mirrors the reference line for line.
+
+    ``time.tzset()`` is mandatory here: the hermetic conftest pins ``TZ=UTC`` via
+    ``monkeypatch.setenv`` (so the Rust subprocess inherits UTC), but CPython's libc caches
+    the local timezone on the first ``localtime`` call of the process (pytest startup
+    formats timestamps before the fixture runs). Without an explicit ``tzset`` reload the
+    reference would format in the developer's wall-clock zone while the observer formats in
+    UTC, and the differential assertion would fail on any non-UTC host.
     """
+    time.tzset()
     candidate: list[Path] = []
     seen_paths: set[str] = set()
     for path in candidate_dbs:
@@ -442,3 +450,86 @@ def test_no_second_writer_surface_is_required(tmp_path: Path):
         assert _db_digest(event_db) == before
     finally:
         _stop_process(process)
+
+
+def _rich_db(path: Path) -> None:
+    """Canonical hermes_state_common.py schema (sessions + messages.timestamp)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """CREATE TABLE sessions (
+                id TEXT PRIMARY KEY, source TEXT, title TEXT,
+                started_at REAL, last_activity_at REAL,
+                message_count INTEGER DEFAULT 0, tool_call_count INTEGER DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0,
+                hidden INTEGER NOT NULL DEFAULT 0,
+                parent_session_id TEXT, profile_name TEXT, cwd TEXT
+            )"""
+        )
+        conn.executemany(
+            "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                ("rich", "cli", "Rich", 10.0, 50.0, 7, 3, 0, 1, 0, "parent-1", "prof", "/work"),
+                ("plain", "cli", "Plain", 20.0, 30.0, 0, 0, 1, 0, 0, None, None, None),
+            ],
+        )
+        conn.execute(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, "
+            "content TEXT, timestamp REAL)"
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, timestamp) "
+            "VALUES ('rich', 'user', 'oldest', 11.0)"
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, timestamp) "
+            "VALUES ('rich', 'assistant', 'freshest', 95.0)"
+        )
+
+
+def test_sessions_fast_projection_extras(tmp_path: Path):
+    """The sa-2-868eca1b projection fields must appear on a canonical-schema DB.
+
+    Covers: message_count/tool_call_count passthrough, archived/pinned booleans,
+    parent_session_id/profile_name/cwd, and last_active as the freshest of
+    MAX(messages.timestamp) vs last_activity_at/started_at (95 > 50 here).
+    """
+    binary = Path(__file__).resolve().parents[2] / "target/debug/haos-edge"
+    assert binary.exists(), "build haos-edge before running its black-box contract tests"
+    data_dir = tmp_path / "rich"
+    data_dir.mkdir()
+    _rich_db(data_dir / "state.db")
+    cookie = _authenticated_cookie(data_dir)
+    process, port = _start_observer(binary, tmp_path, "rich", data_dir)
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/sessions/fast?limit=30", headers={"Cookie": cookie}
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.load(response)
+    finally:
+        _stop_process(process)
+
+    rows = {row["session_id"]: row for row in payload["data"]["sessions"]}
+    assert set(rows) == {"rich", "plain"}
+    rich = rows["rich"]
+    assert rich["message_count"] == 7
+    assert rich["tool_call_count"] == 3
+    assert rich["archived"] is False
+    assert rich["pinned"] is True
+    assert rich["parent_session_id"] == "parent-1"
+    assert rich["profile_name"] == "prof"
+    assert rich["cwd"] == "/work"
+    # last_active must be the freshest message timestamp (95), not last_activity_at (50).
+    assert rich["last_active_ts"] == 95.0
+    assert rich["last_active"]
+    assert rich["last_active"] > rich["updated_at"], "last_active must reflect message freshness"
+    plain = rows["plain"]
+    assert plain["message_count"] == 0
+    assert plain["archived"] is True
+    assert plain["pinned"] is False
+    assert plain["parent_session_id"] is None
+    assert plain["profile_name"] is None
+    assert plain["cwd"] is None
+    # No messages: last_active falls back to last_activity_at (30).
+    assert plain["last_active_ts"] == 30.0
