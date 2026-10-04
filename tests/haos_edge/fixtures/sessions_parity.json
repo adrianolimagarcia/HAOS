@@ -1,0 +1,13 @@
+{
+  "contract": "GET /api/sessions",
+  "query": {"limit": 20, "offset": 0, "archived": "exclude", "order": "recent", "exclude_sources": "cron"},
+  "rows": [
+    {"id":"root-new","source":"cli","title":"New","started_at":10,"last_activity_at":20,"message_count":1,"archived":0,"hidden":0,"pinned":0,"parent_session_id":null,"model_config":null,"profile_name":"default","cwd":"/tmp"},
+    {"id":"archived","source":"cli","title":"Old","started_at":30,"last_activity_at":40,"message_count":1,"archived":1,"hidden":0,"pinned":0,"parent_session_id":null,"model_config":null,"profile_name":"default","cwd":"/tmp"},
+    {"id":"hidden","source":"cli","title":"Hidden","started_at":50,"last_activity_at":60,"message_count":1,"archived":0,"hidden":1,"pinned":0,"parent_session_id":null,"model_config":null,"profile_name":"default","cwd":"/tmp"},
+    {"id":"cron","source":"cron","title":"Cron","started_at":70,"last_activity_at":80,"message_count":1,"archived":0,"hidden":0,"pinned":0,"parent_session_id":null,"model_config":null,"profile_name":"default","cwd":"/tmp"},
+    {"id":"branch","source":"cli","title":"Branch","started_at":90,"last_activity_at":100,"message_count":1,"archived":0,"hidden":0,"pinned":0,"parent_session_id":"root-new","model_config":"{\"_branched_from\":\"root-new\"}","profile_name":"default","cwd":"/tmp"},
+    {"id":"child","source":"tool","title":"Tool","started_at":110,"last_activity_at":120,"message_count":1,"archived":0,"hidden":0,"pinned":0,"parent_session_id":"root-new","model_config":null,"profile_name":"default","cwd":"/tmp"}
+  ],
+  "expected_recent_ids": ["branch", "root-new"]
+}
