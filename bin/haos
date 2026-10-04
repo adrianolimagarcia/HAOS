@@ -13,6 +13,14 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+# Keep the legacy engine entry reachable without duplicating canonical CLI parsing.
+# Delegate before legacy imports, which can initialize unrelated engine stores.
+if len(sys.argv) > 1 and sys.argv[1] == "framework":
+    from hermes_cli.main import main as canonical_main
+
+    canonical_main()
+    raise SystemExit(0)
+
 from hermes.platform.protocols.bus import EventBus
 from hermes.platform.observability.events import Event
 from hermes.platform.observability.event_store import EventStore

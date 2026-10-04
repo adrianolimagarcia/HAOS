@@ -56,6 +56,34 @@ class TestNoninteractiveGitEnv:
         env = noninteractive_git_env({"GIT_TERMINAL_PROMPT": "1"})
         assert env["GIT_TERMINAL_PROMPT"] == "0"
 
+    def test_empty_git_identity_vars_are_dropped(self):
+        """git rejects an EMPTY GIT_AUTHOR/COMMITTER ident even when repo
+        config supplies one (exit 128, "empty ident name not allowed"), so
+        a polluted ambient env silently breaks every internal commit path
+        (dream audit store, profile staging, review pane)."""
+        env = noninteractive_git_env(
+            {
+                "GIT_AUTHOR_NAME": "",
+                "GIT_AUTHOR_EMAIL": "",
+                "GIT_COMMITTER_NAME": "",
+                "GIT_COMMITTER_EMAIL": "",
+                "GIT_AUTHOR_DATE": "",  # not an ident var: untouched
+            }
+        )
+        for key in (
+            "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+            "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
+        ):
+            assert key not in env, f"{key}='' must be dropped, not passed empty"
+        assert env.get("GIT_AUTHOR_DATE") == ""
+
+    def test_nonempty_git_identity_vars_survive(self):
+        env = noninteractive_git_env(
+            {"GIT_AUTHOR_NAME": "Ana", "GIT_COMMITTER_EMAIL": "a@b.c"}
+        )
+        assert env["GIT_AUTHOR_NAME"] == "Ana"
+        assert env["GIT_COMMITTER_EMAIL"] == "a@b.c"
+
     def test_strips_ambient_git_config_injection(self):
         env = noninteractive_git_env(
             {
@@ -240,6 +268,44 @@ class _BasicAuthChallenge(http.server.BaseHTTPRequestHandler):
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_internal_commit_survives_empty_identity_env(tmp_path: Path):
+    """E2E contract: repo-local identity + ambient EMPTY ident vars. The
+    sanitized env must let `git commit` succeed (the -c config identity is
+    used); the raw polluted env must fail. Proves the sanitizer is the fix,
+    not a no-op."""
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git binary required")
+    repo = tmp_path / "r"
+    repo.mkdir()
+    base = noninteractive_git_env({})
+    subprocess.run([git, "init", "-q", "."], cwd=repo, env=base, check=True)
+    subprocess.run([git, "config", "user.name", "Local Bot"], cwd=repo,
+                   env=base, check=True)
+    subprocess.run([git, "config", "user.email", "bot@local"], cwd=repo,
+                   env=base, check=True)
+    (repo / "f.txt").write_text("x\n")
+    subprocess.run([git, "add", "f.txt"], cwd=repo, env=base, check=True)
+
+    polluted = noninteractive_git_env({
+        "GIT_AUTHOR_NAME": "", "GIT_AUTHOR_EMAIL": "",
+        "GIT_COMMITTER_NAME": "", "GIT_COMMITTER_EMAIL": "",
+    })
+    res = subprocess.run(
+        [git, "commit", "-m", "sanitized"], cwd=repo, env=polluted,
+        capture_output=True, text=True,
+    )
+    assert res.returncode == 0, f"sanitized env must commit: {res.stderr}"
+
+    raw = dict(base)
+    raw.update({"GIT_AUTHOR_NAME": "", "GIT_AUTHOR_EMAIL": ""})
+    res_raw = subprocess.run(
+        [git, "commit", "-m", "raw", "--allow-empty"], cwd=repo, env=raw,
+        capture_output=True, text=True,
+    )
+    assert res_raw.returncode != 0, "raw empty ident must still fail (premise)"
+
+
 def test_git_clone_against_auth_remote_fails_fast(tmp_path: Path):
     server = http.server.HTTPServer(("127.0.0.1", 0), _BasicAuthChallenge)
     port = server.server_address[1]

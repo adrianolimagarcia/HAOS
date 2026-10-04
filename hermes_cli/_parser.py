@@ -22,7 +22,7 @@ PRE_ARGPARSE_INHERITED_FLAGS: list[tuple[str, bool]] = [("--profile", True), ("-
 # snapshot lacks AND derivation regresses.
 _VALUE_FLAGS_FALLBACK: frozenset[str] = frozenset({
     "-z", "--oneshot", "-m", "--model", "--provider", "--reasoning", "-t", "--toolsets",
-    "-r", "--resume", "-s", "--skills", "--usage-file", "--in",
+    "-r", "--resume", "-s", "--skills", "--usage-file", "--in", "--bot-id",
 })
 _OPTIONAL_VALUE_FLAGS_FALLBACK: frozenset[str] = frozenset({"-c", "--continue"})
 
@@ -133,6 +133,8 @@ def _add_top_level_flags(parser: argparse.ArgumentParser) -> None:
         "can always account for spend. No effect outside -z/--oneshot."))
     # --model / --provider are accepted at the top level so they can pair with -z without the
     # `chat` subcommand; if neither -z nor a subcommand consumes them, they fall through as None.
+    inherited(parser, "--bot-id", default=None, metavar="BOT_ID", help=(
+        "Civilization Bot ID to bind this agent session to (loads Bot SOUL/IDENTITY/VALUES)."))
     inherited(parser, "-m", "--model", default=None, help=(
         "Model override for this invocation (e.g. anthropic/claude-sonnet-4.6). "
         "Applies to -z/--oneshot and --tui. Also settable via HERMES_INFERENCE_MODEL env var."))
@@ -267,6 +269,8 @@ def _build_chat_parser(subparsers) -> argparse.ArgumentParser:
         "Auto-approve any unseen shell hooks declared in config.yaml "
         "without a TTY prompt (see also HERMES_ACCEPT_HOOKS env var and "
         "hooks_auto_accept: in config.yaml)."))
+    inherited(chat_parser, "--bot-id", default=SUPPRESS, metavar="BOT_ID", help=(
+        "Civilization Bot ID to bind this agent session to (loads Bot SOUL/IDENTITY/VALUES)."))
     add("--checkpoints", action="store_true", default=False,
         help="Enable filesystem checkpoints before destructive file operations (use /rollback to restore)")
     add("--max-turns", type=int, default=None, metavar="N",

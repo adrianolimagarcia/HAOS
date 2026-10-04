@@ -25,6 +25,12 @@ pub async fn proxy_handler(State(state): State<AppState>, req: Request) -> Respo
     let is_sse = path_query.contains("/stream") || path_query.contains("/chat");
 
     let mut client_req = state.http_client.request(method, &target_url);
+    // Session detail is a canonical, potentially expensive read. Do not let the
+    // generic 60s proxy timeout turn a slow Python merge into a false 504/loading
+    // state; SSE already has no deadline, and this endpoint needs the same
+    // bounded-but-generous budget as the frontend API client.
+    let is_session_detail = uri.path() == "/api/session";
+
 
     // Repassar cabeçalhos do cliente para o backend Python
     let original_host = req.headers().get(header::HOST).cloned();
@@ -45,8 +51,10 @@ pub async fn proxy_handler(State(state): State<AppState>, req: Request) -> Respo
     client_req = client_req.header("X-Forwarded-Proto", "http");
 
     // Configuração de timeout: infinito para SSE, 60s para requisições normais
-    if !is_sse {
+    if !is_sse && !is_session_detail {
         client_req = client_req.timeout(Duration::from_secs(60));
+    } else if is_session_detail {
+        client_req = client_req.timeout(Duration::from_secs(180));
     }
 
     // Encaminhar corpo da requisição

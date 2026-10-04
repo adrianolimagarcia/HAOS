@@ -49,7 +49,31 @@ def _get_hybrid_router():
         okf_dir.mkdir(parents=True, exist_ok=True)
     gr_dir = home / "graphrag"
     from hermes.platform.memory.hybrid_router import HybridKnowledgeRouter
-    return HybridKnowledgeRouter(okf_dir=okf_dir, graphrag_dir=gr_dir)
+    # RAPTOR: fail-closed por arquivo (mesma regra do GraphRAG available()).
+    # A árvore só entra no router depois de `hermes memory raptor build`;
+    # o caminho de leitura nunca cria um DB vazio.
+    raptor_store = None
+    raptor_db = home / "memory" / "raptor.db"
+    if raptor_db.exists():
+        try:
+            from hermes.platform.memory.raptor_memory import RaptorStore
+            raptor_store = RaptorStore(db_path=raptor_db)
+        except Exception:
+            raptor_store = None
+    # Planner por intenção: opt-in via config; False preserva a cascata fixa.
+    use_planner = False
+    try:
+        from hermes_cli.config import cfg_get, load_config_readonly
+        use_planner = bool(cfg_get(
+            load_config_readonly(), "memory", "hybrid_planner", default=False))
+    except Exception:
+        pass
+    return HybridKnowledgeRouter(
+        okf_dir=okf_dir,
+        graphrag_dir=gr_dir,
+        raptor_store=raptor_store,
+        use_planner=use_planner,
+    )
 
 
 def obsidian_get_adr(adr_id: str) -> str:

@@ -405,7 +405,17 @@ class MemoryManager:
         """Run one provider's prefetch; external providers are bounded by a timeout. A stuck external
         call keeps running on its daemon thread and the provider is skipped on later turns until it returns."""
         if provider.name == "builtin":
-            return provider.prefetch(query, session_id=session_id)
+            builtin_result = provider.prefetch(query, session_id=session_id)
+            if isinstance(builtin_result, str) and builtin_result.strip():
+                # Same spill bound as external providers: the builtin result is stamped
+                # into the user turn's api_content and replayed every later turn, so an
+                # unbounded registry/notes mirror would cascade the prefix identically.
+                builtin_result = spill_if_oversized(
+                    builtin_result, session_id=session_id,
+                    source=f"{getattr(provider, 'plugin_id', None) or 'builtin'} memory prefetch",
+                    config=self._external_prefetch_spill_config,
+                )
+            return builtin_result
 
         result_box: Dict[str, Any] = {}
 

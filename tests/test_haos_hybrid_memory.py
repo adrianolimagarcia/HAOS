@@ -69,3 +69,161 @@ def test_hybrid_router_no_match(temp_okf_dir: Path) -> None:
 
     assert result["found"] is False
     assert result["source"] == "NONE"
+
+
+# ── Invariantes do gate endurecido (0.21.80) ───────────────────────────────
+# Reproduzem a classe de bug medida no corpus real: find_deterministic
+# aceitava `tag in query` como substring livre, então em queries longas
+# uma tag fragmento ('file' ⊂ 'filesystem') ou uma tag isolada ('token')
+# interceptava com documento não relacionado, escondendo o RAGFlow que
+# tinha o documento certo (teto medido: 0.897@1 / 0.974@3).
+
+def test_okf_gate_fragmento_de_tag_nao_e_evidencia(temp_okf_dir: Path) -> None:
+    store = OKFStore(temp_okf_dir)
+    store.save_document(
+        title="Licao Rust Estatico",
+        content="binario musl static-linking",
+        doc_type="lesson",
+        tags=["rust", "file"],
+    )
+    # 'file' é fragmento de 'filesystem' — o gate antigo (substring livre)
+    # respondia aqui; o endurecido não tem evidência nenhuma.
+    assert store.find_deterministic(
+        "/tmp fora da RAM e zram como swap nunca como filesystem"
+    ) is None
+
+
+def test_okf_gate_tag_unica_sem_corroboracao_nao_responde(temp_okf_dir: Path) -> None:
+    store = OKFStore(temp_okf_dir)
+    store.save_document(
+        title="Tokens A2A da malha Hermes",
+        content="token de 64 chars",
+        doc_type="lesson",
+        tags=["a2a", "token", "convencao"],
+    )
+    # 'token' casa como palavra inteira, mas é evidência ÚNICA numa query de
+    # 12 palavras sobre outro assunto — o gate antigo respondia por substring.
+    assert store.find_deterministic(
+        "google drive via rclone refresh token expira em 7 dias consent screen"
+    ) is None
+
+
+def test_okf_gate_duas_tags_palavra_inteira_corroboram(temp_okf_dir: Path) -> None:
+    store = OKFStore(temp_okf_dir)
+    store.save_document(
+        title="Contrato Memoria HAOS",
+        content="stack de memoria em runtime",
+        doc_type="contract",
+        tags=["haos", "memoria", "runtime"],
+    )
+    # Feature preservada: ≥2 tags distintas do MESMO doc casando como
+    # palavras inteiras é evidência corroborada e o gate responde.
+    found = store.find_deterministic("qual o contrato de memoria do haos")
+    assert found is not None
+    assert found.title == "Contrato Memoria HAOS"
+
+
+def test_okf_gate_tag_hifenizada_exige_sequencia_completa(temp_okf_dir: Path) -> None:
+    store = OKFStore(temp_okf_dir)
+    store.save_document(
+        title="Build estatica",
+        content="musl",
+        doc_type="lesson",
+        tags=["static-linking", "musl"],
+    )
+    # 'linking' isolado NÃO casa com a tag 'static-linking' (sequência de
+    # palavras); e mesmo que casasse, seria evidência única.
+    assert store.find_deterministic("o linking dinamico quebrou a build") is None
+    # A sequência completa, corroborada por segunda tag, casa.
+    found = store.find_deterministic("musl static-linking no binario final")
+    assert found is not None
+
+
+def test_okf_gate_tags_sem_cobertura_minima_nao_interceptam_query_longa(temp_okf_dir: Path) -> None:
+    store = OKFStore(temp_okf_dir)
+    store.save_document(
+        title="Licao BTRFS Badblocks",
+        content="btrfs nao tem bad-block map",
+        doc_type="lesson",
+        tags=["btrfs", "disco", "particionamento"],
+    )
+    # Query longa sobre swapfile e zram: contém 'btrfs' e 'disco', mas eles cobrem
+    # apenas 2 de 7 tokens de conteúdo (28% < 50%) — o gate não deve interceptar
+    # para permitir que o RAGFlow encontre o documento certo no vault.
+    assert store.find_deterministic(
+        "configuracao btrfs de tmp em disco e prioridades de swapfile e zram0"
+    ) is None
+
+    # Consulta focada no assunto da lição: tags cobrem >= 50% dos tokens de conteúdo
+    found = store.find_deterministic("particionamento btrfs em disco")
+    assert found is not None
+    assert found.title == "Licao BTRFS Badblocks"
+
+
+# ── F2: Contratos de proveniência em RECONCILED_MEMORY ──────────────────────
+
+def test_reconciled_memory_exposes_provenance_and_resolves_existing_slug(
+    temp_okf_dir: Path, tmp_path: Path
+) -> None:
+    """F2 (SELF_INDEX_PLAN): quando o registro carrega metadata.slug e a lição
+
+    OKF existe em licoes/<slug>.md, o payload expõe source_paths e provenance.
+    """
+    from hermes.platform.memory.reconciler import MemoryReconciler
+
+    # 1. Cria a lição OKF física
+    licoes_dir = temp_okf_dir / "licoes"
+    licoes_dir.mkdir(parents=True, exist_ok=True)
+    lesson_file = licoes_dir / "abc123-1.md"
+    lesson_file.write_text(
+        "---\ntitle: 'Lição Teste'\ntype: lesson\n---\nConteúdo da lição de teste.",
+        encoding="utf-8",
+    )
+
+    # 2. Reconciliador com DB isolado
+    db_path = tmp_path / "reconciled_test.db"
+    reconciler = MemoryReconciler(db_path=db_path)
+    reconciler.reconcile(
+        topic="diagnostico de gateway upstream",
+        content="Falha de upstream em proxies de API",
+        category="troubleshooting",
+        confidence=0.95,
+        metadata={"slug": "abc123-1", "source": "dream_distill_6h"},
+    )
+
+    # 3. Router consultando o tópico
+    router = HybridKnowledgeRouter(okf_dir=temp_okf_dir, reconciler=reconciler)
+    res = router.query("diagnostico de gateway upstream")
+
+    assert res["found"] is True
+    assert res["source"] == "RECONCILED_MEMORY"
+    assert res.get("source_paths") == ["licoes/abc123-1.md"]
+    assert res.get("provenance") == {
+        "slug": "abc123-1",
+        "source": "dream_distill_6h",
+    }
+
+
+def test_reconciled_memory_without_slug_does_not_fabricate_path(
+    temp_okf_dir: Path, tmp_path: Path
+) -> None:
+    """F2: registro sem slug expõe proveniência sem inventar source_paths."""
+    from hermes.platform.memory.reconciler import MemoryReconciler
+
+    db_path = tmp_path / "reconciled_noslug.db"
+    reconciler = MemoryReconciler(db_path=db_path)
+    reconciler.reconcile(
+        topic="padrao sem slug",
+        content="Conteudo generico sem lição geradora",
+        metadata={"source": "manual", "session_id": "sess_123"},
+    )
+
+    router = HybridKnowledgeRouter(okf_dir=temp_okf_dir, reconciler=reconciler)
+    res = router.query("padrao sem slug")
+
+    assert res["found"] is True
+    assert res["source"] == "RECONCILED_MEMORY"
+    assert "source_paths" not in res  # Nunca inventar campo/caminho
+    assert res.get("provenance") == {"source": "manual", "session_id": "sess_123"}
+
+

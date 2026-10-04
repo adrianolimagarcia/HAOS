@@ -112,7 +112,18 @@ class DeterministicLaneWorker(LaneWorker):
 
     name = "deterministic"
 
-    def execute(self, task_id: str, workspace: Path, spec: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(
+        self,
+        task_id: str,
+        workspace: Path,
+        spec: Dict[str, Any],
+        *,
+        cancel_event: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        if cancel_event is not None and getattr(cancel_event, "is_set", lambda: False)():
+            from hermes.platform.execution.heartbeat import LaneCancelledError
+            raise LaneCancelledError(f"deterministic worker for task '{task_id}' was cancelled")
         workspace.mkdir(parents=True, exist_ok=True)
         lane = lane_for_spec(spec)
         marker = workspace / ".haos"
@@ -281,6 +292,7 @@ class HermesCliLaneWorker(LaneWorker):
         *,
         heartbeat_fn: Optional[Callable[[str], bool]] = None,
         heartbeat_interval: float = 15.0,
+        cancel_event: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Executa o worker agêntico (detalhes na docstring da classe).
 
@@ -358,30 +370,15 @@ class HermesCliLaneWorker(LaneWorker):
                     if self.timeout_seconds is not None
                     else _env_timeout()
                 )
-                if heartbeat_fn is not None:
-                    # D3: espera com heartbeat/TTL — o control-plane que DETÉM
-                    # o claim renova enquanto o filho vive; par quebrado =>
-                    # kill + LaneError (HeartbeatLost/Deadline). Import lazy
-                    # (heartbeat.py importa LaneError deste módulo).
-                    from hermes.platform.execution.heartbeat import wait_with_heartbeat
-                    returncode = wait_with_heartbeat(
-                        proc,
-                        heartbeat_fn=lambda: heartbeat_fn(task_id),
-                        heartbeat_interval=heartbeat_interval,
-                        timeout_seconds=timeout,
-                        task_id=task_id,
-                    )
-                else:
-                    try:
-                        returncode = proc.wait(timeout=timeout)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(proc.pid, signal.SIGKILL)
-                        except (ProcessLookupError, PermissionError):
-                            pass
-                        raise LaneError(
-                            f"hermes worker for task '{task_id}' timed out"
-                        ) from None
+                from hermes.platform.execution.heartbeat import wait_with_heartbeat
+                returncode = wait_with_heartbeat(
+                    proc,
+                    heartbeat_fn=(lambda: heartbeat_fn(task_id)) if heartbeat_fn is not None else None,
+                    heartbeat_interval=heartbeat_interval,
+                    timeout_seconds=timeout,
+                    task_id=task_id,
+                    cancel_event=cancel_event,
+                )
         except FileNotFoundError as exc:
             raise LaneError(
                 f"hermes worker binary not found: {argv[0]!r}"
@@ -433,14 +430,16 @@ class HermesCliLaneWorker(LaneWorker):
         cmd = [self.hermes_command or "haos"]
         if self.profile:
             cmd += ["-p", self.profile]
-        cmd += ["--cli", "--accept-hooks"]
+        cmd += ["--cli"]
+        cmd += ["chat", "--source", "haos", "--accept-hooks"]
         # Console/chat do control plane: o spec carrega yolo_mode e o worker
         # nasce sem portão de aprovação — o filho é headless, um prompt de
         # aprovação ali trava a missão para sempre. A hardline blocklist do
         # kernel continua valendo (não é bypassável nem sob --yolo).
         if spec.get("yolo_mode"):
             cmd += ["--yolo"]
-        cmd += ["chat", "--source", "haos"]
+        if spec.get("bot_id"):
+            cmd += ["--bot-id", str(spec["bot_id"])]
         # Respeita o modelo configurado no spec quando especificado,
         # resolvendo via ExactModelFailoverRouter se disponível ou por postura
         model = spec.get("model_profile") or spec.get("model_profile_preferred")
@@ -611,6 +610,8 @@ class HermesCliLaneWorker(LaneWorker):
                 env["HAOS_DATA_DIR"] = os.environ["HAOS_DATA_DIR"]
         env["TERMINAL_CWD"] = str(workspace.resolve())
         env["HAOS_TASK_ID"] = task_id
+        if spec.get("bot_id"):
+            env["HERMES_BOT_ID"] = str(spec["bot_id"])
         max_runtime = spec.get("max_runtime_minutes")
         if max_runtime:
             env["TERMINAL_TIMEOUT"] = str(int(max_runtime) * 60)

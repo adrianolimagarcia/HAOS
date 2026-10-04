@@ -26,6 +26,56 @@ INITIAL_CONFIDENCE = 0.3
 CONFIDENCE_BOOST = 0.2
 CONFIDENCE_PENALTY = 0.3
 
+# Filtro determinístico anti-contaminação (auditoria 2026-09-29): o extrator do
+# dream ingere o preview bruto da sessão, que começa com scaffolding de prompt
+# (envelopes de A2A, skill-listing, out-of-band, workspace, system notes). Tais
+# textos NÃO são lições — são ruído de contexto — e nunca devem virar instinto.
+# Sem LLM: comparação literal de substring contra marcadores conhecidos.
+ENVELOPE_MARKERS: tuple = (
+    "[A2A inbound",
+    "[IMPORTANT:",  # cobre 'The following skill(s)' e 'You are running as a scheduled cron job'
+    "[OUT-OF-BAND USER MESSAGE",
+    "[Workspace::v1",
+    "[SYSTEM",
+    "[System note",
+)
+
+
+def is_prompt_envelope(text: str) -> bool:
+    """True quando o texto contém um marcador de envelope de prompt conhecido.
+
+    Deliberamente amplo (substring em qualquer posição, não só no início): um
+    candidato que embute scaffolding em qualquer linha é ruído de contexto, não
+    regra aprendida. Falso-positivo aceitável: uma regra que *cita* o marcador
+    é rejeitada e o autor pode reformulá-la; contaminação promovida a skill é
+    muito mais cara.
+    """
+    return any(marker in text for marker in ENVELOPE_MARKERS)
+
+
+def calculate_initial_confidence(rule: str, category: str = "workflow") -> float:
+    """Calcula a confiança inicial calibrada por evidência.
+
+    Fatos técnicos verificáveis e decisões de arquitetura começam com alta confiança
+    (0.85 a 0.95), promovendo automaticamente sem precisar de repetição cega.
+    Lições operacionais comuns começam no padrão 0.30 e sobem por reforço.
+    """
+    text = rule.strip().lower()
+
+    # Perguntas, mensagens de saudação ou scaffolding
+    if text.endswith("?") or text.startswith(("olá", "ola", "bom dia", "por favor", "responda", "###")):
+        return INITIAL_CONFIDENCE
+
+    # Decisões arquiteturais, convenções canônicas e ADRs
+    if any(k in text for k in ("adr-", "arquitetura:", "decisão aceita", "decisao aceita")):
+        return 0.95
+
+    # Fatos técnicos concretos verificados com portas/ips/serviços explícitos
+    if any(k in text for k in ("porta 127.0.0.1:", "systemd service", "proxy socks5 ativo")):
+        return 0.85
+
+    return INITIAL_CONFIDENCE
+
 
 @dataclass
 class Instinct:
@@ -117,8 +167,19 @@ class InstinctStore:
         category: str = "workflow",
         project_scope: str = "global",
         tags: Optional[List[str]] = None,
-    ) -> Instinct:
-        """Create or reinforce an atomic instinct."""
+        initial_confidence: Optional[float] = None,
+    ) -> Optional[Instinct]:
+        """Create or reinforce an atomic instinct.
+
+        Retorna None quando o texto é scaffolding de prompt (envelope) — filtro
+        determinístico anti-contaminação; ver ``is_prompt_envelope``.
+        """
+        if is_prompt_envelope(rule):
+            logger.warning(
+                "Rejected envelope text from instinct store (scope=%s): %.80s",
+                project_scope, rule,
+            )
+            return None
         instincts = self.load_instincts(project_scope)
         instinct_id = self.instinct_id_for(rule)
 
@@ -128,11 +189,17 @@ class InstinctStore:
             if tags:
                 instinct.tags = list(set(instinct.tags + tags))
         else:
+            base_conf = (
+                initial_confidence
+                if initial_confidence is not None
+                else calculate_initial_confidence(rule, category)
+            )
             instinct = Instinct(
                 id=instinct_id,
                 rule=rule.strip(),
                 category=category,
                 project_scope=project_scope,
+                confidence=base_conf,
                 tags=tags or [],
             )
             instincts[instinct_id] = instinct

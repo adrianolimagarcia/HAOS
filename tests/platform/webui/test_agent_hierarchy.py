@@ -7,15 +7,15 @@ from hermes.platform.webui.agent_hierarchy import AgentHierarchyStore, Hierarchy
 
 def test_hierarchy_supports_master_managers_bots_and_advisory_turn_limit(tmp_path):
     store = AgentHierarchyStore(tmp_path / "hierarchy.json")
-    master = store.upsert_node({"name": "Mestre", "role": "master", "model": "m"})
-    left = store.upsert_node({"name": "Gerente A", "role": "manager", "parent_id": master["id"], "model": "a"})
-    right = store.upsert_node({"name": "Gerente B", "role": "manager", "parent_id": master["id"], "model": "b"})
+    master = store.upsert_node({"name": "Mestre", "role": "master", "model": "deepseek-v4-flash"})
+    left = store.upsert_node({"name": "Gerente A", "role": "manager", "parent_id": master["id"], "model": "deepseek-v4-flash"})
+    right = store.upsert_node({"name": "Gerente B", "role": "manager", "parent_id": master["id"], "model": "deepseek-v4-flash"})
     bot = store.upsert_node({"name": "Bot", "role": "bot", "parent_id": left["id"]})
-    store.set_bot_model("provider", "shared-bot")
+    store.set_bot_model("a6api", "deepseek-v4-flash")
     edge = store.set_advisory_edge(left["id"], right["id"], 4)
     snapshot = store.snapshot()
     assert {n["id"] for n in snapshot["nodes"]} == {master["id"], left["id"], right["id"], bot["id"]}
-    assert snapshot["bot_model"]["model"] == "shared-bot"
+    assert snapshot["bot_model"]["model"] == "deepseek-v4-flash"
     assert edge["max_turns"] == 4
 
 

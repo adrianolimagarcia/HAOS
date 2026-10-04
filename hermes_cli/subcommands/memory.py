@@ -49,4 +49,15 @@ def build_memory_parser(subparsers, *, cmd_memory: Callable) -> None:
     _migrate_parser.add_argument("--scope", default="", help="Escopo padrão das notas importadas (padrão: project)")
     _migrate_parser.add_argument("--json", action="store_true", help="Saída do relatório em JSON")
 
+    # HAOS RAPTOR — árvore multi-resolução construída do índice RAGFlow canônico.
+    _raptor_parser = memory_sub.add_parser(
+        "raptor", help="Árvore RAPTOR (abstração progressiva) sobre o índice RAGFlow")
+    _raptor_sub = _raptor_parser.add_subparsers(dest="raptor_command")
+    _raptor_build = _raptor_sub.add_parser(
+        "build", help="Constrói a árvore a partir dos chunks do ragflow.db (RAGFlow é lido, nunca alterado)")
+    _raptor_build.add_argument("--corpus", default="default", help="corpus_id na árvore (padrão: default)")
+    _raptor_build.add_argument("--limit-docs", type=int, default=0,
+                               help="Piloto/CI: usa só os N primeiros docs; 0 = todos")
+    _raptor_build.add_argument("--json", action="store_true", help="Relatório em JSON")
+
     memory_parser.set_defaults(func=cmd_memory)

@@ -24,6 +24,7 @@ async-stream = "0.3"
 walkdir = "2.5"
 regex = "1.10"
 serde_yaml = "0.9"
+haos-civ = { path = "../haos-civ" }
 
 [dev-dependencies]
 tempfile = "3"

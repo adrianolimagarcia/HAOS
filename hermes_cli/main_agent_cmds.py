@@ -70,6 +70,8 @@ def cmd_memory(args):
         _cmd_memory_revert(args)
     elif sub == "migrate":
         _cmd_memory_migrate(args)
+    elif sub == "raptor":
+        _cmd_memory_raptor(args)
     else:
         from hermes_cli.memory_setup import memory_command
         memory_command(args)
@@ -146,6 +148,57 @@ def _cmd_memory_migrate(args):
     if summary["dry_run"]:
         print("-" * 58)
         print("  Nada foi escrito. Rode com --apply para migrar.")
+    return 0
+
+
+def _cmd_memory_raptor(args):
+    """``hermes memory raptor build`` — constrói a árvore RAPTOR do índice RAGFlow.
+
+    O ragflow.db é lido, nunca alterado; o RaptorStore é substituído por corpus
+    (idempotente). Sem subcomando, mostra usage — mesma regra dos demais.
+    """
+    import json as _json
+    import time
+
+    sub = getattr(args, "raptor_command", None)
+    if sub != "build":
+        print("Uso: hermes memory raptor build [--corpus ID] [--limit-docs N] [--json]")
+        return 2
+    from hermes.platform.memory.ragflow_engine import RAGFlowStore
+    from hermes.platform.memory.raptor_ingest import build_from_ragflow
+    from hermes.platform.memory.raptor_memory import RaptorStore
+
+    ragflow = RAGFlowStore()
+    if not ragflow.db_path.exists():
+        print(f"  ✗ índice RAGFlow não encontrado: {ragflow.db_path}")
+        print("    Rode a ingestão primeiro (hermes haos doc-index ou o fabric).")
+        return 2
+    limit_docs = getattr(args, "limit_docs", 0) or None
+    t0 = time.monotonic()
+    report = build_from_ragflow(
+        ragflow,
+        raptor_store=RaptorStore(),
+        corpus_id=getattr(args, "corpus", "default"),
+        limit_docs=limit_docs,
+    )
+    report["elapsed_s"] = round(time.monotonic() - t0, 2)
+    if getattr(args, "json", False):
+        print(_json.dumps(report, indent=2, ensure_ascii=False))
+        return 0
+    print("=" * 58)
+    print("      HAOS RAPTOR — ÁRVORE DE ABSTRAÇÃO PROGRESSIVA      ")
+    print("=" * 58)
+    print(f"  Corpus            : {report['corpus_id']}")
+    print(f"  Chunks de origem  : {report['chunks']}")
+    print(f"  Nós escritos      : {report['nodes']}")
+    print(f"  Profundidade máx. : {report['max_level']}")
+    print(f"  Por nível         : {report['levels']}")
+    print(f"  Tempo             : {report['elapsed_s']}s")
+    print(f"  Destino           : {report['db']}")
+    if report["chunks"] == 0:
+        print("  ⚠ índice RAGFlow vazio — nada construído.")
+        return 1
+    print("  ✓ retrieve do router já enxerga esta árvore (caminho do planner).")
     return 0
 
 

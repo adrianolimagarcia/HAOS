@@ -253,6 +253,28 @@ class EventStore:
             rows = cursor.fetchall()
             return self._rows_to_events(rows)
 
+    def events_next(self, seq: int, limit: int = 64) -> List[Event]:
+        """Earliest events after a cursor, for lossless bounded backlog draining.
+
+        Advance the cursor to the last processed event's ``seq``. Unlike
+        ``events_after(limit=...)``, this never selects the newest tail.
+        ``seq`` must be a nonnegative int and ``limit`` an int in 1..256;
+        booleans are not accepted. Invalid arguments raise ValueError.
+        """
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 0:
+            raise ValueError("seq must be a nonnegative integer")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 256:
+            raise ValueError("limit must be an integer in 1..256")
+        with self._lock:
+            conn = self._get_connection()
+            # SQLite seq cannot exceed signed int64; larger cursors are empty
+            # too, but binding a larger Python integer would raise OverflowError.
+            cursor = conn.execute(
+                "SELECT * FROM events WHERE seq > ? ORDER BY seq ASC, timestamp ASC LIMIT ?",
+                (min(seq, 2**63 - 1), limit),
+            )
+            return self._rows_to_events(cursor.fetchall())
+
     def _rows_to_events(self, rows) -> List[Event]:
         events = []
         for row in rows:

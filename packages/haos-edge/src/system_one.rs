@@ -33,6 +33,11 @@ impl SystemOneEngine {
         engine
     }
 
+    /// Creates an inert handle for routes that are not mounted in observer mode.
+    pub fn new_uninitialized(data_dir: &Path) -> Self {
+        Self { db_path: data_dir.join("system_one_decisions.db") }
+    }
+
     fn now_secs() -> f64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
