@@ -52,6 +52,8 @@ class GatewayProfileReconcileMixin:
     _served_profile_homes: Optional[Dict[str, "Path"]] = None
     _served_profile_signatures: Optional[Dict[str, tuple]] = None
     _profile_reconcile_lock: Optional[asyncio.Lock] = None
+    _profile_own_gateway_warned: Optional[set[str]] = None
+    _profile_probe_timeout_warned: Optional[set[str]] = None
 
     # ── state helpers ─────────────────────────────────────────────────────────────────────────────
 
@@ -112,7 +114,9 @@ class GatewayProfileReconcileMixin:
             from gateway.status import live_gateway_pid_for_home
 
             blocked = set()
+            timed_out = set()
             warned = self._profile_own_gateway_warned or set()
+            timeout_warned = self._profile_probe_timeout_warned or set()
             for name in list(current):
                 if name == active or name in known:
                     continue
@@ -127,10 +131,15 @@ class GatewayProfileReconcileMixin:
                         self._run_housekeeping_in_executor(live_gateway_pid_for_home, current[name]),
                         timeout=_OWN_GATEWAY_PROBE_TIMEOUT_SECS)
                 except asyncio.TimeoutError:
-                    # Unprovable this cycle must read as blocked: the multiplexer never races
-                    # a possibly-live own gateway. Next cycle probes again.
-                    logger.debug("Own-gateway probe for profile '%s' stalled; treating as blocked", name)
-                    pid = -1
+                    # Unprovable is not "own gateway running": skip it this cycle without
+                    # warning about (or remembering) a gateway that may not exist. Warn once
+                    # per stall; a peer that stays wedged repeats at DEBUG every cycle.
+                    timed_out.add(name)
+                    log = logger.debug if name in timeout_warned else logger.warning
+                    log("[MULTIPLEX] Own-gateway probe for profile '%s' timed out; "
+                        "not serving it this cycle", name)
+                    del current[name]
+                    continue
                 if pid is not None:
                     blocked.add(name)
                     if name not in warned:
@@ -138,6 +147,7 @@ class GatewayProfileReconcileMixin:
                                        "stop it before the host can serve this profile", name)
                     del current[name]
             self._profile_own_gateway_warned = blocked
+            self._profile_probe_timeout_warned = timed_out
             sigs = self._served_profile_signatures or {}
             added = [n for n in current if n not in known and n != active]
             removed = [n for n in known if n not in current and n != active]
