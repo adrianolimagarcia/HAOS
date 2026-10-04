@@ -347,6 +347,11 @@ def _run_single_child(
                 with _quiet("Could not record civilization timeout"):
                     from hermes.platform.civilization.delegation import record_task_result
                     record_task_result(_civ, failure_entry)
+                with _quiet("Could not suggest civilization recovery"):
+                    from hermes.platform.civilization.delegation import suggest_recovery
+                    _suggestion = suggest_recovery(_civ, failure_entry)
+                    if _suggestion:
+                        failure_entry["civilization"]["recovery"] = _suggestion
             return failure_entry
 
         schema = _validate_child_output_schema(child, result, task_index, run.child_task_id, run.relay_text)
@@ -388,6 +393,16 @@ def _run_single_child(
                 record_task_result(child._civ_task, failure_entry)
             except Exception:
                 logger.debug("Could not record civilization failure", exc_info=True)
+            # ADR-021: attach the recovery suggestion (retry/replan/reassign/
+            # .../halt) so the parent can act — or stop — instead of blindly
+            # re-delegating. Inert when HAOS_CIV_RECOVERY=0.
+            try:
+                from hermes.platform.civilization.delegation import suggest_recovery
+                _suggestion = suggest_recovery(child._civ_task, failure_entry)
+                if _suggestion:
+                    failure_entry["civilization"]["recovery"] = _suggestion
+            except Exception:
+                logger.debug("Could not suggest civilization recovery", exc_info=True)
         return run.finish_failed(
             failure_entry, _late_pending_steer,
             preview=str(exc), summary=str(exc), status="failed",
