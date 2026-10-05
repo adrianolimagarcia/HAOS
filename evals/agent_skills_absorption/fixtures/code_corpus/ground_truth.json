@@ -1,0 +1,67 @@
+{
+  "files": [
+    "py_pkg/__init__.py",
+    "py_pkg/base.py",
+    "py_pkg/math_service.py",
+    "py_pkg/app_service.py",
+    "ts_pkg/types.ts",
+    "ts_pkg/client.ts",
+    "ts_pkg/index.js"
+  ],
+  "languages": {
+    "python": ["py_pkg/__init__.py", "py_pkg/base.py", "py_pkg/math_service.py", "py_pkg/app_service.py"],
+    "typescript": ["ts_pkg/types.ts", "ts_pkg/client.ts"],
+    "javascript": ["ts_pkg/index.js"]
+  },
+  "ground_truth": {
+    "symbols": [
+      {"file": "py_pkg/base.py", "name": "BaseService", "kind": "class", "lang": "python"},
+      {"file": "py_pkg/math_service.py", "name": "Calculator", "kind": "class", "lang": "python"},
+      {"file": "py_pkg/math_service.py", "name": "standalone_mult", "kind": "function", "lang": "python"},
+      {"file": "py_pkg/app_service.py", "name": "AppService", "kind": "class", "lang": "python"},
+      {"file": "py_pkg/app_service.py", "name": "entrypoint", "kind": "function", "lang": "python"},
+      {"file": "ts_pkg/types.ts", "name": "UserProfile", "kind": "interface", "lang": "typescript"},
+      {"file": "ts_pkg/types.ts", "name": "CalcStatus", "kind": "type_alias", "lang": "typescript"},
+      {"file": "ts_pkg/types.ts", "name": "CalcResponse", "kind": "interface", "lang": "typescript"},
+      {"file": "ts_pkg/client.ts", "name": "ApiClient", "kind": "class", "lang": "typescript"},
+      {"file": "ts_pkg/client.ts", "name": "createDefaultClient", "kind": "function", "lang": "typescript"},
+      {"file": "ts_pkg/index.js", "name": "startApp", "kind": "function", "lang": "javascript"}
+    ],
+    "imports": [
+      {"source_file": "py_pkg/app_service.py", "target_module": "py_pkg.base", "imported_names": ["BaseService"], "lang": "python"},
+      {"source_file": "py_pkg/app_service.py", "target_module": "py_pkg.math_service", "imported_names": ["Calculator", "standalone_mult"], "lang": "python"},
+      {"source_file": "ts_pkg/client.ts", "target_module": "./types", "imported_names": ["UserProfile", "CalcResponse"], "lang": "typescript"},
+      {"source_file": "ts_pkg/index.js", "target_module": "./client", "imported_names": ["createDefaultClient"], "lang": "javascript"}
+    ],
+    "calls": [
+      {"caller_file": "py_pkg/app_service.py", "caller_symbol": "AppService.execute_flow", "callee_symbol": "Calculator.add", "lang": "python"},
+      {"caller_file": "py_pkg/app_service.py", "caller_symbol": "AppService.execute_flow", "callee_symbol": "standalone_mult", "lang": "python"},
+      {"caller_file": "py_pkg/app_service.py", "caller_symbol": "entrypoint", "callee_symbol": "AppService.run", "lang": "python"},
+      {"caller_file": "ts_pkg/index.js", "caller_symbol": "startApp", "callee_symbol": "createDefaultClient", "lang": "javascript"},
+      {"caller_file": "ts_pkg/index.js", "caller_symbol": "startApp", "callee_symbol": "ApiClient.fetchUser", "lang": "javascript"}
+    ],
+    "inheritances": [
+      {"child_class": "py_pkg.app_service::AppService", "parent_class": "py_pkg.base::BaseService", "lang": "python"}
+    ]
+  },
+  "architectural_questions": [
+    {
+      "id": "arch_q1_py_entrypoint",
+      "question": "What service orchestrates the math calculation flow and where is it invoked?",
+      "target_symbols": ["py_pkg.app_service::AppService", "py_pkg.app_service::entrypoint"],
+      "target_files": ["py_pkg/app_service.py"]
+    },
+    {
+      "id": "arch_q2_ts_client_types",
+      "question": "Which interface models the return payload of the API calculation submission in TypeScript?",
+      "target_symbols": ["ts_pkg/types::CalcResponse"],
+      "target_files": ["ts_pkg/types.ts"]
+    },
+    {
+      "id": "arch_q3_cross_lang_calls",
+      "question": "How does the JavaScript entrypoint obtain the ApiClient instance?",
+      "target_symbols": ["ts_pkg/client::createDefaultClient", "ts_pkg/index::startApp"],
+      "target_files": ["ts_pkg/index.js", "ts_pkg/client.ts"]
+    }
+  ]
+}

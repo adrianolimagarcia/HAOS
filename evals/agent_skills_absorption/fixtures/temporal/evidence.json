@@ -1,0 +1,33 @@
+{
+  "as_of_utc": "2026-10-04T00:00:00Z",
+  "channels": [
+    {"name":"primary-index","status":"ok","results":16},
+    {"name":"status-api","status":"degraded","results":0,"reason":"fixture simulates partial outage"},
+    {"name":"vendor-docs","status":"bypassed","results":0,"reason":"not queried in this run"}
+  ],
+  "sources": [
+    {"id":"E01","url":"https://oriondb.example/releases/4-2","published_at":"2026-09-20T10:00:00Z","claim":"Orion DB 4.2 added snapshot export"},
+    {"id":"E02","url":"https://nimbus.example/status/2026-09-30","published_at":"2026-09-30T08:30:00Z","claim":"Nimbus API had a 23-minute outage"},
+    {"id":"E03","url":"https://atlas.example/pricing","published_at":"2026-09-29T12:00:00Z","claim":"Atlas Storage is priced at $12 per TB-month"},
+    {"id":"E04","url":"https://lumen.example/blog/sdk-3-1","published_at":"2026-09-28T09:00:00Z","claim":"Lumen SDK 3.1 was released"},
+    {"id":"E05","url":"https://lumen.example/changelog","published_at":"2026-09-29T09:00:00Z","claim":"Lumen SDK 3.1 release has been postponed"},
+    {"id":"E06","url":"https://zephyr.example/news/passkeys","published_at":null,"claim":"Zephyr Auth announced passkey login"},
+    {"id":"E07","url":"https://pinecone.example/releases","published_at":"2026-09-11T16:15:00Z","claim":"Pinecone CLI 2.8 is the stable release"},
+    {"id":"E08","url":"https://cedar.example/incidents/latency","published_at":"2026-09-26T04:05:00Z","claim":"Cedar Payments had elevated latency"},
+    {"id":"E09","url":"https://solstice.example/pricing","published_at":"2026-07-15T09:00:00Z","claim":"Solstice Compute lists the small instance at $9 per month"},
+    {"id":"E10","url":"https://quartz.example/docs","published_at":"2026-09-27T15:00:00Z","claim":"Quartz Agent supports Python 3.12"},
+    {"id":"E11","url":"https://quartz.example/compatibility","published_at":"2026-09-28T15:00:00Z","claim":"Quartz Agent supports Python 3.11"},
+    {"id":"E12","url":"https://harbor.example/announcement/failover","published_at":"2026-09-22T13:45:00Z","claim":"Harbor Queue announced regional failover"},
+    {"id":"E13","url":"https://ember.example/builds","published_at":null,"claim":"Ember Cache supports ARM builds"},
+    {"id":"E14","url":"https://kestrel.example/changelog/5","published_at":"2026-10-02T18:00:00Z","claim":"Kestrel UI 5.0 was released"},
+    {"id":"E15","url":"https://vector.example/security/token-exposure","published_at":"2026-08-31T21:00:00Z","claim":"Vector Mail fixed a token exposure"},
+    {"id":"E16","url":"https://compass.example/pricing/team","published_at":"2026-08-01T00:00:00Z","claim":"Compass Metrics team plan costs $180 per year"},
+    {"id":"E17","url":"https://maple.example/releases","published_at":"2026-09-25T11:00:00Z","claim":"Maple Compiler 1.9 is the latest version"},
+    {"id":"E18","url":"https://maple.example/changelog","published_at":"2026-09-26T11:00:00Z","claim":"Maple Compiler 2.0 is in beta, not stable"}
+  ],
+  "expected_disagreements": [
+    {"case_id":"T0-04","source_ids":["E04","E05"]},
+    {"case_id":"T0-09","source_ids":["E10","E11"]},
+    {"case_id":"T0-16","source_ids":["E17","E18"]}
+  ]
+}
