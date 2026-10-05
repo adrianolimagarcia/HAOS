@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from cron import unreachable_retry as ur
-from cron.jobs import create_job, get_job, mark_job_run
+from cron import scheduler as sched
+from cron.jobs import create_job, get_due_jobs, get_job, mark_job_run
 
 
 @pytest.fixture

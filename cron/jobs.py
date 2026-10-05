@@ -853,6 +853,27 @@ def _ensure_aware(dt: datetime) -> datetime:
     return dt.astimezone(target_tz)
 
 
+def _instant_after(left: datetime, right: datetime) -> bool:
+    """Whether *left* is a later absolute instant than *right*."""
+    return left.astimezone(timezone.utc) > right.astimezone(timezone.utc)
+
+
+def _instant_at_or_before(left: datetime, right: datetime) -> bool:
+    """Whether *left* is at or before *right* as an absolute instant."""
+    return left.astimezone(timezone.utc) <= right.astimezone(timezone.utc)
+
+
+def _instant_before(left: datetime, right: datetime) -> bool:
+    """Whether *left* is an earlier absolute instant than *right*."""
+    return left.astimezone(timezone.utc) < right.astimezone(timezone.utc)
+
+
+def _seconds_after(dt: datetime, seconds: float) -> datetime:
+    """*dt* plus real *seconds*, in *dt*'s zone. Aware ``+ timedelta`` is wall-clock arithmetic
+    that drops ``fold``, so inside a fall-back hour it lands an hour off."""
+    return (dt.astimezone(timezone.utc) + timedelta(seconds=seconds)).astimezone(dt.tzinfo)
+
+
 def _parse_aware(value: Any) -> Optional[datetime]:
     """``_ensure_aware(datetime.fromisoformat(value))``, or None when *value* is not a parseable ISO
     string."""
@@ -2398,9 +2419,12 @@ def _record_run_outcome(
         job["run_claim"] = None
 
 
-def _advance_after_run(job: Dict[str, Any], now: str) -> None:
+def _advance_after_run(job: Dict[str, Any], now: str, *, ladder_rung: bool = False) -> None:
     """Bump ``repeat.completed`` and recompute ``next_run_at``; retire the record as a terminal
-    completion when the repeat limit is reached or a one-shot has no further run."""
+    completion when the repeat limit is reached or a one-shot has no further run.
+
+    ``ladder_rung``: this run re-ran an occurrence that already counted (an unreachable-model
+    re-run, ``cron.unreachable_retry.is_retry_run``), so ``repeat.completed`` is left as is."""
     # If no next run, decide whether this is terminal completion (one-shot) or a transient failure
     # (recurring schedule couldn't compute — e.g. 'croniter' missing from the runtime env). Recurring jobs
     # must NEVER be silently disabled: that turns a missing runtime dep into "job completed" and the user's
@@ -2414,9 +2438,10 @@ def _advance_after_run(job: Dict[str, Any], now: str) -> None:
         times = repeat.get("times")
         finite = times is not None and times > 0
         completed = repeat.get("completed", 0)
-        # Finite one-shots were pre-claimed by claim_dispatch() (completed already incremented) —
-        # do not double-count; recurring jobs and direct callers still get the increment.
-        if not (kind == "once" and finite and completed > 0):
+        # Count each occurrence once. A ladder re-run's occurrence already counted, and finite
+        # one-shots were pre-claimed by claim_dispatch() (completed already incremented); every
+        # other run, recurring or direct, gets the increment.
+        if not ladder_rung and not (kind == "once" and finite and completed > 0):
             completed += 1
             repeat["completed"] = completed
         if finite and completed >= times:
@@ -2454,6 +2479,7 @@ def mark_job_run(
     *,
     expected_fire_owner: Optional[str] = None,
     model_unreachable: bool = False,
+    ladder_rung: bool = False,
 ) -> bool:
     """Mark a job as run: update last_run_at/last_status, bump completed, recompute next_run_at,
     and retire the record as a terminal completion when the repeat limit is reached.
@@ -2466,7 +2492,9 @@ def mark_job_run(
     ``model_unreachable``: this failed run never reached the model (transient network/DNS error,
     zero API calls). Recurring jobs then get a bounded automatic re-run — ``next_run_at`` is pulled
     earlier per ``cron.unreachable_retry.RETRY_DELAYS_SECONDS`` — instead of waiting a full period
-    (Cowork-style; see cron/unreachable_retry.py).
+    (Cowork-style; see cron/unreachable_retry.py). ``ladder_rung``: this run IS one of those
+    re-runs (``is_retry_run``); its occurrence already counted, so ``repeat.completed`` is not
+    bumped again.
     """
     def apply(jobs, _i, job):
         if expected_fire_owner is not None:
@@ -2478,7 +2506,7 @@ def mark_job_run(
                 return False
         now = _hermes_now().isoformat()
         _record_run_outcome(job, success, error, delivery_error, status, now)
-        _advance_after_run(job, now)
+        _advance_after_run(job, now, ladder_rung=ladder_rung)
         from cron.unreachable_retry import clear_state, plan_retry
 
         if not success and model_unreachable and not is_terminal_job(job):
