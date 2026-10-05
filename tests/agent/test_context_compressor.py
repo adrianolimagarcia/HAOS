@@ -2202,6 +2202,31 @@ class TestUpdateModelResetsCalibration:
 
 
 
+    def test_absolute_volume_safety_cap_default_for_large_windows(self):
+        # 2M window model without explicit threshold_tokens_cap should cap at ABSOLUTE_VOLUME_SAFETY_CAP (180_000)
+        c = ContextCompressor(model="codex_gpt-6-sol-low", threshold_percent=0.75)
+        c.context_length = 2_000_000
+        c._apply_threshold_tokens_cap()
+        assert c.threshold_tokens == 180_000
+
+    def test_shrink_messages_or_tools(self):
+        c = ContextCompressor(model="test-model")
+        messages = [
+            {"role": "system", "content": "You are an assistant."},
+            {"role": "user", "content": "Run tool"},
+            {"role": "assistant", "content": "Running..."},
+            {"role": "tool", "tool_call_id": "call_1", "content": "A" * 5000},
+            {"role": "user", "content": "Latest turn"},
+        ]
+        shrunk = c.shrink_messages_or_tools(messages, max_tokens=180_000)
+        assert len(shrunk) == len(messages)
+        tool_content = shrunk[3]["content"]
+        assert "[Output truncated by Context Shrink:" in tool_content
+        assert "chars omitted]" in tool_content
+        assert tool_content.startswith("A" * 1000)
+        assert tool_content.endswith("A" * 500)
+
+
 class TestThresholdTokensCap:
     """Tests for the absolute token cap (compression.threshold_tokens).
 

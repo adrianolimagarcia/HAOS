@@ -90,6 +90,13 @@ def run_preflight_compression(
         and len(v.messages) > 1
         and v.compression_attempts < max_compression_attempts
     )
+    # High token volume safety harness: mechanically shrink huge middle turns/tools before proceeding
+    _chars_est = sum(len(m.get("content", "")) for m in v.messages if isinstance(m, dict) and isinstance(m.get("content"), str))
+    if _chars_est > 700_000:
+        shrink_fn = getattr(compressor, "shrink_messages_or_tools", None)
+        if callable(shrink_fn):
+            v.messages = shrink_fn(v.messages, max_tokens=getattr(compressor, "ABSOLUTE_VOLUME_SAFETY_CAP", 180_000))
+
     if (
         _eligible
         and not _review_fork_first_request_pending(agent)
@@ -219,6 +226,25 @@ def run_preflight_compression(
         # Any other gate blocking the forced preflight (e.g. uncompressible one-
         # message request) must fail closed: the request is proven not to fit.
         return _done("return", _exhausted_result())
+    # Without a provider usage anchor, an estimate beyond the entire window is
+    # unsafe to send (some backends silently truncate). A failed summary, cooldown,
+    # lock, or uncompressible active turn remains intact for a later retry.
+    _context_length = getattr(compressor, "context_length", 0)
+    if (
+        agent.compression_enabled
+        and isinstance(_context_length, int) and _context_length > 0
+        and request_pressure_tokens >= _context_length
+        and not getattr(agent, "_request_pressure_anchored", False)
+        and not getattr(compressor, "awaiting_real_usage_after_compression", False)
+    ):
+        logger.warning(
+            "Pre-API request deferred: estimated %s tokens >= context %s (session %s)",
+            request_pressure_tokens, _context_length, agent.session_id or "none",
+        )
+        agent._persist_session(v.messages, v.conversation_history)
+        return _done("return", _compression_deferred_result(
+            agent, v.messages, v.api_call_count, reason="oversized_request"
+        ))
     return _done("fallthrough")
 
 

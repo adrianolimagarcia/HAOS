@@ -663,6 +663,7 @@ def _is_summary_stub(content: str) -> bool:
 # Shared floor; the clarify summary cap must stay strictly BELOW it so a preserved
 # user answer is never re-summarized away on a later prune pass.
 _PRUNE_MIN_CHARS = 200
+ABSOLUTE_VOLUME_SAFETY_CAP = 180_000
 
 # Sentinel ``user_response`` values from timeout / no-user clarify callbacks;
 # must never be quoted as a user answer.
@@ -2406,11 +2407,19 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
     _coerce_threshold_tokens_cap = _coerce_max_tokens
 
     def _apply_threshold_tokens_cap(self) -> None:
-        """Clamp threshold_tokens to the configured cap (itself clamped to the context length)."""
+        """Clamp threshold_tokens to the configured cap (itself clamped to the context length).
+        For huge windows (context >= 1_500_000 or threshold > 200_000), applies ABSOLUTE_VOLUME_SAFETY_CAP
+        as a safety default when no explicit user cap is provided."""
         if self.threshold_tokens_cap is not None and self.threshold_tokens_cap > 0:
             _effective_cap = min(self.threshold_tokens_cap, self.context_length)
             if _effective_cap < self.threshold_tokens:
                 self.threshold_tokens = _effective_cap
+        elif self.threshold_tokens_cap is None:
+            # Default safety cap for massive context windows (>= 1.5M models)
+            if self.context_length >= 1_500_000:
+                _effective_cap = min(ABSOLUTE_VOLUME_SAFETY_CAP, self.context_length)
+                if _effective_cap < self.threshold_tokens:
+                    self.threshold_tokens = _effective_cap
 
     @staticmethod
     def _effective_threshold_percent(context_length: int, threshold_percent: float) -> float:
@@ -2645,6 +2654,48 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         if self.last_real_prompt_tokens >= self.threshold_tokens:
             return False
         return not self._provider_omits_usage
+
+    def shrink_messages_or_tools(
+        self, messages: List[Dict[str, Any]], max_tokens: int = ABSOLUTE_VOLUME_SAFETY_CAP
+    ) -> List[Dict[str, Any]]:
+        """Mechanically shrink transcript messages to fit safely under max_tokens without LLM calls.
+        Preserves system/head messages and recent tail. In the middle section, truncates oversized
+        tool outputs (>2000 chars) replacing content with '[Output truncated by Context Shrink: N chars omitted]'.
+        If token pressure remains critical, drops older intermediate non-system turns."""
+        if not messages or len(messages) <= 2:
+            return messages
+        result = [m.copy() for m in messages]
+        head_end = min(len(result), self._protect_head_size(result))
+        protect_tail = 1
+        tail_start = max(0, min(len(result), len(result) - protect_tail))
+
+        # Pass 1: Truncate large historical tool outputs
+        for i in range(0, tail_start):
+            msg = result[i]
+            if msg.get("role") == "tool":
+                content = msg.get("content", "")
+                if isinstance(content, str) and len(content) > 2000:
+                    keep_prefix = content[:1000]
+                    keep_suffix = content[-500:]
+                    omitted = len(content) - (len(keep_prefix) + len(keep_suffix))
+                    result[i] = {
+                        **msg,
+                        "content": f"{keep_prefix}\n[Output truncated by Context Shrink: {omitted} chars omitted]\n{keep_suffix}",
+                    }
+
+        def _total_est() -> int:
+            return sum(_estimate_msg_budget_tokens(m) for m in result)
+
+        if _total_est() <= max_tokens or len(result) <= head_end + protect_tail:
+            return result
+
+        # Pass 2: If still above budget, drop older intermediate turns
+        while _total_est() > max_tokens and len(result) > (head_end + protect_tail):
+            result.pop(head_end)
+
+        return result
+
+
 
     def should_compress(self, prompt_tokens: int = None) -> bool:
         """True when compression should run now (anti-thrash included; see :meth:`should_compress_info` for the reason)."""
@@ -4366,22 +4417,6 @@ Write only the summary body. Do not include any preamble or prefix."""
                 prepend=True,
             )
         drop_stale_api_content(replay)
-
-        # The replay is a replacement for the in-flight row, not an additional
-        # occurrence of it. When the original survived in the protected head,
-        # retaining it gives the durable transcript two active rows with the
-        # same message_uid and renders the request twice after reload.
-        replay_uid = replay.get("message_uid")
-        if isinstance(replay_uid, str) and replay_uid:
-            compressed[:] = [
-                msg
-                for msg in compressed
-                if not (
-                    msg is not carrier
-                    and msg.get("role") == "user"
-                    and msg.get("message_uid") == replay_uid
-                )
-            ]
 
         if last_visible_role == "user":
             # Alternation is judged on template-visible rows only (tool_calls /
