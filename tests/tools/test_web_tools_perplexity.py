@@ -57,6 +57,9 @@ def test_search_dispatch_maps_search_api_shape():
         "url": "https://en.wikipedia.org/wiki/Bloom_filter",
         "description": "space-efficient probabilistic structure",
         "position": 1,
+        "date": "2004-04-17",
+        "published": "2004-04-17",
+        "published_at": "2004-04-17",
     }
 
 

@@ -105,14 +105,18 @@ def _normalize_search_results(response: Dict[str, Any]) -> Dict[str, Any]:
     """Map Search API ``{results: [{title,url,snippet,...}]}`` to the tool shape."""
     web_results = []
     for i, result in enumerate(response.get("results") or []):
-        web_results.append(
-            {
-                "title": result.get("title", "") or "",
-                "url": result.get("url", "") or "",
-                "description": result.get("snippet", "") or "",
-                "position": i + 1,
-            }
-        )
+        row: Dict[str, Any] = {
+            "title": result.get("title", "") or "",
+            "url": result.get("url", "") or "",
+            "description": result.get("snippet", "") or "",
+            "position": i + 1,
+        }
+        published = result.get("date") or result.get("published_at") or result.get("published")
+        if published:
+            row["date"] = published
+            row["published"] = published
+            row["published_at"] = published
+        web_results.append(row)
     return {"success": True, "data": {"web": web_results}}
 
 
