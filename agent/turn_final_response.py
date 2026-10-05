@@ -77,22 +77,40 @@ def finish_text_response(
     # delimiter. ``finish_reason == "stop"`` means the provider considers generation
     # complete, so the empty-response ladder would only re-bill the same input to arrive
     # at a truncated preview of this text; promote the reasoning to the visible answer
-    # BEFORE the ladder. ``length`` (cut off mid-thought) stays on the continuation path,
-    # and the promoted text is persisted as ordinary content so the next turn replays it.
+    # BEFORE the ladder. ``length`` (cut off mid-thought) stays on the continuation path.
+    # The promoted text is RETURNED as the answer but never written into the assistant
+    # row's ``content``: chain-of-thought stored as ordinary content is indistinguishable
+    # from a real reply on every history surface (#111761). The row keeps ``content``
+    # empty with the text in its reasoning fields and carries the promoted text as the
+    # ``api_content`` sidecar, so the next turn still replays it byte-identically.
+    # Anthropic thinking (signed ``thinking`` block, or a plugin's ``*.native_assistant`` carrier
+    # of native Claude turns) is a summary written by a separate model, never the answer: it
+    # takes the empty-response continuation below instead.
     _content = assistant_message.content
+    _promoted = None
     if (
         finish_reason == "stop"
         and not assistant_message.tool_calls
         and (_content is None or (isinstance(_content, str) and not _content.strip()))
-    ):
-        _promoted = agent._extract_reasoning(assistant_message)
-        if _promoted:
-            logger.info(
-                "Reasoning-only clean stop (%d chars) — using reasoning as the final response",
-                len(_promoted),
+        and not any(
+            isinstance(d, dict) and (
+                (d.get("type") in ("thinking", "redacted_thinking") and (d.get("signature") or d.get("data")))
+                or str(d.get("type") or "").endswith(".native_assistant")
             )
-            assistant_message.content = _promoted
-    final_response = assistant_message.content or ""
+            for d in getattr(assistant_message, "reasoning_details", None) or ()
+        )
+    ):
+        _promoted = agent._extract_reasoning(assistant_message) or None
+        if _promoted:
+            # WARNING, not INFO: a model that keeps ending turns this way is stalled
+            # (planning monologue, zero tool calls) while the turn reports "complete".
+            logger.warning(
+                "Reasoning-only clean stop (%d chars) — returning the reasoning as the final "
+                "response (model=%s provider=%s api_calls=%d tool_turns=%d)",
+                len(_promoted), agent.model, agent.provider, api_call_count,
+                sum(1 for m in messages if isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")),
+            )
+    final_response = _promoted or assistant_message.content or ""
     # Unmute: _mute_post_response from a housekeeping tool turn must not silence
     # empty-response warnings on the final response path.
     agent._mute_post_response = False
