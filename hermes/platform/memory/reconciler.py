@@ -107,6 +107,7 @@ class MemoryReconciler:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_haos_mem_topic ON haos_memories(topic, status);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_haos_mem_status ON haos_memories(status);")
             conn.commit()
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
 
     @staticmethod
     def _normalize_tokens(text: str) -> set[str]:

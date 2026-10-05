@@ -187,9 +187,27 @@ impl RAGGraphEngine {
                  node_id UNINDEXED,
                  content,
                  tokenize='unicode61'
-             );",
+             );
+
+             CREATE TABLE IF NOT EXISTS haos_mental_models (
+                 model_id TEXT PRIMARY KEY,
+                 title TEXT NOT NULL,
+                 version INTEGER NOT NULL DEFAULT 1,
+                 ast_json TEXT NOT NULL,
+                 compiled_markdown TEXT NOT NULL,
+                 token_count INTEGER NOT NULL,
+                 last_refreshed_at INTEGER NOT NULL,
+                 last_memory_write_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_mental_models_write ON haos_mental_models(last_memory_write_at);",
         )
         .map_err(|e| format!("Failed to initialize raggraph schema: {e}"))?;
+
+        // Migrações retrocompatíveis para bases já existentes
+        let _ = conn.execute("ALTER TABLE haos_graph_nodes ADD COLUMN valid_from INTEGER;", []);
+        let _ = conn.execute("ALTER TABLE haos_graph_nodes ADD COLUMN valid_until INTEGER;", []);
+        let _ = conn.execute("ALTER TABLE haos_graph_nodes ADD COLUMN proof_count INTEGER NOT NULL DEFAULT 1;", []);
+        let _ = conn.execute("ALTER TABLE haos_graph_nodes ADD COLUMN supporting_quotes_json TEXT NOT NULL DEFAULT '[]';", []);
 
         Ok(conn)
     }

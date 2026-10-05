@@ -22,6 +22,7 @@ P11 — gate de staging:
 from __future__ import annotations
 
 import logging
+import hashlib
 import os
 import re
 import subprocess
@@ -60,6 +61,7 @@ def _sanitize_session_preview(text: str) -> str:
 
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
 from hermes.platform.context.memory.candidate import MemoryCandidate
+from hermes.platform.context.memory.mental_model_client import MentalModelClient
 from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
 from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
 from hermes.platform.memory.instincts import InstinctStore, is_prompt_envelope, INITIAL_CONFIDENCE
@@ -335,6 +337,44 @@ class DreamConsolidator:
         self.staging_store = MemoryStagingStore(self.memory_dir / "staging")
         self.router = MemoryRouter(staging_store=self.staging_store)
         self.instinct_store = InstinctStore(self.memory_dir / "instincts")
+        self.mental_model_client = MentalModelClient(self.home)
+
+    def _promote_mental_model(self, candidate: MemoryCandidate, sources: List[str]) -> int:
+        """Project a promoted lesson; count only successful model writes."""
+        destination = candidate.proposed_destination
+        category = _CATEGORY_BY_DESTINATION.get(destination, "")
+        if destination == "core_agent" or category == "workflow":
+            model_id, section_id, title = "core_directives", "sec_core", "Core directives"
+        elif destination == "core_user" or category == "domain":
+            model_id, section_id, title = "user_preferences", "sec_user", "User preferences"
+        else:
+            model_id, section_id, title = "domain_conventions", "sec_conventions", "Domain conventions"
+        block_id = hashlib.sha256(candidate.fact.strip().encode("utf-8")).hexdigest()
+        client = self.mental_model_client
+        # One transaction prevents a visible section-only partial projection.
+        return int(client.apply_deltas(model_id, [
+            {"type": "add_section", "section_id": section_id, "title": title, "order": 0},
+            {"type": "append_block", "section_id": section_id,
+             "block": {"block_id": block_id, "content": candidate.fact.strip(),
+                       "proof_count": len(set(sources)),
+                       "source_node_ids": list(dict.fromkeys(sources))}},
+        ]))
+
+    def _repair_promoted_models(self) -> int:
+        """Replay promoted staging records after a projection failure or DB loss."""
+        updated = 0
+        for record in self.staging_store.load().values():
+            if record.get("status") != PROMOTED or not record.get("fact"):
+                continue
+            try:
+                candidate = self.router.route_fact(
+                    fact=record["fact"], source_uri=record.get("source_uri") or "",
+                    confidence=float(record.get("confidence") or 0), scope="project",
+                )
+                updated += self._promote_mental_model(candidate, list(record.get("provenance") or []))
+            except Exception:
+                logger.exception("Promoted lesson mental-model repair failed")
+        return updated
 
     def get_cursor(self) -> float:
         """Timestamp of last consolidated session."""
@@ -366,7 +406,8 @@ class DreamConsolidator:
             self.vault_adrs_dir.mkdir(parents=True, exist_ok=True)
 
         from hermes_state import SessionDB
-        db = SessionDB(read_only=True)
+        # Read the same explicit profile that owns staging and the projection.
+        db = SessionDB(db_path=self.home / "state.db", read_only=True)
         last_cursor = self.get_cursor()
 
         try:
@@ -381,6 +422,7 @@ class DreamConsolidator:
         ]
 
         if not candidates:
+            repaired = 0 if dry_run else self._repair_promoted_models()
             return {
                 "status": "idle",
                 "message": "No new sessions to consolidate",
@@ -388,11 +430,13 @@ class DreamConsolidator:
                 "staged_count": 0,
                 "promoted_count": 0,
                 "commit": None,
+                "mental_models_updated": repaired,
             }
 
         consolidated = 0
         staged = 0
         promoted = 0
+        mental_models_updated = 0
         reconciliation_stats = {"ADD": 0, "UPDATE": 0, "SUPERSEDE": 0, "NOOP": 0}
         max_ts = last_cursor
 
@@ -497,6 +541,10 @@ class DreamConsolidator:
                 self.staging_store.mark_promoted(
                     key, doc_path=str(writer.last_written) if writer.last_written else None
                 )
+                try:
+                    mental_models_updated += self._promote_mental_model(candidate, [*prior_sessions, session_uri])
+                except Exception:
+                    logger.exception("Promoted lesson mental-model projection failed")
 
                 # Mem0-inspired declarative memory reconciliation (apenas no que é
                 # promovido, como antes: o stats espelha conhecimento canônico).
@@ -532,10 +580,12 @@ class DreamConsolidator:
                 "consolidated_count": consolidated,
                 "staged_count": staged,
                 "promoted_count": promoted,
+                "mental_models_updated": 0,
                 "reconciliation": reconciliation_stats,
                 "commit": None,
             }
 
+        mental_models_updated += self._repair_promoted_models()
         self.set_cursor(max_ts)
         # P5 — integridade: as escritas deste turno (lições okf, staging, cursor)
         # são registradas no baseline no MESMO turno do fluxo de escrita (senão o
@@ -552,6 +602,7 @@ class DreamConsolidator:
             "consolidated_count": consolidated,
             "staged_count": staged,
             "promoted_count": promoted,
+            "mental_models_updated": mental_models_updated,
             "reconciliation": reconciliation_stats,
             "commit": commit_info.sha if commit_info else None,
             "timestamp": commit_info.timestamp if commit_info else None,

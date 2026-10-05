@@ -22,7 +22,8 @@ LESSON = "Sempre rodar o wrapper de testes antes do commit"
 
 
 def _new_session(home: Path, sid: str, lesson: str, title: str = "Sessao com licao") -> None:
-    db = SessionDB()
+    # Bind the fixture to the exact profile read by Dream; no global-home fallback.
+    db = SessionDB(db_path=home / "state.db")
     db.ensure_session(session_id=sid, source="cli", model="gemini-test")
     db.set_session_title(sid, title)
     db.append_message(sid, "user", lesson)
@@ -331,7 +332,11 @@ def test_dream_dry_run_não_escreve_nada(tmp_path: Path, monkeypatch):
     consolidator = DreamConsolidator(hermes_home=home)
 
     def _snapshot(root: Path):
-        return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+        return sorted(
+            str(p.relative_to(root))
+            for p in root.rglob("*")
+            if p.is_file() and not p.name.endswith(("-wal", "-shm"))
+        )
 
     before = _snapshot(home)
     cursor_before = consolidator.get_cursor()

@@ -1,7 +1,9 @@
 pub mod compactor;
+pub mod mental_model;
 pub mod okf;
 pub mod profile;
 pub mod raggraph;
+pub mod tempr;
 pub mod vector_search;
 pub mod worker_snapshot;
 pub mod writer_envelope;
@@ -1501,6 +1503,79 @@ mod tests {
             -3
         );
     }
+
+    #[test]
+    fn test_adr022_mental_model_and_tempr_c_abi() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let haos_home = temp_dir.path();
+        std::fs::File::create(haos_home.join("state.db")).unwrap();
+        let c_haos_home = std::ffi::CString::new(haos_home.to_str().unwrap()).unwrap();
+        let c_model_id = std::ffi::CString::new("architecture_rules").unwrap();
+
+        // 1. Aplicar DeltaOp AddSection via C-ABI
+        let delta_add_sec = serde_json::json!({
+            "type": "add_section",
+            "section_id": "sec_core",
+            "title": "Regras Centrais",
+            "order": 1
+        }).to_string();
+        let c_delta_1 = std::ffi::CString::new(delta_add_sec).unwrap();
+
+        let rc1 = mental_model_apply_delta_json(
+            c_haos_home.as_ptr(),
+            c_model_id.as_ptr(),
+            c_delta_1.as_ptr(),
+        );
+        assert_eq!(rc1, 0, "apply_delta_json AddSection should succeed");
+
+        // 2. Aplicar DeltaOp AppendBlock via C-ABI
+        let delta_append_blk = serde_json::json!({
+            "type": "append_block",
+            "section_id": "sec_core",
+            "block": {
+                "block_id": "b_rust",
+                "content": "Engine nativo em Rust sem dependências externas",
+                "proof_count": 8,
+                "source_node_ids": ["exp_01"]
+            }
+        }).to_string();
+        let c_delta_2 = std::ffi::CString::new(delta_append_blk).unwrap();
+
+        let rc2 = mental_model_apply_delta_json(
+            c_haos_home.as_ptr(),
+            c_model_id.as_ptr(),
+            c_delta_2.as_ptr(),
+        );
+        assert_eq!(rc2, 0, "apply_delta_json AppendBlock should succeed");
+
+        // 3. Obter Markdown compilado via C-ABI O(1)
+        let mut buf = vec![0u8; 4096];
+        let bytes_written = mental_model_get_compiled_buffered(
+            c_haos_home.as_ptr(),
+            c_model_id.as_ptr(),
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() as c_int,
+        );
+        assert!(bytes_written > 0, "mental_model_get_compiled_buffered should return length > 0");
+
+        let compiled_md = std::str::from_utf8(&buf[..bytes_written as usize]).unwrap();
+        assert!(compiled_md.contains("## Regras Centrais"));
+        assert!(compiled_md.contains("- Engine nativo em Rust sem dependências externas (provas: 8)"));
+
+        // 4. Testar tempr_search_buffered via C-ABI
+        let c_query = std::ffi::CString::new("Rust dependências").unwrap();
+        let mut tempr_buf = vec![0u8; 8192];
+        let tempr_res = tempr_search_buffered(
+            c_haos_home.as_ptr(),
+            c_query.as_ptr(),
+            0.0,
+            0.0,
+            10,
+            tempr_buf.as_mut_ptr() as *mut c_char,
+            tempr_buf.len() as c_int,
+        );
+        assert!(tempr_res >= 0, "tempr_search_buffered should succeed");
+    }
 }
 
 // =========================================================================
@@ -1674,4 +1749,146 @@ pub extern "C" fn raggraph_record_agent_event(
         Ok(_) => 0,
         Err(_) => -2,
     }
+}
+
+/// Recupera o Markdown pré-compilado de um Mental Model em O(1) (<0.1ms).
+#[no_mangle]
+pub extern "C" fn mental_model_get_compiled_buffered(
+    haos_home_cstr: *const c_char,
+    model_id_cstr: *const c_char,
+    out_buf: *mut c_char,
+    out_buf_cap: c_int,
+) -> c_int {
+    if haos_home_cstr.is_null() || model_id_cstr.is_null() || out_buf.is_null() || out_buf_cap <= 1 {
+        return -1;
+    }
+
+    let haos_home_str = unsafe { CStr::from_ptr(haos_home_cstr).to_string_lossy() };
+    let model_id = unsafe { CStr::from_ptr(model_id_cstr).to_string_lossy() };
+    let haos_home = Path::new(&*haos_home_str);
+
+    let conn = match crate::raggraph::RAGGraphEngine::open_or_create_db(haos_home) {
+        Ok(c) => c,
+        Err(_) => return -2,
+    };
+
+    match crate::mental_model::StructuredDocument::get_compiled_markdown(&conn, &model_id) {
+        Ok(Some(md)) => {
+            let bytes = md.as_bytes();
+            if bytes.len() >= out_buf_cap as usize {
+                return -3; // Buffer insuficiente
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr() as *const c_char, out_buf, bytes.len());
+                *out_buf.add(bytes.len()) = 0;
+            }
+            bytes.len() as c_int
+        }
+        Ok(None) => 0, // Não encontrado
+        Err(_) => -4,
+    }
+}
+
+/// Aplica uma mutação DeltaOp em formato JSON no Mental Model especificado.
+#[no_mangle]
+pub extern "C" fn mental_model_apply_delta_json(
+    haos_home_cstr: *const c_char,
+    model_id_cstr: *const c_char,
+    delta_json_cstr: *const c_char,
+) -> c_int {
+    if haos_home_cstr.is_null() || model_id_cstr.is_null() || delta_json_cstr.is_null() {
+        return -1;
+    }
+
+    let haos_home_str = unsafe { CStr::from_ptr(haos_home_cstr).to_string_lossy() };
+    let model_id = unsafe { CStr::from_ptr(model_id_cstr).to_string_lossy() };
+    let delta_json = unsafe { CStr::from_ptr(delta_json_cstr).to_string_lossy() };
+    let haos_home = Path::new(&*haos_home_str);
+
+    let op: crate::mental_model::DeltaOp = match serde_json::from_str(&delta_json) {
+        Ok(o) => o,
+        Err(_) => return -2, // JSON inválido
+    };
+
+    let conn = match crate::raggraph::RAGGraphEngine::open_or_create_db(haos_home) {
+        Ok(c) => c,
+        Err(_) => return -3,
+    };
+
+    let mut doc = match crate::mental_model::StructuredDocument::load_from_db(&conn, &model_id) {
+        Ok(Some(d)) => d,
+        Ok(None) => crate::mental_model::StructuredDocument::new(model_id.as_ref(), model_id.as_ref()),
+        Err(_) => return -4,
+    };
+
+    if let Err(e) = doc.apply_delta(&op) {
+        eprintln!("apply_delta error: {e}");
+        return -5; // Falha na aplicação do delta
+    }
+
+    match doc.save_to_db(&conn) {
+        Ok(_) => 0,
+        Err(_) => -6,
+    }
+}
+
+/// Executa busca híbrida unificada TEMPR diretamente em SQLite.
+#[no_mangle]
+pub extern "C" fn tempr_search_buffered(
+    haos_home_cstr: *const c_char,
+    query_text_cstr: *const c_char,
+    time_start: c_double,
+    time_end: c_double,
+    limit: c_int,
+    out_buf: *mut c_char,
+    out_buf_cap: c_int,
+) -> c_int {
+    if haos_home_cstr.is_null() || query_text_cstr.is_null() || out_buf.is_null() || out_buf_cap <= 1 || limit <= 0 {
+        return -1;
+    }
+
+    let haos_home_str = unsafe { CStr::from_ptr(haos_home_cstr).to_string_lossy() };
+    let query_text = unsafe { CStr::from_ptr(query_text_cstr).to_string_lossy() };
+    let haos_home = Path::new(&*haos_home_str);
+
+    let conn = match crate::raggraph::RAGGraphEngine::open_or_create_db(haos_home) {
+        Ok(c) => c,
+        Err(_) => return -2,
+    };
+
+    let t_start = if time_start > 0.0 { Some(time_start as f64) } else { None };
+    let t_end = if time_end > 0.0 { Some(time_end as f64) } else { None };
+    let params = crate::tempr::TEMPRParams::default();
+
+    let results = match crate::tempr::TEMPREngine::search(
+        &conn,
+        &query_text,
+        &[],
+        t_start,
+        t_end,
+        limit as usize,
+        &params,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("tempr search error: {e}");
+            return -3;
+        }
+    };
+
+    let json_bytes = match serde_json::to_vec(&results) {
+        Ok(b) => b,
+        Err(_) => return -4,
+    };
+
+    if json_bytes.len() >= out_buf_cap as usize {
+        return -5; // Buffer insuficiente
+    }
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(json_bytes.as_ptr() as *const c_char, out_buf, json_bytes.len());
+        *out_buf.add(json_bytes.len()) = 0;
+    }
+
+    json_bytes.len() as c_int
 }

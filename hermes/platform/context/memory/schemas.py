@@ -53,10 +53,14 @@ class KnowledgeItem:
     superseded_by: Optional[str] = None
     tags: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    proof_count: int = 1
+    supporting_quotes: List[Dict[str, Any]] = field(default_factory=list)
+    valid_from: Optional[float] = None
+    valid_until: Optional[float] = None
 
     def digest(self) -> str:
         """Hash SHA-256 canônico para auditoria criptográfica e deduplicação."""
-        payload = f"{self.id}:{self.kind}:{self.scope}:{self.title}:{self.content}:{self.supersedes}"
+        payload = f"{self.id}:{self.kind}:{self.scope}:{self.title}:{self.content}:{self.supersedes}:{self.proof_count}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def is_active(self) -> bool:
@@ -80,6 +84,10 @@ class KnowledgeItem:
             "superseded_by": self.superseded_by,
             "tags": list(self.tags),
             "metadata": dict(self.metadata),
+            "proof_count": self.proof_count,
+            "supporting_quotes": list(self.supporting_quotes),
+            "valid_from": self.valid_from,
+            "valid_until": self.valid_until,
             "digest": self.digest(),
             "is_active": self.is_active(),
         }
@@ -102,7 +110,130 @@ class KnowledgeItem:
             superseded_by=data.get("superseded_by"),
             tags=list(data.get("tags", [])),
             metadata=dict(data.get("metadata", {})),
+            proof_count=int(data.get("proof_count", 1)),
+            supporting_quotes=list(data.get("supporting_quotes", [])),
+            valid_from=float(data["valid_from"]) if data.get("valid_from") is not None else None,
+            valid_until=float(data["valid_until"]) if data.get("valid_until") is not None else None,
         )
+
+
+@dataclass
+class MentalModelBlockSchema:
+    """Bloco atômico de conteúdo dentro de uma seção de modelo mental."""
+    block_id: str
+    content: str
+    proof_count: int = 1
+    source_node_ids: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "block_id": self.block_id,
+            "content": self.content,
+            "proof_count": self.proof_count,
+            "source_node_ids": list(self.source_node_ids),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> MentalModelBlockSchema:
+        return cls(
+            block_id=data["block_id"],
+            content=data["content"],
+            proof_count=int(data.get("proof_count", 1)),
+            source_node_ids=list(data.get("source_node_ids", [])),
+        )
+
+
+@dataclass
+class MentalModelSectionSchema:
+    """Seção agrupando blocos de um modelo mental."""
+    section_id: str
+    title: str
+    order: int = 0
+    blocks: List[MentalModelBlockSchema] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "section_id": self.section_id,
+            "title": self.title,
+            "order": self.order,
+            "blocks": [b.to_dict() for b in self.blocks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> MentalModelSectionSchema:
+        return cls(
+            section_id=data["section_id"],
+            title=data["title"],
+            order=int(data.get("order", 0)),
+            blocks=[MentalModelBlockSchema.from_dict(b) for b in data.get("blocks", [])],
+        )
+
+
+@dataclass
+class MentalModelASTSchema:
+    """Documento estruturado compilável (AST) de um Modelo Mental (ADR-022)."""
+    model_id: str
+    title: str
+    version: int = 1
+    sections: List[MentalModelSectionSchema] = field(default_factory=list)
+
+    def compile_to_markdown(self) -> str:
+        out = [f"# {self.title}\n"]
+        for sec in sorted(self.sections, key=lambda s: s.order):
+            out.append(f"## {sec.title}")
+            for blk in sec.blocks:
+                out.append(f"- {blk.content} (provas: {blk.proof_count})")
+            out.append("")
+        return "\n".join(out).strip()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "model_id": self.model_id,
+            "title": self.title,
+            "version": self.version,
+            "sections": [s.to_dict() for s in self.sections],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> MentalModelASTSchema:
+        return cls(
+            model_id=data["model_id"],
+            title=data["title"],
+            version=int(data.get("version", 1)),
+            sections=[MentalModelSectionSchema.from_dict(s) for s in data.get("sections", [])],
+        )
+
+
+@dataclass
+class DeltaOpSchema:
+    """Operação Delta atômica para mutação de AST de Modelo Mental."""
+    op_type: Literal["add_section", "append_block", "replace_block", "remove_block"]
+    section_id: str
+    title: Optional[str] = None
+    order: Optional[int] = None
+    block: Optional[MentalModelBlockSchema] = None
+    block_id: Optional[str] = None
+    new_content: Optional[str] = None
+    proof_increment: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "type": self.op_type,
+            "section_id": self.section_id,
+        }
+        if self.title is not None:
+            d["title"] = self.title
+        if self.order is not None:
+            d["order"] = self.order
+        if self.block is not None:
+            d["block"] = self.block.to_dict()
+        if self.block_id is not None:
+            d["block_id"] = self.block_id
+        if self.new_content is not None:
+            d["new_content"] = self.new_content
+        if self.proof_increment:
+            d["proof_increment"] = self.proof_increment
+        return d
 
 
 @dataclass
