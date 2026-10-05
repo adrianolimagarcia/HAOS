@@ -285,6 +285,20 @@ class TestMemoryStoreReplace:
         assert result["success"] is True and "Deploys: Fly.io." in store.memory_entries
 
 
+class TestSelfCorrectingFailures:
+    def test_failures_name_the_fix(self, store):
+        """A refused write tells the model exactly what to change: the chars to free, and
+        for an old_text that matches nothing, the entries it most resembles."""
+        store.add("memory", "Deploys go through GitHub Actions to Fly.io with manual approval.")
+        store.add("memory", "x" * 380)  # 65 + 3 + 380 = 448 of 500
+        full = store.add("memory", "y" * 54)  # 448 + 3 + 54 = 505
+        assert "by 5 chars" in full["error"] and "free at least 5 chars" in full["error"]
+        miss = store.apply_batch("memory", [{"action": "replace", "old_text": "Deploys via GitHub Actions to Fly",
+                                             "content": "Deploys: Fly.io + canary."}])
+        assert miss["closest_entries"] == ["Deploys go through GitHub Actions to Fly.io with manual approval."]
+        assert "current_entries" not in miss  # batch aborts still never echo the store (#97316)
+
+
 class TestMemoryStoreRemove:
     def test_remove_entry(self, store):
         store.add("memory", "temporary note")
@@ -679,6 +693,16 @@ class TestExternalDriftGuard:
 
         result = store.replace("memory", "Entry two", "Entry two replaced.")
         assert result["success"] is True
+
+    def test_hand_formatted_layout_is_not_drift(self, store):
+        """#107270: blank lines around § and an empty entry lose nothing on a flush (parsing
+        only strips whitespace), so replace/remove must work and leave no .bak behind."""
+        path = store._path_for("memory")
+        path.write_text("Deploys: Fly.io, manual approval.\n\n§\n\nHost: forge\n§\n\n§\nRepo: acme", encoding="utf-8")
+        assert store.replace("memory", "Deploys:", "Deploys: Fly.io, 30m canary, manual approval.")["success"] is True
+        assert store.remove("memory", "Repo: acme")["success"] is True
+        assert path.read_text(encoding="utf-8") == "Deploys: Fly.io, 30m canary, manual approval.\n§\nHost: forge"
+        assert not list(path.parent.glob("MEMORY.md.bak.*"))
 
     def test_drift_guard_also_protects_user_target(self, store):
         """USER.md gets the same guarantee as MEMORY.md."""
