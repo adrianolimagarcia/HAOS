@@ -55,10 +55,39 @@ def _read_failed_error(path: Path) -> Dict[str, Any]:
         f"memory, so the write is refused. Nothing was changed — retry in a moment.")
 
 
+# Typography a model re-types differently from the stored entry: every quote/backtick -> "'",
+# every dash/minus -> "-". Plus whitespace runs (re-wrapped lines, NBSP) -> one space.
+_MATCH_FOLD = str.maketrans({**dict.fromkeys("\"`\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f", "'"),
+                             **dict.fromkeys("\u2010\u2011\u2012\u2013\u2014\u2015\u2212", "-")})
+
+
+def _normalize_for_match(text: str) -> str:
+    """Quote/dash/whitespace-folded form for tolerant old_text matching. Models re-emit an
+    entry with straight quotes for curly ones, '-' for an em dash, unwrapped lines, or a
+    newline over-escaped to a literal backslash-n, and a byte-exact substring test then
+    reports "No entry matched" for an unambiguous target."""
+    return " ".join(str(text).replace("\\n", " ").translate(_MATCH_FOLD).split())
+
+
+def _substring_matches(entries: List[str], old_text: str) -> List[int]:
+    """Indices of entries containing *old_text*: byte-exact first, else typography-folded."""
+    if exact := [i for i, e in enumerate(entries) if old_text in e]:
+        return exact
+    needle = _normalize_for_match(old_text)
+    if not any(c.isalnum() for c in needle):  # punctuation/space alone would select a whole entry
+        return []
+    return [i for i, e in enumerate(entries) if needle in _normalize_for_match(e)]
+
+
 def _find_unique_match(entries: List[str], old_text: str) -> Tuple[Optional[int], bool]:
-    """``(index, ambiguous)`` for entries containing *old_text*. Exact-duplicate
+    """``(index, ambiguous)`` for entries matching *old_text*. A whole-entry
+    EXACT match (``old_text == entry``) takes absolute priority — substring
+    matches are only considered when no entry equals *old_text*, so a short
+    entry stays addressable even when its full text is contained inside a
+    longer sibling entry (remove('test') vs '...tests pass...'). Exact-duplicate
     matches are safe (first wins); distinct matches → ``(None, True)``."""
-    matches = [i for i, e in enumerate(entries) if old_text in e]
+    exact = [i for i, e in enumerate(entries) if e == old_text]
+    matches = exact or _substring_matches(entries, old_text)
     if len({entries[i] for i in matches}) > 1:
         return None, True
     return (matches[0] if matches else None), False
