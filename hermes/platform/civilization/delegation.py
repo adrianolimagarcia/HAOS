@@ -676,6 +676,14 @@ def record_task_result(
     except Exception as exc:
         logger.debug("Failed recording evolution experience: %s", exc)
 
+    # 3. Auto-evolution & Canary Evaluation (Tier 3+)
+    try:
+        from .auto_evolution import evaluate_canary_health, check_and_trigger_auto_evolution
+        evaluate_canary_health(bot_id, event_store=store)
+        check_and_trigger_auto_evolution(bot_id, event_store=store)
+    except Exception as exc:
+        logger.debug("Failed auto-evolution or canary evaluation: %s", exc)
+
 
 # ---------------------------------------------------------------------------
 # Promotion-route hardening (audit B1 / M5 / Council-fachada)
