@@ -1,0 +1,122 @@
+[
+  {
+    "case_id": "T0-01",
+    "query": "What changed in the latest Orion DB release?",
+    "flow": "mcp__haos_edge__perplexity_ask",
+    "status": "ok",
+    "model": "default",
+    "latency_seconds": 25.7,
+    "claimed_date": "2026-09-20T00:00:00Z",
+    "citation_ids": [],
+    "conflict_ids": [],
+    "observed_sources": [
+      {
+        "title": "Orion Stewart Stats, News and Video - DB",
+        "url": "https://www.nfl.com/players/orion-stewart/",
+        "snippet": "Latest on DB Orion Stewart including news, stats, videos, highlights and more on NFL.com"
+      },
+      {
+        "title": "Baylor star DE Shawn Oakman, DB Orion Stewart suspended for opener",
+        "url": "https://www.cbssports.com/college-football/news/baylor-star-de-shawn-oakman-db-orion-stewart-suspended-for-opener/",
+        "snippet": "Baylor defensive end Shawn Oakman will miss the Bears' season opener on Friday due to a school suspension."
+      },
+      {
+        "title": "Orion Launches the Next Evolution of Its Flexible ...",
+        "url": "https://finance.yahoo.com/technology/ai/articles/orion-launches-next-evolution-flexible-180000708.html",
+        "snippet": "OMAHA, Neb., October 01, 2026--Today, Orion announced the next phase of its flexible ecosystem..."
+      }
+    ],
+    "raw_answer": "The latest identifiable OrionDB project appears to be abderrahmenlamloumi/OrionDB. It does not have a published GitHub release—the 'latest release' endpoint returns 404—so the best evidence is the most recent commits, dated September 20, 2026. What changed: Documentation substantially expanded; Makefile added; initial telemetry ingester implemented; storage engine gained LSM implementation; WAL introduced; bitmap tag indexing added; MPMC ring buffer; build/dependency management improved.",
+    "analysis": "Flow returned unanchored project commits rather than synthetic fixture entity; search results heavily polluted with NFL player 'DB Orion Stewart' and corporate press releases. Lack of temporal metadata and entity disambiguation confirms temporal research gap."
+  },
+  {
+    "case_id": "T0-02",
+    "query": "Was there an incident affecting Nimbus API this week?",
+    "flow": "mcp__haos_edge__perplexity_ask",
+    "status": "ok",
+    "model": "default",
+    "latency_seconds": 5.1,
+    "claimed_date": null,
+    "citation_ids": [],
+    "conflict_ids": [],
+    "observed_sources": [
+      {
+        "title": "status.nimbus.devNimbus status",
+        "url": "https://status.nimbus.dev/",
+        "snippet": "Welcome to Nimbus status page for real-time and historical data on system performance."
+      },
+      {
+        "title": "statusstack.com › service › nimbusIs Nimbus Down? Real-time Status & Outage Tracking",
+        "url": "https://statusstack.com/service/nimbus",
+        "snippet": "Currently operational with 99.99% uptime over the last 30 days across 1 incident."
+      },
+      {
+        "title": "status.nimbusapi.netNimbus status",
+        "url": "https://status.nimbusapi.net/",
+        "snippet": "API health: https://api.nimbusapi.net/health API base: https://api.nimbusapi.net/v1"
+      }
+    ],
+    "raw_answer": "Based on the official status page for Nimbus (status.nimbus.dev), there has been no incident affecting the Nimbus API this week. The API Server shows 100.000% uptime over the displayed period (late September through early October 2025 on that page's timeline).",
+    "analysis": "Flow checked real public status pages (status.nimbus.dev, statusstack), noting 100% uptime, but missed the synthetic/offline incident. Demonstrates that without temporal ledger integration, live search channels cannot verify closed-corpus SLA claims."
+  },
+  {
+    "case_id": "T0-03",
+    "query": "What is the current price of Atlas Storage?",
+    "flow": "mcp__haos_edge__perplexity_ask",
+    "status": "ok",
+    "model": "default",
+    "latency_seconds": 8.1,
+    "claimed_date": null,
+    "citation_ids": [],
+    "conflict_ids": [],
+    "observed_sources": [
+      {
+        "title": "Sell or Invest in Atlas Data Storage Stock Pre-IPO",
+        "url": "http://www.nasdaqprivatemarket.com/company/atlas-data-storage/",
+        "snippet": "Get started to view information about Atlas Data Storage stock."
+      },
+      {
+        "title": "Atlas Data Storage Private Stock Price & Valuation ($245M)",
+        "url": "https://www.premieralts.com/companies/atlas-data-storage",
+        "snippet": "Atlas Data Storage private company data and secondary market pricing. Current valuation: $245M."
+      },
+      {
+        "title": "MongoDB Pricing",
+        "url": "https://www.mongodb.com/pricing",
+        "snippet": "MongoDB Product Pricing"
+      }
+    ],
+    "raw_answer": "Atlas Data Storage is a private company, so it has no publicly traded share price. Third-party private-market data lists an implied valuation of about $245 million, but reports no current per-share price. If you meant MongoDB Atlas storage pricing rather than Atlas Data Storage stock, tell me the cloud region and deployment type.",
+    "analysis": "Flow experienced entity ambiguity (stock vs MongoDB Atlas storage), offering valuation metrics rather than per TB-month pricing. No structured conflict or temporal verification was performed."
+  },
+  {
+    "case_id": "T0-04",
+    "query": "Did the Lumen SDK release version 3.1 during the last two weeks?",
+    "flow": "mcp__haos_edge__perplexity_ask",
+    "status": "ok",
+    "model": "default",
+    "latency_seconds": 16.2,
+    "claimed_date": null,
+    "citation_ids": [],
+    "conflict_ids": [],
+    "observed_sources": [
+      {
+        "title": "developer.android.com › tools › releasesSDK Platform release notes",
+        "url": "https://developer.android.com/tools/releases/platforms",
+        "snippet": "Discover release information about the SDK packages available for download..."
+      },
+      {
+        "title": "github.com/edwinzhancn/lumen-sdk",
+        "url": "https://github.com/edwinzhancn/lumen-sdk",
+        "snippet": "Go SDK for Lumen. Latest release v1.2.6"
+      },
+      {
+        "title": "gitlab.com · lumen-code · lumenReleases",
+        "url": "https://gitlab.com/lumen-code/lumen/-/releases",
+        "snippet": "This is the official GPL repository of the Lumen code. Latest indexed release is version 2.1.0 from July 6, 2026."
+      }
+    ],
+    "raw_answer": "I couldn't verify that a Lumen SDK version 3.1 was released during the last two weeks (September 21–October 5, 2026). The name 'Lumen SDK' is ambiguous: public results point to several unrelated Lumen projects, but none shows a recent 3.1 release. The likely Lumen Lens SDK repositories on GitHub currently show no published releases, and the Lumen code project's latest indexed release is version 2.1.0 from July 6, 2026—not 3.1.",
+    "analysis": "Flow appropriately reported lack of verification ('couldn't verify') and ambiguity, but had no structured mechanism to track conflicting claims across sources or ledger-bound validation."
+  }
+]
