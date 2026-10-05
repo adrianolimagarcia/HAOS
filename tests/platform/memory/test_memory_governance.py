@@ -43,7 +43,7 @@ LESSON_2 = "Workflow procedure how to restore a broken gateway"
 
 
 def _new_session(home: Path, sid: str, lesson: str) -> None:
-    db = SessionDB()
+    db = SessionDB(db_path=home / "state.db")
     db.ensure_session(session_id=sid, source="cli", model="gemini-test")
     db.set_session_title(sid, f"Sessao {sid}")
     db.append_message(sid, "user", lesson)

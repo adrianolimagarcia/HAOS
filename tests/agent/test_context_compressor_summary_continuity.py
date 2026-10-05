@@ -459,3 +459,27 @@ def test_empty_post_handoff_window_noops_without_summary_call():
     assert compressor._last_compress_aborted is False
     telemetry = compressor._last_compression_telemetry or {}
     assert telemetry.get("failure_class") == "empty_post_handoff_window"
+
+
+def test_merge_summary_into_tail_row_strips_stale_prior_summary():
+    """Ensure _merge_summary_into_tail_row strips any previous summary from the tail message,
+    preventing nesting/accumulation of stale historical summaries."""
+    compressor = _compressor()
+    stale_summary = f"{SUMMARY_PREFIX}\nOld stale summary about sessions 1, 2, 3\n\n{_SUMMARY_END_MARKER}"
+    tail_msg = {
+        "role": "user",
+        "content": (
+            f"{_MERGED_PRIOR_CONTEXT_HEADER}\n"
+            f"Active live user request here\n\n"
+            f"{_MERGED_SUMMARY_DELIMITER}\n\n"
+            f"{stale_summary}"
+        ),
+        COMPRESSED_SUMMARY_METADATA_KEY: True,
+    }
+    new_summary = f"{SUMMARY_PREFIX}\nBrand new summary about subagent loop hygiene\n\n{_SUMMARY_END_MARKER}"
+    compressor._merge_summary_into_tail_row(tail_msg, new_summary, summary_role="user", force_user_leading=False)
+
+    content = tail_msg["content"]
+    assert "Active live user request here" in content
+    assert "Brand new summary about subagent loop hygiene" in content
+    assert "Old stale summary about sessions 1, 2, 3" not in content

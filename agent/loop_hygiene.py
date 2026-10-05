@@ -22,6 +22,9 @@ DEFAULT_REPEAT_TOOL_THRESHOLD = 2
 # Max repetition allowed before forcing an explicit stop warning
 MAX_REPEAT_TOOL_STRIKES = 4
 
+DEFAULT_PATCH_FAILURE_THRESHOLD = 4
+DEFAULT_TEST_FAILURE_THRESHOLD = 3
+
 
 @dataclass
 class ToolInvocationSignature:
@@ -97,6 +100,116 @@ class RepeatToolGuard:
         return False, None
 
 
+class TargetFailureStreakGuard:
+    """Tracks target-level consecutive failures (e.g. repeated patch failures on the same file,
+    or repeated test command failures in terminal) to detect semantic loops where the model
+    slightly varies arguments but keeps failing on the exact same target.
+    """
+
+    def __init__(
+        self,
+        patch_threshold: int = DEFAULT_PATCH_FAILURE_THRESHOLD,
+        test_threshold: int = DEFAULT_TEST_FAILURE_THRESHOLD,
+    ):
+        self.patch_threshold = patch_threshold
+        self.test_threshold = test_threshold
+        self._file_patch_failures: Dict[str, int] = {}
+        self._test_command_failures: Dict[str, int] = {}
+
+    def _extract_path(self, args: Any) -> Optional[str]:
+        if isinstance(args, dict):
+            return args.get("path") or args.get("file_path") or args.get("file")
+        if isinstance(args, str):
+            try:
+                data = json.loads(args)
+                if isinstance(data, dict):
+                    return data.get("path") or data.get("file_path") or data.get("file")
+            except Exception:
+                pass
+        return None
+
+    def _extract_command(self, args: Any) -> Optional[str]:
+        if isinstance(args, dict):
+            return args.get("command") or args.get("cmd")
+        if isinstance(args, str):
+            try:
+                data = json.loads(args)
+                if isinstance(data, dict):
+                    return data.get("command") or data.get("cmd")
+            except Exception:
+                return args.strip()
+        return None
+
+    def record_and_check(
+        self, tool_name: str, args: Any, result_content: str
+    ) -> tuple[bool, Optional[str]]:
+        """Record target outcome and check for streak breaches.
+
+        Returns (is_breach, reminder_message_or_none).
+        """
+        res_str = str(result_content)
+
+        if tool_name == "patch":
+            path = self._extract_path(args)
+            if not path:
+                return False, None
+
+            # Detect failure vs success in patch result
+            is_failure = (
+                "error:" in res_str.lower()
+                or "could not find" in res_str.lower()
+                or "failed" in res_str.lower()
+                or not ("success" in res_str.lower() or "patched" in res_str.lower())
+            )
+
+            if is_failure:
+                self._file_patch_failures[path] = self._file_patch_failures.get(path, 0) + 1
+                count = self._file_patch_failures[path]
+                if count >= self.patch_threshold:
+                    msg = (
+                        f"\n\n[TARGET FAILURE STREAK]: You have failed to patch '{path}' "
+                        f"{count} times in a row with different search strings. "
+                        "STOP guessing search strings! Read the actual file with `read_file` to see its exact lines, "
+                        "indentation, and surrounding context, or use `write_file` if rewriting cleanly."
+                    )
+                    return True, msg
+            else:
+                self._file_patch_failures[path] = 0
+
+            return False, None
+
+        if tool_name in ("terminal", "bash"):
+            cmd = self._extract_command(args)
+            if not cmd:
+                return False, None
+
+            # Detect test failure
+            is_failure = (
+                "FAILED" in res_str
+                or "exit code 1" in res_str
+                or "exit code 2" in res_str
+                or "AssertionError" in res_str
+                or "Error:" in res_str
+            )
+
+            if is_failure:
+                self._test_command_failures[cmd] = self._test_command_failures.get(cmd, 0) + 1
+                count = self._test_command_failures[cmd]
+                if count >= self.test_threshold:
+                    msg = (
+                        f"\n\n[TEST FAILURE STREAK]: Test command '{cmd}' has failed {count} times consecutively. "
+                        "STOP repeatedly running failing tests without an effective fix. "
+                        "Inspect the specific failure trace, check recent edits, or revert invalid hypotheses."
+                    )
+                    return True, msg
+            else:
+                self._test_command_failures[cmd] = 0
+
+            return False, None
+
+        return False, None
+
+
 def attach_repetition_reminder_if_needed(agent: Any, tool_name: str, args: Any, tool_result_content: str) -> str:
     """Helper used during tool execution to append loop hygiene reminder if needed."""
     guard = getattr(agent, "_repeat_tool_guard", None)
@@ -109,6 +222,24 @@ def attach_repetition_reminder_if_needed(agent: Any, tool_name: str, args: Any, 
         logger.warning(
             "Repeat tool invocation detected for '%s' (repetition count=%d)",
             tool_name, guard._consecutive_count
+        )
+        return tool_result_content + reminder
+
+    return tool_result_content
+
+
+def attach_target_failure_reminder_if_needed(agent: Any, tool_name: str, args: Any, tool_result_content: str) -> str:
+    """Helper used during tool execution to append target failure streak reminder if needed."""
+    guard = getattr(agent, "_target_failure_guard", None)
+    if guard is None:
+        guard = TargetFailureStreakGuard()
+        setattr(agent, "_target_failure_guard", guard)
+
+    is_breach, reminder = guard.record_and_check(tool_name, args, tool_result_content)
+    if is_breach and reminder:
+        logger.warning(
+            "Target failure streak detected for '%s'",
+            tool_name
         )
         return tool_result_content + reminder
 

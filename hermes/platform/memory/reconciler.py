@@ -101,9 +101,25 @@ class MemoryReconciler:
                     superseded_by TEXT,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL,
-                    metadata TEXT
+                    metadata TEXT,
+                    proof_count INTEGER DEFAULT 1,
+                    valid_from REAL,
+                    valid_until REAL,
+                    supersedes TEXT
                 );
             """)
+            # Migrações idempotentes para bancos legados
+            for col_def in (
+                "proof_count INTEGER DEFAULT 1",
+                "valid_from REAL",
+                "valid_until REAL",
+                "supersedes TEXT",
+            ):
+                try:
+                    conn.execute(f"ALTER TABLE haos_memories ADD COLUMN {col_def};")
+                except sqlite3.OperationalError:
+                    pass
+
             conn.execute("CREATE INDEX IF NOT EXISTS idx_haos_mem_topic ON haos_memories(topic, status);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_haos_mem_status ON haos_memories(status);")
             conn.commit()
@@ -336,3 +352,152 @@ class MemoryReconciler:
         for mem in active:
             lines.append(f"• [{mem.topic}] {mem.content}")
         return "\n".join(lines)
+
+    def reconcile_candidate(self, candidate: Any) -> Dict[str, Any]:
+        """Concilia um candidato de memória e retorna o status e o KnowledgeItem canônico."""
+        from hermes.platform.context.memory.candidate import validate_candidate
+        from hermes.platform.context.memory.schemas import KnowledgeItem
+
+        # Validação de integridade e segurança
+        is_valid, reason = validate_candidate(candidate)
+        if not is_valid:
+            return {"status": "rejected", "item": None, "reason": reason}
+
+        # Gate de promoção automática (correções explícitas com supersedes têm prioridade de governança)
+        is_explicit_supersedes = bool(getattr(candidate, "supersedes", None))
+        is_casual = (
+            getattr(candidate, "category", "") == "preference"
+            and getattr(candidate, "proof_count", 1) < 2
+            and getattr(candidate, "confidence", 0.0) < 0.85
+        )
+        if not is_explicit_supersedes and (candidate.confidence < 0.85 or is_casual):
+            return {"status": "staged_only", "item": None, "reason": "Confidence or proof count below promotion threshold"}
+
+        now = time.time()
+        content = (getattr(candidate, "fact", "") or getattr(candidate, "content", "")).strip()
+        cat = getattr(candidate, "category", "general")
+        topic = cat
+        meta = {"category": cat, "provenance": getattr(candidate, "provenance", [])}
+
+        with self._lock, self._get_connection() as conn:
+            # Caso 1: Revogação explícita
+            if candidate.supersedes and (
+                candidate.valid_until is not None or "não" in content.lower() or "not" in content.lower()
+            ):
+                target_id = candidate.supersedes
+                v_until = candidate.valid_until or now
+                conn.execute(
+                    "UPDATE haos_memories SET status = 'superseded', superseded_by = ?, valid_until = ?, updated_at = ? WHERE id = ?;",
+                    (candidate.id, v_until, now, target_id),
+                )
+                conn.commit()
+                row = conn.execute("SELECT * FROM haos_memories WHERE id = ?;", (target_id,)).fetchone()
+                if row:
+                    item = KnowledgeItem(
+                        id=row["id"],
+                        title=row["topic"],
+                        kind="fact",
+                        content=row["content"],
+                        scope="project",
+                        confidence=float(row["confidence"]),
+                        supersedes=row["supersedes"],
+                        superseded_by=row["superseded_by"],
+                        proof_count=int(row["proof_count"] or 1),
+                        valid_from=float(row["valid_from"]) if row["valid_from"] is not None else None,
+                        valid_until=float(row["valid_until"]) if row["valid_until"] is not None else None,
+                    )
+                    return {"status": "superseded", "item": item}
+
+            # Caso 2: Substituição afirmativa (correção supersedes)
+            new_id = getattr(candidate, "id", f"mem_{uuid.uuid4().hex[:12]}")
+            if candidate.supersedes:
+                target_id = candidate.supersedes
+                v_until = candidate.valid_from or now
+                conn.execute(
+                    "UPDATE haos_memories SET status = 'superseded', superseded_by = ?, valid_until = ?, updated_at = ? WHERE id = ?;",
+                    (new_id, v_until, now, target_id),
+                )
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO haos_memories (
+                    id, category, topic, content, confidence, status, superseded_by, created_at, updated_at,
+                    metadata, proof_count, valid_from, valid_until, supersedes
+                ) VALUES (?, ?, ?, ?, ?, 'active', NULL, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    new_id,
+                    cat,
+                    topic,
+                    content,
+                    candidate.confidence,
+                    now,
+                    now,
+                    json.dumps(meta, ensure_ascii=False),
+                    getattr(candidate, "proof_count", 1),
+                    getattr(candidate, "valid_from", None),
+                    getattr(candidate, "valid_until", None),
+                    getattr(candidate, "supersedes", None),
+                ),
+            )
+            conn.commit()
+
+        item = KnowledgeItem(
+            id=new_id,
+            title=topic,
+            kind="fact",
+            content=content,
+            scope="project",
+            confidence=candidate.confidence,
+            supersedes=getattr(candidate, "supersedes", None),
+            superseded_by=None,
+            proof_count=getattr(candidate, "proof_count", 1),
+            valid_from=getattr(candidate, "valid_from", None),
+            valid_until=getattr(candidate, "valid_until", None),
+        )
+        return {"status": "active", "item": item}
+
+    def get_memory_by_id(self, memory_id: str) -> Optional[Any]:
+        """Recupera um KnowledgeItem pelo ID (ativo ou superado)."""
+        from hermes.platform.context.memory.schemas import KnowledgeItem
+
+        with self._lock, self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM haos_memories WHERE id = ?;", (memory_id,)).fetchone()
+            if not row:
+                return None
+            return KnowledgeItem(
+                id=row["id"],
+                title=row["topic"],
+                kind="fact",
+                content=row["content"],
+                scope="project",
+                confidence=float(row["confidence"]),
+                supersedes=row["supersedes"],
+                superseded_by=row["superseded_by"],
+                proof_count=int(row["proof_count"] or 1),
+                valid_from=float(row["valid_from"]) if row["valid_from"] is not None else None,
+                valid_until=float(row["valid_until"]) if row["valid_until"] is not None else None,
+            )
+
+    def list_active_memories(self) -> List[Any]:
+        """Lista todos os KnowledgeItems ativos."""
+        from hermes.platform.context.memory.schemas import KnowledgeItem
+
+        with self._lock, self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM haos_memories WHERE status = 'active' ORDER BY updated_at DESC;").fetchall()
+            return [
+                KnowledgeItem(
+                    id=r["id"],
+                    title=r["topic"],
+                    kind="fact",
+                    content=r["content"],
+                    scope="project",
+                    confidence=float(r["confidence"]),
+                    supersedes=r["supersedes"],
+                    superseded_by=r["superseded_by"],
+                    proof_count=int(r["proof_count"] or 1),
+                    valid_from=float(r["valid_from"]) if r["valid_from"] is not None else None,
+                    valid_until=float(r["valid_until"]) if r["valid_until"] is not None else None,
+                )
+                for r in rows
+            ]

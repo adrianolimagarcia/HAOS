@@ -4798,7 +4798,8 @@ Write only the summary body. Do not include any preamble or prefix."""
         self, msg: Dict[str, Any], summary: str, summary_role: str, force_user_leading: bool,
     ) -> None:
         """Fold the summary into a carried tail row (in place) when no standalone role alternates."""
-        old_content = msg.get("content", "")
+        stripped = self._strip_context_summary_handoff_message(msg)
+        old_content = stripped.get("content", "") if stripped is not None else msg.get("content", "")
         if force_user_leading and summary_role == "user":
             # Anthropic/Bedrock: summary must lead the first visible message; the real request
             # follows the end marker.

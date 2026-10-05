@@ -16,9 +16,18 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
 ScopeType = Literal["private", "team", "project", "global"]
+
+
+class KnowledgeStatus(str, Enum):
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
+    ARCHIVED = "archived"
+
+
 # Includes canonical kinds plus Hindsight 4-Network Logical Taxonomy (World Facts, Experiences, Observations, Mental Models)
 KnowledgeKind = Literal[
     "adr",
@@ -66,6 +75,25 @@ class KnowledgeItem:
     def is_active(self) -> bool:
         """Indica se este conhecimento ainda é canônico ou se foi superado no tempo."""
         return self.superseded_by is None
+
+    @property
+    def status(self) -> KnowledgeStatus:
+        """Status semântico canônico do conhecimento."""
+        if self.superseded_by is not None:
+            return KnowledgeStatus.SUPERSEDED
+        if self.valid_until is not None and time.time() > self.valid_until:
+            return KnowledgeStatus.SUPERSEDED
+        return KnowledgeStatus.ACTIVE
+
+    def is_valid_at(self, timestamp: float) -> bool:
+        """Verifica se o conhecimento é válido no timestamp indicado (ADR-022 TEMPR)."""
+        if self.valid_from is not None and timestamp < self.valid_from:
+            return False
+        if self.valid_until is not None and timestamp > self.valid_until:
+            return False
+        if self.valid_until is None and self.superseded_by is not None:
+            return False
+        return True
 
     def to_dict(self) -> Dict[str, Any]:
         return {

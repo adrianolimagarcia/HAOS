@@ -1062,11 +1062,15 @@ def _commit_tool_result(
     # string-safe fallback so a rejected image result never poisons history.
     _tool_content = agent._tool_result_content_for_active_model(function_name, persisted_result)
 
-    # HAOS Loop Hygiene: repeat-tool-reminder
+    # HAOS Loop Hygiene: repeat-tool-reminder & target-failure-streak
     try:
-        from agent.loop_hygiene import attach_repetition_reminder_if_needed
+        from agent.loop_hygiene import (
+            attach_repetition_reminder_if_needed,
+            attach_target_failure_reminder_if_needed,
+        )
         if isinstance(_tool_content, str):
             _tool_content = attach_repetition_reminder_if_needed(agent, function_name, function_args, _tool_content)
+            _tool_content = attach_target_failure_reminder_if_needed(agent, function_name, function_args, _tool_content)
     except Exception as _hygiene_err:
         logger.debug("Loop hygiene check failed: %s", _hygiene_err)
 

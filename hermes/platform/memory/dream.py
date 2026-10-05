@@ -405,15 +405,17 @@ class DreamConsolidator:
             self.okf_dir.mkdir(parents=True, exist_ok=True)
             self.vault_adrs_dir.mkdir(parents=True, exist_ok=True)
 
-        from hermes_state import SessionDB
-        # Read the same explicit profile that owns staging and the projection.
-        db = SessionDB(db_path=self.home / "state.db", read_only=True)
+        recent_sessions = []
+        state_db_path = self.home / "state.db"
+        if state_db_path.exists():
+            from hermes_state import SessionDB
+            # Read the same explicit profile that owns staging and the projection.
+            db = SessionDB(db_path=state_db_path, read_only=True)
+            try:
+                recent_sessions = db.list_recent_sessions_bounded(limit=50)
+            finally:
+                db.close()
         last_cursor = self.get_cursor()
-
-        try:
-            recent_sessions = db.list_recent_sessions_bounded(limit=50)
-        finally:
-            db.close()
 
         # Sessions newer than cursor with some content
         candidates = [
@@ -449,16 +451,21 @@ class DreamConsolidator:
             # Check if this session generated key operational decisions or learnings
             preview = (s.get("preview") or "").strip()
             preview = _sanitize_session_preview(preview)
-            if not preview:
+            if not preview and state_db_path.exists():
                 try:
-                    msgs = db.get_messages(sid)
-                    for m in msgs:
-                        content = _sanitize_session_preview(m.get("content") or "")
-                        if content:
-                            preview += content[:200] + " "
-                            if len(preview) >= 300:
-                                break
-                    preview = preview.strip()
+                    from hermes_state import SessionDB
+                    _sdb = SessionDB(db_path=state_db_path, read_only=True)
+                    try:
+                        msgs = _sdb.get_messages(sid)
+                        for m in msgs:
+                            content = _sanitize_session_preview(m.get("content") or "")
+                            if content:
+                                preview += content[:200] + " "
+                                if len(preview) >= 300:
+                                    break
+                        preview = preview.strip()
+                    finally:
+                        _sdb.close()
                 except Exception:
                     pass
 
