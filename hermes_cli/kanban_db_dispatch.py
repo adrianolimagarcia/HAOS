@@ -2005,7 +2005,7 @@ def _lane_rows(conn: sqlite3.Connection, status: str) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT id, assignee FROM tasks "
         f"WHERE status = '{status}' AND claim_lock IS NULL "
-        "ORDER BY priority DESC, created_at ASC"
+        "ORDER BY priority DESC, created_at ASC, id ASC"
     ).fetchall()
 
 
@@ -2080,6 +2080,74 @@ def _dispatch_once_locked(
     # Review rows are enumerated up front so the budget split can see whether
     # review work exists at all.
     review_rows = _lane_rows(conn, "review") if review_dispatch_enabled() else []
+
+    # Read-only candidate selection via Rust haos-edge (opt-in / shadow mode)
+    try:
+        from hermes_cli.kanban_rust_selector import (
+            get_rust_selector_mode,
+            query_rust_candidates,
+        )
+        selector_mode = get_rust_selector_mode()
+        if selector_mode in ("rust", "shadow"):
+            from hermes_cli.profiles import get_active_profile_name
+            active_profile = get_active_profile_name() or "default"
+            db_p = _kb.kanban_db_path(board=board)
+            kanban_h = _kb.kanban_home()
+            rust_candidates = query_rust_candidates(
+                db_p,
+                profile=active_profile,
+                data_dir=kanban_h,
+                include_review=review_dispatch_enabled(),
+            )
+            if rust_candidates is not None:
+                if selector_mode == "shadow":
+                    # Compare Rust candidate ordering with Python candidate ordering for telemetry.
+                    # Shadow mode strictly observes and never mutates ready_rows/review_rows.
+                    py_ready_ids = [r["id"] for r in ready_rows]
+                    rust_ready_ids = [c["id"] for c in rust_candidates if c.get("status") == "ready"]
+                    if py_ready_ids != rust_ready_ids:
+                        _kb._log.warning(
+                            "Kanban selector shadow mismatch for 'ready': Python=%s, Rust=%s",
+                            py_ready_ids,
+                            rust_ready_ids,
+                        )
+                    if review_dispatch_enabled():
+                        py_review_ids = [r["id"] for r in review_rows]
+                        rust_review_ids = [c["id"] for c in rust_candidates if c.get("status") == "review"]
+                        if py_review_ids != rust_review_ids:
+                            _kb._log.warning(
+                                "Kanban selector shadow mismatch for 'review': Python=%s, Rust=%s",
+                                py_review_ids,
+                                rust_review_ids,
+                            )
+                elif selector_mode == "rust":
+                    # Re-fetch actual rows preserving Rust's deterministic candidate order
+                    rust_ready_ids = [c["id"] for c in rust_candidates if c.get("status") == "ready"]
+                    if rust_ready_ids:
+                        placeholders = ",".join("?" for _ in rust_ready_ids)
+                        queried = conn.execute(
+                            f"SELECT id, assignee FROM tasks WHERE id IN ({placeholders}) AND status = 'ready' AND claim_lock IS NULL",
+                            rust_ready_ids,
+                        ).fetchall()
+                        row_map = {r["id"]: r for r in queried}
+                        ready_rows = [row_map[cid] for cid in rust_ready_ids if cid in row_map]
+                    else:
+                        ready_rows = []
+
+                    if review_dispatch_enabled():
+                        rust_review_ids = [c["id"] for c in rust_candidates if c.get("status") == "review"]
+                        if rust_review_ids:
+                            placeholders = ",".join("?" for _ in rust_review_ids)
+                            queried = conn.execute(
+                                f"SELECT id, assignee FROM tasks WHERE id IN ({placeholders}) AND status = 'review' AND claim_lock IS NULL",
+                                rust_review_ids,
+                            ).fetchall()
+                            row_map = {r["id"]: r for r in queried}
+                            review_rows = [row_map[cid] for cid in rust_review_ids if cid in row_map]
+                        else:
+                            review_rows = []
+    except Exception as _sel_err:
+        _kb._log.warning("Rust selector evaluation failed, falling back to Python: %s", _sel_err)
     # Review-lane reservation: the ready loop runs first and would otherwise
     # consume the ENTIRE shared budget, starving reviews under a sustained ready
     # backlog. When spawnable review work exists and there is any budget, hold

@@ -1882,6 +1882,12 @@ DEFAULT_CONFIG = {
         # On boards that never archive, the notifier GC purges subscriptions for tasks done with no
         # activity for this many days so stale rows aren't scanned forever. 0 = off.
         "done_sub_retention_days": 30,
+        # Read-only candidate selector via Rust haos-edge ("off", "shadow", "rust").
+        "rust_selector": "off",
+        # Explicit path to haos-edge executable; empty = canonical system/distro search only.
+        "rust_selector_binary": "",
+        # Timeout budget (seconds) for read-only candidate query to haos-edge.
+        "rust_selector_timeout_seconds": 2.0,
     },
     # Bot Mode cross-connection relay (tools/bot_relay.py): envelopes queued by message_agent for
     # agents on other connections wait in an on-disk outbox until the Desktop drains them.

@@ -1,4 +1,5 @@
 pub mod compactor;
+pub mod kanban_selector;
 pub mod mental_model;
 pub mod okf;
 pub mod profile;

@@ -8,6 +8,7 @@ mod db;
 pub mod event_hub;
 pub mod file_engine;
 pub mod idempotency;
+pub mod kanban_selector;
 pub mod loop_detector;
 mod mcp;
 pub mod okf;
@@ -30,7 +31,7 @@ pub mod writer_lock;
 
 use clap::{Parser, Subcommand};
 use db::DbHelper;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 #[derive(Parser, Debug)]
@@ -162,6 +163,26 @@ enum Commands {
     Okf {
         #[command(subcommand)]
         action: OkfCommands,
+    },
+
+    /// Read-only candidate selection for Kanban dispatcher
+    #[command(name = "kanban-select")]
+    KanbanSelect {
+        /// Explicit absolute path to kanban.db database
+        #[arg(long = "db-path")]
+        db_path: PathBuf,
+
+        /// Profile identity for isolation and audit validation
+        #[arg(long)]
+        profile: String,
+
+        /// Profile data directory for canonical scoping
+        #[arg(long = "data-dir")]
+        data_dir: PathBuf,
+
+        /// Include tasks waiting in review status
+        #[arg(long = "include-review")]
+        include_review: bool,
     },
 }
 
@@ -530,6 +551,14 @@ async fn main() {
                 }
             }
         },
+        Some(Commands::KanbanSelect {
+            db_path,
+            profile,
+            data_dir,
+            include_review,
+        }) => {
+            cmd_kanban_select(&db_path, &profile, &data_dir, include_review);
+        }
         None => {
             cmd_status();
         }
@@ -992,4 +1021,63 @@ fn delegate_to_python(args: &[String]) {
 
     eprintln!("✗ Failed to locate Python agent runtime.");
     std::process::exit(1);
+}
+
+fn cmd_kanban_select(
+    db_path: &Path,
+    profile: &str,
+    data_dir: &Path,
+    include_review: bool,
+) {
+    // 1. Explicit profile and data-dir binding check
+    let resolved = match profile::resolve_profile_data_dir(Some(profile), Some(data_dir)) {
+        Ok(binding) => binding,
+        Err(err) => {
+            let res = kanban_selector::SelectorResult::error(format!(
+                "Invalid explicit profile binding: {:?}",
+                err
+            ));
+            println!("{}", serde_json::to_string(&res).unwrap_or_default());
+            std::process::exit(2);
+        }
+    };
+
+    // 2. Validate db_path matches or is contained inside resolved profile data_dir
+    let abs_db = match db_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => db_path.to_path_buf(),
+    };
+    let abs_data = match resolved.data_dir().canonicalize() {
+        Ok(p) => p,
+        Err(_) => resolved.data_dir().to_path_buf(),
+    };
+
+    if !abs_db.starts_with(&abs_data) {
+        let res = kanban_selector::SelectorResult::error(format!(
+            "Scope violation: db_path {} is outside data_dir {}",
+            abs_db.display(),
+            abs_data.display()
+        ));
+        let out = serde_json::to_string(&res).unwrap_or_default();
+        println!("{out}");
+        std::process::exit(3);
+    }
+
+    // 3. Execute read-only candidate query
+    match kanban_selector::select_candidates(db_path, include_review) {
+        Ok(candidates) => {
+            let res = kanban_selector::SelectorResult {
+                contract_version: "kanban_selector_v1".to_string(),
+                ok: true,
+                candidates,
+                error: None,
+            };
+            println!("{}", serde_json::to_string(&res).unwrap_or_default());
+        }
+        Err(e) => {
+            let res = kanban_selector::SelectorResult::error(e);
+            println!("{}", serde_json::to_string(&res).unwrap_or_default());
+            std::process::exit(1);
+        }
+    }
 }
