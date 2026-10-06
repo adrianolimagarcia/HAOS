@@ -186,6 +186,33 @@ class DecisionStore:
                 })
             return results
 
+    def get_choice_training_samples(self, limit: int = 500) -> List[Tuple[str, List[str], int]]:
+        """Recupera amostras de decisões do tipo 'choice' para treino em lote do Jev."""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT result_json FROM system_one_decisions
+                WHERE decision_type = 'choice'
+                ORDER BY last_hit_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            samples = []
+            for r in rows:
+                try:
+                    data = json.loads(r["result_json"])
+                    opts = data.get("options")
+                    selected = data.get("selected")
+                    ctx = data.get("context", "")
+                    q = data.get("question", "")
+                    if opts and selected and selected in opts and len(opts) > 1:
+                        target_idx = opts.index(selected)
+                        full_ctx = f"QUESTION: {q}\nCONTEXT: {ctx}" if q else ctx
+                        samples.append((full_ctx, opts, target_idx))
+                except Exception:
+                    continue
+            return samples
+
     def clear(self, domain: Optional[str] = None) -> int:
         """Limpa decisões memorizadas (total ou por domínio)."""
         with self._get_conn() as conn:

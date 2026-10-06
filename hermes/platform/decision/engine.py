@@ -16,6 +16,7 @@ import urllib.error
 
 from hermes.platform.decision.spec import DecisionBoolean, DecisionChoice, DecisionScore
 from hermes.platform.decision.store import DecisionStore
+from hermes.platform.decision.jev_scorer import JevOptionScorer
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +31,15 @@ class SystemOneEngine:
         model: str = DEFAULT_MODEL,
         store: Optional[DecisionStore] = None,
         timeout: float = 12.0,
+        scorer: Optional[JevOptionScorer] = None,
+        confidence_threshold: float = 0.80,
     ):
         self.endpoint_url = endpoint_url.rstrip("/")
         self.model = model
         self.store = store or DecisionStore()
         self.timeout = timeout
+        self.jev_scorer = scorer or JevOptionScorer()
+        self.confidence_threshold = confidence_threshold
 
     def _call_gemini_lite(self, prompt: str, schema_hint: str) -> Dict[str, Any]:
         """Executa chamada atômica para o Gemini 2.5 Flash Lite no endpoint local."""
@@ -158,11 +163,23 @@ class SystemOneEngine:
         context: str,
         domain: str = "general",
     ) -> DecisionChoice:
-        """Escolha estrita entre opções permitidas com probabilidades estimadas."""
+        """Escolha estrita entre opções com fast-gated inference (Jev -> LLM)."""
         t0 = time.perf_counter()
+        if not options:
+            raise ValueError("A lista de opções não pode estar vazia.")
+        if len(options) == 1:
+            return DecisionChoice(
+                selected=options[0],
+                confidence=1.0,
+                probabilities={options[0]: 1.0},
+                reason="Single option provided",
+                learned=False,
+                latency_ms=0.0,
+            )
+
         pattern_key = self.store.compute_key(domain, question, context, options=options)
 
-        # 1. Verifica cache local
+        # 1. Verifica cache local exato (padrão aprendido previamente)
         cached = self.store.get(pattern_key)
         if cached:
             res_dict, _ = cached
@@ -176,7 +193,25 @@ class SystemOneEngine:
                 latency_ms=round(latency, 2),
             )
 
-        # 2. Cold Start: Consulta Gemini Lite
+        # 2. Fast-Gated Inference: Jev-like Local Scorer
+        full_ctx = f"QUESTION: {question}\nCONTEXT: {context}"
+        jev_decision = self.jev_scorer.decide(full_ctx, options, domain=domain)
+
+        # Se a confiança for igual ou superior ao threshold, usa direto o Jev!
+        if jev_decision.confidence >= self.confidence_threshold:
+            jev_decision.reason = (
+                f"Fast-gated Jev decision (confidence={jev_decision.confidence:.2f} >= "
+                f"threshold={self.confidence_threshold:.2f})"
+            )
+            return jev_decision
+
+        # 3. Escala para o LLM (System-2: incerteza ou confiança abaixo do threshold)
+        logger.debug(
+            "Jev confidence (%.2f) below threshold (%.2f). Escalating to LLM...",
+            jev_decision.confidence,
+            self.confidence_threshold,
+        )
+
         opts_formatted = json.dumps(options)
         schema = f'{{"selected": string (must be one of {opts_formatted}), "confidence": number, "probabilities": dict, "reason": string}}'
         prompt = f"QUESTION: {question}\nALLOWED OPTIONS: {opts_formatted}\nCONTEXT: {context}"
@@ -195,13 +230,16 @@ class SystemOneEngine:
 
             confidence = float(raw.get("confidence", 0.95))
             probabilities = raw.get("probabilities") or {selected: confidence}
-            reason = str(raw.get("reason", ""))
+            reason = str(raw.get("reason", "LLM decision"))
 
             to_save = {
                 "selected": selected,
                 "confidence": confidence,
                 "probabilities": probabilities,
                 "reason": reason,
+                "options": options,
+                "context": context,
+                "question": question,
             }
             self.store.put(
                 pattern_key=pattern_key,
@@ -222,14 +260,45 @@ class SystemOneEngine:
                 latency_ms=round(latency, 2),
             )
         except Exception as exc:
-            logger.warning("SystemOne decide_choice failed: %s", exc)
-            return DecisionChoice(
-                selected=options[0] if options else "unknown",
-                confidence=0.5,
-                reason=f"Fallback on error: {exc}",
-                learned=False,
-                latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
-            )
+            logger.warning("SystemOne LLM call failed, falling back to Jev decision: %s", exc)
+            jev_decision.reason = f"Fallback on LLM error ({exc})"
+            return jev_decision
+
+    def train_jev_offline(
+        self,
+        epochs: int = 5,
+        lr: float = 0.01,
+        limit: int = 500,
+    ) -> Dict[str, Any]:
+        """Treina o modelo Jev offline utilizando o histórico de decisões acumuladas no SQLite."""
+        samples = self.store.get_choice_training_samples(limit=limit)
+        if not samples:
+            return {
+                "status": "no_samples",
+                "samples_count": 0,
+                "message": "Nenhuma amostra de decisão 'choice' elegível encontrada no banco.",
+            }
+
+        avg_loss = self.jev_scorer.train_batch(samples, epochs=epochs, lr=lr)
+        saved_path = self.jev_scorer.save_weights()
+        return {
+            "status": "trained",
+            "samples_count": len(samples),
+            "epochs": epochs,
+            "final_loss": round(avg_loss, 4),
+            "weights_path": str(saved_path),
+        }
+
+    def decide_choice_fast(
+        self,
+        question: str,
+        options: List[str],
+        context: str = "",
+        domain: str = "general",
+    ) -> DecisionChoice:
+        """Decisão ultra-rápida de uma passada (System-1 Jev-like) sem chamadas de rede."""
+        full_ctx = f"QUESTION: {question}\nCONTEXT: {context}" if context else question
+        return self.jev_scorer.decide(full_ctx, options, domain=domain)
 
     def decide_score(
         self,

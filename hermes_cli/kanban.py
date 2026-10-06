@@ -421,6 +421,86 @@ def _cmd_swarm(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_flow(args: argparse.Namespace) -> int:
+    from hermes_cli import kanban_flow as kf
+    try:
+        graph = kf.parse_flow_dsl(args.dsl, goal=args.goal or "", name=getattr(args, "name", "custom_flow"))
+    except ValueError as exc:
+        return _err(f"kanban flow: {exc}", 2)
+
+    if getattr(args, "dry_run", False):
+        info = graph.as_dict()
+        if getattr(args, "json", False):
+            _print_json(info)
+        else:
+            print(f"Flow DAG validated: '{graph.name}' ({len(graph.nodes)} nodes, {len(graph.edges)} edges)\n"
+                  f"Topological order: {' -> '.join(graph.validate_dag())}")
+        return 0
+
+    with kbc.connect_closing() as conn:
+        created = kf.create_kanban_flow(
+            conn,
+            graph=graph,
+            goal=args.goal,
+            created_by=args.created_by or _profile_author(),
+            tenant=args.tenant,
+            priority=args.priority,
+            idempotency_key=getattr(args, "idempotency_key", None),
+        )
+    if getattr(args, "json", False):
+        _print_json(created.as_dict())
+    else:
+        print(f"Flow root: {created.root_id}\n"
+              f"Flow name: {created.flow_name}\n"
+              "Tasks created:\n" + "\n".join(f"  [{nid}] -> {tid}" for nid, tid in created.task_mapping.items()) + "\n"
+              f"Entry tasks: {', '.join(created.entry_task_ids)}\n"
+              f"Terminal tasks: {', '.join(created.terminal_task_ids)}")
+    return 0
+
+
+def _cmd_flow_moa(args: argparse.Namespace) -> int:
+    from hermes_cli import kanban_flow as kf
+    specialists = args.specialist or ["security", "architecture", "performance"]
+    try:
+        graph = kf.build_moa_flow(
+            goal=args.goal,
+            target_description=args.target,
+            specialists=specialists,
+            judge_profile=getattr(args, "judge", "conductor"),
+        )
+    except ValueError as exc:
+        return _err(f"kanban flow-moa: {exc}", 2)
+
+    if getattr(args, "dry_run", False):
+        info = graph.as_dict()
+        if getattr(args, "json", False):
+            _print_json(info)
+        else:
+            print(f"MoA Flow DAG validated: '{graph.name}' ({len(graph.nodes)} nodes, {len(graph.edges)} edges)\n"
+                  f"Specialists: {', '.join(specialists)}\n"
+                  f"Judge: {getattr(args, 'judge', 'conductor')}")
+        return 0
+
+    with kbc.connect_closing() as conn:
+        created = kf.create_kanban_flow(
+            conn,
+            graph=graph,
+            goal=args.goal,
+            created_by=args.created_by or _profile_author(),
+            tenant=args.tenant,
+            priority=args.priority,
+            idempotency_key=getattr(args, "idempotency_key", None),
+        )
+    if getattr(args, "json", False):
+        _print_json(created.as_dict())
+    else:
+        print(f"MoA Flow root: {created.root_id}\n"
+              "Tasks created:\n" + "\n".join(f"  [{nid}] -> {tid}" for nid, tid in created.task_mapping.items()) + "\n"
+              f"Specialist tasks: {', '.join(created.task_mapping[f'eval_{s}'] for s in specialists if f'eval_{s}' in created.task_mapping)}\n"
+              f"Judge task: {created.task_mapping.get('judge', '-')}")
+    return 0
+
+
 def _cmd_list(args: argparse.Namespace) -> int:
     assignee = args.assignee
     if args.mine and not assignee:
@@ -1263,6 +1343,7 @@ def _cmd_decompose(args: argparse.Namespace) -> int:
 
 _HANDLERS = {
     "init": _cmd_init, "create": _cmd_create, "swarm": _cmd_swarm,
+    "flow": _cmd_flow, "flow-moa": _cmd_flow_moa,
     "list": _cmd_list, "ls": _cmd_list, "show": _cmd_show,
     "assign": _cmd_assign, "set-model": _cmd_set_model,
     "reclaim": _cmd_reclaim, "reassign": _cmd_reassign,

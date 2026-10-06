@@ -351,6 +351,12 @@ _DOMAINS = {
         "database", "port", "service", "reliability", "deployment",
         "systemd", "api", "network", "mesh", "proxy",
     ),
+    "reverse-bot": (
+        "reverse", "reversing", "decompile", "decompilation", "disassemble",
+        "disassembly", "ghidra", "ida", "radare2", "binary", "elf", "apk",
+        "frida", "firmware", "bytecode", "pe", "hex", "memory", "injection",
+        "pwn", "crackme",
+    ),
 }
 
 
@@ -474,7 +480,10 @@ def route_task(
         candidates = [bid for bid, words in _DOMAINS.items() if bid in available and any(w in text for w in words)]
         if candidates:
             bot_id, reason = candidates[0], "capability-match"
-            task_domain = "security" if "security" in bot_id else "architecture"
+            task_domain = (
+                "reverse-engineering" if "reverse" in bot_id
+                else ("security" if "security" in bot_id else "architecture")
+            )
         else:
             bot_id, reason = None, "auto-created-specialist"
             task_domain = _slug(str(task.get("goal", "general")))
