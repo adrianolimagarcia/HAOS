@@ -260,7 +260,9 @@ _LEGACY_COMPRESSION_CONTINUATION_USER_CONTENT = (
 # Content string is the authoritative marker: SessionDB drops ``_``-metadata.
 MAX_ITERATIONS_SUMMARY_REQUEST = (
     "You've reached the maximum number of tool-calling iterations allowed. Please provide a final response "
-    "summarizing what you've found and accomplished so far, without calling any more tools."
+    "summarizing what you've found and accomplished so far, without calling any more tools. "
+    "Explicitly evaluate whether continuing this session with further iterations is strictly necessary, "
+    "or if you should hand off the consolidated state to the coordinator/operator to request assistance or intervention."
 )
 _BACKGROUND_PROCESS_NOTIFICATION_PREFIX = "[IMPORTANT: Background process "
 
