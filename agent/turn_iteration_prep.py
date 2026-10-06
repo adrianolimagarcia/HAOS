@@ -27,15 +27,40 @@ ITERATION_BUDGET_WARNING_TEMPLATE = (
     "solely because of this warning."
 )
 
+ITERATION_TIER2_STEER_60_WARNING_TEMPLATE = (
+    "[SYSTEM NOTICE — iteration budget checkpoint: Tier 2] You have consumed {used} of {maximum} "
+    "iterations (60% of your budget). Be hyper-efficient: eliminate all redundancies, loops, or repetitive "
+    "tool calls immediately. Focus strictly on direct, objective action and completing the task."
+)
+
 
 def _maybe_inject_iteration_budget_warning(agent: Any, messages: Any) -> bool:
-    """Append the opt-in one-shot warning to the newest tool result."""
+    """Append the opt-in one-shot warning or Tier 2 60% steer warning to the newest tool result."""
     import os
     from agent.delegation_context import is_dispatcher_owned_worker_context
 
     # Cancellation results still need persistence, but must not urge more work.
     if getattr(agent, "_interrupt_requested", False):
         return False
+
+    budget = getattr(agent, "iteration_budget", None)
+    if budget is None or budget.max_total <= 1 or budget.max_total >= sys.maxsize:
+        return False
+
+    # Check Tier 2 (60% steer) first or configured ratio checkpoint.
+    # Trigger conditions:
+    # 1. Tier 2 (60% steer): fires once when used >= 0.6 * max_total (or used >= 40 when max_total around 67, since 40/67 ~= 0.597)
+    #    tracked by `agent._steer_60_warned`.
+    # 2. Configured budget_warning_ratio / kanban_worker checkpoint: tracked by `agent._iteration_budget_warning_injected`.
+    
+    tier2_threshold = min(0.6 * budget.max_total, budget.max_total - 1)
+    if budget.max_total in (66, 67):
+        tier2_threshold = min(40, budget.max_total - 1)
+
+    tier2_eligible = (
+        not getattr(agent, "_steer_60_warned", False)
+        and budget.used >= tier2_threshold
+    )
 
     ratio = getattr(agent, "budget_warning_ratio", None)
     kanban_worker = (
@@ -45,19 +70,30 @@ def _maybe_inject_iteration_budget_warning(agent: Any, messages: Any) -> bool:
     )
     if ratio is None and kanban_worker:
         ratio = 0.9
-    budget = getattr(agent, "iteration_budget", None)
-    if (
-        ratio is None
-        or budget is None
-        or budget.max_total <= 1
-        or budget.max_total >= sys.maxsize
-        or getattr(agent, "_iteration_budget_warning_injected", False)
-        or budget.used < min(ratio * budget.max_total, budget.max_total - 1)
-    ):
-        return False
-    notice = ITERATION_BUDGET_WARNING_TEMPLATE.format(
-        used=budget.used, maximum=budget.max_total
+
+    ratio_eligible = (
+        ratio is not None
+        and not getattr(agent, "_iteration_budget_warning_injected", False)
+        and budget.used >= min(ratio * budget.max_total, budget.max_total - 1)
     )
+
+    if not tier2_eligible and not ratio_eligible:
+        return False
+
+    # Prioritize Tier 2 warning if eligible; otherwise ratio warning.
+    # If both eligible on the same iteration, Tier 2 notice is injected and marks _steer_60_warned.
+    # To keep notifications clean, inject the appropriate notice.
+    is_tier2 = tier2_eligible
+
+    if is_tier2:
+        notice = ITERATION_TIER2_STEER_60_WARNING_TEMPLATE.format(
+            used=budget.used, maximum=budget.max_total
+        )
+    else:
+        notice = ITERATION_BUDGET_WARNING_TEMPLATE.format(
+            used=budget.used, maximum=budget.max_total
+        )
+
     if kanban_worker:
         notice += (
             " While tools are still available, call kanban_complete only if all task "
@@ -77,7 +113,10 @@ def _maybe_inject_iteration_budget_warning(agent: Any, messages: Any) -> bool:
         message["content"] = [*(content or []), {"type": "text", "text": notice}]
     else:
         return False
-    agent._iteration_budget_warning_injected = True
+    if is_tier2:
+        agent._steer_60_warned = True
+    else:
+        agent._iteration_budget_warning_injected = True
     return True
 
 
