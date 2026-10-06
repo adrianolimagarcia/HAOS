@@ -332,3 +332,42 @@ target/
 # a secrets/. O repo é público; só o harness e o baseline AGREGADO
 # (benchmarks/haos_retrieval_gold.baseline.json) são versionáveis.
 benchmarks/haos_retrieval_gold.json
+
+# Scratchpad/Hardware local temp files & images
+/_tmp_*
+/.tmp_*
+*.img.txt
+/kernel
+/kernel_dtb
+/ramdisk.cpio
+/power_watchdog.sh
+/kdiff/
+/fm_iris_patch/
+/fontes/
+/paperclip-analysis/
+/paperclip-plugin/
+/diff_config_quimera10_vs_estavel24.diff
+/patch_quimera10_charger_stock24.diff
+/bt_candidate_serial_hs_stock_vs_10.patch
+/bt_restore_stock_serial_hs.patch
+/diff_paths.txt
+/dmesg_s4_live.txt
+/errors_dump.txt
+/only_cur.txt
+/only_stock.txt
+/tree_diff_list.txt
+/cfg_Image-gz-dtb-control_build1.txt
+/=
+/.claude/
+/CHECKSUMS_quimera_v3_synth.md
+/DIAG_FM_RADIO_Z01KD.md
+/PLANO_CORRECAO_QUIMERA.md
+/PLAN_som_z01k.md
+/RCA_S4_ADSP_progresso.md
+/RCA_S4_ADSP_relatorio.md
+/bluetooth_z01kd_rca.md
+/plano-correcao-z01kd.md
+/rca_icl_25ma_brownout.md
+/relatorio_voltagem_stock_vs_custom.md
+
+
