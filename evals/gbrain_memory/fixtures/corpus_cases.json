@@ -1,0 +1,158 @@
+{
+  "description": "Corpus de avaliação congelado para o pipeline de memória do HAOS e absorção seletiva de conceitos GBrain.",
+  "version": "1.0.0",
+  "frozen_at": "2026-10-06T18:00:00-03:00",
+  "cases": [
+    {
+      "id": "TC-TEMP-01",
+      "category": "temporal_validity",
+      "title": "Fato com valid_until expirado retornado indevidamente em busca textual/FTS",
+      "description": "Um fato gravado com valid_until=T1 não deve ser retornado como fato vigente em queries realizadas em T2 > T1.",
+      "record": {
+        "record_id": "rec_temp_01",
+        "scope": "project",
+        "kind": "fact",
+        "content": "Porta do serviço Redis configurada para 6379",
+        "valid_from": 1700000000.0,
+        "valid_until": 1700003600.0,
+        "status": "active"
+      },
+      "query": "Porta do serviço Redis",
+      "eval_time": 1700010000.0,
+      "expected_behavior": "Fato deve ser filtrado ou marcado explicitamente como expirado",
+      "haos_current_behavior": "Retornado como ativo porque search_fts filtra apenas status='active' e ignora valid_until",
+      "gap_ref": "GAP-01"
+    },
+    {
+      "id": "TC-TEMP-02",
+      "category": "temporal_validity",
+      "title": "Fato com valid_from futuro retornado prematuramente",
+      "description": "Um fato agendado ou com vigência futura (valid_from > now) não deve ser recuperado como fato imediatamente aplicável.",
+      "record": {
+        "record_id": "rec_temp_02",
+        "scope": "project",
+        "kind": "fact",
+        "content": "Migração para Kubernetes v1.32 entra em vigor em 2027",
+        "valid_from": 1800000000.0,
+        "valid_until": null,
+        "status": "active"
+      },
+      "query": "versão do Kubernetes em vigor",
+      "eval_time": 1791300000.0,
+      "expected_behavior": "Fato não deve ser retornado como vigente no presente",
+      "haos_current_behavior": "Retornado porque valid_from não é avaliado no retrieval",
+      "gap_ref": "GAP-01"
+    },
+    {
+      "id": "TC-TEMP-03",
+      "category": "temporal_validity",
+      "title": "is_valid_at sem invocação no pipeline operacional",
+      "description": "O método de domínio KnowledgeItem.is_valid_at() existe em schemas.py mas não tem chamadores no pipeline de busca.",
+      "target_file": "hermes/platform/context/memory/schemas.py",
+      "target_line": 96,
+      "expected_behavior": "is_valid_at deve ser invocado em filtros de busca e render",
+      "haos_current_behavior": "0 chamadores no código do retrieval e da store",
+      "gap_ref": "GAP-01"
+    },
+    {
+      "id": "TC-OBS-01",
+      "category": "observed_vs_recorded",
+      "title": "Ausência do campo observed_at no schema MemoryRecord",
+      "description": "MemoryRecord possui created_at (momento de escrita no banco) mas não possui observed_at (momento em que o fato ocorreu ou foi observado na conversa/mundo).",
+      "target_file": "hermes/platform/context/memory/canonical_store.py",
+      "target_line": 45,
+      "expected_behavior": "MemoryRecord deve registrar observed_at separadamente de created_at",
+      "haos_current_behavior": "Apenas created_at está presente; observed_at ausente no DDL e dataclass",
+      "gap_ref": "GAP-02"
+    },
+    {
+      "id": "TC-OBS-02",
+      "category": "observed_vs_recorded",
+      "title": "Batch sync ou re-ingestão distorce timestamp do evento",
+      "description": "Quando logs ou sessões antigas são ingeridas tardiamente, created_at reflete o momento do processamento e não a ocorrência.",
+      "event_timestamp": 1780000000.0,
+      "ingestion_timestamp": 1791300000.0,
+      "expected_behavior": "Recency decay e ordenação devem levar em conta observed_at",
+      "haos_current_behavior": "Recency decay decai a partir de created_at, tratando evento antigo ingerido hoje como novíssimo",
+      "gap_ref": "GAP-02"
+    },
+    {
+      "id": "TC-REND-01",
+      "category": "frescor_conflito_transparencia",
+      "title": "_render omite anotação de frescor e idade do fato",
+      "description": "Ao injetar contexto no prompt do agente, _render() formata apenas 'scope: content' sem data, idade ou nível de frescor.",
+      "target_file": "hermes/platform/context/memory/retrieval.py",
+      "target_line": 173,
+      "expected_behavior": "Render deve declarar marcadores como [recente: 2d atrás] ou [validade: vigente]",
+      "haos_current_behavior": "Formatação cega '[scope] content' sem metadados temporais",
+      "gap_ref": "GAP-03"
+    },
+    {
+      "id": "TC-REND-02",
+      "category": "frescor_conflito_transparencia",
+      "title": "_render omite avisos de incerteza e lacunas",
+      "description": "Fatos com baixa confiança ou score marginal são injetados indistintamente sem marcação de incerteza.",
+      "target_file": "hermes/platform/context/memory/retrieval.py",
+      "target_line": 173,
+      "expected_behavior": "Contexto deve sinalizar confiabilidade ao LLM",
+      "haos_current_behavior": "Texto puro sem tag de confiança ou ressalva",
+      "gap_ref": "GAP-03"
+    },
+    {
+      "id": "TC-DREAM-01",
+      "category": "dream_cursor_reopened_session",
+      "title": "Cursor do dream avança monotoniamente e cega sessões reabertas",
+      "description": "DreamConsolidator avança cursor = max(session.started_at). Sessões antigas reabertas com novas mensagens mantêm started_at antigo.",
+      "target_file": "hermes/platform/memory/dream.py",
+      "target_line": 427,
+      "scenario": "Sessão S1 criada em T1, reaberta com novas mensagens em T3. Cursor do dream em T2 (T1 < T2 < T3).",
+      "expected_behavior": "S1 deve ser reprocessada para destilar os novos turnos",
+      "haos_current_behavior": "S1 é ignorada na query WHERE started_at > ? porque started_at < T2",
+      "gap_ref": "GAP-04"
+    },
+    {
+      "id": "TC-DREAM-02",
+      "category": "dream_cursor_reopened_session",
+      "title": "Ausência de tracking last_message_at no cursor do dream",
+      "description": "State db e schema de sessões não indexam last_message_at para controle de checkpoint do dream.",
+      "target_file": "hermes/platform/memory/dream.py",
+      "target_line": 596,
+      "expected_behavior": "Cursor baseado em last_activity / last_message_at por sessão",
+      "haos_current_behavior": "Cursor único global baseado em max(started_at)",
+      "gap_ref": "GAP-04"
+    },
+    {
+      "id": "TC-CONF-01",
+      "category": "conflict_surfacing",
+      "title": "Conflito detectado pelo dream é isolado no staging sem alerta ao dono",
+      "description": "Quando DreamConsolidator encontra contradição via MemoryConsolidator.detect_conflicts, ele invoca router.stage_candidate(reason='conflict_with_canonical'). O fato vai para pending_candidates.json mas nenhuma notificação/inbox é gerada para o operador.",
+      "target_file": "hermes/platform/memory/dream.py",
+      "target_line": 582,
+      "expected_behavior": "Conflito deve gerar item no inbox/notificação para revisão ativa",
+      "haos_current_behavior": "Silenciosamente represado em staging/pending_candidates.json",
+      "gap_ref": "GAP-05"
+    },
+    {
+      "id": "TC-CONF-02",
+      "category": "conflict_surfacing",
+      "title": "detect_conflicts ignora escopo federado e restringe-se a texto simples",
+      "description": "detect_conflicts em consolidation.py avalia apenas sobreposição de tokens e palavras-chave sem considerar contradições semânticas profundas.",
+      "target_file": "hermes/platform/context/memory/consolidation.py",
+      "target_line": 70,
+      "expected_behavior": "Detecção de contradição enriquecida com relações de supersessão e aviso ao usuário",
+      "haos_current_behavior": "Filtro raso e destino confinado ao staging",
+      "gap_ref": "GAP-05"
+    },
+    {
+      "id": "TC-CONF-03",
+      "category": "conflict_surfacing",
+      "title": "Ausência de endpoint CLI / UI para resolução de conflitos staged",
+      "description": "Não existe comando 'hermes memory conflicts' ou rota de aprovação específica para candidatos staged por conflito.",
+      "target_file": "hermes/platform/context/memory/staging.py",
+      "target_line": 208,
+      "expected_behavior": "Superfície clara de inspeção e reconciliação de conflitos pendentes",
+      "haos_current_behavior": "Candidatos em staging só expiram por TTL ou aprovação manual genérica",
+      "gap_ref": "GAP-05"
+    }
+  ]
+}

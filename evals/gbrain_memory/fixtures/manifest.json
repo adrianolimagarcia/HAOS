@@ -1,0 +1,28 @@
+{
+  "corpus_name": "gbrain_memory_eval_corpus",
+  "version": "1.0.0",
+  "frozen_at": "2026-10-06T18:00:00-03:00",
+  "author": "HAOS Subagent (Etapa 0 Auditoria Memória)",
+  "corpus_cases_file": "corpus_cases.json",
+  "corpus_cases_sha256": "9a314feec639ae68e68e48f2e8cc8af08451a6cac3b674c21b96f145931e0644",
+  "total_cases": 12,
+  "categories_breakdown": {
+    "temporal_validity": 3,
+    "observed_vs_recorded": 2,
+    "frescor_conflito_transparencia": 2,
+    "dream_cursor_reopened_session": 2,
+    "conflict_surfacing": 3
+  },
+  "hypothesis_coverage": {
+    "GAP-01": "validade temporal não aplicada no recall (search_fts/active_by_ids/is_valid_at sem chamadores)",
+    "GAP-02": "sem distinção observed_at vs recorded_at em MemoryRecord",
+    "GAP-03": "_render() do retrieval.py não declara frescor/lacunas/conflitos",
+    "GAP-04": "cursor do dream não reprocessa sessão antiga reaberta com mensagens novas",
+    "GAP-05": "destino dos conflitos engolido silenciosamente em pending_candidates.json sem alerta ao dono"
+  },
+  "invariants": [
+    "Corpus read-only, imutável sem alteração de hash",
+    "Não depende de LLM externo ou chamadas de rede para avaliação estrutural",
+    "Compatível com o harness de teste de regressão do HAOS"
+  ]
+}
