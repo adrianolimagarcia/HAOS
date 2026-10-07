@@ -1837,8 +1837,31 @@ def _dispatch_lane_task(
         result.spawned.append((task_id, assignee, ""))
         _count_spawn(assignee)
         return True
-    claim = _kb.claim_review_task if lane == "review" else _kb.claim_task
-    claimed = claim(conn, task_id, ttl_seconds=ttl_seconds)
+
+    # Attempt atomic claim: use fast Rust haos-edge claim if opt-in enabled, else Python claim
+    claimed = None
+    try:
+        from hermes_cli.kanban_rust_claim import get_rust_claim_mode, rust_claim_task
+        if get_rust_claim_mode() == "rust":
+            from hermes_cli.profiles import get_active_profile_name
+            active_profile = get_active_profile_name() or "default"
+            kanban_h = _kb.kanban_home()
+            claimed = rust_claim_task(
+                conn,
+                task_id,
+                profile=active_profile,
+                data_dir=kanban_h,
+                ttl_seconds=ttl_seconds,
+                lane=lane,
+            )
+    except Exception as _claim_err:
+        _kb._log.warning("Rust claim failed, falling back to Python: %s", _claim_err)
+        claimed = None
+
+    if claimed is None:
+        claim = _kb.claim_review_task if lane == "review" else _kb.claim_task
+        claimed = claim(conn, task_id, ttl_seconds=ttl_seconds)
+
     if claimed is None:
         return False
     try:
