@@ -88,12 +88,13 @@ def test_dream_git_store_init_and_commit(tmp_path: Path):
 
 
 def test_dream_consolidator_runs_and_records_cursor(tmp_path: Path, monkeypatch):
-    """Contrato antigo preservado: dry-run conta sem escrever; run grava cursor e commit."""
+    """Contrato preservado: dry-run conta sem escrever; run grava cursor e commit.
+    Usa declaração factual determinística em vez de interrogação/pergunta (T4)."""
     home = tmp_path / ".hermes"
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
 
-    _new_session(home, "20260908_test_dream_session", "Qual o plano de contingência?")
+    _new_session(home, "20260908_test_dream_session", "Definir plano de contingência para failover")
 
     consolidator = DreamConsolidator(hermes_home=home)
     assert consolidator.get_cursor() == 0.0

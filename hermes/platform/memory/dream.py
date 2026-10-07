@@ -61,7 +61,7 @@ def _sanitize_session_preview(text: str) -> str:
 
 
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
-from hermes.platform.context.memory.candidate import MemoryCandidate, contains_secrets
+from hermes.platform.context.memory.candidate import MemoryCandidate, contains_secrets, contains_question, contains_hypothesis
 from hermes.platform.context.memory.mental_model_client import MentalModelClient
 from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
 from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
@@ -502,7 +502,7 @@ class DreamConsolidator:
                     # e quebra candidate_key/hash. O blob completo fica em delta_text
                     # para a extração futura (T4) sem mudar o contrato atual.
                     delta_parts = []
-                    first_user_text = ""
+                    user_messages = []
                     sess_total_chars = 0
                     sess_max_ts = last_sess_ts
                     for m in delta_msgs:
@@ -512,27 +512,29 @@ class DreamConsolidator:
                         content = (m.get("content") or "").strip()
                         if not content:
                             continue
-                        if not first_user_text and m.get("role") == "user":
-                            # Paridade com o preview legado: mesma forma que
-                            # _shape_preview dá à primeira msg do usuário
-                            # (newlines→espaço, truncamento 60+...). O truncamento
-                            # é load-bearing: quebra o fechamento de marcadores de
-                            # envelope, deixando o fragmento para o filtro pegar.
-                            first_user_text = _shape_preview(content[:MAX_MSG_CHARS])
                         chunk = content[:MAX_MSG_CHARS]
                         if sess_total_chars + len(chunk) > MAX_SESSION_CHARS:
                             remaining = MAX_SESSION_CHARS - sess_total_chars
                             if remaining > 0:
                                 delta_parts.append(chunk[:remaining])
+                                if m.get("role") == "user":
+                                    user_clean = " ".join(chunk[:remaining].splitlines()).strip()
+                                    if user_clean:
+                                        user_messages.append(user_clean)
                             break
                         delta_parts.append(chunk)
                         sess_total_chars += len(chunk)
+                        if m.get("role") == "user":
+                            user_clean = " ".join(chunk.splitlines()).strip()
+                            if user_clean:
+                                user_messages.append(user_clean)
 
                     delta_text = " ".join(delta_parts).strip()
                     candidates.append(s)
                     session_deltas[sid] = {
                         "delta_text": delta_text,
-                        "first_user_text": first_user_text,
+                        "user_messages": user_messages,
+                        "has_delta_msgs": True,
                         "max_msg_ts": max(sess_max_ts, started_at),
                     }
             finally:
@@ -580,143 +582,141 @@ class DreamConsolidator:
                 max_ts = max(max_ts, sess_max_ts)
                 continue
 
-            preview = delta_info.get("first_user_text") or delta_info.get("delta_text", "")
+            # Extração determinística 0..N a partir das mensagens USER do delta (T4).
+            # Respostas do agente não viram fatos; perguntas e hipóteses não devem virar fatos.
+            # Não dividir blob com respostas de assistente; não reprocessar preview antigo
+            # em sessões com delta exclusivo de assistant.
             sess_max_ts = delta_info.get("max_msg_ts", started_at)
             new_per_session[sid] = max(new_per_session.get(sid, 0.0), sess_max_ts)
             max_ts = max(max_ts, sess_max_ts)
 
-            if not preview:
-                preview = (s.get("preview") or "").strip()
-            preview = _sanitize_session_preview(preview)
-            if not preview and state_db_path.exists():
-                try:
-                    from hermes_state import SessionDB
-                    _sdb = SessionDB(db_path=state_db_path, read_only=True)
-                    try:
-                        msgs = _sdb.get_messages(sid)
-                        for m in msgs:
-                            content = _sanitize_session_preview(m.get("content") or "")
-                            if content:
-                                preview += content[:200] + " "
-                                if len(preview) >= 300:
-                                    break
-                        preview = preview.strip()
-                    finally:
-                        _sdb.close()
-                except Exception:
-                    pass
+            candidate_sources = []
+            if delta_info.get("has_delta_msgs"):
+                # Delta estruturado: pega APENAS mensagens elegíveis do usuário via shape preview legado
+                for raw_msg in delta_info.get("user_messages") or []:
+                    candidate_sources.append((_shape_preview(raw_msg), raw_msg))
+            else:
+                # Sessão nova sem msgs explícitas: fallback para preview apenas se sessão começou após cursor
+                raw_preview = (s.get("preview") or "").strip()
+                if raw_preview:
+                    candidate_sources = [(_shape_preview(raw_preview), raw_preview)]
 
-            if len(preview) < 20:
-                continue
-
-            # Extração determinística da lição: primeiro período do preview (mesma
-            # evidência estrutural de antes — frase completa; SEM gate por palavra-
-            # chave solta no preview cru, que sumiu com o P11). A frase completa
-            # (sem o truncamento de 140 chars) é o evidence_span do P5: o trecho
-            # literal do transcript que originou a lição.
-            first_sentence = preview.split(".")[0].strip()
-            lesson = first_sentence[:140]
-            if len(lesson) <= 15:
-                continue
-
-            # Filtro anti-contaminação (auditoria 2026-09-29): o preview bruto da
-            # sessão pode começar com scaffolding de prompt (envelope A2A, listing
-            # de skills, system note). Isso não é lição — descarta ANTES de virar
-            # instinto ou candidato de staging. Determinístico, sem LLM.
-            if is_prompt_envelope(lesson):
-                logger.debug("Skipped envelope text in dream extraction (session %s)", sid)
-                continue
-
-            session_uri = f"session://{sid}"
-            key = candidate_key(lesson)
-
-            # Reforço é recorrência ENTRE sessões: a mesma sessão reprocessada não
-            # reforça, e lição já promovida não é re-ingerida.
-            existing = self.staging_store.get(key)
-            if existing is not None:
-                if existing.get("status") == PROMOTED or session_uri in (existing.get("provenance") or []):
+            for shaped_source, raw_source in candidate_sources:
+                # Envelope RAW rejeitado antes da sanitização (se a mensagem inteira for um envelope não-sanitizável como A2A):
+                # Preserva compatibilidade com scaffolding limpo por _sanitize_session_preview (ex: [System note: ...]).
+                # Envelopes de protocolo/inbound reais (A2A, OUT-OF-BAND, Workspace) nunca devem ter seu conteúdo interior
+                # extraído como lição.
+                if any(m in raw_source for m in ("[A2A inbound", "[OUT-OF-BAND", "[Workspace::v1")):
+                    logger.debug("Skipped envelope text in dream extraction (session %s)", sid)
                     continue
 
-            # Destino determinístico (MemoryRouter.classify_destination) — usado para
-            # a categoria do instinto e para a metadata da lição promovida.
-            destination = self.router.classify_destination(lesson)
+                if contains_question(raw_source):
+                    logger.debug("Skipped question in dream extraction (session %s): %s", sid, raw_source)
+                    continue
+                if contains_hypothesis(raw_source):
+                    logger.debug("Skipped hypothesis in dream extraction (session %s): %s", sid, raw_source)
+                    continue
 
-            if not dry_run:
-                instinct = self.instinct_store.record_instinct(
-                    rule=lesson,
-                    category=_CATEGORY_BY_DESTINATION.get(destination, "workflow"),
-                    project_scope=INSTINCT_PROJECT_SCOPE,
-                    tags=["dream-distilled"],
+                source_text = _sanitize_session_preview(raw_source)
+                if len(source_text) < 20 or is_prompt_envelope(source_text):
+                    continue
+
+                first_sentence = source_text.split(".")[0].strip()
+                lesson = first_sentence[:140]
+                if len(lesson) <= 15:
+                    continue
+
+                # Filtro anti-contaminação determinístico: envelope de prompt, pergunta e hipótese
+                if is_prompt_envelope(lesson):
+                    logger.debug("Skipped envelope text in dream extraction (session %s)", sid)
+                    continue
+                if contains_question(lesson):
+                    logger.debug("Skipped question in dream extraction (session %s): %s", sid, lesson)
+                    continue
+                if contains_hypothesis(lesson):
+                    logger.debug("Skipped hypothesis in dream extraction (session %s): %s", sid, lesson)
+                    continue
+
+                session_uri = f"session://{sid}"
+                key = candidate_key(lesson)
+
+                # Reforço é recorrência ENTRE sessões: a mesma sessão reprocessada não
+                # reforça, e lição já promovida não é re-ingerida.
+                existing = self.staging_store.get(key)
+                if existing is not None:
+                    if existing.get("status") == PROMOTED or session_uri in (existing.get("provenance") or []):
+                        continue
+
+                # Destino determinístico (MemoryRouter.classify_destination) — usado para
+                # a categoria do instinto e para a metadata da lição promovida.
+                destination = self.router.classify_destination(lesson)
+
+                if not dry_run:
+                    instinct = self.instinct_store.record_instinct(
+                        rule=lesson,
+                        category=_CATEGORY_BY_DESTINATION.get(destination, "workflow"),
+                        project_scope=INSTINCT_PROJECT_SCOPE,
+                        tags=["dream-distilled"],
+                    )
+                    confidence = instinct.confidence if instinct is not None else INITIAL_CONFIDENCE
+                else:
+                    confidence = self.instinct_store.peek_confidence(
+                        rule=lesson, project_scope=INSTINCT_PROJECT_SCOPE
+                    )
+
+                candidate = self.router.route_fact(
+                    fact=lesson,
+                    source_uri=session_uri,
+                    confidence=confidence,
+                    scope="project",
                 )
-                # record_instinct retorna None só para envelope — já filtrado
-                # acima; o guard é defesa em profundidade, não caminho esperado.
-                confidence = instinct.confidence if instinct is not None else INITIAL_CONFIDENCE
-            else:
-                # Dry-run: prevê a confiança do próximo reforço sem escrever nada.
-                confidence = self.instinct_store.peek_confidence(
-                    rule=lesson, project_scope=INSTINCT_PROJECT_SCOPE
+                consolidated += 1
+
+                if dry_run:
+                    continue
+
+                # P5 — proveniência acumulada: TODAS as sessões que viram a lição
+                prior_sessions = list((existing.get("provenance") or []) if existing else [])
+                writer = _CanonicalLessonWriter(
+                    okf_dir=self.okf_dir, session_id=sid, title=title,
+                    model=s.get("model") or "", evidence_span=first_sentence,
+                    extracted_at=datetime.now(timezone.utc).isoformat(),
+                    provenance=[*prior_sessions, session_uri],
                 )
-
-            candidate = self.router.route_fact(
-                fact=lesson,
-                source_uri=session_uri,
-                confidence=confidence,
-                scope="project",
-            )
-            consolidated += 1
-
-            if dry_run:
-                continue
-
-            # P5 — proveniência acumulada: TODAS as sessões que viram a lição
-            # (o staging já acumula; a lição canônica reflete o mesmo contrato).
-            prior_sessions = list((existing.get("provenance") or []) if existing else [])
-            writer = _CanonicalLessonWriter(
-                okf_dir=self.okf_dir, session_id=sid, title=title,
-                model=s.get("model") or "", evidence_span=first_sentence,
-                extracted_at=datetime.now(timezone.utc).isoformat(),
-                provenance=[*prior_sessions, session_uri],
-            )
-            if self.router.process_candidate(candidate, writer):
-                # Acumula a proveniência da sessão da promoção ANTES de marcar,
-                # para o registro refletir todas as sessões que viram a lição.
-                self.staging_store.stage_candidate(candidate, reason="recurrence_promotion")
-                promoted += 1
-                self.staging_store.mark_promoted(
-                    key, doc_path=str(writer.last_written) if writer.last_written else None
-                )
-                try:
-                    mental_models_updated += self._promote_mental_model(candidate, [*prior_sessions, session_uri])
-                except Exception:
-                    logger.exception("Promoted lesson mental-model projection failed")
-
-                # Mem0-inspired declarative memory reconciliation (apenas no que é
-                # promovido, como antes: o stats espelha conhecimento canônico).
-                if any(k in preview.lower() for k in ("preferência", "preferencia", "usando", "migramos", "banco", "framework", "agora usamos", "não usamos")):
+                if self.router.process_candidate(candidate, writer):
+                    self.staging_store.stage_candidate(candidate, reason="recurrence_promotion")
+                    promoted += 1
+                    self.staging_store.mark_promoted(
+                        key, doc_path=str(writer.last_written) if writer.last_written else None
+                    )
                     try:
-                        fact_candidate = preview.split(".")[0].strip()[:180]
-                        if len(fact_candidate) > 10:
-                            topic = "general"
-                            for cand_topic in ("banco", "database", "ui", "framework", "style", "language", "auth", "tool"):
-                                if cand_topic in fact_candidate.lower():
-                                    topic = cand_topic
-                                    break
-                            rec_res = self.reconciler.reconcile(
-                                topic=topic,
-                                content=fact_candidate,
-                                category="session_fact",
-                                metadata={"session_id": sid, "source": "dream"},
-                            )
-                            if rec_res.action in reconciliation_stats:
-                                reconciliation_stats[rec_res.action] += 1
-                    except Exception as _rec_err:
-                        logger.debug("Dream memory reconciliation failed: %s", _rec_err)
-            else:
-                staged += 1
-                if candidate.status == "rejected":
-                    # Conflito com conhecimento canônico: nada é descartado — o
-                    # candidato volta para o staging até reforçar/resolver.
-                    self.router.stage_candidate(candidate, reason=STAGE_REASON_CONFLICT)
+                        mental_models_updated += self._promote_mental_model(candidate, [*prior_sessions, session_uri])
+                    except Exception:
+                        logger.exception("Promoted lesson mental-model projection failed")
+
+                    if any(k in source_text.lower() for k in ("preferência", "preferencia", "usando", "migramos", "banco", "framework", "agora usamos", "não usamos")):
+                        try:
+                            fact_candidate = source_text.split(".")[0].strip()[:180]
+                            if len(fact_candidate) > 10:
+                                topic = "general"
+                                for cand_topic in ("banco", "database", "ui", "framework", "style", "language", "auth", "tool"):
+                                    if cand_topic in fact_candidate.lower():
+                                        topic = cand_topic
+                                        break
+                                rec_res = self.reconciler.reconcile(
+                                    topic=topic,
+                                    content=fact_candidate,
+                                    category="session_fact",
+                                    metadata={"session_id": sid, "source": "dream"},
+                                )
+                                if rec_res.action in reconciliation_stats:
+                                    reconciliation_stats[rec_res.action] += 1
+                        except Exception as _rec_err:
+                            logger.debug("Dream memory reconciliation failed: %s", _rec_err)
+                else:
+                    staged += 1
+                    if candidate.status == "rejected":
+                        self.router.stage_candidate(candidate, reason=STAGE_REASON_CONFLICT)
 
         if dry_run:
             return {
