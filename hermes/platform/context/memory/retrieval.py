@@ -70,7 +70,7 @@ class HybridMemoryRetriever:
         if not scopes or limit <= 0 or budget_chars <= 0:
             return []
         # FTS is both a candidate channel and the authority filter.
-        fts = self.store.search_fts(query, scopes, max(20, limit * 4))
+        fts = self.store.search_fts(query, scopes, max(20, limit * 4), now=reference)
         if access is not None:
             authorized = [record for record in fts if access.can_read(record.scope, record.metadata)]
             self._count("dropped_by_acl", len(fts) - len(authorized))
@@ -86,7 +86,7 @@ class HybridMemoryRetriever:
             # Contract: vector search returns canonical record IDs only. Resolve
             # every ID again through the journal before emitting any content.
             vector_ids = tuple(self.vector_search(query, scopes, max(20, limit * 4)))
-            resolved = self.store.active_by_ids(vector_ids, scopes)
+            resolved = self.store.active_by_ids(vector_ids, scopes, now=reference)
             if access is not None:
                 authorized = [record for record in resolved if access.can_read(record.scope, record.metadata)]
                 self._count("dropped_by_acl", len(resolved) - len(authorized))
@@ -198,6 +198,9 @@ class HybridMemoryRetriever:
         provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
         
         # Freshness / temporal metadata
+        # Se observed_at for None ou for idêntico a valid_from (legado sem observed_at explícito),
+        # ou se explicitamente None, exibe 'freshness unknown' ou a data correspondente.
+        # Mas para suportar dados legados onde observed_at era fallback para valid_from:
         if rec.observed_at is not None:
             # Data ISO curta: YYYY-MM-DD
             dt = datetime.datetime.fromtimestamp(rec.observed_at, tz=datetime.timezone.utc)

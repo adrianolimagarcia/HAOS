@@ -1030,7 +1030,7 @@ pub extern "C" fn canonical_engine_read_records_buffered(
     let sql = format!(
         "SELECT record_id, logical_id, revision, scope, kind, status, content, \
                 content_hash, confidence, provenance_json, metadata_json, \
-                valid_from, valid_until, supersedes_json \
+                valid_from, valid_until, supersedes_json, observed_at \
          FROM memory_records \
          WHERE status='active' AND record_id IN ({}) AND scope IN ({});",
         id_placeholders, scope_placeholders
@@ -1065,6 +1065,7 @@ pub extern "C" fn canonical_engine_read_records_buffered(
             "valid_from": row.get::<_, f64>(11)?,
             "valid_until": row.get::<_, Option<f64>>(12)?,
             "supersedes_json": row.get::<_, String>(13)?,
+            "observed_at": row.get::<_, Option<f64>>(14)?,
         }))
     }) {
         Ok(r) => r,
@@ -1152,7 +1153,7 @@ pub extern "C" fn canonical_engine_read_records_buffered_v2(
     let sql = format!(
         "SELECT record_id, logical_id, revision, scope, kind, status, content, \
                 content_hash, confidence, provenance_json, metadata_json, \
-                valid_from, valid_until, supersedes_json \
+                valid_from, valid_until, supersedes_json, observed_at \
          FROM memory_records \
          WHERE status='active' \
            AND (valid_from IS NULL OR valid_from <= ?1) \
@@ -1192,6 +1193,7 @@ pub extern "C" fn canonical_engine_read_records_buffered_v2(
             "valid_from": row.get::<_, f64>(11)?,
             "valid_until": row.get::<_, Option<f64>>(12)?,
             "supersedes_json": row.get::<_, String>(13)?,
+            "observed_at": row.get::<_, Option<f64>>(14)?,
         }))
     }) {
         Ok(r) => r,
@@ -1269,7 +1271,7 @@ pub extern "C" fn canonical_engine_search_fts_buffered(
     let sql = format!(
         "SELECT r.record_id, r.logical_id, r.revision, r.scope, r.kind, r.status, r.content, \
                 r.content_hash, r.confidence, r.provenance_json, r.metadata_json, \
-                r.valid_from, r.valid_until, r.supersedes_json \
+                r.valid_from, r.valid_until, r.supersedes_json, r.observed_at \
          FROM memory_fts f \
          JOIN memory_records r ON r.record_id = f.record_id \
          WHERE memory_fts MATCH ?1 AND r.status = 'active' AND r.scope IN ({}) \
@@ -1307,6 +1309,7 @@ pub extern "C" fn canonical_engine_search_fts_buffered(
             "valid_from": row.get::<_, f64>(11)?,
             "valid_until": row.get::<_, Option<f64>>(12)?,
             "supersedes_json": row.get::<_, String>(13)?,
+            "observed_at": row.get::<_, Option<f64>>(14)?,
         }))
     }) {
         Ok(r) => r,
@@ -1385,7 +1388,7 @@ pub extern "C" fn canonical_engine_search_fts_buffered_v2(
     let sql = format!(
         "SELECT r.record_id, r.logical_id, r.revision, r.scope, r.kind, r.status, r.content, \
                 r.content_hash, r.confidence, r.provenance_json, r.metadata_json, \
-                r.valid_from, r.valid_until, r.supersedes_json \
+                r.valid_from, r.valid_until, r.supersedes_json, r.observed_at \
          FROM memory_fts f \
          JOIN memory_records r ON r.record_id = f.record_id \
          WHERE memory_fts MATCH ?1 AND r.status = 'active' \
@@ -1427,6 +1430,7 @@ pub extern "C" fn canonical_engine_search_fts_buffered_v2(
             "valid_from": row.get::<_, f64>(11)?,
             "valid_until": row.get::<_, Option<f64>>(12)?,
             "supersedes_json": row.get::<_, String>(13)?,
+            "observed_at": row.get::<_, Option<f64>>(14)?,
         }))
     }) {
         Ok(r) => r,

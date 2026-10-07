@@ -70,10 +70,6 @@ class MemoryRecord:
     content_hash: str = ""
     observed_at: Optional[float] = None
 
-    def __post_init__(self) -> None:
-        if self.observed_at is None:
-            object.__setattr__(self, "observed_at", self.valid_from)
-
     def is_valid_at(self, timestamp: Optional[float] = None, *, now: Optional[float] = None) -> bool:
         """Verifica se o registro é válido no timestamp indicado.
 
