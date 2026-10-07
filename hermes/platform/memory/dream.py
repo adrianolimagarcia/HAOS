@@ -67,6 +67,7 @@ from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CON
 from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
 from hermes.platform.memory.instincts import InstinctStore, is_prompt_envelope, INITIAL_CONFIDENCE
 from hermes.platform.memory.reconciler import MemoryReconciler
+from hermes_state_common import _shape_preview
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ logger = logging.getLogger(__name__)
 # hermes_cli/haos_cmd.py:391 (get_eligible_promotions("default")) e pela tool
 # tools/haos_instinct_tool — reforço e promoção conversam no mesmo namespace.
 INSTINCT_PROJECT_SCOPE = "default"
+MAX_MSG_CHARS = 1200
+MAX_SESSION_CHARS = 7000
+MAX_BATCH_SESSIONS = 50
 
 # Categoria do instinto derivada do destino determinístico do MemoryRouter
 # (tabela, não if/elif em cadeia — ver Code Shape Rules).
@@ -459,16 +463,85 @@ class DreamConsolidator:
             # Read the same explicit profile that owns staging and the projection.
             db = SessionDB(db_path=state_db_path, read_only=True)
             try:
-                recent_sessions = db.list_recent_sessions_bounded(limit=50)
+                recent_sessions = db.list_recent_sessions_bounded(limit=MAX_BATCH_SESSIONS)
             finally:
                 db.close()
-        last_cursor = self.get_cursor()
+        cursor_data = self.get_cursor_data()
+        last_cursor = float(cursor_data.get("max_ts", 0.0))
+        per_session_cursor = dict(cursor_data.get("per_session", {}))
 
-        # Sessions newer than cursor with some content
-        candidates = [
-            s for s in recent_sessions
-            if (s.get("started_at") or 0.0) > last_cursor
-        ]
+        # Sessions to check: newer than max_ts OR with activity/messages newer than per_session cursor
+
+        candidates = []
+        session_deltas: Dict[str, Dict[str, Any]] = {}
+
+        if state_db_path.exists():
+            from hermes_state import SessionDB
+            _sdb = SessionDB(db_path=state_db_path, read_only=True)
+            try:
+                for s in recent_sessions:
+                    sid = s.get("id", "")
+                    started_at = s.get("started_at") or 0.0
+                    last_sess_ts = per_session_cursor.get(sid, 0.0)
+
+                    # Leitura incremental: busca mensagens com timestamp > last_sess_ts
+                    msgs = _sdb.get_messages(sid)
+                    delta_msgs = [m for m in msgs if (m.get("timestamp") or started_at) > last_sess_ts]
+                    if not delta_msgs:
+                        if started_at > last_cursor and (s.get("preview") or "").strip():
+                            # Sessão nova sem messages explícitas mas com preview
+                            candidates.append(s)
+                            session_deltas[sid] = {"delta_text": s.get("preview") or "", "max_msg_ts": started_at}
+                        continue
+
+                    # Constrói texto limitado pelos tetos (1,2k por msg, 7k por sessão).
+                    # Paridade com o preview legado: a extração determinística usa a
+                    # PRIMEIRA mensagem do usuário do delta (o preview antigo era a
+                    # primeira msg do usuário via _shape_preview); juntar todas as
+                    # mensagens polui a primeira frase com a resposta do assistente
+                    # e quebra candidate_key/hash. O blob completo fica em delta_text
+                    # para a extração futura (T4) sem mudar o contrato atual.
+                    delta_parts = []
+                    first_user_text = ""
+                    sess_total_chars = 0
+                    sess_max_ts = last_sess_ts
+                    for m in delta_msgs:
+                        m_ts = m.get("timestamp") or started_at
+                        if m_ts > sess_max_ts:
+                            sess_max_ts = m_ts
+                        content = (m.get("content") or "").strip()
+                        if not content:
+                            continue
+                        if not first_user_text and m.get("role") == "user":
+                            # Paridade com o preview legado: mesma forma que
+                            # _shape_preview dá à primeira msg do usuário
+                            # (newlines→espaço, truncamento 60+...). O truncamento
+                            # é load-bearing: quebra o fechamento de marcadores de
+                            # envelope, deixando o fragmento para o filtro pegar.
+                            first_user_text = _shape_preview(content[:MAX_MSG_CHARS])
+                        chunk = content[:MAX_MSG_CHARS]
+                        if sess_total_chars + len(chunk) > MAX_SESSION_CHARS:
+                            remaining = MAX_SESSION_CHARS - sess_total_chars
+                            if remaining > 0:
+                                delta_parts.append(chunk[:remaining])
+                            break
+                        delta_parts.append(chunk)
+                        sess_total_chars += len(chunk)
+
+                    delta_text = " ".join(delta_parts).strip()
+                    candidates.append(s)
+                    session_deltas[sid] = {
+                        "delta_text": delta_text,
+                        "first_user_text": first_user_text,
+                        "max_msg_ts": max(sess_max_ts, started_at),
+                    }
+            finally:
+                _sdb.close()
+        else:
+            candidates = [
+                s for s in recent_sessions
+                if (s.get("started_at") or 0.0) > last_cursor
+            ]
 
         if not candidates:
             repaired = 0 if dry_run else self._repair_promoted_models()
@@ -489,6 +562,8 @@ class DreamConsolidator:
         reconciliation_stats = {"ADD": 0, "UPDATE": 0, "SUPERSEDE": 0, "NOOP": 0}
         max_ts = last_cursor
 
+        new_per_session = dict(per_session_cursor)
+
         for s in reversed(candidates):
             sid = s.get("id", "")
             title = s.get("title") or "Session"
@@ -496,7 +571,14 @@ class DreamConsolidator:
             max_ts = max(max_ts, started_at)
 
             # Check if this session generated key operational decisions or learnings
-            preview = (s.get("preview") or "").strip()
+            delta_info = session_deltas.get(sid, {})
+            preview = delta_info.get("first_user_text") or delta_info.get("delta_text", "")
+            sess_max_ts = delta_info.get("max_msg_ts", started_at)
+            new_per_session[sid] = max(new_per_session.get(sid, 0.0), sess_max_ts)
+            max_ts = max(max_ts, sess_max_ts)
+
+            if not preview:
+                preview = (s.get("preview") or "").strip()
             preview = _sanitize_session_preview(preview)
             if not preview and state_db_path.exists():
                 try:
@@ -640,7 +722,7 @@ class DreamConsolidator:
             }
 
         mental_models_updated += self._repair_promoted_models()
-        self.set_cursor(max_ts)
+        self.set_cursor(max_ts, per_session=new_per_session)
         # P5 — integridade: as escritas deste turno (lições okf, staging, cursor)
         # são registradas no baseline no MESMO turno do fluxo de escrita (senão o
         # gate de integridade viraria falso positivo crônico na rodada seguinte).
