@@ -58,12 +58,20 @@ def test_temporal_validity_gap_verification():
 
 
 def test_observed_at_gap_verification():
-    """Verifica evidência de código do GAP-02: MemoryRecord não possui campo observed_at."""
+    """Invariante pós-Etapa 1 (fecha GAP-02): MemoryRecord possui observed_at com
+    semântica própria (default = valid_from) e a migração aditiva faz backfill.
+
+    Era detector de lacuna na Etapa 0 (afirmava a ausência); virou contrato de
+    presença quando a Etapa 1 implementou o campo.
+    """
     from hermes.platform.context.memory.canonical_store import MemoryRecord
 
     fields = [f.name for f in dataclasses.fields(MemoryRecord)]
     assert "valid_from" in fields
-    assert "observed_at" not in fields
+    assert "observed_at" in fields
+    # Semântica: observed_at opcional, default = valid_from (nunca inventado)
+    rec_default = MemoryRecord.__dataclass_fields__["observed_at"].default
+    assert rec_default is None
 
 
 def test_render_freshness_gap_verification():
