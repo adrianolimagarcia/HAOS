@@ -61,7 +61,7 @@ def _sanitize_session_preview(text: str) -> str:
 
 
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
-from hermes.platform.context.memory.candidate import MemoryCandidate
+from hermes.platform.context.memory.candidate import MemoryCandidate, contains_secrets
 from hermes.platform.context.memory.mental_model_client import MentalModelClient
 from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
 from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
@@ -572,6 +572,14 @@ class DreamConsolidator:
 
             # Check if this session generated key operational decisions or learnings
             delta_info = session_deltas.get(sid, {})
+            delta_text = delta_info.get("delta_text") or (s.get("preview") or "").strip()
+            if delta_text and contains_secrets(delta_text):
+                logger.warning("Session %s discarded from dream: secrets detected in delta", sid)
+                sess_max_ts = delta_info.get("max_msg_ts", started_at)
+                new_per_session[sid] = max(new_per_session.get(sid, 0.0), sess_max_ts)
+                max_ts = max(max_ts, sess_max_ts)
+                continue
+
             preview = delta_info.get("first_user_text") or delta_info.get("delta_text", "")
             sess_max_ts = delta_info.get("max_msg_ts", started_at)
             new_per_session[sid] = max(new_per_session.get(sid, 0.0), sess_max_ts)
