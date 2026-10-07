@@ -117,4 +117,16 @@ mod tests {
         assert_eq!(alpha.data_dir(), Path::new("/srv/alpha"));
         assert_eq!(beta.data_dir(), Path::new("/srv/beta"));
     }
+
+    #[test]
+    fn profile_traversal_is_rejected() {
+        assert_eq!(
+            resolve_profile_data_dir(Some("../sneaky"), Some(Path::new("/tmp/haos"))),
+            Err(ProfileResolutionError::InvalidProfile)
+        );
+        assert_eq!(
+            resolve_profile_data_dir(Some("foo/bar"), Some(Path::new("/tmp/haos"))),
+            Err(ProfileResolutionError::InvalidProfile)
+        );
+    }
 }
