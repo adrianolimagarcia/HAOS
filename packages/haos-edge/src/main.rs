@@ -8,6 +8,7 @@ mod db;
 pub mod event_hub;
 pub mod file_engine;
 pub mod idempotency;
+pub mod kanban_claim;
 pub mod kanban_selector;
 pub mod loop_detector;
 mod mcp;
@@ -183,6 +184,66 @@ enum Commands {
         /// Include tasks waiting in review status
         #[arg(long = "include-review")]
         include_review: bool,
+    },
+
+    /// Atomic task claim and lease acquisition
+    #[command(name = "kanban-claim")]
+    KanbanClaim {
+        /// Explicit absolute path to kanban.db database
+        #[arg(long = "db-path")]
+        db_path: PathBuf,
+
+        /// Profile identity for isolation and audit validation
+        #[arg(long)]
+        profile: String,
+
+        /// Profile data directory for canonical scoping
+        #[arg(long = "data-dir")]
+        data_dir: PathBuf,
+
+        /// ID of task to claim
+        #[arg(long = "task-id")]
+        task_id: String,
+
+        /// Claimer identity or lock identifier
+        #[arg(long)]
+        claimer: String,
+
+        /// TTL for lease lock in seconds
+        #[arg(long, default_value_t = 300)]
+        ttl: i64,
+
+        /// Source lane/status for claim ('ready' or 'review')
+        #[arg(long = "source-status", default_value = "ready")]
+        source_status: String,
+    },
+
+    /// Extend running task lease heartbeat
+    #[command(name = "kanban-heartbeat")]
+    KanbanHeartbeat {
+        /// Explicit absolute path to kanban.db database
+        #[arg(long = "db-path")]
+        db_path: PathBuf,
+
+        /// Profile identity for isolation and audit validation
+        #[arg(long)]
+        profile: String,
+
+        /// Profile data directory for canonical scoping
+        #[arg(long = "data-dir")]
+        data_dir: PathBuf,
+
+        /// ID of task to heartbeat
+        #[arg(long = "task-id")]
+        task_id: String,
+
+        /// Claimer identity or lock identifier
+        #[arg(long)]
+        claimer: String,
+
+        /// TTL for lease lock extension in seconds
+        #[arg(long, default_value_t = 300)]
+        ttl: i64,
     },
 }
 
@@ -558,6 +619,35 @@ async fn main() {
             include_review,
         }) => {
             cmd_kanban_select(&db_path, &profile, &data_dir, include_review);
+        }
+        Some(Commands::KanbanClaim {
+            db_path,
+            profile,
+            data_dir,
+            task_id,
+            claimer,
+            ttl,
+            source_status,
+        }) => {
+            cmd_kanban_claim(
+                &db_path,
+                &profile,
+                &data_dir,
+                &task_id,
+                &claimer,
+                ttl,
+                &source_status,
+            );
+        }
+        Some(Commands::KanbanHeartbeat {
+            db_path,
+            profile,
+            data_dir,
+            task_id,
+            claimer,
+            ttl,
+        }) => {
+            cmd_kanban_heartbeat(&db_path, &profile, &data_dir, &task_id, &claimer, ttl);
         }
         None => {
             cmd_status();
@@ -1076,6 +1166,123 @@ fn cmd_kanban_select(
         }
         Err(e) => {
             let res = kanban_selector::SelectorResult::error(e);
+            println!("{}", serde_json::to_string(&res).unwrap_or_default());
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_kanban_claim(
+    db_path: &Path,
+    profile: &str,
+    data_dir: &Path,
+    task_id: &str,
+    claimer: &str,
+    ttl: i64,
+    source_status: &str,
+) {
+    // 1. Explicit profile and data-dir binding check
+    let resolved = match profile::resolve_profile_data_dir(Some(profile), Some(data_dir)) {
+        Ok(binding) => binding,
+        Err(err) => {
+            let res = kanban_claim::ClaimTaskResult::error(format!(
+                "Invalid explicit profile binding: {:?}",
+                err
+            ));
+            println!("{}", serde_json::to_string(&res).unwrap_or_default());
+            std::process::exit(2);
+        }
+    };
+
+    // 2. Validate db_path matches or is contained inside resolved profile data_dir
+    let abs_db = match db_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => db_path.to_path_buf(),
+    };
+    let abs_data = match resolved.data_dir().canonicalize() {
+        Ok(p) => p,
+        Err(_) => resolved.data_dir().to_path_buf(),
+    };
+
+    if !abs_db.starts_with(&abs_data) {
+        let res = kanban_claim::ClaimTaskResult::error(format!(
+            "Scope violation: db_path {} is outside data_dir {}",
+            abs_db.display(),
+            abs_data.display()
+        ));
+        let out = serde_json::to_string(&res).unwrap_or_default();
+        println!("{out}");
+        std::process::exit(3);
+    }
+
+    // 3. Execute atomic claim
+    match kanban_claim::atomic_claim_task(db_path, task_id, claimer, ttl, source_status) {
+        Ok(claim_res) => {
+            println!("{}", serde_json::to_string(&claim_res).unwrap_or_default());
+            if !claim_res.ok {
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            let res = kanban_claim::ClaimTaskResult::error(e);
+            println!("{}", serde_json::to_string(&res).unwrap_or_default());
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_kanban_heartbeat(
+    db_path: &Path,
+    profile: &str,
+    data_dir: &Path,
+    task_id: &str,
+    claimer: &str,
+    ttl: i64,
+) {
+    // 1. Explicit profile and data-dir binding check
+    let resolved = match profile::resolve_profile_data_dir(Some(profile), Some(data_dir)) {
+        Ok(binding) => binding,
+        Err(err) => {
+            let res = kanban_claim::HeartbeatResult::error(format!(
+                "Invalid explicit profile binding: {:?}",
+                err
+            ));
+            println!("{}", serde_json::to_string(&res).unwrap_or_default());
+            std::process::exit(2);
+        }
+    };
+
+    // 2. Validate db_path matches or is contained inside resolved profile data_dir
+    let abs_db = match db_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => db_path.to_path_buf(),
+    };
+    let abs_data = match resolved.data_dir().canonicalize() {
+        Ok(p) => p,
+        Err(_) => resolved.data_dir().to_path_buf(),
+    };
+
+    if !abs_db.starts_with(&abs_data) {
+        let res = kanban_claim::HeartbeatResult::error(format!(
+            "Scope violation: db_path {} is outside data_dir {}",
+            abs_db.display(),
+            abs_data.display()
+        ));
+        let out = serde_json::to_string(&res).unwrap_or_default();
+        println!("{out}");
+        std::process::exit(3);
+    }
+
+    // 3. Execute heartbeat extension
+    match kanban_claim::heartbeat_claim_task(db_path, task_id, claimer, ttl) {
+        Ok(hb_res) => {
+            println!("{}", serde_json::to_string(&hb_res).unwrap_or_default());
+            if !hb_res.ok {
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            let res = kanban_claim::HeartbeatResult::error(e);
             println!("{}", serde_json::to_string(&res).unwrap_or_default());
             std::process::exit(1);
         }
