@@ -43,6 +43,17 @@ def fts_match_expression(query: str) -> str:
 
 @dataclass(frozen=True)
 class MemoryRecord:
+    """Canonical transactional memory record stored in SQLite journal.
+
+    Temporal Semantics:
+    - ``observed_at``: Timestamp (UNIX epoch seconds) when the fact was observed
+      or true in the external world. Defaults to ``valid_from`` if not explicitly provided.
+    - ``valid_from``: Timestamp (UNIX epoch seconds) when this record becomes active
+      or authoritative in the canonical store.
+    - ``created_at``: Physical insertion timestamp in SQLite journal.
+    - ``valid_until``: Timestamp when this record expires. If in the past, the record
+      is considered inactive/expired during recall.
+    """
     record_id: str
     logical_id: str
     revision: int
@@ -57,6 +68,29 @@ class MemoryRecord:
     supersedes: Tuple[str, ...] = ()
     metadata: Dict[str, Any] = field(default_factory=dict)
     content_hash: str = ""
+    observed_at: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if self.observed_at is None:
+            object.__setattr__(self, "observed_at", self.valid_from)
+
+    def is_valid_at(self, timestamp: Optional[float] = None, *, now: Optional[float] = None) -> bool:
+        """Verifica se o registro é válido no timestamp indicado.
+
+        Intervalo semiaberto [valid_from, valid_until) — início inclusivo, fim exclusivo.
+        Registros legados sem valid_until delimitado permanecem válidos se status == 'active'.
+        """
+        ref_time = time.time() if now is None else now
+        target_time = ref_time if timestamp is None else timestamp
+        if target_time < self.valid_from:
+            return False
+        if self.valid_until is not None and target_time >= self.valid_until:
+            return False
+        return self.status == "active"
+
+    def is_active_at(self, now: Optional[float] = None) -> bool:
+        """Indica se este registro é ativo no tempo indicado (relógio injetável)."""
+        return self.is_valid_at(now=now)
 
 # Supersession reasons. "declared" comes from the caller; the rest are guesses made by
 # the heuristic, and are the ones an operator needs to be able to review and undo.
@@ -183,6 +217,7 @@ class CanonicalMemoryStore:
             supersedes=tuple(json.loads(d["supersedes_json"])) if isinstance(d.get("supersedes_json"), str) else tuple(d.get("supersedes", ())),
             metadata=json.loads(d["metadata_json"]) if isinstance(d.get("metadata_json"), str) else d.get("metadata", {}),
             content_hash=d.get("content_hash", ""),
+            observed_at=d.get("observed_at"),
         )
 
     @contextmanager
@@ -202,7 +237,14 @@ class CanonicalMemoryStore:
             db.execute("CREATE TABLE IF NOT EXISTS memory_schema_version (version INTEGER NOT NULL)")
             if db.execute("SELECT COUNT(*) FROM memory_schema_version").fetchone()[0] == 0:
                 db.execute("INSERT INTO memory_schema_version VALUES (1)")
-            db.execute("CREATE TABLE IF NOT EXISTS memory_records (record_id TEXT PRIMARY KEY, logical_id TEXT NOT NULL, revision INTEGER NOT NULL, scope TEXT NOT NULL CHECK(scope IN ('private','team','project','global')), kind TEXT NOT NULL, status TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, confidence REAL NOT NULL, provenance_json TEXT NOT NULL, metadata_json TEXT NOT NULL, valid_from REAL NOT NULL, valid_until REAL, supersedes_json TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(logical_id, revision))")
+            db.execute("CREATE TABLE IF NOT EXISTS memory_records (record_id TEXT PRIMARY KEY, logical_id TEXT NOT NULL, revision INTEGER NOT NULL, scope TEXT NOT NULL CHECK(scope IN ('private','team','project','global')), kind TEXT NOT NULL, status TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, confidence REAL NOT NULL, provenance_json TEXT NOT NULL, metadata_json TEXT NOT NULL, valid_from REAL NOT NULL, valid_until REAL, supersedes_json TEXT NOT NULL, created_at REAL NOT NULL, observed_at REAL, UNIQUE(logical_id, revision))")
+
+            # Migração aditiva idempotente: garante que a coluna observed_at existe em bancos legados
+            cols = {row[1] for row in db.execute("PRAGMA table_info(memory_records)").fetchall()}
+            if "observed_at" not in cols:
+                db.execute("ALTER TABLE memory_records ADD COLUMN observed_at REAL")
+                db.execute("UPDATE memory_records SET observed_at = valid_from WHERE observed_at IS NULL")
+
             db.execute("CREATE INDEX IF NOT EXISTS idx_memory_active_scope ON memory_records(scope, logical_id, revision DESC)")
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_dedupe ON memory_records(scope, kind, content_hash, status)")
             db.execute("CREATE TABLE IF NOT EXISTS memory_outbox (event_id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES memory_records(record_id), event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at REAL NOT NULL, available_at REAL NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_until REAL, last_error TEXT)")
@@ -231,12 +273,13 @@ class CanonicalMemoryStore:
     def _hash(content: str) -> str:
         return hashlib.sha256(" ".join(content.split()).casefold().encode("utf-8")).hexdigest()
 
-    def append(self, *, content: str, scope: str, kind: str = "fact", logical_id: Optional[str] = None, provenance: Sequence[Dict[str, Any]] = (), confidence: float = 1.0, metadata: Optional[Dict[str, Any]] = None, supersedes: Sequence[str] = (), idempotency_key: Optional[str] = None, valid_from: Optional[float] = None, supersession_reasons: Optional[Mapping[str, Tuple[str, float]]] = None) -> MemoryRecord:
+    def append(self, *, content: str, scope: str, kind: str = "fact", logical_id: Optional[str] = None, provenance: Sequence[Dict[str, Any]] = (), confidence: float = 1.0, metadata: Optional[Dict[str, Any]] = None, supersedes: Sequence[str] = (), idempotency_key: Optional[str] = None, valid_from: Optional[float] = None, supersession_reasons: Optional[Mapping[str, Tuple[str, float]]] = None, observed_at: Optional[float] = None) -> MemoryRecord:
         if scope not in VALID_SCOPES:
             raise ValueError("invalid scope: %r" % scope)
         if not content or not content.strip():
             raise ValueError("content must not be empty")
         now = time.time() if valid_from is None else valid_from
+        obs_time = now if observed_at is None else observed_at
         content_hash = self._hash(content)
         logical_id = logical_id or str(uuid.uuid4())
         record_id = idempotency_key or str(uuid.uuid4())
@@ -255,8 +298,8 @@ class CanonicalMemoryStore:
             if duplicate is not None:
                 return self._row(duplicate)
             revision = db.execute("SELECT COALESCE(MAX(revision), 0) FROM memory_records WHERE logical_id=?", (logical_id,)).fetchone()[0] + 1
-            record = MemoryRecord(record_id, logical_id, revision, scope, content, kind, "active", max(0.0, min(1.0, float(confidence))), tuple(dict(x) for x in provenance), now, None, tuple(supersedes), metadata, content_hash)
-            db.execute("INSERT INTO memory_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record.record_id, record.logical_id, record.revision, record.scope, record.kind, record.status, record.content, record.content_hash, record.confidence, json.dumps(record.provenance, sort_keys=True), json.dumps(record.metadata, sort_keys=True), record.valid_from, None, json.dumps(record.supersedes), now))
+            record = MemoryRecord(record_id, logical_id, revision, scope, content, kind, "active", max(0.0, min(1.0, float(confidence))), tuple(dict(x) for x in provenance), now, None, tuple(supersedes), metadata, content_hash, obs_time)
+            db.execute("INSERT INTO memory_records (record_id, logical_id, revision, scope, kind, status, content, content_hash, confidence, provenance_json, metadata_json, valid_from, valid_until, supersedes_json, created_at, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (record.record_id, record.logical_id, record.revision, record.scope, record.kind, record.status, record.content, record.content_hash, record.confidence, json.dumps(record.provenance, sort_keys=True), json.dumps(record.metadata, sort_keys=True), record.valid_from, None, json.dumps(record.supersedes), now, record.observed_at))
             if supersedes:
                 db.executemany("UPDATE memory_records SET status='superseded', valid_until=? WHERE record_id=? AND status='active'", [(now, item) for item in supersedes])
                 # Written in the same transaction as the status change: a reason row
@@ -274,7 +317,7 @@ class CanonicalMemoryStore:
             db.executemany("INSERT INTO memory_projection_jobs(event_id, projection, available_at) VALUES (?,?,?)", [(event_id, projection, now) for projection in self.PROJECTIONS])
             return record
 
-    def reinforce(self, record_id: str, confidence: float = 1.0, provenance: Sequence[Dict[str, Any]] = ()) -> Optional[MemoryRecord]:
+    def reinforce(self, record_id: str, confidence: float = 1.0, provenance: Sequence[Dict[str, Any]] = (), observed_at: Optional[float] = None) -> Optional[MemoryRecord]:
         """Raise confidence and merge provenance of an existing record.
 
         Recurrence is the signal that promotes a candidate fact, so a repeated
@@ -293,9 +336,10 @@ class CanonicalMemoryStore:
                 if candidate not in merged:
                     merged.append(candidate)
             raised = max(record.confidence, max(0.0, min(1.0, float(confidence))))
+            new_obs = max(record.observed_at or record.valid_from, observed_at) if observed_at is not None else record.observed_at
             db.execute(
-                "UPDATE memory_records SET confidence=?, provenance_json=? WHERE record_id=?",
-                (raised, json.dumps(merged, sort_keys=True), record_id),
+                "UPDATE memory_records SET confidence=?, provenance_json=?, observed_at=? WHERE record_id=?",
+                (raised, json.dumps(merged, sort_keys=True), new_obs, record_id),
             )
             return self._row(db.execute("SELECT * FROM memory_records WHERE record_id=?", (record_id,)).fetchone())
 
@@ -553,4 +597,21 @@ class CanonicalMemoryStore:
 
     @staticmethod
     def _row(row: sqlite3.Row) -> MemoryRecord:
-        return MemoryRecord(row["record_id"], row["logical_id"], row["revision"], row["scope"], row["content"], row["kind"], row["status"], row["confidence"], tuple(json.loads(row["provenance_json"])), row["valid_from"], row["valid_until"], tuple(json.loads(row["supersedes_json"])), json.loads(row["metadata_json"]), row["content_hash"])
+        observed_at = row["observed_at"] if "observed_at" in row.keys() else row["valid_from"]
+        return MemoryRecord(
+            row["record_id"],
+            row["logical_id"],
+            row["revision"],
+            row["scope"],
+            row["content"],
+            row["kind"],
+            row["status"],
+            row["confidence"],
+            tuple(json.loads(row["provenance_json"])),
+            row["valid_from"],
+            row["valid_until"],
+            tuple(json.loads(row["supersedes_json"])),
+            json.loads(row["metadata_json"]),
+            row["content_hash"],
+            observed_at,
+        )

@@ -72,24 +72,52 @@ class KnowledgeItem:
         payload = f"{self.id}:{self.kind}:{self.scope}:{self.title}:{self.content}:{self.supersedes}:{self.proof_count}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
+    def is_active_at(self, now: Optional[float] = None) -> bool:
+        """Indica se este conhecimento ainda é ativo no tempo indicado (reloj injetável)."""
+        return self.status_at(now) == KnowledgeStatus.ACTIVE
+
     def is_active(self) -> bool:
         """Indica se este conhecimento ainda é canônico ou se foi superado no tempo."""
         return self.superseded_by is None
 
-    @property
-    def status(self) -> KnowledgeStatus:
-        """Status semântico canônico do conhecimento."""
+    def status_at(self, now: Optional[float] = None) -> KnowledgeStatus:
+        """Status semântico canônico do conhecimento com relógio injetável determinístico.
+
+        Expiração é calculada: se valid_until <= moment (passado ou momento atual),
+        o registro é considerado inativo/superado no tempo.
+        """
+        moment = time.time() if now is None else now
         if self.superseded_by is not None:
             return KnowledgeStatus.SUPERSEDED
-        if self.valid_until is not None and time.time() > self.valid_until:
+        if self.valid_until is not None and moment >= self.valid_until:
             return KnowledgeStatus.SUPERSEDED
         return KnowledgeStatus.ACTIVE
 
-    def is_valid_at(self, timestamp: float) -> bool:
-        """Verifica se o conhecimento é válido no timestamp indicado (ADR-022 TEMPR)."""
-        if self.valid_from is not None and timestamp < self.valid_from:
+    @property
+    def status(self) -> KnowledgeStatus:
+        """Status semântico canônico do conhecimento."""
+        return self.status_at()
+
+    def is_valid_at(self, timestamp: Optional[float] = None, *, now: Optional[float] = None) -> bool:
+        """Verifica se o conhecimento é válido no timestamp indicado (ADR-022 TEMPR).
+
+        Semântica de intervalo: [valid_from, valid_until) — início inclusivo, fim exclusivo.
+        Se `valid_from` for None ou `valid_until` for None, o limite em aberto é respeitado.
+        Registros legados sem datas (valid_from=None e valid_until=None) têm vigência
+        baseada estritamente no status de superação (superseded_by).
+
+        Parâmetros:
+        - timestamp: Ponto no tempo a ser verificado. Se None, assume o relógio injetado `now`
+          ou `time.time()`.
+        - now: Relógio injetável determinístico para testes e avaliações temporais (default: time.time()).
+          Se `timestamp` for omitido, `now` define o ponto temporal da verificação.
+        """
+        ref_time = time.time() if now is None else now
+        target_time = ref_time if timestamp is None else timestamp
+
+        if self.valid_from is not None and target_time < self.valid_from:
             return False
-        if self.valid_until is not None and timestamp > self.valid_until:
+        if self.valid_until is not None and target_time >= self.valid_until:
             return False
         if self.valid_until is None and self.superseded_by is not None:
             return False
