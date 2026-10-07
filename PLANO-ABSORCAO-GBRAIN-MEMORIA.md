@@ -188,9 +188,9 @@ Etapa 0 (auditoria) ──┬─→ Etapa 1 (contrato) ──┬─→ Etapa 2 (
 Instalar GBrain; reescrever runtime; novo banco canônico; captura irrestrita de chats; importação automática de emails/reuniões; exclusão destrutiva; otimização Rust sem bottleneck medido; timer novo ao lado do existente.
 
 ## Backlog de execução (cards Kanban)
-1. `gbrain-absorcao/etapa-0-auditoria` — READY primeiro
-2. `gbrain-absorcao/etapa-1-contrato-temporal`
-3. `gbrain-absorcao/etapa-2-retratacao`
-4. `gbrain-absorcao/etapa-3-recall-fundamentado`
-5. `gbrain-absorcao/etapa-4-dream-incremental`
-6. `gbrain-absorcao/etapa-5-piloto-operacao`
+1. ~~`gbrain-absorcao/etapa-0-auditoria`~~ — DONE (corpus congelado, AUDITORIA-MEMORIA.md)
+2. ~~`gbrain-absorcao/etapa-1-contrato-temporal`~~ — DONE no main (`b5884daf9e`, 2026-10-07; ADR-028 + OKF ciclo-de-vida + test_temporal_lifecycle.py)
+3. ~~`gbrain-absorcao/etapa-2-retratacao`~~ — DONE no main (`7749a0087f`, 2026-10-07; C-ABI v2 com filtro valid_from/valid_until; 152 testes verde)
+4. `gbrain-absorcao/etapa-3-recall-fundamentado` — READY (próxima; mesmo arquivo de retrieval que a 2, rodar após este merge)
+5. `gbrain-absorcao/etapa-4-dream-incremental` — READY (paralelizável com a 3; arquivos disjuntos)
+6. `gbrain-absorcao/etapa-5-piloto-operacao` — bloqueada por 3 e 4 (dono + agente)
