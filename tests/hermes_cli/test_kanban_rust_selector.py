@@ -37,10 +37,11 @@ def kanban_env(tmp_path, monkeypatch):
 
 
 def _find_target_haos_edge() -> str | None:
-    # Check worktree target or repo target
+    # Resolve relative to the repository / worktree root or PATH
+    repo_root = Path(__file__).resolve().parents[2]
     possible_paths = [
-        Path("/run/media/adriano/e681b5ac-a4fb-44d4-aebf-9d6584065787/dsh-projetos/HERMES-TURBO/.worktrees/kanban-rust-selector/target/debug/haos-edge"),
-        Path("/run/media/adriano/e681b5ac-a4fb-44d4-aebf-9d6584065787/dsh-projetos/HERMES-TURBO/target/debug/haos-edge"),
+        repo_root / "target" / "debug" / "haos-edge",
+        repo_root / "packages" / "haos-edge" / "target" / "debug" / "haos-edge",
     ]
     for p in possible_paths:
         if p.exists() and os.access(p, os.X_OK):
