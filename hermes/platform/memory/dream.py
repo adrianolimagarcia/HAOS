@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -376,18 +377,64 @@ class DreamConsolidator:
                 logger.exception("Promoted lesson mental-model repair failed")
         return updated
 
-    def get_cursor(self) -> float:
-        """Timestamp of last consolidated session."""
-        if self.cursor_file.exists():
+    def get_cursor_data(self) -> Dict[str, Any]:
+        """Read cursor data with legacy float fallback and corruption sanitization."""
+        default_cursor = {"max_ts": 0.0, "per_session": {}}
+        if not self.cursor_file.exists():
+            return default_cursor
+        try:
+            content = self.cursor_file.read_text(encoding="utf-8").strip()
+            if not content:
+                return default_cursor
             try:
-                return float(self.cursor_file.read_text(encoding="utf-8").strip())
-            except Exception:
-                return 0.0
-        return 0.0
+                data = json.loads(content)
+                if isinstance(data, dict):
+                    max_ts = float(data.get("max_ts") or 0.0)
+                    per_session = data.get("per_session")
+                    if not isinstance(per_session, dict):
+                        per_session = {}
+                    else:
+                        sanitized_per_sess = {}
+                        for k, v in per_session.items():
+                            try:
+                                sanitized_per_sess[str(k)] = float(v)
+                            except (ValueError, TypeError):
+                                pass
+                        per_session = sanitized_per_sess
+                    return {"max_ts": max_ts, "per_session": per_session}
+            except (json.JSONDecodeError, ValueError):
+                pass
+            # Legacy fallback: raw float timestamp
+            try:
+                legacy_ts = float(content)
+                return {"max_ts": legacy_ts, "per_session": {}}
+            except (ValueError, TypeError):
+                logger.warning("Corrupted cursor file at %s; resetting cursor", self.cursor_file)
+                return default_cursor
+        except Exception:
+            logger.warning("Failed reading cursor file at %s", self.cursor_file)
+            return default_cursor
 
-    def set_cursor(self, ts: float) -> None:
+    def get_cursor(self) -> float:
+        """Timestamp of last consolidated session (legacy compatibility)."""
+        return float(self.get_cursor_data().get("max_ts", 0.0))
+
+    def set_cursor(self, ts: float, per_session: Optional[Dict[str, float]] = None) -> None:
+        """Save cursor with max_ts and optional per_session mapping."""
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        self.cursor_file.write_text(str(ts), encoding="utf-8")
+        current = self.get_cursor_data()
+        updated_per_sess = dict(current.get("per_session", {}))
+        if per_session:
+            for sid, val in per_session.items():
+                try:
+                    updated_per_sess[str(sid)] = float(val)
+                except (ValueError, TypeError):
+                    pass
+        payload = {
+            "max_ts": float(ts),
+            "per_session": updated_per_sess,
+        }
+        self.cursor_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def run_dream(self, dry_run: bool = False) -> Dict[str, Any]:
         """Consolidate unconsolidated sessions since last cursor.
