@@ -42,13 +42,19 @@ def test_eval_corpus_structure_and_categories():
 
 
 def test_temporal_validity_gap_verification():
-    """Verifica evidência de código do GAP-01: ausência de filtro valid_until no search_fts."""
+    """Invariante pós-Etapa 2 (fecha GAP-01): search_fts aplica filtro de vigência temporal.
+
+    Era detector de lacuna na Etapa 0 (afirmava ausência de valid_until no search_fts);
+    virou contrato de presença com a implementação do filtro temporal [valid_from, valid_until).
+    """
     from hermes.platform.context.memory.canonical_store import CanonicalMemoryStore
 
     fts_src = inspect.getsource(CanonicalMemoryStore.search_fts)
     assert "r.status='active'" in fts_src
-    # Confirma que valid_until não é checado no SQL
-    assert "valid_until" not in fts_src
+    # Confirma que valid_until e valid_from são checados no SQL/filtro
+    assert "valid_until" in fts_src
+    assert "valid_from" in fts_src
+
 
 
 def test_observed_at_gap_verification():

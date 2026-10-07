@@ -155,12 +155,26 @@ class CanonicalMemoryStore:
                         ]
                         lib.canonical_engine_read_records_buffered.restype = ctypes.c_int
 
+                    if hasattr(lib, "canonical_engine_read_records_buffered_v2"):
+                        lib.canonical_engine_read_records_buffered_v2.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                            ctypes.c_double, ctypes.c_char_p, ctypes.c_int
+                        ]
+                        lib.canonical_engine_read_records_buffered_v2.restype = ctypes.c_int
+
                     if hasattr(lib, "canonical_engine_search_fts_buffered"):
                         lib.canonical_engine_search_fts_buffered.argtypes = [
                             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
                             ctypes.c_int, ctypes.c_char_p, ctypes.c_int
                         ]
                         lib.canonical_engine_search_fts_buffered.restype = ctypes.c_int
+
+                    if hasattr(lib, "canonical_engine_search_fts_buffered_v2"):
+                        lib.canonical_engine_search_fts_buffered_v2.argtypes = [
+                            ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                            ctypes.c_int, ctypes.c_double, ctypes.c_char_p, ctypes.c_int
+                        ]
+                        lib.canonical_engine_search_fts_buffered_v2.restype = ctypes.c_int
 
                     cls._native_lib = lib
                 except Exception:
@@ -169,7 +183,7 @@ class CanonicalMemoryStore:
                 cls._native_lib = None
         return cls._native_lib
 
-    def read_canonical_records(self, record_ids: Sequence[str], scopes: Sequence[str]) -> List[MemoryRecord]:
+    def read_canonical_records(self, record_ids: Sequence[str], scopes: Sequence[str], now: Optional[float] = None) -> List[MemoryRecord]:
         """Leitura ultra-rápida via C-ABI / Rust nativo (SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_NO_MUTEX).
 
         Executa consultas concorrentes em multithread sem bloquear o arquivo SQLite
@@ -178,27 +192,49 @@ class CanonicalMemoryStore:
         if not record_ids or not scopes:
             return []
 
+        effective_now = time.time() if now is None else float(now)
         lib = self._get_native_lib()
-        if lib is not None and hasattr(lib, "canonical_engine_read_records_buffered") and self.path.exists():
-            try:
-                import ctypes
-                buf = ctypes.create_string_buffer(524288)
-                ids_json = json.dumps(list(record_ids)).encode("utf-8")
-                scopes_json = json.dumps(list(scopes)).encode("utf-8")
-                written = lib.canonical_engine_read_records_buffered(
-                    str(self.path).encode("utf-8"),
-                    ids_json,
-                    scopes_json,
-                    buf,
-                    len(buf),
-                )
-                if written > 0:
-                    raw_records = json.loads(buf.value.decode("utf-8"))
-                    return [self._dict_to_record(r) for r in raw_records]
-            except Exception as exc:
-                logger.debug("canonical native read_records fallback: %s", exc)
+        if lib is not None and self.path.exists():
+            if hasattr(lib, "canonical_engine_read_records_buffered_v2"):
+                try:
+                    import ctypes
+                    buf = ctypes.create_string_buffer(524288)
+                    ids_json = json.dumps(list(record_ids)).encode("utf-8")
+                    scopes_json = json.dumps(list(scopes)).encode("utf-8")
+                    written = lib.canonical_engine_read_records_buffered_v2(
+                        str(self.path).encode("utf-8"),
+                        ids_json,
+                        scopes_json,
+                        ctypes.c_double(effective_now),
+                        buf,
+                        len(buf),
+                    )
+                    if written > 0:
+                        raw_records = json.loads(buf.value.decode("utf-8"))
+                        return [self._dict_to_record(r) for r in raw_records]
+                except Exception as exc:
+                    logger.debug("canonical native read_records_v2 fallback: %s", exc)
+            elif hasattr(lib, "canonical_engine_read_records_buffered"):
+                try:
+                    import ctypes
+                    buf = ctypes.create_string_buffer(524288)
+                    ids_json = json.dumps(list(record_ids)).encode("utf-8")
+                    scopes_json = json.dumps(list(scopes)).encode("utf-8")
+                    written = lib.canonical_engine_read_records_buffered(
+                        str(self.path).encode("utf-8"),
+                        ids_json,
+                        scopes_json,
+                        buf,
+                        len(buf),
+                    )
+                    if written > 0:
+                        raw_records = json.loads(buf.value.decode("utf-8"))
+                        records = [self._dict_to_record(r) for r in raw_records]
+                        return [r for r in records if r.is_valid_at(now=effective_now)]
+                except Exception as exc:
+                    logger.debug("canonical native read_records fallback: %s", exc)
 
-        return self.active_by_ids(record_ids, scopes)
+        return self.active_by_ids(record_ids, scopes, now=effective_now)
 
     @staticmethod
     def _dict_to_record(d: Dict[str, Any]) -> MemoryRecord:
@@ -532,12 +568,14 @@ class CanonicalMemoryStore:
         with self._tx() as db:
             db.execute("UPDATE memory_projection_jobs SET lease_owner=NULL, lease_until=NULL, available_at=?, last_error=? WHERE event_id=? AND projection=?", (time.time() + max(0.0, retry_after), error[:1000], event_id, projection))
 
-    def search_fts(self, query: str, scopes: Sequence[str], limit: int = 20) -> List[MemoryRecord]:
+    def search_fts(self, query: str, scopes: Sequence[str], limit: int = 20, now: Optional[float] = None) -> List[MemoryRecord]:
         if not query.strip() or not scopes:
             return []
         expression = fts_match_expression(query)
         if not expression:
             return []  # query carried no searchable word (punctuation only)
+
+        ref_now = time.time() if now is None else now
 
         # Tentativa de aceleração via Rust nativo C-ABI (SQLITE_OPEN_NO_MUTEX)
         lib = self._get_native_lib()
@@ -546,23 +584,43 @@ class CanonicalMemoryStore:
                 import ctypes
                 buf = ctypes.create_string_buffer(524288)
                 scopes_json = json.dumps(list(scopes)).encode("utf-8")
-                written = lib.canonical_engine_search_fts_buffered(
-                    str(self.path).encode("utf-8"),
-                    expression.encode("utf-8"),
-                    scopes_json,
-                    int(limit),
-                    buf,
-                    len(buf),
-                )
+                if hasattr(lib, "canonical_engine_search_fts_buffered_v2"):
+                    written = lib.canonical_engine_search_fts_buffered_v2(
+                        str(self.path).encode("utf-8"),
+                        expression.encode("utf-8"),
+                        scopes_json,
+                        int(limit),
+                        ctypes.c_double(ref_now),
+                        buf,
+                        len(buf),
+                    )
+                else:
+                    written = lib.canonical_engine_search_fts_buffered(
+                        str(self.path).encode("utf-8"),
+                        expression.encode("utf-8"),
+                        scopes_json,
+                        int(limit),
+                        buf,
+                        len(buf),
+                    )
                 if written > 0:
                     raw_records = json.loads(buf.value.decode("utf-8"))
-                    return [self._dict_to_record(r) for r in raw_records]
+                    records = [self._dict_to_record(r) for r in raw_records]
+                    # Garante pós-filtro caso chamada tenha caído na V1 legada
+                    return [r for r in records if (r.valid_from is None or r.valid_from <= ref_now) and (r.valid_until is None or r.valid_until > ref_now)]
             except Exception as exc:
                 logger.debug("canonical native search_fts fallback: %s", exc)
 
         marks = ",".join("?" for _ in scopes)
         with self._lock:
-            rows = self._conn.execute("SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id WHERE memory_fts MATCH ? AND r.status='active' AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?", (expression, *scopes, limit)).fetchall()
+            rows = self._conn.execute(
+                "SELECT r.* FROM memory_fts f JOIN memory_records r ON r.record_id=f.record_id "
+                "WHERE memory_fts MATCH ? AND r.status='active' "
+                "AND (r.valid_from IS NULL OR r.valid_from <= ?) "
+                "AND (r.valid_until IS NULL OR r.valid_until > ?) "
+                "AND r.scope IN (" + marks + ") ORDER BY bm25(memory_fts) LIMIT ?",
+                (expression, ref_now, ref_now, *scopes, limit),
+            ).fetchall()
         return [self._row(row) for row in rows]
 
     def get(self, record_id: str) -> Optional[MemoryRecord]:
@@ -582,16 +640,20 @@ class CanonicalMemoryStore:
             ).fetchall()
         return [self._row(row) for row in rows]
 
-    def active_by_ids(self, record_ids: Sequence[str], scopes: Sequence[str]) -> List[MemoryRecord]:
-        """Resolve index candidates through canonical scope/status policy."""
+    def active_by_ids(self, record_ids: Sequence[str], scopes: Sequence[str], now: Optional[float] = None) -> List[MemoryRecord]:
+        """Resolve index candidates through canonical scope/status policy and temporal validity."""
         if not record_ids or not scopes:
             return []
+        ref_now = time.time() if now is None else now
         ids = ",".join("?" for _ in record_ids)
         marks = ",".join("?" for _ in scopes)
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM memory_records WHERE status='active' AND record_id IN (" + ids + ") AND scope IN (" + marks + ")",
-                (*record_ids, *scopes),
+                "SELECT * FROM memory_records WHERE status='active' "
+                "AND (valid_from IS NULL OR valid_from <= ?) "
+                "AND (valid_until IS NULL OR valid_until > ?) "
+                "AND record_id IN (" + ids + ") AND scope IN (" + marks + ")",
+                (ref_now, ref_now, *record_ids, *scopes),
             ).fetchall()
         return [self._row(row) for row in rows]
 

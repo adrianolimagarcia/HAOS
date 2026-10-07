@@ -1084,6 +1084,133 @@ pub extern "C" fn canonical_engine_read_records_buffered(
     unsafe { copy_json_to_buffer(&json_bytes, out_buf, out_buf_cap) }
 }
 
+/// Leitura ultra-rápida de registros canônicos por IDs e scopes com filtro de vigência temporal (GBrain Etapa 2).
+#[no_mangle]
+pub extern "C" fn canonical_engine_read_records_buffered_v2(
+    db_path_cstr: *const c_char,
+    record_ids_json_cstr: *const c_char,
+    scopes_json_cstr: *const c_char,
+    out_buf: *mut c_char,
+    out_buf_cap: c_int,
+    now: f64,
+) -> c_int {
+    if db_path_cstr.is_null()
+        || record_ids_json_cstr.is_null()
+        || scopes_json_cstr.is_null()
+        || out_buf.is_null()
+        || out_buf_cap <= 1
+    {
+        return -1;
+    }
+
+    let db_path = unsafe { CStr::from_ptr(db_path_cstr).to_string_lossy() };
+    let ids_str = match unsafe { CStr::from_ptr(record_ids_json_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -2,
+    };
+    let scopes_str = match unsafe { CStr::from_ptr(scopes_json_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -3,
+    };
+
+    let p = Path::new(&*db_path);
+    if !p.exists() {
+        return -4;
+    }
+
+    let record_ids: Vec<String> = match serde_json::from_str(ids_str) {
+        Ok(ids) => ids,
+        Err(_) => return -5,
+    };
+    let scopes: Vec<String> = match serde_json::from_str(scopes_str) {
+        Ok(s) => s,
+        Err(_) => return -6,
+    };
+
+    if record_ids.is_empty() || scopes.is_empty() {
+        let empty = b"[]";
+        return unsafe { copy_json_to_buffer(empty, out_buf, out_buf_cap) };
+    }
+
+    let conn = match open_readonly_nomutex(p) {
+        Ok(c) => c,
+        Err(_) => return -7,
+    };
+    let _ = conn.execute_batch("PRAGMA busy_timeout=30000;");
+
+    // Cria cláusulas IN parametrizadas dinamicamente
+    let id_placeholders: String = (3..=record_ids.len() + 2)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let scope_start = record_ids.len() + 3;
+    let scope_placeholders: String = (scope_start..scope_start + scopes.len())
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let sql = format!(
+        "SELECT record_id, logical_id, revision, scope, kind, status, content, \
+                content_hash, confidence, provenance_json, metadata_json, \
+                valid_from, valid_until, supersedes_json \
+         FROM memory_records \
+         WHERE status='active' \
+           AND (valid_from IS NULL OR valid_from <= ?1) \
+           AND (valid_until IS NULL OR valid_until > ?2) \
+           AND record_id IN ({}) AND scope IN ({});",
+        id_placeholders, scope_placeholders
+    );
+
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return -8,
+    };
+
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(record_ids.len() + scopes.len() + 2);
+    params.push(&now);
+    params.push(&now);
+    for id in &record_ids {
+        params.push(id);
+    }
+    for sc in &scopes {
+        params.push(sc);
+    }
+
+    let rows = match stmt.query_map(rusqlite::params_from_iter(params), |row| {
+        Ok(serde_json::json!({
+            "record_id": row.get::<_, String>(0)?,
+            "logical_id": row.get::<_, String>(1)?,
+            "revision": row.get::<_, i64>(2)?,
+            "scope": row.get::<_, String>(3)?,
+            "kind": row.get::<_, String>(4)?,
+            "status": row.get::<_, String>(5)?,
+            "content": row.get::<_, String>(6)?,
+            "content_hash": row.get::<_, String>(7)?,
+            "confidence": row.get::<_, f64>(8)?,
+            "provenance_json": row.get::<_, String>(9)?,
+            "metadata_json": row.get::<_, String>(10)?,
+            "valid_from": row.get::<_, f64>(11)?,
+            "valid_until": row.get::<_, Option<f64>>(12)?,
+            "supersedes_json": row.get::<_, String>(13)?,
+        }))
+    }) {
+        Ok(r) => r,
+        Err(_) => return -9,
+    };
+
+    let mut results = Vec::new();
+    for r in rows.flatten() {
+        results.push(r);
+    }
+
+    let json_bytes = match serde_json::to_vec(&results) {
+        Ok(b) => b,
+        Err(_) => return -10,
+    };
+
+    unsafe { copy_json_to_buffer(&json_bytes, out_buf, out_buf_cap) }
+}
+
 /// Busca FTS5 rápida em memória canônica diretamente em Rust nativo.
 #[no_mangle]
 pub extern "C" fn canonical_engine_search_fts_buffered(
@@ -1158,6 +1285,126 @@ pub extern "C" fn canonical_engine_search_fts_buffered(
 
     let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(scopes.len() + 2);
     params.push(&expression);
+    for sc in &scopes {
+        params.push(sc);
+    }
+    let lim_i64 = limit as i64;
+    params.push(&lim_i64);
+
+    let rows = match stmt.query_map(rusqlite::params_from_iter(params), |row| {
+        Ok(serde_json::json!({
+            "record_id": row.get::<_, String>(0)?,
+            "logical_id": row.get::<_, String>(1)?,
+            "revision": row.get::<_, i64>(2)?,
+            "scope": row.get::<_, String>(3)?,
+            "kind": row.get::<_, String>(4)?,
+            "status": row.get::<_, String>(5)?,
+            "content": row.get::<_, String>(6)?,
+            "content_hash": row.get::<_, String>(7)?,
+            "confidence": row.get::<_, f64>(8)?,
+            "provenance_json": row.get::<_, String>(9)?,
+            "metadata_json": row.get::<_, String>(10)?,
+            "valid_from": row.get::<_, f64>(11)?,
+            "valid_until": row.get::<_, Option<f64>>(12)?,
+            "supersedes_json": row.get::<_, String>(13)?,
+        }))
+    }) {
+        Ok(r) => r,
+        Err(_) => return -8,
+    };
+
+    let mut results = Vec::new();
+    for r in rows.flatten() {
+        results.push(r);
+    }
+
+    let json_bytes = match serde_json::to_vec(&results) {
+        Ok(b) => b,
+        Err(_) => return -9,
+    };
+
+    unsafe { copy_json_to_buffer(&json_bytes, out_buf, out_buf_cap) }
+}
+
+/// Busca FTS5 rápida em memória canônica diretamente em Rust nativo com filtro de vigência temporal v2.
+#[no_mangle]
+pub extern "C" fn canonical_engine_search_fts_buffered_v2(
+    db_path_cstr: *const c_char,
+    fts_expression_cstr: *const c_char,
+    scopes_json_cstr: *const c_char,
+    limit: c_int,
+    out_buf: *mut c_char,
+    out_buf_cap: c_int,
+    now: f64,
+) -> c_int {
+    if db_path_cstr.is_null()
+        || fts_expression_cstr.is_null()
+        || scopes_json_cstr.is_null()
+        || limit <= 0
+        || out_buf.is_null()
+        || out_buf_cap <= 1
+    {
+        return -1;
+    }
+
+    let db_path = unsafe { CStr::from_ptr(db_path_cstr).to_string_lossy() };
+    let expression = match unsafe { CStr::from_ptr(fts_expression_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -2,
+    };
+    let scopes_str = match unsafe { CStr::from_ptr(scopes_json_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return -3,
+    };
+
+    let p = Path::new(&*db_path);
+    if !p.exists() {
+        return -4;
+    }
+
+    let scopes: Vec<String> = match serde_json::from_str(scopes_str) {
+        Ok(s) => s,
+        Err(_) => return -5,
+    };
+
+    if scopes.is_empty() || expression.trim().is_empty() {
+        let empty = b"[]";
+        return unsafe { copy_json_to_buffer(empty, out_buf, out_buf_cap) };
+    }
+
+    let conn = match open_readonly_nomutex(p) {
+        Ok(c) => c,
+        Err(_) => return -6,
+    };
+    let _ = conn.execute_batch("PRAGMA busy_timeout=30000;");
+
+    let scope_placeholders: String = (4..=scopes.len() + 3)
+        .map(|i| format!("?{}", i))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT r.record_id, r.logical_id, r.revision, r.scope, r.kind, r.status, r.content, \
+                r.content_hash, r.confidence, r.provenance_json, r.metadata_json, \
+                r.valid_from, r.valid_until, r.supersedes_json \
+         FROM memory_fts f \
+         JOIN memory_records r ON r.record_id = f.record_id \
+         WHERE memory_fts MATCH ?1 AND r.status = 'active' \
+           AND ((r.valid_from IS NULL OR r.valid_from <= ?2) AND (r.valid_until IS NULL OR r.valid_until > ?3)) \
+           AND r.scope IN ({}) \
+         ORDER BY bm25(memory_fts) LIMIT ?{};",
+        scope_placeholders,
+        scopes.len() + 4
+    );
+
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return -7,
+    };
+
+    let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(scopes.len() + 4);
+    params.push(&expression);
+    params.push(&now);
+    params.push(&now);
     for sc in &scopes {
         params.push(sc);
     }
@@ -1322,6 +1569,63 @@ mod tests {
             serde_json::from_slice(&buf[..ret_fts as usize]).unwrap();
         assert_eq!(fts_parsed.len(), 1);
         assert_eq!(fts_parsed[0]["record_id"], "rec1");
+
+        // V2 Tests with temporal validity
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "INSERT INTO memory_records VALUES ('rec_expired', 'log3', 1, 'project', 'fact', 'active', 'Expired content', 'h3', 1.0, '[]', '{}', 10.0, 50.0, '[]', 10.0);
+             INSERT INTO memory_records VALUES ('rec_future', 'log4', 1, 'project', 'fact', 'active', 'Future content', 'h4', 1.0, '[]', '{}', 150.0, 200.0, '[]', 150.0);
+             INSERT INTO memory_fts VALUES ('rec_expired', 'Expired content');
+             INSERT INTO memory_fts VALUES ('rec_future', 'Future content');"
+        ).unwrap();
+        drop(conn);
+
+        // At now = 100.0: rec1 is valid (100.0 <= 100.0 and NULL > 100.0); rec_expired has valid_until=50.0 <= 100.0; rec_future has valid_from=150.0 > 100.0
+        let c_v2_ids = std::ffi::CString::new("[\"rec1\", \"rec_expired\", \"rec_future\"]").unwrap();
+        let ret_read_v2 = canonical_engine_read_records_buffered_v2(
+            c_db_path.as_ptr(),
+            c_v2_ids.as_ptr(),
+            c_scopes.as_ptr(),
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() as c_int,
+            100.0,
+        );
+        assert!(ret_read_v2 > 0);
+        let read_v2_parsed: Vec<serde_json::Value> =
+            serde_json::from_slice(&buf[..ret_read_v2 as usize]).unwrap();
+        assert_eq!(read_v2_parsed.len(), 1);
+        assert_eq!(read_v2_parsed[0]["record_id"], "rec1");
+
+        // Exactly at valid_until: now = 50.0 for rec_expired (valid_until=50.0). Condition is valid_until > ?now, so 50.0 > 50.0 is false
+        let ret_read_v2_boundary = canonical_engine_read_records_buffered_v2(
+            c_db_path.as_ptr(),
+            c_v2_ids.as_ptr(),
+            c_scopes.as_ptr(),
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() as c_int,
+            50.0,
+        );
+        assert!(ret_read_v2_boundary > 0);
+        let read_v2_bound_parsed: Vec<serde_json::Value> =
+            serde_json::from_slice(&buf[..ret_read_v2_boundary as usize]).unwrap();
+        let bound_ids: Vec<&str> = read_v2_bound_parsed.iter().map(|r| r["record_id"].as_str().unwrap()).collect();
+        assert!(!bound_ids.contains(&"rec_expired"));
+
+        // Search FTS v2
+        let c_fts_expired_expr = std::ffi::CString::new("\"Expired\"").unwrap();
+        let ret_fts_v2 = canonical_engine_search_fts_buffered_v2(
+            c_db_path.as_ptr(),
+            c_fts_expired_expr.as_ptr(),
+            c_scopes.as_ptr(),
+            10,
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() as c_int,
+            100.0, // expired at 50, now 100
+        );
+        assert!(ret_fts_v2 > 0);
+        let fts_v2_parsed: Vec<serde_json::Value> =
+            serde_json::from_slice(&buf[..ret_fts_v2 as usize]).unwrap();
+        assert_eq!(fts_v2_parsed.len(), 0);
 
         let _ = std::fs::remove_file(db_path);
     }
