@@ -5,6 +5,7 @@ the sole promptable payload, which prevents a stale or over-broad projection
 from bypassing scope and supersession policy.
 """
 from __future__ import annotations
+import datetime
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -148,7 +149,7 @@ class HybridMemoryRetriever:
         hits = self.retrieve(query, allowed_scopes, limit, budget_chars, access, now=now)
         if not hits:
             return ""
-        blocks = [self._render(hit) for hit in hits]
+        blocks = [self._render(hit, now=now) for hit in hits]
         # Never return nothing for a budget that is merely small: the floor shrinks with it.
         floor = min(_MIN_BLOCK_CHARS, budget_chars)
         rendered: List[str] = []
@@ -170,7 +171,31 @@ class HybridMemoryRetriever:
         return "\n\n".join(rendered)
 
     @staticmethod
-    def _render(hit: RetrievalHit) -> str:
+    def _render(hit: RetrievalHit, now: Optional[float] = None) -> str:
         rec = hit.record
         provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
-        return "[memory:%s scope=%s provenance=%s]\n%s" % (rec.record_id, rec.scope, provenance or "unknown", rec.content)
+        
+        # Freshness / temporal metadata
+        if rec.observed_at is not None:
+            # Data ISO curta: YYYY-MM-DD
+            dt = datetime.datetime.fromtimestamp(rec.observed_at, tz=datetime.timezone.utc)
+            observed_str = dt.strftime("%Y-%m-%d")
+        else:
+            observed_str = "freshness unknown"
+        
+        flags: List[str] = []
+        ref_time = time.time() if now is None else now
+        if rec.valid_until is not None:
+            remaining = rec.valid_until - ref_time
+            if 0 <= remaining < 7 * 86400:
+                flags.append("expired-soon")
+        
+        flags_str = (" " + " ".join(flags)) if flags else ""
+        return "[memory:%s scope=%s observed=%s provenance=%s%s]\n%s" % (
+            rec.record_id,
+            rec.scope,
+            observed_str,
+            provenance or "unknown",
+            flags_str,
+            rec.content,
+        )
