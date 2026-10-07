@@ -149,7 +149,29 @@ class HybridMemoryRetriever:
         hits = self.retrieve(query, allowed_scopes, limit, budget_chars, access, now=now)
         if not hits:
             return ""
-        blocks = [self._render(hit, now=now) for hit in hits]
+
+        # Detecção de conflitos entre os hits recuperados (query barata em memória/store via detect_conflicts)
+        from hermes.platform.context.memory.candidate import MemoryCandidate
+        from hermes.platform.context.memory.consolidation import MemoryConsolidator
+        consolidator = MemoryConsolidator()
+        conflicts_map: Dict[str, List[str]] = {}
+        for i, hit_a in enumerate(hits):
+            cand = MemoryCandidate(
+                id=hit_a.record.record_id,
+                fact=hit_a.record.content,
+            )
+            other_items = [
+                {"id": hit_b.record.record_id, "content": hit_b.record.content}
+                for j, hit_b in enumerate(hits)
+                if i != j
+            ]
+            conflict = consolidator.detect_conflicts(cand, other_items)
+            if conflict and conflict.get("conflicting_item_id"):
+                conf_id = str(conflict["conflicting_item_id"])
+                conflicts_map.setdefault(hit_a.record.record_id, []).append(conf_id)
+                conflicts_map.setdefault(conf_id, []).append(hit_a.record.record_id)
+
+        blocks = [self._render(hit, now=now, conflict_ids=conflicts_map.get(hit.record.record_id)) for hit in hits]
         # Never return nothing for a budget that is merely small: the floor shrinks with it.
         floor = min(_MIN_BLOCK_CHARS, budget_chars)
         rendered: List[str] = []
@@ -171,7 +193,7 @@ class HybridMemoryRetriever:
         return "\n\n".join(rendered)
 
     @staticmethod
-    def _render(hit: RetrievalHit, now: Optional[float] = None) -> str:
+    def _render(hit: RetrievalHit, now: Optional[float] = None, conflict_ids: Optional[Sequence[str]] = None) -> str:
         rec = hit.record
         provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
         
@@ -191,11 +213,13 @@ class HybridMemoryRetriever:
                 flags.append("expired-soon")
         
         flags_str = (" " + " ".join(flags)) if flags else ""
-        return "[memory:%s scope=%s observed=%s provenance=%s%s]\n%s" % (
+        conflict_str = (" [conflict: %s]" % ", ".join(sorted(conflict_ids))) if conflict_ids else ""
+        return "[memory:%s scope=%s observed=%s provenance=%s%s%s]\n%s" % (
             rec.record_id,
             rec.scope,
             observed_str,
             provenance or "unknown",
             flags_str,
+            conflict_str,
             rec.content,
         )
