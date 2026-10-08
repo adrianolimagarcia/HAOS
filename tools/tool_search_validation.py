@@ -83,6 +83,20 @@ def validate_deferred_call_args(name: str, args: Dict[str, Any]) -> Optional[str
     ``arguments: object`` bridge. See #5149.
     """
     try:
+        from tools.capability_registry_v2 import is_v2_enabled, default_capability_registry
+        if is_v2_enabled():
+            v2_op = default_capability_registry.get_operation(name)
+            if v2_op is not None:
+                from tools.capability_registry_v2 import _validate_args
+                err = _validate_args(v2_op.parameters_schema, args if isinstance(args, dict) else {})
+                if err:
+                    return _validation_error(
+                        f"tool_call to '{name}' failed v2 validation: {err}. The tool was NOT invoked.",
+                        path="arguments", constraint="v2_schema", parameters=v2_op.parameters_schema)
+    except Exception:
+        pass
+
+    try:
         from tools.registry import registry as _registry
         schema = _registry.get_schema(name)
         if not isinstance(schema, dict):

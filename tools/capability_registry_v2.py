@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import multiprocessing
+import queue
 import os
 import re
 import threading
@@ -151,11 +152,23 @@ class CapabilityRegistryV2:
         caller_profile: Optional[str] = None,
         fallback_handler=None,
         security_context: Optional[SecurityContext] = None,
+        check_feature_flag: bool = False,
     ) -> dict:
         started = time.monotonic()
         op = self.get_operation(op_id)
         risk = op.risk_level if op else "unknown"
 
+        if check_feature_flag and not is_v2_enabled():
+            return self._failure(
+                503,
+                "feature_disabled",
+                "Capability Registry v2 is disabled by feature flag",
+                op_id,
+                started,
+                risk,
+                caller_role,
+                caller_profile,
+            )
         # Resolve SecurityContext fail-closed against role spoofing
         if security_context is not None:
             if not isinstance(security_context, SecurityContext):
@@ -338,9 +351,9 @@ def _run_with_timeout(handler: Callable[..., Any], args: dict, timeout: int | fl
             proc.close()
             raise TimeoutError("Operation timed out and worker process was terminated")
 
-        if not q.empty():
-            status, payload = q.get_nowait()
-        else:
+        try:
+            status, payload = q.get(timeout=0.2)
+        except queue.Empty:
             status, payload = ("err", RuntimeError("Worker process exited without returning a result"))
         proc.close()
         if status == "err":

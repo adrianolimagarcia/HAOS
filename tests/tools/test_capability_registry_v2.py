@@ -6,6 +6,12 @@ import pytest
 from tools.capability_registry_v2 import CapabilityOperation, CapabilityRegistryV2, is_v2_enabled, create_trusted_security_context
 
 
+@pytest.fixture(autouse=True)
+def enable_v2_for_unit_tests(monkeypatch):
+    monkeypatch.setenv("HAOS_MCP_CAPABILITY_REGISTRY_V2", "true")
+
+
+
 def _operation(**overrides):
     values = dict(
         id="search.docs", tool_ref="docs_search", name="Search documentation",
@@ -241,7 +247,7 @@ def test_registration_validation_rules():
 
 def test_concurrent_execution_thread_safety():
     registry = CapabilityRegistryV2()
-    registry.register(_operation(id="op.concurrent"), lambda args: args["query"])
+    registry.register(_operation(id="op.concurrent", timeout_seconds=5), lambda args: args["query"])
 
     def run_worker(idx):
         return registry.execute("op.concurrent", {"query": f"worker_{idx}"})
@@ -315,5 +321,45 @@ def test_timeout_worker_active_termination_no_residual_side_effects(tmp_path):
 
     # O arquivo NÃO deve existir porque o worker foi terminado ativamente pelo SO
     assert not marker_file.exists(), "Worker zumbi continuou vivo após o timeout e executou mutação!"
+
+def test_feature_flag_disabled_blocks_execution(monkeypatch):
+    monkeypatch.setenv("HAOS_MCP_CAPABILITY_REGISTRY_V2", "false")
+    registry = CapabilityRegistryV2()
+    registry.register(_operation(id="op.flag_test"), lambda args: "executed")
+    res = registry.execute("op.flag_test", {"query": "hello"})
+    assert res["ok"] is False
+    assert res["error"]["status"] == 503
+    assert res["error"]["code"] == "feature_disabled"
+
+
+def test_validate_deferred_call_args_integration_with_v2(monkeypatch):
+    from tools.capability_registry_v2 import default_capability_registry
+    from tools.tool_search_validation import validate_deferred_call_args
+
+    monkeypatch.setenv("HAOS_MCP_CAPABILITY_REGISTRY_V2", "true")
+    test_v2_op = _operation(
+        id="v2_special_op",
+        parameters_schema={
+            "type": "object",
+            "required": ["mandatory_param"],
+            "properties": {"mandatory_param": {"type": "string"}}
+        }
+    )
+    default_capability_registry.register(test_v2_op)
+
+    # Chamada inválida missing required param
+    err_json = validate_deferred_call_args("v2_special_op", {})
+    assert err_json is not None
+    assert "failed v2 validation" in err_json
+    assert "Missing required fields: mandatory_param" in err_json
+
+    # Chamada válida
+    assert validate_deferred_call_args("v2_special_op", {"mandatory_param": "valid"}) is None
+
+    # Chamada quando flag está OFF: não intercepta v2
+    monkeypatch.setenv("HAOS_MCP_CAPABILITY_REGISTRY_V2", "false")
+    err_off = validate_deferred_call_args("v2_special_op", {})
+    # Com flag OFF, cai para o validador legado (_registry.get_schema('v2_special_op')), que retorna None se não estiver no legado
+    assert err_off is None or "failed v2 validation" not in err_off
 
 
