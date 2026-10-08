@@ -312,6 +312,23 @@ def _codex_native_auto_compaction(agent: Any) -> bool:
     )
 
 
+def _force_oversized_unanchored_preflight(
+    deferred: bool, tokens: int, context_length: Any, awaiting_real_usage: bool
+) -> bool:
+    """Force compression only when waiting for real usage cannot make progress.
+
+    Sub-window unanchored estimates remain governed by calibrated provider usage.
+    """
+    return (
+        deferred
+        and isinstance(context_length, int)
+        and not isinstance(context_length, bool)
+        and context_length > 0
+        and tokens >= context_length
+        and not awaiting_real_usage
+    )
+
+
 def _preflight_compression(
     agent: Any, out: CompactionOutcome, system_message: Optional[str], user_message: Any,
     effective_task_id: str,
@@ -348,6 +365,22 @@ def _preflight_compression(
     _preflight_deferred = not getattr(agent, "_request_pressure_anchored", False) and getattr(
         _compressor, "should_defer_preflight_to_real_usage", lambda _tokens: False
     )(_preflight_tokens)
+    # A usage-less estimate may be noisy, but deferring beyond the *entire*
+    # context window cannot obtain new real usage: the pre-API safety guard
+    # refuses that request. Attempt a bounded, fail-closed compression instead
+    # of leaving oversized sessions in a retry/defer cycle. Respect native
+    # auto-compaction, cooldowns and durable compression locks downstream.
+    _context_length = getattr(_compressor, "context_length", None)
+    if _force_oversized_unanchored_preflight(
+        _preflight_deferred, _preflight_tokens, _context_length,
+        bool(getattr(_compressor, "awaiting_real_usage_after_compression", False)),
+    ):
+        logger.warning(
+            "Oversized unanchored preflight: estimated %s tokens >= context %s; "
+            "attempting guarded compression rather than waiting for impossible provider usage",
+            _preflight_tokens, _context_length,
+        )
+        _preflight_deferred = False
     _codex_native_auto = _codex_native_auto_compaction(agent)
 
     if not _preflight_deferred:
