@@ -487,6 +487,7 @@ class LessonSkillPromoter:
         from agent.skill_utils import get_skill_loadout_limit, get_skill_loadout_pins  # function-level
 
         counts: Dict[str, int] = {"proposed": 0, "ignored": 0, "deduped": 0, "audit_failed": 0}
+        from hermes.platform.memory.promotion_gate import evaluate_promotion_gate
         park = self.audited_park()
         limit = get_skill_loadout_limit()
         pins = get_skill_loadout_pins()
@@ -505,6 +506,13 @@ class LessonSkillPromoter:
             ra = assess_lesson_promotion(fact, destination, confidence)
             if ra.action == "ignore":
                 counts["ignored"] += 1
+                continue
+
+            gate = evaluate_promotion_gate(fact, ra, key=key, home=self.home)
+            if not gate.allowed:
+                counts["gate_blocked"] = counts.get("gate_blocked", 0) + 1
+                logger.info("Skill promotion blocked: key=%s stage=%s reason=%s",
+                            key, gate.stage, gate.reason)
                 continue
 
             proposed_name = skill_name_from_lesson(fact)

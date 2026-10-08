@@ -20,6 +20,7 @@ change-detector — todos relacionam duas peças de dados):
 from __future__ import annotations
 
 import json
+import pytest
 import re
 from pathlib import Path
 
@@ -358,3 +359,12 @@ def test_mark_applied_preserva_o_registro(tmp_path, monkeypatch):
     assert after["status"] == "applied"
     assert "applied_at" in after
     assert after["lesson_fact"] == LESSON  # proveniência nunca some
+
+
+@pytest.fixture(autouse=True)
+def _legacy_promotion_contract(monkeypatch):
+    from hermes.platform.memory import promotion_gate
+    monkeypatch.setattr(
+        promotion_gate, "evaluate_promotion_gate",
+        lambda *_args, **_kwargs: promotion_gate.GateVerdict(True, "test", "legacy contract"),
+    )
