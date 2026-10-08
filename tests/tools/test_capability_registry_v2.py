@@ -251,3 +251,43 @@ def test_concurrent_execution_thread_safety():
 
     assert len(registry.audit_traces) == 20
 
+
+def test_auth_role_spoofing_fail_closed():
+    from tools.capability_registry_v2 import (
+        CapabilityRegistryV2,
+        create_trusted_security_context,
+        create_anonymous_security_context,
+        SecurityContext,
+    )
+    registry = CapabilityRegistryV2()
+    op = _operation(id="admin.drop_db", roles=["admin"], read_only=False)
+    registry.register(op, lambda args: {"dropped": True})
+
+    # 1. Tentativa de spoofing via caller_role sem contexto
+    res = registry.execute("admin.drop_db", {"query": "drop"}, caller_role="admin")
+    assert res["ok"] is False
+    assert res["error"]["status"] == 403
+    assert res["error"]["code"] == "role_spoofing_prevented"
+
+    # 2. Contexto anônimo tentando role admin
+    anon_ctx = create_anonymous_security_context()
+    res = registry.execute("admin.drop_db", {"query": "drop"}, security_context=anon_ctx)
+    assert res["ok"] is False
+    assert res["error"]["status"] == 403
+    assert res["error"]["code"] == "forbidden"
+
+    # 3. Contexto fraudulento não autenticado com role="admin"
+    forged_ctx = SecurityContext(principal_id="attacker", role="admin", authenticated=False)
+    res = registry.execute("admin.drop_db", {"query": "drop"}, security_context=forged_ctx)
+    assert res["ok"] is False
+    assert res["error"]["status"] == 403
+    assert res["error"]["code"] == "authentication_required"
+
+    # 4. Contexto confiável e autenticado
+    trusted_ctx = create_trusted_security_context(principal_id="sys_admin", role="admin")
+    res = registry.execute("admin.drop_db", {"query": "drop"}, security_context=trusted_ctx)
+    assert res["ok"] is True
+    assert res["result"] == {"dropped": True}
+    assert res["trace"]["caller_role"] == "admin"
+
+

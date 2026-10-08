@@ -16,6 +16,46 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 
+@dataclass(frozen=True)
+class SecurityContext:
+    principal_id: str
+    role: str = "default"
+    profile: str = "default"
+    authenticated: bool = False
+    session_id: Optional[str] = None
+    claims: dict = field(default_factory=dict)
+
+
+def create_trusted_security_context(
+    principal_id: str,
+    role: str,
+    profile: str = "default",
+    session_id: Optional[str] = None,
+    claims: Optional[dict] = None,
+) -> SecurityContext:
+    """Create a verified/authenticated security context."""
+    if not principal_id or not isinstance(principal_id, str):
+        raise ValueError("principal_id must be a non-empty string")
+    return SecurityContext(
+        principal_id=principal_id,
+        role=role or "default",
+        profile=profile or "default",
+        authenticated=True,
+        session_id=session_id,
+        claims=claims or {},
+    )
+
+
+def create_anonymous_security_context(profile: str = "default") -> SecurityContext:
+    """Create an unauthenticated default security context."""
+    return SecurityContext(
+        principal_id="anonymous",
+        role="default",
+        profile=profile or "default",
+        authenticated=False,
+    )
+
+
 @dataclass
 class CapabilityOperation:
     id: str
@@ -102,35 +142,80 @@ class CapabilityRegistryV2:
         with self._lock:
             self.audit_traces.clear()
 
-    def execute(self, op_id: str, args: dict, caller_role: str = "default", caller_profile: str = "default", fallback_handler=None) -> dict:
+    def execute(
+        self,
+        op_id: str,
+        args: dict,
+        caller_role: Optional[str] = None,
+        caller_profile: Optional[str] = None,
+        fallback_handler=None,
+        security_context: Optional[SecurityContext] = None,
+    ) -> dict:
         started = time.monotonic()
         op = self.get_operation(op_id)
         risk = op.risk_level if op else "unknown"
+
+        # Resolve SecurityContext fail-closed against role spoofing
+        if security_context is not None:
+            if not isinstance(security_context, SecurityContext):
+                return self._failure(403, "invalid_security_context", "Security context is invalid", op_id, started, risk, "untrusted", caller_profile or "default")
+            effective_role = security_context.role
+            effective_profile = security_context.profile
+            effective_authenticated = security_context.authenticated
+        else:
+            # Caller passed arbitrary caller_role without SecurityContext:
+            if caller_role is not None and caller_role not in {"default", "restricted", "read_only"}:
+                return self._failure(
+                    403,
+                    "role_spoofing_prevented",
+                    f"Unauthenticated caller cannot declare privileged role '{caller_role}' without a trusted SecurityContext",
+                    op_id,
+                    started,
+                    risk,
+                    "unauthenticated",
+                    caller_profile or "default",
+                )
+            effective_role = caller_role or "default"
+            effective_profile = caller_profile or "default"
+            effective_authenticated = False
+
+        if effective_role not in {"default", "restricted", "read_only"} and not effective_authenticated:
+            return self._failure(
+                403,
+                "authentication_required",
+                f"Role '{effective_role}' requires an authenticated SecurityContext",
+                op_id,
+                started,
+                risk,
+                effective_role,
+                effective_profile,
+            )
+
         try:
             if op is None:
-                return self._failure(404, "operation_not_found", "Unknown operation", op_id, started, risk, caller_role, caller_profile)
-            if not isinstance(caller_role, str) or not caller_role.strip():
-                return self._failure(403, "forbidden", "Caller role is invalid", op_id, started, risk, caller_role, caller_profile)
-            if caller_role not in op.roles:
-                return self._failure(403, "forbidden", "Caller role is not permitted", op_id, started, risk, caller_role, caller_profile)
+                return self._failure(404, "operation_not_found", "Unknown operation", op_id, started, risk, effective_role, effective_profile)
+            if not isinstance(effective_role, str) or not effective_role.strip():
+                return self._failure(403, "forbidden", "Caller role is invalid", op_id, started, risk, effective_role, effective_profile)
+            if effective_role not in op.roles:
+                return self._failure(403, "forbidden", "Caller role is not permitted", op_id, started, risk, effective_role, effective_profile)
             if not isinstance(args, dict):
-                return self._failure(400, "invalid_arguments", "Arguments must be an object", op_id, started, risk, caller_role, caller_profile)
+                return self._failure(400, "invalid_arguments", "Arguments must be an object", op_id, started, risk, effective_role, effective_profile)
             error = _validate_args(op.parameters_schema, args)
             if error:
-                return self._failure(400, "invalid_arguments", error, op_id, started, risk, caller_role, caller_profile)
-            if not op.read_only and caller_role in {"default", "restricted", "read_only"}:
-                return self._failure(403, "read_only_enforced", "Mutating operation is not permitted for a restricted caller", op_id, started, risk, caller_role, caller_profile)
+                return self._failure(400, "invalid_arguments", error, op_id, started, risk, effective_role, effective_profile)
+            if not op.read_only and effective_role in {"default", "restricted", "read_only"}:
+                return self._failure(403, "read_only_enforced", "Mutating operation is not permitted for a restricted caller", op_id, started, risk, effective_role, effective_profile)
             with self._lock:
                 handler = self._handlers.get(op_id)
             handler = handler or fallback_handler
             if handler is None:
-                return self._failure(501, "handler_unavailable", "No handler is registered", op_id, started, risk, caller_role, caller_profile)
+                return self._failure(501, "handler_unavailable", "No handler is registered", op_id, started, risk, effective_role, effective_profile)
             result = _run_with_timeout(handler, args, max(1, op.timeout_seconds))
-            return self._record({"ok": True, "result": result}, op_id, started, "allow", risk, caller_role, caller_profile, 200)
+            return self._record({"ok": True, "result": result}, op_id, started, "allow", risk, effective_role, effective_profile, 200)
         except TimeoutError:
-            return self._failure(504, "timeout", "Operation timed out", op_id, started, risk, caller_role, caller_profile)
+            return self._failure(504, "timeout", "Operation timed out", op_id, started, risk, effective_role, effective_profile)
         except Exception as exc:
-            return self._failure(500, "execution_error", str(exc)[:300], op_id, started, risk, caller_role, caller_profile)
+            return self._failure(500, "execution_error", str(exc)[:300], op_id, started, risk, effective_role, effective_profile)
 
     def _failure(self, status: int, code: str, message: str, op_id: str, started: float, risk: str, caller_role: str = "default", caller_profile: str = "default") -> dict:
         return self._record({"ok": False, "error": {"status": status, "code": code, "message": message}}, op_id, started, "deny" if status < 500 else "error", risk, caller_role, caller_profile, status)
