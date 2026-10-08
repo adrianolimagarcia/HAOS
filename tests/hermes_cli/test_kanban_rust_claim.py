@@ -218,6 +218,33 @@ def test_fallback_timeout_and_bad_json(kanban_home, monkeypatch):
         assert _rust_claim(conn, task_id, kanban_home) is not None
 
 
+def test_timeout_after_write_does_not_duplicate_claim(kanban_home, monkeypatch):
+    binary = _find_edge()
+    if binary is None:
+        pytest.skip("haos-edge binary not built")
+    with kbc.connect() as conn:
+        task_id = kb.create_task(conn, title="Timeout after write")
+
+    orig_run = subprocess.run
+    def run_hook(cmd, *args, **kwargs):
+        # Let the real binary execute first and write the claim to DB
+        res = orig_run(cmd, *args, **kwargs)
+        # Then simulate a timeout exception in python caller
+        raise subprocess.TimeoutExpired("edge", 1)
+
+    monkeypatch.setattr(krc.subprocess, "run", run_hook)
+    with kbc.connect() as conn:
+        res = krc.rust_claim_task(
+            conn, task_id, profile="default", data_dir=kanban_home,
+            claimer="worker-timeout", ttl_seconds=300, binary_path=binary,
+        )
+        assert res is not None
+        assert res.claim_lock == "worker-timeout"
+        # Verify exactly 1 run was created, never duplicated
+        runs = conn.execute("SELECT COUNT(*) FROM task_runs WHERE task_id = ?", (task_id,)).fetchone()[0]
+        assert runs == 1
+
+
 def test_profile_scope_and_path_traversal_rejected(kanban_home):
     binary = _find_edge()
     if binary is None:
@@ -236,6 +263,19 @@ def test_profile_scope_and_path_traversal_rejected(kanban_home):
             claimer="test-worker", ttl_seconds=300, binary_path=binary,
         ) is None
         assert kb.get_task(conn, task_id).status == "ready"
+
+        # Symlink pointing outside data_dir must be rejected
+        symlink_home = kanban_home.parent / "symlink_home"
+        try:
+            symlink_home.symlink_to(other_home, target_is_directory=True)
+            assert krc.rust_claim_task(
+                conn, task_id, profile="default", data_dir=symlink_home,
+                claimer="test-worker", ttl_seconds=300, binary_path=binary,
+            ) is None
+            task = kb.get_task(conn, task_id)
+            assert task is not None and task.status == "ready"
+        except OSError:
+            pass  # Filesystem does not support symlinks
 
 
 def test_heartbeat_success_and_fallback(kanban_home, monkeypatch):

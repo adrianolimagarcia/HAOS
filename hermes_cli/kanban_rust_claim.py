@@ -174,6 +174,18 @@ def rust_claim_task(
         lane,
     ]
 
+    def _fallback_claim() -> Optional[Task]:
+        # If the Rust binary timed out or failed AFTER committing the claim to SQLite,
+        # checking the task state avoids duplicating the claim, creating an extra run,
+        # or failing because status is already 'running'.
+        current = get_task(conn, task_id)
+        if current and current.status == "running" and current.claim_lock == resolved_claimer:
+            logger.info("Rust claim write succeeded before failure/timeout; adopting claim for task %s", task_id)
+            return current
+        if lane == "review":
+            return claim_review_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+        return claim_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+
     try:
         proc = subprocess.run(
             cmd,
@@ -184,14 +196,10 @@ def rust_claim_task(
         )
     except subprocess.TimeoutExpired:
         logger.warning("haos-edge kanban-claim timed out after %s seconds; falling back to Python", timeout_seconds)
-        if lane == "review":
-            return claim_review_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
-        return claim_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+        return _fallback_claim()
     except Exception as exc:
         logger.warning("haos-edge kanban-claim subprocess failed: %s; falling back to Python", exc)
-        if lane == "review":
-            return claim_review_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
-        return claim_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+        return _fallback_claim()
 
     # Scope/binding errors are authoritative refusals: falling back would permit
     # Python to mutate a task even though the Rust profile check rejected it.
@@ -213,15 +221,11 @@ def rust_claim_task(
             proc.stdout,
             proc.stderr,
         )
-        if lane == "review":
-            return claim_review_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
-        return claim_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+        return _fallback_claim()
 
     if not isinstance(data, dict):
         logger.warning("Invalid payload from haos-edge kanban-claim: expected dict. Falling back to Python")
-        if lane == "review":
-            return claim_review_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
-        return claim_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+        return _fallback_claim()
 
     if data.get("contract_version") != CONTRACT_VERSION:
         logger.warning(
@@ -229,16 +233,12 @@ def rust_claim_task(
             data.get("contract_version"),
             CONTRACT_VERSION,
         )
-        if lane == "review":
-            return claim_review_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
-        return claim_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+        return _fallback_claim()
 
     if not data.get("ok"):
         error_msg = data.get("error", "unknown error")
         logger.warning("haos-edge kanban-claim reported error: %s; falling back to Python", error_msg)
-        if lane == "review":
-            return claim_review_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
-        return claim_task(conn, task_id, ttl_seconds=resolved_ttl, claimer=resolved_claimer)
+        return _fallback_claim()
 
     # Claim executed by Rust
     if data.get("claimed") is not True:
