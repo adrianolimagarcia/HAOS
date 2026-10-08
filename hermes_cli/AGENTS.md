@@ -140,6 +140,13 @@ it guards. `plan → snapshot → apply → restart-per-kind → verify → repo
   prints it, and records a failed receipt step — one stale-symbol `AttributeError` must not abort
   the fleet matrix, reconciliation and receipt finalize that follow it.
 
+Process identity and command matching:
+- **Never infer process identity from argv substrings** (`"serve" in cmdline`) — this caused multiple fleet-update issues (#90778, #87594, #78089, #76129, #91964).
+- Use canonical matchers: `hermes_cli.update_cmd._hermes_holder_subcommand` (subcommand extraction) and `gateway.status.looks_like_gateway_command_line`.
+- Match against FULL command lines and truncate only for display/logging.
+- Flag sets must be derived dynamically from the argparse parser (`_holder_value_flags()`), never hardcoded hand-written tuples.
+- **Argparse alias dispatch:** `add_parser("list", aliases=["ls"])` sets `dest` to the literal the user typed (`"ls"`). Dispatch handlers must accept both the canonical name and aliases.
+
 Process-scan coordination between updater, serve/dashboard, and gateway is being replaced by a
 gateway-owned control socket (#92091); scans are the fallback layer for old/crashed processes — read
 #92091 before adding any heuristic. Process identity rules (never argv substrings; canonical

@@ -131,6 +131,13 @@ replaced by #92091's `pause-for-update`. Do NOT "fix" gateway-dies-with-app by r
 gateway under the backend, and do NOT "fix" update locks by widening the tree-kill. Gateways stamp
 `code_sha`/`code_version` into `gateway_state.json` (`status.py`) so the updater can verify a fleet.
 
+## Process Identity & Command Matching
+
+- **Never infer process identity from argv substrings** (`"serve" in cmdline`).
+- Use canonical matchers: `gateway.status.looks_like_gateway_command_line` and `gateway.status.live_gateway_pid_for_home`.
+- Match against FULL command lines and truncate only for display/logging.
+- Flag sets must be derived from the parser (`_holder_value_flags()`), never hardcoded.
+
 ## Profile scope (adapters, turns, and everything between turns)
 
 - **Token locks.** An adapter that connects with a unique credential (bot token, API key) calls
