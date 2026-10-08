@@ -3,7 +3,7 @@ import concurrent.futures
 import time
 import pytest
 
-from tools.capability_registry_v2 import CapabilityOperation, CapabilityRegistryV2, is_v2_enabled
+from tools.capability_registry_v2 import CapabilityOperation, CapabilityRegistryV2, is_v2_enabled, create_trusted_security_context
 
 
 def _operation(**overrides):
@@ -64,7 +64,7 @@ def test_read_only_restriction_and_permitted_mutator_role():
     registry = CapabilityRegistryV2()
     registry.register(_operation(read_only=False, roles=["default", "admin"]), lambda _args: "changed")
     denied = registry.execute("search.docs", {"query": "x"}, caller_role="default")
-    allowed = registry.execute("search.docs", {"query": "x"}, caller_role="admin")
+    allowed = registry.execute("search.docs", {"query": "x"}, security_context=create_trusted_security_context("test-admin", "admin"))
     assert denied["error"]["code"] == "read_only_enforced"
     assert allowed["result"] == "changed"
 
@@ -166,12 +166,15 @@ def test_adversarial_role_bypass_and_injection():
         assert res["trace"]["status"] == 403
 
 
-def test_adversarial_read_only_mutation_prevention():
+def test_adversarial_read_only_mutation_prevention(tmp_path):
     registry = CapabilityRegistryV2()
-    executed = []
+    marker = tmp_path / "mutation-marker"
+    def mutate(args):
+        marker.write_text(args["query"])
+        return "dropped"
     registry.register(
         _operation(id="db.drop", read_only=False, roles=["operator", "dba"]),
-        lambda args: executed.append(args) or "dropped"
+        mutate
     )
 
     # Restricted and default callers cannot mutate even if role matches
@@ -181,13 +184,13 @@ def test_adversarial_read_only_mutation_prevention():
         assert res["error"]["status"] == 403
         assert res["error"]["code"] in {"forbidden", "read_only_enforced"}
 
-    assert len(executed) == 0
+    assert not marker.exists()
 
     # Authorized non-restricted role succeeds
-    res = registry.execute("db.drop", {"query": "drop table"}, caller_role="dba")
+    res = registry.execute("db.drop", {"query": "drop table"}, security_context=create_trusted_security_context("test-dba", "dba"))
     assert res["ok"] is True
     assert res["result"] == "dropped"
-    assert len(executed) == 1
+    assert marker.read_text() == "drop table"
 
 
 def test_timeout_returns_504_and_records_trace():
