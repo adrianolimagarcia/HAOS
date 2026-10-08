@@ -2209,3 +2209,26 @@ def test_a_persist_without_declared_intent_still_cannot_erase_a_cooldown(
     entry = _disk_entry(tmp_path)
     assert entry["last_status"] == "exhausted"
     assert entry["last_error_code"] == 402
+
+
+def test_credential_pool_entry_serves_endpoint_unit():
+    """Verify endpoint match logic for child credential leasing."""
+    from agent.credential_pool import PooledCredential, credential_pool_entry_serves_endpoint
+
+    assert credential_pool_entry_serves_endpoint(None, "https://api.openai.com/v1") is False
+
+    entry_no_url = PooledCredential.from_dict("openai", {"access_token": "sk-123"})
+    assert credential_pool_entry_serves_endpoint(entry_no_url, None) is True
+    assert credential_pool_entry_serves_endpoint(entry_no_url, "https://api.openai.com/v1") is True
+
+    entry_custom = PooledCredential.from_dict(
+        "custom",
+        {
+            "access_token": "sk-custom",
+            "base_url": "https://custom.endpoint.local/v1",
+            "inference_base_url": "https://custom.endpoint.local/v1/chat",
+        },
+    )
+    assert credential_pool_entry_serves_endpoint(entry_custom, "https://custom.endpoint.local/v1") is True
+    assert credential_pool_entry_serves_endpoint(entry_custom, "https://custom.endpoint.local/v1/chat") is True
+    assert credential_pool_entry_serves_endpoint(entry_custom, "https://other.endpoint.local/v1") is False

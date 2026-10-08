@@ -419,6 +419,28 @@ def _norm_url(url: Any) -> str:
     return str(url or "").strip().rstrip("/")
 
 
+def credential_pool_entry_serves_endpoint(entry: Optional[PooledCredential], endpoint: Optional[str]) -> bool:
+    """Return True if the credential entry serves the requested endpoint.
+    If endpoint is None or empty, or entry has no explicit base_url,
+    it serves the default endpoint for its provider."""
+    if entry is None:
+        return False
+    if not endpoint:
+        return True
+    req_norm = _norm_url(endpoint)
+    if not req_norm:
+        return True
+    entry_urls = []
+    if getattr(entry, "base_url", None):
+        entry_urls.append(_norm_url(entry.base_url))
+    if getattr(entry, "inference_base_url", None):
+        entry_urls.append(_norm_url(entry.inference_base_url))
+    if not entry_urls:
+        return True
+    return req_norm in entry_urls
+
+
+
 def _iter_custom_providers(config: Optional[dict] = None):
     """Yield ``(normalized_name, entry)`` from the merged custom-provider config view."""
     if config is None:
