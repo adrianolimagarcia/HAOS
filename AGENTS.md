@@ -30,170 +30,54 @@ past that); see the **routing table** at the end and read the area file before e
 
 ## What Hermes Is
 
-Hermes is a personal AI agent that runs the same agent core across a CLI, a messaging
-gateway (Telegram, Discord, Slack, ~20 platforms), a TUI, and an Electron desktop app. It
-learns across sessions (memory + skills), delegates to subagents, runs scheduled jobs, and
-drives a real terminal and browser. It is extended primarily through **plugins and skills**,
-not by growing the core.
+Hermes is a personal AI agent running the same agent core across CLI, messaging
+gateway (Telegram, Discord, Slack, ~20 platforms), TUI, and Electron desktop app.
+Extended primarily through **plugins and skills**, not by growing the core.
 
-Two invariants shape almost every design decision and are the lens for reviewing any change:
+Two sacred invariants shape almost every design decision:
+- **Per-conversation prompt caching is sacred:** Reuses a cached prefix every turn. Mutating past context, swapping toolsets, reloading memories, or rebuilding system prompts mid-conversation invalidates cache and multiplies cost (exception: context compression). Slash commands mutating system-prompt state must be **cache-aware**: default to deferred invalidation (next session) with opt-in `--now` (`/skills install --now`).
+- **The core is a narrow waist; capability lives at the edges:** Model tools are sent on every API call. New capability arrives as CLI command + skill, service-gated tool (`check_fn`), or plugin — not core surface.
 
-- **Per-conversation prompt caching is sacred.** A long-lived conversation reuses a cached
-  prefix every turn. Anything that mutates past context, swaps toolsets, reloads memories, or
-  rebuilds the system prompt mid-conversation invalidates that cache and multiplies the user's
-  cost. We do not do it; the ONE exception is context compression. Slash commands that mutate
-  system-prompt state (skills, tools, memory) must be **cache-aware**: default to deferred
-  invalidation (takes effect next session) with an opt-in `--now` flag (`/skills install --now`
-  is the canonical pattern).
-- **The core is a narrow waist; capability lives at the edges.** Every model tool is sent on
-  every API call, so the bar for a new *core* tool is high. New capability should arrive as a
-  CLI command + skill, a service-gated tool, or a plugin — not as core surface.
+## Contribution Rubric & Intent
 
-## Contribution Rubric — What We Want / What We Don't
+The core agent and tool schema is a narrow waist: additions are paid for on every API call.
+Expansive at the edges, conservative at the waist.
 
-The project's intent layer. It serves humans aiming a contribution AND the automated triage
-sweeper, which may only close on `implemented_on_main`, `cannot_reproduce`, or `incoherent`.
-Taste-based "out of scope" closes are a human maintainer's call; the sweeper's job is to
-recognize design intent and *avoid wrongly closing a legitimate contribution*.
+### What We Want
+- **Fix real bugs, well:** Reproduce on current `main`, point to exact line, fix whole bug class across siblings.
+- **Expand reach at the edges:** New adapters, channels, providers, models, desktop/TUI/dashboard features land routinely via existing setup UX (`hermes tools`, `hermes setup`, auto-install) rather than raw env vars.
+- **Refactor god-files into clean modules:** Mechanical extraction PRs are welcome work.
+- **Keep core narrow:** Ladder: extend existing code → CLI command + skill → service-gated tool (`check_fn`) → plugin → MCP server in catalog → core tool (last resort).
+- **Extend, don't duplicate:** Check existing infra first. Design ABC + orchestrator when 3+ PRs integrate same category.
+- **Behavior contracts over snapshots:** Assert relationships between data, never freeze arbitrary current values.
+- **E2E validation:** Real imports against temp `HERMES_HOME` (A→B→A under multiplex for profile scope).
+- **Invariants:** Preserve prompt caching, strict role alternation, and byte-stable system prompts.
 
-Read the balance right: Hermes ships a **lot**. Most merges are bug fixes to reported
-behavior, and the product surface (platforms, providers, models, desktop/TUI features)
-expands aggressively on purpose. The restraint below targets the **core agent + model tool
-schema**, the one place where every addition is paid for on every API call. "Smallest
-footprint" governs *how a capability is wired into the core*, not whether the product may
-grow: expansive at the edges, conservative at the waist.
+### What We Don't Want
+- **Speculative infrastructure:** Hooks/callbacks without concrete consumers.
+- **New `HERMES_*` env vars for non-secret config:** `.env` is for secrets only; behavioral settings go in `config.yaml`.
+- **New core tool when terminal + file (or skill) works:** Fix the environment or mounts instead.
+- **Lazy-reading escape hatches on instructional tools:** No pagination on tools models read fully (skills, prompts).
+- **Fixes that destroy features they secure:** Verify original intent (`git log -p -S`) before restricting behavior.
+- **Outbound telemetry without opt-in gating:** No analytics or tracking without user config gate.
+- **Third-party products in-tree:** Vendor SaaS connectors and observability backends belong in standalone plugin repos (`~/.hermes/plugins/`).
 
-### What we want
+### Verifying Bug Premise Before Closing
+- **Intentional design, not a gap:** Profiles are independent islands; check intent before assuming an omission.
+- **Premise doesn't hold against runtime:** Point to exact manifesting line and verify fix alters it.
+- **Load-bearing absence:** Deliberate omission prevents shadowing/conflicts.
+- **Overreach / resurrected dead approaches:** Scope creep or reviving closed directions is rejected.
 
-- **Fix real bugs, well.** Reproduce the symptom on current `main`, point to the exact line
-  where it manifests, and fix the whole bug class — sibling call paths included.
-- **Expand reach at the edges.** New adapters, channels, providers, models, desktop/TUI/
-  dashboard features land routinely, including large ones — as long as they integrate with
-  the existing setup/config UX (`hermes tools`, `hermes setup`, auto-install) rather than
-  bolting on a raw env var.
-- **Refactor god-files into clean modules.** Huge mechanical `+N/-N` extraction PRs are
-  wanted work. "Every line traces to the request" applies to *feature* PRs; a declared
-  refactor's request IS the extraction.
-- **Keep the core narrow.** Prefer, in order: extend existing code → CLI command + skill →
-  service-gated tool (`check_fn`) → plugin → MCP server in the catalog → new core tool (last
-  resort). See the Footprint Ladder.
-- **Extend, don't duplicate.** Check whether existing infrastructure covers the use case
-  before adding a module/manager/hook. When 3+ open PRs integrate the same *category*
-  (memory backends, providers, notifiers), design an ABC + orchestrator, wrap the existing
-  built-in as the first provider, and turn the competing PRs into plugins against it.
-- **Behavior contracts over snapshots.** Tests assert how two pieces of data relate, never
-  freeze a current value (see Testing).
-- **E2E validation, not just green unit mocks.** Anything touching resolution chains, config
-  propagation, security boundaries, remote backends, or file/network I/O must exercise the
-  real path with real imports against a temp `HERMES_HOME` — two of them (A→B→A) when the
-  change touches profile scope. Mocks hide integration bugs.
-- **Cache-, alternation-, and invariant-safe.** Preserve prompt caching, strict role
-  alternation (never two same-role messages in a row; never a synthetic user message injected
-  mid-loop), and a system prompt byte-stable for the life of a conversation.
-- **Contributor credit preserved.** Salvage external work by cherry-picking (rebase-merge) so
-  authorship survives; build on top rather than reimplementing.
+### The Footprint Ladder (New Capability Decision)
+1. **Extend existing code** — zero new surface.
+2. **CLI command + skill** — config/state/infra expressible as shell commands (`hermes cron`, `hermes tools`).
+3. **Service-gated tool (`check_fn`)** — structured params/returns needed AND prerequisite configured.
+4. **Plugin** — lives in `~/.hermes/plugins/` or pip package.
+5. **MCP server (in catalog)** — reached via built-in MCP client, zero core schema footprint.
+6. **New core tool** — only when fundamental, broadly useful, and unreachable via terminal/file/MCP.
 
-### What we don't want (rejected even when well-built)
-
-- **Speculative infrastructure.** Hooks/callbacks/extension points with no concrete consumer.
-  Adding a hook is easy; removing one after plugins depend on it is hard. A hook with a real,
-  stated use case is NOT speculative even if the consumer ships separately.
-- **New `HERMES_*` env vars for non-secret config.** `.env` is for secrets only. Behavioral
-  settings (timeouts, thresholds, flags, display prefs) go in `config.yaml`; bridge to an
-  internal env var in code if the mechanism needs one. Reject "set X in your .env" docs
-  unless X is a credential.
-- **A new core tool when terminal + file (or a skill) already do the job.** If the only
-  barrier is file visibility on a remote backend, fix the mount, not the toolset.
-- **Lazy-reading escape hatches on instructional tools.** No `offset`/`limit` pagination on
-  tools that load content the agent must read fully (skills, prompts, playbooks) — models
-  read page 1 and skip the rest.
-- **"Fixes" that destroy the feature they secure.** Read the original intent
-  (`git log -p -S`) before restricting behavior; find a fix that preserves the feature.
-- **Outbound telemetry / usage attribution without opt-in gating.** No analytics,
-  third-party identifier tagging, or attribution tags until a generic user-facing opt-in
-  (config gate + setup prompt + `hermes tools` toggle) exists. Park behind a label.
-- **Change-detector tests, cache-breaking mid-conversation, dead code wired in without E2E
-  proof, plugins that touch core files.** Plugins work within the ABCs/hooks we provide; if
-  one needs more, widen the generic plugin surface, never special-case it in core.
-- **Third-party products integrated into the core tree.** Observability backends, vendor
-  SaaS connectors, analytics dashboards, and other "someone else's product" plugins do NOT
-  land under `plugins/` — every one becomes our burden against a fast-moving core for a
-  backend we don't own. Ship as a **standalone plugin repo** (`~/.hermes/plugins/` or pip
-  entry point), promoted in the Nous Research Discord `#plugins-skills-and-skins`. This is a
-  coupling decision, not a quality bar; such PRs are closed with a pointer to publish.
-
-### Before you call it a bug — verify the premise (and when NOT to close)
-
-The most common reason a well-written PR is closed is a **wrong premise** or treating an
-**intentional design as a gap**. These patterns tell a reviewer what to scrutinize and tell
-the sweeper when a PR is NOT safe to close (when in doubt, leave it open for a human):
-
-- **"Intentional design, not a gap."** Ask whether the isolation IS the design. Profiles are
-  independent islands on purpose: a PR adding live config inheritance from the default
-  profile was closed because coupling profiles is exactly what the design prevents (`--clone`
-  already covers "start from my default"). Read `git log -p -S "<symbol>"` before assuming
-  something is unfinished.
-- **"The premise doesn't hold against how X actually works."** Trace the real runtime before
-  accepting a rationale. Real closes: a rate-limit "re-probe during cooldown" PR (the breaker
-  trips only on a *confirmed-empty* bucket, so re-probing hammers a bucket proven empty); a
-  usage fix whose new branch **never executes** because an earlier guard already popped the
-  state. If you can't point to the exact line where the bug manifests AND show the fix changes
-  that line's behavior, the premise is unverified.
-- **"The absence was deliberate."** Restoring "missing" `__init__.py` files made a test tree
-  importable as a dotted package that shadowed the real plugin and deleted its `register()`
-  at import time. The omission was load-bearing.
-- **"Overreached / resurrected an approach we moved past."** Scope creep beyond the agreed
-  base, or reviving a direction maintainers closed, is rejected even when it works. Offer the
-  rest as a focused follow-up.
-
-Throughline: **verify the claim AND the intent against the codebase before writing or merging
-a fix.** A reproduction on current `main` plus a line-level account beats a plausible
-rationale. When unsure about intent, asking is cheaper than shipping a fix that fights the
-design.
-
-### The Footprint Ladder (new capability decision)
-
-Choose the highest (least-footprint) rung that correctly solves the problem:
-
-1. **Extend existing code** — a variation of something that exists. Zero new surface.
-2. **CLI command + skill** — config/state/infra expressible as shell commands; the agent runs
-   `hermes <subcommand>` guided by a skill. Default for subscriptions, scheduled tasks,
-   service setup (`hermes webhook`, `hermes cron`, `hermes tools`).
-3. **Service-gated tool (`check_fn`)** — needs structured params/returns AND only appears when
-   a prerequisite is configured (Home Assistant tools, memory-provider tools). This rung gates
-   reachability/opt-in process-wide; a capability that varies per SESSION (who is watching) is
-   a named toolset folded in by the toolset resolver, not a `check_fn` — see "Surface capability
-   is a property of the SESSION" below.
-4. **Plugin** — third-party/niche/user-specific; lives in `~/.hermes/plugins/` or a pip
-   package, discovered at runtime.
-5. **MCP server (in the catalog)** — genuinely a tool but not core-fundamental. Zero permanent
-   core-schema footprint, reusable by any MCP host, reached via the built-in MCP client.
-6. **New core tool** — only when fundamental, broadly useful to nearly every user, and
-   unreachable via terminal + file or an MCP server (terminal, read_file, web_search,
-   browser_navigate).
-
-### Surface capability is a property of the SESSION, never of the process env
-
-A tool that works only because of *who is on the other end* (desktop panes, in-app browser,
-message reactions, Projects) must resolve availability from the **session's own source**, not
-from an env var on the backend. Client and backend are separate machines: the desktop app may
-drive a locally spawned backend, one over SSH, one behind URL + token, or Hermes Cloud, and
-only the first two carry `HERMES_DESKTOP=1`. An env-keyed gate is a silent no-op on the other
-topologies — the tool is stripped from the schema while the platform hint tells the model it
-is "inside the Hermes desktop app". The pattern:
-
-- **The toolset is the surface gate.** Keep such tools off `_HERMES_CORE_TOOLS` and in a named
-  toolset (`desktop_ui`, `project`); the GUI gateway's `_load_enabled_toolsets(platform)`
-  folds it in when the session's platform says GUI. One resolver, every topology.
-- **`check_fn` answers reachability or opt-in, not surface.** "Is the bridge wired?" — fine.
-  "Was I spawned by Electron?" — not. `check_fn` results are TTL-cached process-wide
-  (`tools/registry.py`); a per-session answer does not belong there.
-- **Ask which identity you mean.** `HERMES_DESKTOP=1` legitimately means "this backend was
-  spawned by the app" (cron ticker, web-dist handling). It does NOT mean "a GUI is watching";
-  the embedded terminal pane (`hermes --tui` against that backend) is the counterexample.
-
-Test: if the capability still makes sense with the client on another machine, it is
-session-scoped. Assert the GUI session gets the tool **with the env var absent**.
+### Surface capability is a property of the SESSION
+- Tools depending on client type (desktop panes, in-app browser) resolve availability from session metadata/platform (`desktop_ui`, `project`), never backend process env vars (`HERMES_DESKTOP=1` means spawned by app, not that a GUI is watching).
 
 ## Development Environment
 
@@ -252,79 +136,26 @@ plus **siblings** `<stem>_<topic>.py` in the same directory, each owning one top
 families: `hermes_state.py` (21), `gateway/run.py` (15), `tools/mcp_tool.py` (15),
 `hermes_cli/kanban.py` (14), `hermes_cli/web_server.py` (13 + 24 routers), `hermes_cli/auth.py`
 (12), `tools/browser_tool.py` (11), `cli.py` (12 `hermes_cli/cli_*_mixin.py`), `run_agent.py`
-(`agent/turn_*.py`, `agent_init.py`, `conversation_loop.py`).
+(`agent/turn_*.py`, `agent_init.py`, conversation_loop.py).
 
-- **Find code by topic, not by facade:** `grep -rn "def name" <dir>/<stem>_*.py`. Reading the
-  facade first is the expensive way (`evals/codebase_navigability/`).
-- **Siblings may import each other and late-import the facade** inside functions. A facade
-  never imports a sibling at module level *and* gets imported by that sibling at module level.
-- **Patch where production reads.** Siblings often do `from <facade> import name` inside the
-  function so `monkeypatch.setattr(facade, "name", ...)` is the seam; a patch on the defining
-  module passes silently. Check the call site's binding before writing a patch target
-  (blind repointing to defining modules broke 130+ tests).
-- **Compat pointers are OFF LIMITS in-tree.** Old import paths kept alive for external plugins
-  (`PLUGIN-COMPAT` blocks, `COMPAT_MANIFEST.md`, `compat_manifest.json`) must not be used by
-  in-tree code or tests; `scripts/check_compat_pointers.py` runs in CI, and
-  `-W error::hermes_cli.plugin_compat.HermesPluginCompatWarning` catches them in the suite.
-  They are removed 2026-09-14 by reverting one commit. Import from the defining module.
-- **Don't recreate god files.** A file passing ~2,000 lines or a function passing ~300 lines /
-  cyclomatic complexity 30 is the signal to split along `<stem>_<topic>` FIRST, in its own
-  commit. New behaviour goes in a new or topical sibling — never appended to a facade.
-- **No `if/elif` ladders ≥ 4 branches keyed on a name/kind** — use a dict/table → handler
-  (`_SLASH_DISPATCH` in `cli.py`, `_command_handler_table` in the gateway are the shape).
-- **No re-export shims for internal moves** ("keep the old name importable"). Internal paths
-  are not API; external compat is handled ONCE by the compat layer, not per PR.
-- **Moving a symbol means fixing its docs in the same PR:** grep `website/docs`,
-  `skills/`, and every `AGENTS.md` for the old `path.py` + symbol (23 doc files went stale
-  after the refactor). `evals/codebase_navigability/static_metrics.py <tree> <label>` measures
-  file/function/CC/elif distributions before/after a large PR in ~2 min.
+- **Find code by topic, not by facade:** `grep -rn "def name" <dir>/<stem>_*.py`.
+- **Siblings may import each other and late-import the facade** inside functions. Facade never imports a sibling at module level *and* gets imported by that sibling at module level.
+- **Patch where production reads:** Siblings often do `from <facade> import name` inside functions so `monkeypatch.setattr(facade, "name", ...)` is the seam.
+- **Compat pointers are OFF LIMITS in-tree:** Old import paths for external plugins (`scripts/check_compat_pointers.py`) must not be used in-tree.
+- **Don't recreate god files:** File > 2k lines or function > 300 lines / CC 30 triggers splitting along `<stem>_<topic>`.
+- **No `if/elif` ladders ≥ 4 branches keyed on a name/kind** — use a dict/table → handler.
+- **No re-export shims for internal moves:** Internal paths are not API.
+- **Moving a symbol means fixing its docs in the same PR:** grep `website/docs`, `skills/`, and area `AGENTS.md`.
 
 ## Code Shape Rules (all languages)
 
-- No "defense-in-depth" wrappers, `try/except: pass` around code that cannot fail, or flags
-  nobody sets. Docstrings/comments keep the WHY, cut the WHAT.
-- **Never infer process identity from argv substrings** (`"serve" in cmdline`) — the bug class
-  behind ~10 fleet-update issues (#90778, #87594, #78089, #76129, #91964). Use the canonical
-  matchers `gateway.status.looks_like_gateway_command_line` and
-  `hermes_cli.update_cmd._hermes_holder_subcommand`; flag sets are DERIVED from the parser
-  (`_holder_value_flags()`), never hand-written; match FULL cmdlines and truncate only for
-  display. Details: `hermes_cli/AGENTS.md`.
-- **Never hardcode `~/.hermes`.** `get_hermes_home()` for code paths, `display_hermes_home()`
-  for user-facing text (both from `hermes_constants`). Hardcoding breaks profiles (5 bugs in
-  PR #3575). Profile operations themselves are HOME-anchored
-  (`_get_profiles_root()` = `Path.home()/.hermes/profiles`) so `hermes -p x profile list`
-  sees all profiles — intentional, not a bug.
-- **One process may serve many profiles; code that runs outside a turn binds the owning
-  profile scope explicitly.** A profile = home + secret scope + terminal scope, bound by
-  `gateway/run.py::_profile_runtime_scope` (turn), `tui_gateway/server.py::@_profile_scoped` +
-  `model_switch.py::_session_profile_runtime_scope` (RPC, teardown), `cron/scheduler_provider.py::
-  _profile_cron_scope` (ticker), `gateway/run_agent_cache.py::_run_release_in_profile_scope`
-  (eviction). `os.environ`, module globals and import-time values hold the *launch* profile's, so
-  an unbound read is a silent default-profile leak, never an error: home/config/`.env`-derived
-  module constants are a bug class — key slots by `hermes_home_key()` or resolve at call time.
-  Needs a binding: boot probes (`check_fn`, MCP discovery, hooks), session end/eviction, tickers,
-  deferred callbacks, RPC methods, config readers, thread hops (`spawn_context_thread`), child
-  spawns (`served_profile_child_env`, never `os.environ.copy()`). Fail-closed reads exist only after
-  `set_multiplex_active(True)`. Prove live with two homes (A→B→A) under multiplex, not one temp
-  `HERMES_HOME`. Advisory lint: `scripts/check_profile_scope_patterns.py`.
-- **Argparse alias dispatch:** `add_parser("list", aliases=["ls"])` sets `dest` to the literal
-  the user typed (`"ls"`). Dispatch must accept both (caught PTY-testing `hermes webhook ls`).
-- **Don't wire in dead code without E2E validation.** Unshipped code was dead for a reason;
-  E2E the real resolution chain with real imports against a temp `HERMES_HOME` first.
-
-### TypeScript style (desktop, TUI, website, future TS packages)
-
-Small nanostores over component state when state is shared or read by distant UI; each
-feature owns its atoms (chat near chat, shared in `src/store`); rendering components use
-`useStore`, non-rendering actions read `$atom.get()`; never thread state through three
-components when the leaf can subscribe; persistence sits beside the atom that owns it. Route
-roots stay thin (compose routes + shell, never controllers). No monolithic hooks — one narrow
-job each; colocated action modules over god hooks. Pure side-effect callbacks use the terse
-void form `onState={st => void setGatewayState(st)}`; async handlers make intent explicit
-`onClick={() => void save()}`. Interfaces for public props and shared object shapes (not
-`type X = {...}`); extend React primitives (`React.ComponentProps<'button'>`, `Omit`, `Pick`).
-Table-driven beats condition ladders for ids/routes/views. `src/app` owns routes/pages,
-`src/store` shared atoms, `src/lib` pure helpers.
+- No "defense-in-depth" wrappers, `try/except: pass` around code that cannot fail, or flags nobody sets. Docstrings/comments keep the WHY, cut the WHAT.
+- **Never infer process identity from argv substrings** (`"serve" in cmdline`) — canonical matchers: `gateway.status.looks_like_gateway_command_line` and `hermes_cli.update_cmd._hermes_holder_subcommand`; derive flags from parser (`_holder_value_flags()`); match full cmdlines. Details: `hermes_cli/AGENTS.md` and `gateway/AGENTS.md`.
+- **Never hardcode `~/.hermes`.** `get_hermes_home()` for code paths, `display_hermes_home()` for user-facing text (from `hermes_constants`). Profile operations are HOME-anchored (`_get_profiles_root()` = `Path.home()/.hermes/profiles`).
+- **One process may serve many profiles; code that runs outside a turn binds the owning profile scope explicitly.** A profile = home + secret scope + terminal scope, bound by `gateway/run.py::_profile_runtime_scope` (turn), `tui_gateway/server.py::@_profile_scoped` + `model_switch.py::_session_profile_runtime_scope` (RPC, teardown), `cron/scheduler_provider.py::_profile_cron_scope` (ticker), `gateway/run_agent_cache.py::_run_release_in_profile_scope` (eviction). An unbound read leaks default profile; key slots by `hermes_home_key()` or resolve at call time. Advisory lint: `scripts/check_profile_scope_patterns.py`.
+- **Argparse alias dispatch:** `add_parser("list", aliases=["ls"])` sets `dest` to literal typed (`"ls"`). Dispatch must accept both (see `hermes_cli/AGENTS.md`).
+- **Don't wire in dead code without E2E validation.** Exercise real resolution chain with real imports against temp `HERMES_HOME`.
+- **TypeScript style:** See `apps/desktop/AGENTS.md` § TypeScript Style Rules for desktop/frontend conventions (nanostores, thin routes, interface over type).
 
 ## Dependency Pinning Policy
 
@@ -347,102 +178,29 @@ changing `pyproject.toml`. Reference: #2810 (bounds), #9801 (SHA pinning + audit
 
 ## Testing (applies everywhere)
 
-**ALWAYS use `scripts/run_tests.sh`**, never bare `pytest`. It enforces CI parity: credential
-vars unset, `TZ=UTC`, `LANG=C.UTF-8`, `HERMES_HOME` → temp dir, and per-file subprocess
-isolation via `scripts/run_tests_parallel.py` (no xdist; workers scale with CPU count) so
-module-level dicts/ContextVars cannot leak between files. Direct `pytest` on a big machine
-with API keys set has caused repeated "works locally, fails in CI" incidents (and the reverse).
+**ALWAYS use `scripts/run_tests.sh`**, never bare `pytest`. It enforces CI parity: credential vars unset, `TZ=UTC`, `LANG=C.UTF-8`, `HERMES_HOME` → temp dir, and per-file subprocess isolation via `scripts/run_tests_parallel.py` (no xdist; workers scale with CPU count).
 
 ```bash
 scripts/run_tests.sh                                    # full suite
 scripts/run_tests.sh tests/gateway/                     # one directory
-scripts/run_tests.sh tests/agent/test_foo.py -k test_x  # runner is file-granular; -k narrows
+scripts/run_tests.sh tests/agent/test_foo.py -k test_x  # file-granular; -k narrows
 scripts/run_tests.sh -v --tb=long                       # pytest flags pass through
 ```
 
-- **Flake policy:** a failing FILE is retried once in a fresh subprocess (`--file-retries`;
-  `HERMES_TEST_FILE_RETRIES=0` disables). Pass-on-retry is green but printed under `⚠ FLAKY`
-  with both outputs — a bug to fix, not noise. Timing tests must not assume a quiet runner:
-  wall-clock bounds ≥ 2s, event-based sync, no `assert not _wait_until(...)` races.
-- **Placement mirrors the source tree.** A test lives in `tests/<top-level source dir>/` (`tests/hermes_cli/`,
-  `tests/agent/`, `tests/hermes_state/`, `tests/gateway/relay/`, ...); installer/updater script tests
-  under `tests/scripts/{install,desktop_update}/`. Only tests of root-level modules (`batch_runner`,
-  `utils`, `hermes_constants`, packaging) sit directly in `tests/`. No issue numbers in filenames —
-  cite the issue in the module docstring (`test_89315_x.py` → `test_x.py`, "Regression for #89315").
-- **Placement (CI lanes):** `scripts/ci/classify_changes.py` picks jobs by changed files. A Python test
-  asserting about `package.json`, `package-lock.json`, `tsconfig.json`, or `.ts/.tsx/.js/
-  .mjs/.cjs` sources will not run on a JS-only PR (green on PR, red on `main` where the
-  classifier fails open). Such tests belong in the vitest suite, not `tests/*.py`.
-- **Tests must not write to `~/.hermes/`.** The autouse `_isolate_hermes_home` fixture in
-  `tests/conftest.py` redirects `HERMES_HOME`; never hardcode `~/.hermes/` in tests. Profile
-  tests also mock `Path.home()` so `_get_profiles_root()` / `_get_default_hermes_home()` stay
-  in the temp dir (pattern: `tests/hermes_cli/test_profiles.py`):
-  ```python
-  @pytest.fixture
-  def profile_env(tmp_path, monkeypatch):
-      home = tmp_path / ".hermes"; home.mkdir()
-      monkeypatch.setattr(Path, "home", lambda: tmp_path)
-      monkeypatch.setenv("HERMES_HOME", str(home))
-      return home
-  ```
-  Tests that `patch.object(Path, "home", ...)` must ALSO set `HERMES_HOME` — code reads the
-  env var, not `Path.home()/.hermes`.
+- **Flake policy:** Failing file retried once in fresh subprocess (`--file-retries`). Pass-on-retry is printed under `⚠ FLAKY` — a bug to fix. Timing tests must use event-based sync or generous bounds (see `website/docs/developer-guide/contributing.md`).
+- **Placement mirrors source tree:** Tests live in `tests/<top-level source dir>/` (`tests/hermes_cli/`, `tests/agent/`, `tests/gateway/`). Root-level modules sit in `tests/`. No issue numbers in filenames (cite in docstring).
+- **Placement (CI lanes):** JS/TS-specific tests belong in vitest suite, not `tests/*.py` (classified by `scripts/ci/classify_changes.py`).
+- **Tests must not write to `~/.hermes/`:** `_isolate_hermes_home` redirects `HERMES_HOME`. Profile tests mock `Path.home()` and set `HERMES_HOME`.
 
 ### Don't fake the host OS
-
-Behaviour that genuinely differs per host is tested ON that host with `@pytest.mark.linux_only`
-/ `macos_only` / `windows_only`, never by patching `sys.platform`. Host-independent things stay
-unmarked: pure functions that take the platform as data (`hidden_windows_child_options(opts,
-is_windows=True)`) and declaration/packaging invariants ("pyproject declares `tzdata` with a
-`sys_platform == 'win32'` marker"). Setting a module-level `IS_WINDOWS` flag and calling
-`windows_detach_flags()` IS a fake. The line: **if the test needs the interpreter to believe it
-is on another OS to pass, it belongs on that OS.** A test that walks several platforms in
-sequence is split — host-native arm on Linux, other arms as their own marked tests.
-
-**Use the marker, never a bare `skipif`.** `scripts/ci/list_os_marked_tests.py` finds files for
-the macOS/Windows lanes by grepping the marker *name*, then filters with `-m <marker>`. A
-`skipif(sys.platform != "win32")` test skips on Linux AND is never imported on Windows — it runs
-nowhere, silently. A file-local alias (`windows_only = pytest.mark.skipif(...)`) is listed but
-`-m windows_only` deselects everything: green over zero coverage. Don't `pytest.skip()` non-host
-rows of a platform `@parametrize` — split into one marked test per OS.
-
-**Live Windows process-topology E2E (`wine2e` lane):** `windows-venv-e2e.yml` runs
-`tests/hermes_cli/test_venv_holder_windows_live.py` on a real `windows-latest` runner (real
-processes, no mocked psutil) ONLY on pushes to `wine2e/**` branches. Workflow: write probes
-pinning CORRECT behavior, push to `wine2e/` to reproduce live on unfixed code, fix, iterate to
-green, then open the PR with the live receipt. Extend it when touching that subsystem; assert
-against the gateway ANCESTOR found by argv, not the direct parent (the venv shim makes every
-spawn a launcher/worker chain).
+- Differing behavior is tested on that host with `@pytest.mark.linux_only` / `macos_only` / `windows_only`, never by patching `sys.platform`.
+- Use the marker, never bare `skipif(sys.platform != ...)` (breaks CI marker grepping). Live Windows process-topology tests live in the `wine2e` lane (see `website/docs/developer-guide/contributing.md`).
 
 ### Don't write change-detector tests
-
-A change-detector fails whenever data *expected to change* is updated — model catalogs,
-`_config_version`, enumeration counts, hardcoded model lists. It adds no coverage and taxes
-every routine update. Don't: `assert "gemini-2.5-pro" in _PROVIDER_MODELS["gemini"]`,
-`assert DEFAULT_CONFIG["_config_version"] == 21`, `assert len(models) == 8`. Do: `assert
-"gemini" in _PROVIDER_MODELS and len(_PROVIDER_MODELS["gemini"]) >= 1` (plumbing works);
-`assert raw["_config_version"] == DEFAULT_CONFIG["_config_version"]` (migration reaches
-latest); `assert not (set(moonshot_models) & coding_plan_only_models)` (no leak); every
-catalog model has a context-length entry (relationship). If it reads like a snapshot, delete
-it; if it reads like a contract between two pieces of data, keep it. Reviewers reject new
-change-detectors; authors convert them before re-review.
+- Never freeze data expected to change (catalogs, version numbers, enumeration counts). Assert contracts and relationships between data, not snapshots.
 
 ### Never read source code in tests
-
-A test that reads a `.py`/`.ts`/`.tsx` file's text tests the *shape of the source*, not
-behavior — banned outright. It passes when the implementation is subtly broken (regex matches
-a mis-wired call site) and fails on correct refactors; it can't run against bundled/minified
-artifacts; it blocks structural cleanup; it gives false confidence. Don't
-`fs.readFileSync('main.ts')` + `assert.match(source, /spawn\(...hiddenWindowsChildOptions/)`.
-Do extract the logic into a pure/DI-testable function and call it:
-```ts
-export function hiddenWindowsChildOptions(options = {}, isWindows = process.platform === 'win32') {
-  if (!isWindows || 'windowsHide' in options) return options
-  return { ...options, windowsHide: true }
-}
-```
-If the logic lives inline in a god-file and extraction feels disruptive, that is the signal to
-extract, not to regex around it.
+- Testing `.py`/`.ts` file text tests shape, not behavior — banned. Extract logic into pure/DI-testable functions and call them.
 
 ## Routing Table — working in X → read X/AGENTS.md
 

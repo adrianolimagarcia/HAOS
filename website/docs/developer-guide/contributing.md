@@ -20,6 +20,39 @@ We value contributions in this order:
 6. **New tools** — rarely needed; most capabilities should be skills
 7. **Documentation** — fixes, clarifications, new examples
 
+## Detailed Contribution Rubric & Footprint Ladder
+
+The full intent layer for contributions and automated triage sweeper:
+
+### What we want
+- **Fix real bugs, well:** Reproduce symptom on current `main`, locate the exact line, fix the whole bug class across sibling call paths.
+- **Expand reach at the edges:** New adapters, channels, providers, models, desktop/TUI/dashboard features land routinely when integrated into existing setup UX (`hermes tools`, `hermes setup`, auto-install) rather than raw env vars.
+- **Refactor god-files into clean modules:** Mechanical extraction PRs are welcome. Every line must trace to the refactoring scope.
+- **Keep the core narrow:** Prefer extend existing code → CLI command + skill → service-gated tool (`check_fn`) → plugin → MCP server in catalog → new core tool (last resort).
+- **Extend, don't duplicate:** Check existing infrastructure before adding modules/managers/hooks. Design ABCs + orchestrators when 3+ PRs integrate the same category.
+- **Behavior contracts over snapshots:** Assert relationships between data, never freeze arbitrary current values.
+- **E2E validation, not just green unit mocks:** Real imports against temporary `HERMES_HOME` (A→B→A under multiplex for profile scope).
+- **Cache-, alternation-, and invariant-safe:** Preserve prompt caching, strict role alternation, and byte-stable system prompts.
+
+### What we don't want (rejected even when well-built)
+- **Speculative infrastructure:** Hooks/callbacks with no concrete consumer.
+- **New `HERMES_*` env vars for non-secret config:** `.env` is for secrets only; behavioral settings go in `config.yaml`.
+- **A new core tool when terminal + file (or a skill) suffices:** Fix the environment or mounts instead.
+- **Lazy-reading escape hatches on instructional tools:** No pagination on tools models must read fully (skills, prompts).
+- **"Fixes" that destroy the feature they secure:** Understand intent via `git log -p -S` before restricting behavior.
+- **Outbound telemetry without opt-in gating:** No analytics or third-party identifier tagging without user config gate.
+- **Third-party products in-tree:** Vendor SaaS connectors and observability backends belong in standalone plugin repos (`~/.hermes/plugins/`).
+
+### Verifying Bug Premise Before Closing
+- **Intentional design, not a gap:** Profiles are independent islands on purpose; verify design intent with `git log -p -S "<symbol>"`.
+- **The premise doesn't hold against runtime:** Point to the exact manifesting line and prove the fix changes behavior.
+- **Load-bearing absence:** Deliberately omitted files/hooks may prevent shadowing or namespace pollution.
+- **Overreach / resurrected dead approaches:** Scope creep or reviving closed directions is rejected even if functional.
+
+### Surface capability is a property of the SESSION
+- Tools that depend on client type (panes, in-app browser) must resolve availability from session metadata/platform, never process environment variables (`HERMES_DESKTOP=1` means spawned by app, not that a GUI is watching).
+
+
 ## Common contribution paths
 
 - Building a custom/local tool without modifying Hermes core? Start with [Build a Hermes Plugin](../developer-guide/plugins/index.md)
@@ -136,6 +169,22 @@ ln -sf "$(pwd)/venv/bin/hermes" ~/.local/bin/hermes
 ```bash
 scripts/run_tests.sh
 ```
+
+### Timing Bounds and Wall-Clock Assertions
+
+- **No wall-clock upper bounds in unit tests.** Never assert `elapsed < 0.5`, `await asyncio.sleep(...)` followed by a tight delta check, or any wall-clock upper bound under 2 seconds. CI runners (especially Windows / macOS shared runners) experience scheduling pauses of several seconds under load; tight bounds cause flaky failures.
+- **Floor vs. ceiling:** Testing that something did *not* block (e.g. non-blocking dispatch) should assert the action completed, a queue received the item, or an event was set — not that `time.perf_counter() - start < 0.05`. If a timeout is necessary, make the deadline generous (>= 2.0s) and test the *state change*, not the duration.
+- **Grandfathered bounds:** Pre-existing wall-clock bounds are grandfathered in `scripts/ci/timing_bounds_baseline.txt` and checked by `scripts/check_timing_bounds.py`. The ratchet only tightens: do not add new timing-dependent assertions.
+
+### Live Windows Process-Topology E2E (`wine2e` Lane)
+
+- `windows-venv-e2e.yml` runs real Windows integration tests (real virtualenv, real native binaries, real Windows processes, no mocked psutil) **only** on pushes to `wine2e/**` branches.
+- **Workflow:**
+  1. Write probes pinning correct behavior.
+  2. Push to a `wine2e/<topic>` branch to reproduce live on unfixed code in CI.
+  3. Implement the fix and iterate on the `wine2e/**` branch until green.
+  4. Merge the fix to your feature branch before opening or updating the PR against `main`.
+
 
 ## Code Style
 

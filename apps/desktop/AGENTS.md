@@ -236,3 +236,12 @@ disagree about whether the notice was shown. Sign-in goes through the existing
 connector transfer and reports `reason`, `account_email` and `model` on completion; every entry
 point (Billing, status chip, ready screen) opens the one free-tier sign-in dialog. Never branch on
 provider display names: the picker row carries `free_tier_row`, status cards carry `free_tier`.
+
+## TypeScript Style Rules
+
+- **Use TypeScript everywhere:** No new `.js` files; type annotations on all exports.
+- **State and stores:** Small nanostores over component state when state is shared or read by distant UI; each feature owns its atoms (chat near chat, shared in `src/store`); rendering components use `useStore`, non-rendering actions read `$atom.get()`; never thread state through three components when the leaf can subscribe; persistence sits beside the atom that owns it.
+- **Thin routes & colocated actions:** Route roots stay thin (compose routes + shell, never controllers). No monolithic hooks — one narrow job each; colocated action modules over god hooks.
+- **Terse callbacks:** Pure side-effect callbacks use the terse void form `onState={st => void setGatewayState(st)}`; async handlers make intent explicit `onClick={() => void save()}`.
+- **Types & shapes:** Interfaces for public props and shared object shapes (not `type X = {...}`); extend React primitives (`React.ComponentProps<'button'>`, `Omit`, `Pick`). Table-driven beats condition ladders for ids/routes/views.
+- **Code placement:** `src/app` owns routes/pages, `src/store` shared atoms, `src/lib` pure helpers.

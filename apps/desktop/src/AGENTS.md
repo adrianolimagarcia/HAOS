@@ -1,7 +1,7 @@
 # apps/desktop/src/ — backend contract, slash palette, Bot Mode
 
 Applies on top of `apps/desktop/AGENTS.md` (the judgment guide) and the root `AGENTS.md`.
-Root TypeScript style rules apply.
+TypeScript style rules live in `apps/desktop/AGENTS.md` § TypeScript Style Rules.
 
 ## The desktop is its own chat surface on a `hermes serve` backend
 
