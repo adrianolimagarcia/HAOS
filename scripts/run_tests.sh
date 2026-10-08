@@ -33,12 +33,28 @@
 
 set -euo pipefail
 
-# ── Locate repo root ────────────────────────────────────────────────────────
+# ── Locate repo root and main checkout ──────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+MAIN_REPO_ROOT=""
+if command -v git >/dev/null 2>&1; then
+  GIT_COMMON_DIR="$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$GIT_COMMON_DIR" ]; then
+    # In a worktree, --git-common-dir points to <main-checkout>/.git (or bare repo)
+    GIT_COMMON_ABS="$(cd "$REPO_ROOT" && cd "$GIT_COMMON_DIR" 2>/dev/null && pwd || true)"
+    if [ -n "$GIT_COMMON_ABS" ]; then
+      case "$GIT_COMMON_ABS" in
+        */.git) MAIN_REPO_ROOT="$(dirname "$GIT_COMMON_ABS")" ;;
+        *) MAIN_REPO_ROOT="$GIT_COMMON_ABS" ;;
+      esac
+    fi
+  fi
+fi
+
 # ── Locate python ───────────────────────────────────────────────────────────
-# Probe local venvs first; fall back to the Nix devShell's editable venv
+# Probe local venvs first; fall back to main checkout venv, then release venv,
+# then Nix devShell's editable venv
 # (HERMES_PYTHON is exported by the devShell hook and ships [dev] extras:
 # pytest, pytest-asyncio, pytest-timeout, ruff, ty).
 #
@@ -51,7 +67,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV=""
 VENV_PYTHON=""
 SKIPPED_VENVS=""
-for candidate in "$REPO_ROOT/.venv" "$REPO_ROOT/venv" "$HOME/.hermes/hermes-agent/venv"; do
+
+CANDIDATES=("$REPO_ROOT/.venv" "$REPO_ROOT/venv")
+if [ -n "$MAIN_REPO_ROOT" ] && [ "$MAIN_REPO_ROOT" != "$REPO_ROOT" ]; then
+  CANDIDATES+=("$MAIN_REPO_ROOT/.venv" "$MAIN_REPO_ROOT/venv")
+fi
+CANDIDATES+=("$HOME/.hermes/hermes-agent/venv")
+
+for candidate in "${CANDIDATES[@]}"; do
   if [ -f "$candidate/bin/activate" ]; then
     if "$candidate/bin/python" -c 'import pytest' 2>/dev/null; then
       VENV="$candidate"
@@ -90,8 +113,10 @@ elif [ -n "${HERMES_PYTHON:-}" ] && [ -x "$HERMES_PYTHON" ] \
   PYTHON="$HERMES_PYTHON"
   echo "▶ no local venv — using Nix dev venv via HERMES_PYTHON: $PYTHON"
 else
-  echo "error: no virtualenv with pytest found in $REPO_ROOT/.venv or $REPO_ROOT/venv," >&2
-  echo "       and HERMES_PYTHON is not a python with pytest (enter the Nix devShell or create a venv)" >&2
+  CANDIDATES_STR="${CANDIDATES[*]}"
+  echo "error: no virtualenv with pytest found in probed locations:" >&2
+  echo "       $CANDIDATES_STR" >&2
+  echo "       and HERMES_PYTHON (${HERMES_PYTHON:-unset}) is not a python with pytest (enter the Nix devShell, set HERMES_PYTHON, or create a venv)" >&2
   if [ -n "$SKIPPED_VENVS" ]; then
     echo "       (skipped for missing pytest:$SKIPPED_VENVS — install dev extras there, or create $REPO_ROOT/.venv)" >&2
   fi
