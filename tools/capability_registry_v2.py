@@ -7,6 +7,7 @@ an authorized operation has no registered v2 executor.
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import re
 import threading
@@ -312,22 +313,56 @@ def _matches_type(value: Any, expected: Any) -> bool:
     return types.get(expected, lambda _v: False)(value)
 
 
-def _run_with_timeout(handler: Callable[..., Any], args: dict, timeout: int) -> Any:
-    """Run handlers in a daemon worker; timeout returns promptly without blocking shutdown."""
-    result: list[Any] = []
-    failure: list[BaseException] = []
-    done = threading.Event()
-    def invoke() -> None:
-        try:
-            result.append(handler(args))
-        except BaseException as exc:
-            failure.append(exc)
-        finally:
-            done.set()
-    worker = threading.Thread(target=invoke, daemon=True)
-    worker.start()
-    if not done.wait(timeout):
-        raise TimeoutError
-    if failure:
-        raise failure[0]
-    return result[0] if result else None
+def _run_with_timeout(handler: Callable[..., Any], args: dict, timeout: int | float) -> Any:
+    """Run handlers with an active termination guard to prevent zombie worker side effects."""
+    try:
+        ctx = multiprocessing.get_context("fork")
+        q = ctx.Queue()
+
+        def worker_target() -> None:
+            try:
+                res = handler(args)
+                q.put(("ok", res))
+            except BaseException as exc:
+                q.put(("err", exc))
+
+        proc = ctx.Process(target=worker_target)
+        proc.start()
+        proc.join(timeout)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(0.05)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(0.05)
+            proc.close()
+            raise TimeoutError("Operation timed out and worker process was terminated")
+
+        if not q.empty():
+            status, payload = q.get_nowait()
+        else:
+            status, payload = ("err", RuntimeError("Worker process exited without returning a result"))
+        proc.close()
+        if status == "err":
+            raise payload
+        return payload
+    except (ValueError, AttributeError):
+        result: list[Any] = []
+        failure: list[BaseException] = []
+        done = threading.Event()
+
+        def invoke() -> None:
+            try:
+                result.append(handler(args))
+            except BaseException as exc:
+                failure.append(exc)
+            finally:
+                done.set()
+
+        worker = threading.Thread(target=invoke, daemon=True)
+        worker.start()
+        if not done.wait(timeout):
+            raise TimeoutError
+        if failure:
+            raise failure[0]
+        return result[0] if result else None

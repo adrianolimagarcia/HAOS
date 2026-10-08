@@ -291,3 +291,26 @@ def test_auth_role_spoofing_fail_closed():
     assert res["trace"]["caller_role"] == "admin"
 
 
+def test_timeout_worker_active_termination_no_residual_side_effects(tmp_path):
+    import time
+    marker_file = tmp_path / "zombie_marker.txt"
+
+    def slow_mutating_worker(args):
+        time.sleep(0.4)
+        marker_file.write_text("zombie_executed")
+        return {"status": "ok"}
+
+    registry = CapabilityRegistryV2()
+    # Registra com timeout de 1 segundo, mas vamos testar diretamente o _run_with_timeout com timeout curto
+    from tools.capability_registry_v2 import _run_with_timeout
+
+    with pytest.raises(TimeoutError):
+        _run_with_timeout(slow_mutating_worker, {}, 0.1)
+
+    # Espera tempo suficiente para o worker ter executado se ainda estivesse vivo
+    time.sleep(0.5)
+
+    # O arquivo NÃO deve existir porque o worker foi terminado ativamente pelo SO
+    assert not marker_file.exists(), "Worker zumbi continuou vivo após o timeout e executou mutação!"
+
+
