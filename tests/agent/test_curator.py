@@ -172,6 +172,24 @@ def _backdate(u, name: str, days: int, *, use_count: int = 1):
 
 
 
+def test_candidate_list_excludes_user_owned_and_bundled_skills(curator_env):
+    """The review plan must not offer skills rejected by the mutation guard."""
+    c, u = curator_env["curator"], curator_env["usage"]
+    skills = curator_env["home"] / "skills"
+    _write_skill(skills, "managed")
+    _write_skill(skills, "user-owned")
+    _write_skill(skills, "bundled")
+    u.mark_agent_created("managed")
+    u.load_usage().setdefault("user-owned", {})
+    (skills / ".bundled_manifest").write_text("bundled:hash\\n", encoding="utf-8")
+
+    listing = c._render_candidate_list()
+
+    assert "- managed " in listing
+    assert "user-owned" not in listing
+    assert "bundled" not in listing
+
+
 def test_candidate_list_marks_cron_referenced_skills(curator_env, monkeypatch):
     """The LLM review candidate list flags cron-referenced skills so the
     review pass knows not to prune them."""
