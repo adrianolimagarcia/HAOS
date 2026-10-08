@@ -28,8 +28,19 @@ from typing import Iterable
 # name/prefix instead of grepping declare lines (see below / issue #71296).
 _SNAPSHOT_EXCLUDED_ENV_REGEX = (
     "^declare -x (HERMES_SESSION_|HERMES_UI_SESSION_ID|HERMES_CRON_AUTO_DELIVER_|"
-    "HERMES_CRON_SESSION|HERMES_BROWSER_CONTROL_)")
+    "HERMES_CRON_SESSION|HERMES_BROWSER_CONTROL_|HERMES_DELEGATED_CHILD_CONTEXT|"
+    "HERMES_KANBAN_TASK|HERMES_KANBAN_RUN_ID|HERMES_KANBAN_CLAIM_LOCK)")
 _SHELL_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Process/task-level markers that belong only to specific execution contexts (e.g. subagent
+# delegation or Kanban worker claiming) and must NEVER leak into or persist across shared terminal
+# snapshots. Handled with save/restore around snapshot sourcing and excluded on dump.
+_SNAPSHOT_TRANSIENT_ENV_NAMES: tuple[str, ...] = (
+    "HERMES_DELEGATED_CHILD_CONTEXT",
+    "HERMES_KANBAN_TASK",
+    "HERMES_KANBAN_RUN_ID",
+    "HERMES_KANBAN_CLAIM_LOCK",
+)
 
 # mktemp template suffix + the shell variable holding the allocated temp path.
 _SNAP_TMP_SUFFIX = ".tmp.XXXXXXXXXX"
@@ -63,7 +74,7 @@ def _export_dump_excluding_session_vars(tmp_path: str, excluded_names: Iterable[
     # ${!PREFIX*} is bash 3.2+ name-prefix expansion; empty matches are ignored
     # under 2>/dev/null. Caller names are quoted so malformed config can never
     # become shell syntax (valid names stay unquoted by shlex.quote()).
-    safe_names = {name for name in excluded_names if isinstance(name, str) and name}
+    safe_names = {name for name in (*excluded_names, *_SNAPSHOT_TRANSIENT_ENV_NAMES) if isinstance(name, str) and name}
     extra_unset = "".join(f" {shlex.quote(name)}" for name in sorted(safe_names))
     return (
         "{ ( unset ${!HERMES_SESSION_*} ${!HERMES_CRON_AUTO_DELIVER_*} "
@@ -134,7 +145,8 @@ def _wrap_command_script(
     changing the command's umask.
     """
     escaped = command.replace("'", "'\\''")
-    save, restore = _passthrough_save_restore(passthrough_names)
+    all_passthrough = tuple(dict.fromkeys((*passthrough_names, *_SNAPSHOT_TRANSIENT_ENV_NAMES)))
+    save, restore = _passthrough_save_restore(all_passthrough)
     parts = list(save)
     if snapshot_ready:
         parts.append(f"source {quoted_snap} >/dev/null 2>&1 || true")
@@ -150,7 +162,7 @@ def _wrap_command_script(
     if snapshot_ready:
         parts.append(
             f"__hermes_snap_tmp=$(mktemp {snap_tmp_template}) && "
-            f"{{ {_export_dump_excluding_session_vars(_SNAP_TMP, passthrough_names)} "
+            f"{{ {_export_dump_excluding_session_vars(_SNAP_TMP, all_passthrough)} "
             f"&& mv -f {_SNAP_TMP} {quoted_snap}; }} "
             f"2>/dev/null || rm -f {_SNAP_TMP} 2>/dev/null || true")
     parts += [_cwd_marker_printf(cwd_marker), "exit $__hermes_ec"]
