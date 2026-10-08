@@ -1888,6 +1888,12 @@ DEFAULT_CONFIG = {
         "rust_selector_binary": "",
         # Timeout budget (seconds) for read-only candidate query to haos-edge.
         "rust_selector_timeout_seconds": 2.0,
+        # Atomic task claim and lease fencing via Rust haos-edge ("off", "rust").
+        "rust_claim": "off",
+        # Explicit path to haos-edge executable for claims; empty = canonical system/distro search only.
+        "rust_claim_binary": "",
+        # Timeout budget (seconds) for atomic claim and lease operations in haos-edge.
+        "rust_claim_timeout_seconds": 5.0,
     },
     # Bot Mode cross-connection relay (tools/bot_relay.py): envelopes queued by message_agent for
     # agents on other connections wait in an on-disk outbox until the Desktop drains them.
