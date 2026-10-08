@@ -26,6 +26,12 @@ from hermes_cli import kanban_rust_selector as krs
 
 
 @pytest.fixture
+def all_assignees_spawnable(monkeypatch):
+    from hermes_cli import profiles
+    monkeypatch.setattr(profiles, "profile_exists", lambda name: True)
+
+
+@pytest.fixture
 def kanban_env(tmp_path, monkeypatch):
     """Isolated HERMES_HOME and temporary Kanban database."""
     home = tmp_path / ".hermes"
