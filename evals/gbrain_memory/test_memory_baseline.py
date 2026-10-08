@@ -75,15 +75,18 @@ def test_observed_at_gap_verification():
 
 
 def test_render_freshness_gap_verification():
-    """Verifica evidência de código do GAP-03: _render() formata sem metadados de frescor ou ressalvas."""
+    """Invariante pós-Etapa 3 (fecha GAP-03): _render() formata com metadados de frescor e ressalvas.
+
+    Era detector de lacuna na Etapa 0 (afirmava ausência de frescor); virou contrato de
+    presença quando a Etapa 3 implementou observed e expired-soon.
+    """
     from hermes.platform.context.memory.retrieval import HybridMemoryRetriever
 
     retriever_src = inspect.getsource(HybridMemoryRetriever._render)
-    assert '[memory:%s scope=%s provenance=%s]' in retriever_src
-    # Confirma que não há injeção de data, validade ou confiança
-    assert "recente" not in retriever_src
-    assert "valid_until" not in retriever_src
-    assert "confidence" not in retriever_src
+    assert "observed=" in retriever_src
+    assert "expired-soon" in retriever_src
+    assert "valid_until" in retriever_src
+
 
 
 def test_dream_cursor_gap_verification():

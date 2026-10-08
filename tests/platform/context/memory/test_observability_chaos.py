@@ -117,12 +117,12 @@ def test_channel_hits_and_acl_drops_are_distinguishable_from_an_empty_store(tmp_
         assert metrics.counter("channel_hits.fts") >= 1
         assert metrics.counter("channel_hits.vector") >= 1
 
-        # Bob shares no scope with Alice: his query returns nothing AND the drop is
-        # recorded, so this is not confusable with "the store is empty".
+        # Bob shares no scope with Alice: his query returns no facts (empty canonical notice)
+        # AND the drop is recorded, so this is not confusable with "the store is empty".
         bob = MemoryAccessContext("bob", frozenset({"team-b"}), frozenset({"project-b"}))
         provider.initialize(session_id="bob", memory_access_context=bob)
         before = metrics.counter("dropped_by_acl")
-        assert provider.prefetch("projections derived state", session_id="bob") == ""
+        assert provider.prefetch("projections derived state", session_id="bob") == "[nenhuma memória canônica encontrada para esta consulta]"
         assert metrics.counter("dropped_by_acl") > before
     finally:
         coordinator.close()

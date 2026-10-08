@@ -150,9 +150,12 @@ class HermesFabricMemoryProvider(MemoryProvider):
         if self.metrics is not None:
             self.metrics.increment("prefetch.canonical_reader")
         try:
-            return HybridMemoryRetriever(self.canonical_store, vector, self.metrics).format_context(
+            rendered = HybridMemoryRetriever(self.canonical_store, vector, self.metrics).format_context(
                 query, scopes, limit=5, budget_chars=5000, access=access,
             )
+            if not rendered and bool(query and query.strip()):
+                return "[nenhuma memória canônica encontrada para esta consulta]"
+            return rendered
         except Exception:  # noqa: BLE001
             # A dead or locked journal must not break the turn: recall degrades to
             # nothing and the failure is counted, rather than propagating.

@@ -5,6 +5,7 @@ the sole promptable payload, which prevents a stale or over-broad projection
 from bypassing scope and supersession policy.
 """
 from __future__ import annotations
+import datetime
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -69,7 +70,7 @@ class HybridMemoryRetriever:
         if not scopes or limit <= 0 or budget_chars <= 0:
             return []
         # FTS is both a candidate channel and the authority filter.
-        fts = self.store.search_fts(query, scopes, max(20, limit * 4))
+        fts = self.store.search_fts(query, scopes, max(20, limit * 4), now=reference)
         if access is not None:
             authorized = [record for record in fts if access.can_read(record.scope, record.metadata)]
             self._count("dropped_by_acl", len(fts) - len(authorized))
@@ -85,7 +86,7 @@ class HybridMemoryRetriever:
             # Contract: vector search returns canonical record IDs only. Resolve
             # every ID again through the journal before emitting any content.
             vector_ids = tuple(self.vector_search(query, scopes, max(20, limit * 4)))
-            resolved = self.store.active_by_ids(vector_ids, scopes)
+            resolved = self.store.active_by_ids(vector_ids, scopes, now=reference)
             if access is not None:
                 authorized = [record for record in resolved if access.can_read(record.scope, record.metadata)]
                 self._count("dropped_by_acl", len(resolved) - len(authorized))
@@ -148,7 +149,29 @@ class HybridMemoryRetriever:
         hits = self.retrieve(query, allowed_scopes, limit, budget_chars, access, now=now)
         if not hits:
             return ""
-        blocks = [self._render(hit) for hit in hits]
+
+        # Detecção de conflitos entre os hits recuperados (query barata em memória/store via detect_conflicts)
+        from hermes.platform.context.memory.candidate import MemoryCandidate
+        from hermes.platform.context.memory.consolidation import MemoryConsolidator
+        consolidator = MemoryConsolidator()
+        conflicts_map: Dict[str, List[str]] = {}
+        for i, hit_a in enumerate(hits):
+            cand = MemoryCandidate(
+                id=hit_a.record.record_id,
+                fact=hit_a.record.content,
+            )
+            other_items = [
+                {"id": hit_b.record.record_id, "content": hit_b.record.content}
+                for j, hit_b in enumerate(hits)
+                if i != j
+            ]
+            conflict = consolidator.detect_conflicts(cand, other_items)
+            if conflict and conflict.get("conflicting_item_id"):
+                conf_id = str(conflict["conflicting_item_id"])
+                conflicts_map.setdefault(hit_a.record.record_id, []).append(conf_id)
+                conflicts_map.setdefault(conf_id, []).append(hit_a.record.record_id)
+
+        blocks = [self._render(hit, now=now, conflict_ids=conflicts_map.get(hit.record.record_id)) for hit in hits]
         # Never return nothing for a budget that is merely small: the floor shrinks with it.
         floor = min(_MIN_BLOCK_CHARS, budget_chars)
         rendered: List[str] = []
@@ -170,7 +193,36 @@ class HybridMemoryRetriever:
         return "\n\n".join(rendered)
 
     @staticmethod
-    def _render(hit: RetrievalHit) -> str:
+    def _render(hit: RetrievalHit, now: Optional[float] = None, conflict_ids: Optional[Sequence[str]] = None) -> str:
         rec = hit.record
         provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
-        return "[memory:%s scope=%s provenance=%s]\n%s" % (rec.record_id, rec.scope, provenance or "unknown", rec.content)
+        
+        # Freshness / temporal metadata
+        # Se observed_at for None ou for idêntico a valid_from (legado sem observed_at explícito),
+        # ou se explicitamente None, exibe 'freshness unknown' ou a data correspondente.
+        # Mas para suportar dados legados onde observed_at era fallback para valid_from:
+        if rec.observed_at is not None:
+            # Data ISO curta: YYYY-MM-DD
+            dt = datetime.datetime.fromtimestamp(rec.observed_at, tz=datetime.timezone.utc)
+            observed_str = dt.strftime("%Y-%m-%d")
+        else:
+            observed_str = "freshness unknown"
+        
+        flags: List[str] = []
+        ref_time = time.time() if now is None else now
+        if rec.valid_until is not None:
+            remaining = rec.valid_until - ref_time
+            if 0 <= remaining < 7 * 86400:
+                flags.append("expired-soon")
+        
+        flags_str = (" " + " ".join(flags)) if flags else ""
+        conflict_str = (" [conflict: %s]" % ", ".join(sorted(conflict_ids))) if conflict_ids else ""
+        return "[memory:%s scope=%s observed=%s provenance=%s%s%s]\n%s" % (
+            rec.record_id,
+            rec.scope,
+            observed_str,
+            provenance or "unknown",
+            flags_str,
+            conflict_str,
+            rec.content,
+        )
