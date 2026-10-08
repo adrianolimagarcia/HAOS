@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-10-08T20:42:02Z",
+  "token_footprint": {
+    "v1_char_count": 66334,
+    "v1_estimated_tokens": 17456,
+    "v2_compact_char_count": 30125,
+    "v2_compact_estimated_tokens": 7928,
+    "token_reduction_pct": 54.59
+  },
+  "search_performance": {
+    "iterations": 10000,
+    "avg_latency_us": 318.03,
+    "p50_latency_us": 308.05,
+    "p95_latency_us": 379.01,
+    "p99_latency_us": 439.89,
+    "ops_per_sec": 3144.4
+  },
+  "validation_performance": {
+    "iterations": 10000,
+    "avg_latency_us": 3.18,
+    "p50_latency_us": 4.01,
+    "p95_latency_us": 4.36,
+    "p99_latency_us": 19.43,
+    "ops_per_sec": 314509.4
+  }
+}
