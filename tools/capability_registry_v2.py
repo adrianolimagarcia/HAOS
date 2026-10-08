@@ -44,6 +44,18 @@ class CapabilityRegistryV2:
     def register(self, operation: CapabilityOperation, handler: Callable[..., Any] | None = None) -> None:
         if not isinstance(operation, CapabilityOperation) or not operation.id:
             raise ValueError("operation must be a CapabilityOperation with a non-empty id")
+        if not isinstance(operation.tool_ref, str) or not operation.tool_ref.strip():
+            raise ValueError("operation must have a valid non-empty tool_ref")
+        if not isinstance(operation.name, str) or not operation.name.strip():
+            raise ValueError("operation must have a valid non-empty name")
+        if not isinstance(operation.parameters_schema, dict):
+            raise ValueError("operation parameters_schema must be a dictionary")
+        if not isinstance(operation.roles, list):
+            raise ValueError("operation roles must be a list of strings")
+        if operation.risk_level not in {"low", "medium", "high", "critical", "unknown"}:
+            raise ValueError(f"operation risk_level '{operation.risk_level}' is invalid")
+        if operation.cost_tier not in {"free", "low", "medium", "high", "enterprise"}:
+            raise ValueError(f"operation cost_tier '{operation.cost_tier}' is invalid")
         with self._lock:
             self._operations[operation.id] = operation
             if handler is not None:
@@ -82,39 +94,58 @@ class CapabilityRegistryV2:
         scored.sort(key=lambda item: (-item[0], -item[1], item[2]))
         return [item[3] for item in scored[:limit]]
 
+    def get_audit_traces(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [dict(t) for t in self.audit_traces]
+
+    def clear_audit_traces(self) -> None:
+        with self._lock:
+            self.audit_traces.clear()
+
     def execute(self, op_id: str, args: dict, caller_role: str = "default", caller_profile: str = "default", fallback_handler=None) -> dict:
         started = time.monotonic()
         op = self.get_operation(op_id)
         risk = op.risk_level if op else "unknown"
         try:
             if op is None:
-                return self._failure(404, "operation_not_found", "Unknown operation", op_id, started, risk)
+                return self._failure(404, "operation_not_found", "Unknown operation", op_id, started, risk, caller_role, caller_profile)
+            if not isinstance(caller_role, str) or not caller_role.strip():
+                return self._failure(403, "forbidden", "Caller role is invalid", op_id, started, risk, caller_role, caller_profile)
             if caller_role not in op.roles:
-                return self._failure(403, "forbidden", "Caller role is not permitted", op_id, started, risk)
+                return self._failure(403, "forbidden", "Caller role is not permitted", op_id, started, risk, caller_role, caller_profile)
             if not isinstance(args, dict):
-                return self._failure(400, "invalid_arguments", "Arguments must be an object", op_id, started, risk)
+                return self._failure(400, "invalid_arguments", "Arguments must be an object", op_id, started, risk, caller_role, caller_profile)
             error = _validate_args(op.parameters_schema, args)
             if error:
-                return self._failure(400, "invalid_arguments", error, op_id, started, risk)
+                return self._failure(400, "invalid_arguments", error, op_id, started, risk, caller_role, caller_profile)
             if not op.read_only and caller_role in {"default", "restricted", "read_only"}:
-                return self._failure(403, "read_only_enforced", "Mutating operation is not permitted for a restricted caller", op_id, started, risk)
+                return self._failure(403, "read_only_enforced", "Mutating operation is not permitted for a restricted caller", op_id, started, risk, caller_role, caller_profile)
             with self._lock:
                 handler = self._handlers.get(op_id)
             handler = handler or fallback_handler
             if handler is None:
-                return self._failure(501, "handler_unavailable", "No handler is registered", op_id, started, risk)
+                return self._failure(501, "handler_unavailable", "No handler is registered", op_id, started, risk, caller_role, caller_profile)
             result = _run_with_timeout(handler, args, max(1, op.timeout_seconds))
-            return self._record({"ok": True, "result": result}, op_id, started, "allow", risk)
+            return self._record({"ok": True, "result": result}, op_id, started, "allow", risk, caller_role, caller_profile, 200)
         except TimeoutError:
-            return self._failure(504, "timeout", "Operation timed out", op_id, started, risk)
+            return self._failure(504, "timeout", "Operation timed out", op_id, started, risk, caller_role, caller_profile)
         except Exception as exc:
-            return self._failure(500, "execution_error", str(exc)[:300], op_id, started, risk)
+            return self._failure(500, "execution_error", str(exc)[:300], op_id, started, risk, caller_role, caller_profile)
 
-    def _failure(self, status: int, code: str, message: str, op_id: str, started: float, risk: str) -> dict:
-        return self._record({"ok": False, "error": {"status": status, "code": code, "message": message}}, op_id, started, "deny" if status < 500 else "error", risk)
+    def _failure(self, status: int, code: str, message: str, op_id: str, started: float, risk: str, caller_role: str = "default", caller_profile: str = "default") -> dict:
+        return self._record({"ok": False, "error": {"status": status, "code": code, "message": message}}, op_id, started, "deny" if status < 500 else "error", risk, caller_role, caller_profile, status)
 
-    def _record(self, response: dict, op_id: str, started: float, verdict: str, risk: str) -> dict:
-        trace = {"op_id": op_id, "timestamp": datetime.now(timezone.utc).isoformat(), "duration_ms": max(0, round((time.monotonic() - started) * 1000)), "verdict": verdict, "risk": risk}
+    def _record(self, response: dict, op_id: str, started: float, verdict: str, risk: str, caller_role: str = "default", caller_profile: str = "default", status: int = 200) -> dict:
+        trace = {
+            "op_id": op_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "duration_ms": max(0, round((time.monotonic() - started) * 1000)),
+            "verdict": verdict,
+            "status": status,
+            "risk": risk,
+            "caller_role": caller_role,
+            "caller_profile": caller_profile,
+        }
         with self._lock:
             self.audit_traces.append(trace)
         response["trace"] = trace
@@ -176,6 +207,16 @@ def _validate_args(schema: dict, args: dict) -> str | None:
         expected = detail.get("type")
         if not _matches_type(value, expected):
             return f"Argument {key} must be {expected}"
+        # Validate nested objects and array items if schema defines them
+        if expected == "object" and isinstance(value, dict) and "properties" in detail:
+            nested_err = _validate_args(detail, value)
+            if nested_err:
+                return f"Argument {key}.{nested_err}"
+        elif expected == "array" and isinstance(value, list) and "items" in detail and isinstance(detail["items"], dict):
+            item_expected = detail["items"].get("type")
+            for idx, item_val in enumerate(value):
+                if not _matches_type(item_val, item_expected):
+                    return f"Argument {key}[{idx}] must be {item_expected}"
     return None
 
 
