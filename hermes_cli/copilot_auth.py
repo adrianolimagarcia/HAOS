@@ -36,23 +36,62 @@ _DEVICE_CODE_POLL_INTERVAL = 5  # seconds
 _DEVICE_CODE_POLL_SAFETY_MARGIN = 3  # seconds
 
 
+def _token_fingerprint(raw_token: str) -> str:
+    """Short fingerprint of a raw token for cache keying (avoids storing full token)."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()[:16]
+
+
+# Negative cache for invalid tokens: maps token fingerprint -> (is_valid: bool, error_message: str).
+# Prevents repeated regex/prefix checks and redundant warning log spam for known-bad tokens.
+_validation_cache: dict[str, tuple[bool, str]] = {}
+# Tracks fingerprints for which an invalid-token warning has already been emitted.
+# Ensures warnings are logged at most once per token.
+_warned_invalid_token_fps: set[str] = set()
+
+
+def _invalidate_token_validation_cache() -> None:
+    """Reset the token validation cache and warning history (for tests and token rotation)."""
+    global _validation_cache, _warned_invalid_token_fps
+    _validation_cache.clear()
+    _warned_invalid_token_fps.clear()
+
+
 def validate_copilot_token(token: str) -> tuple[bool, str]:
     """Validate that a token is usable with the Copilot API."""
     token = token.strip()
     if not token:
         return False, "Empty token"
+    fp = _token_fingerprint(token)
+    cached = _validation_cache.get(fp)
+    if cached is not None:
+        return cached
+
     if token.startswith(_CLASSIC_PAT_PREFIX):
-        return False, (
+        res = (False, (
             "Classic Personal Access Tokens (ghp_*) are not supported by the " +
             "Copilot API. Use one of:\n" +
             "  → `copilot login` or `" + product_command("model") + "` to authenticate via OAuth\n" +
             "  → A fine-grained PAT (github_pat_*) with Copilot Requests permission\n" +
-            "  → `gh auth login` with the default device code flow (produces gho_* tokens)")
+            "  → `gh auth login` with the default device code flow (produces gho_* tokens)"))
+        _validation_cache[fp] = res
+        return res
     if not token.startswith(_SUPPORTED_PREFIXES):
-        return False, (
+        res = (False, (
             "Unsupported GitHub token format for the Copilot API. "
-            f"Supported token prefixes: {', '.join(_SUPPORTED_PREFIXES)}.")
-    return True, "OK"
+            f"Supported token prefixes: {', '.join(_SUPPORTED_PREFIXES)}."))
+        _validation_cache[fp] = res
+        return res
+    res = (True, "OK")
+    _validation_cache[fp] = res
+    return res
+
+
+def _maybe_warn_invalid_token(env_var: str, token: str, msg: str) -> None:
+    """Emit a warning for an invalid token at most once per token fingerprint."""
+    fp = _token_fingerprint(token)
+    if fp not in _warned_invalid_token_fps:
+        _warned_invalid_token_fps.add(fp)
+        logger.warning("Token from %s is not supported: %s", env_var, msg)
 
 
 def resolve_copilot_token() -> tuple[str, str]:
@@ -69,7 +108,7 @@ def resolve_copilot_token() -> tuple[str, str]:
         valid, msg = validate_copilot_token(val)
         if valid:
             return val, env_var
-        logger.warning("Token from %s is not supported: %s", env_var, msg)
+        _maybe_warn_invalid_token(env_var, val, msg)
     # `gh auth token` fallback ONLY when no Copilot env var was set: an exported GITHUB_TOKEN
     # (even a classic PAT) means the user intends *that* token; skipping also avoids a slow
     # subprocess (up to 5s on Windows) on every cold start.
@@ -250,11 +289,6 @@ _EXCHANGE_FAILURE_TTL_PERMANENT_SECONDS = 1800.0   # 401/403/404: won't heal
 _EXCHANGE_PERMANENT_HTTP_STATUSES = frozenset({401, 403, 404})
 
 
-def _token_fingerprint(raw_token: str) -> str:
-    """Short fingerprint of a raw token for cache keying (avoids storing full token)."""
-    return hashlib.sha256(raw_token.encode()).hexdigest()[:16]
-
-
 def _read_jwt_store(path: Path) -> Optional[dict]:
     """Bounded read of the on-disk JWT store → dict, or None if missing/unusable (a store over
     the 1 MiB cap or non-dict can't balloon memory or get rewritten back out)."""
@@ -300,8 +334,10 @@ def evict_cached_exchanged_token(raw_token: str) -> None:
         return
     fp = _token_fingerprint(raw_token)
     _jwt_cache.pop(fp, None)
-    # Eviction = "force a fresh exchange": the negative-cache entry must go too.
+    # Eviction = "force a fresh exchange": negative-cache entries must go too.
     _exchange_failure_cache.pop(fp, None)
+    _validation_cache.pop(fp, None)
+    _warned_invalid_token_fps.discard(fp)
 
     def _evict(path, store):
         if store is not None and fp in store:

@@ -139,6 +139,87 @@ class TestGhCliTokenCache:
         self._reset()
 
 
+class TestTokenNegativeCacheAndWarning:
+    """Negative cache per token fingerprint and single warning per token."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        from hermes_cli.copilot_auth import _invalidate_token_validation_cache
+        _invalidate_token_validation_cache()
+        yield
+        _invalidate_token_validation_cache()
+
+    def test_negative_validation_cached_without_storing_raw_token(self):
+        from hermes_cli.copilot_auth import (
+            validate_copilot_token,
+            _validation_cache,
+            _token_fingerprint,
+        )
+        token = "ghp_secret_bad_token_123"
+        fp = _token_fingerprint(token)
+
+        valid, msg = validate_copilot_token(token)
+        assert valid is False
+        assert "Classic Personal Access Tokens" in msg
+
+        # Fingerprint is used as key, raw token is never stored in cache
+        assert fp in _validation_cache
+        assert token not in _validation_cache
+        assert _validation_cache[fp] == (valid, msg)
+
+        # Subsequent call returns cached result
+        valid2, msg2 = validate_copilot_token(token)
+        assert (valid2, msg2) == (valid, msg)
+
+    def test_warning_emitted_once_per_token_in_resolve(self, monkeypatch, caplog):
+        import logging
+        from hermes_cli.copilot_auth import resolve_copilot_token
+
+        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "ghp_first_classic")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+        with caplog.at_level(logging.WARNING, logger="hermes_cli.copilot_auth"):
+            token1, src1 = resolve_copilot_token()
+            assert token1 == ""
+            assert src1 == ""
+            # First resolution logs warning
+            warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+            assert len(warnings) == 1
+            assert "Token from COPILOT_GITHUB_TOKEN is not supported" in warnings[0].message
+
+            # Second resolution with SAME token does not re-emit warning
+            token2, src2 = resolve_copilot_token()
+            assert token2 == ""
+            assert src2 == ""
+            warnings_after = [r for r in caplog.records if r.levelno == logging.WARNING]
+            assert len(warnings_after) == 1
+
+    def test_warning_re_emitted_when_token_changes(self, monkeypatch, caplog):
+        import logging
+        from hermes_cli.copilot_auth import resolve_copilot_token
+
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+        with caplog.at_level(logging.WARNING, logger="hermes_cli.copilot_auth"):
+            monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "ghp_first_classic")
+            resolve_copilot_token()
+            warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+            assert len(warnings) == 1
+
+            # Change token to another invalid one
+            monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "ghp_second_classic")
+            resolve_copilot_token()
+            warnings_after = [r for r in caplog.records if r.levelno == logging.WARNING]
+            assert len(warnings_after) == 2
+
+            # Calling again with second token does not emit a 3rd warning
+            resolve_copilot_token()
+            warnings_third = [r for r in caplog.records if r.levelno == logging.WARNING]
+            assert len(warnings_third) == 2
+
+
 class TestRequestHeaders:
     """Copilot API header generation."""
 
