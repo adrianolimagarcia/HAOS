@@ -106,4 +106,3 @@ def test_format_context_budget_respected_with_header_metadata(tmp_path):
     assert "[memory:" in ctx
     assert "observed=2026-" in ctx
     store.close()
-

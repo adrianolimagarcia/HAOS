@@ -355,7 +355,7 @@ def test_dream_dry_run_não_escreve_nada(tmp_path: Path, monkeypatch):
 
 def test_dream_delta_com_segredo_descarta_sessao_sem_staging_nem_projecao(tmp_path: Path, monkeypatch):
     """T3: segredo em mensagem posterior ao preview descarta a sessão inteira.
-    
+
     Garante ausência em staging, instintos, okf e projeções de mental model,
     mesmo que o preview inicial da sessão seja limpo.
     """
@@ -403,4 +403,3 @@ def test_dream_delta_com_segredo_descarta_sessao_sem_staging_nem_projecao(tmp_pa
         rows = cursor.execute("SELECT model_id FROM haos_mental_models").fetchall()
         conn.close()
         assert len(rows) == 0
-

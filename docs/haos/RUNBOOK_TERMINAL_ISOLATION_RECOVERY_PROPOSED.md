@@ -1,6 +1,6 @@
 # Runbook Proposto: Recuperação de Isolamento de Terminal da Sessão Pai Contaminada
 
-**Status:** PROPOSTO — NENHUM COMANDO EXECUTADO EM PRODUÇÃO.  
+**Status:** PROPOSTO — NENHUM COMANDO EXECUTADO EM PRODUÇÃO.
 Todos os comandos listados abaixo são estritamente para planejamento e execução controlada em janela futura de manutenção. Toda mutação requer aprovação prévia do operador/dono.
 
 ---

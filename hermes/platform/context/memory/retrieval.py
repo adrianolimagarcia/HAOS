@@ -196,7 +196,7 @@ class HybridMemoryRetriever:
     def _render(hit: RetrievalHit, now: Optional[float] = None, conflict_ids: Optional[Sequence[str]] = None) -> str:
         rec = hit.record
         provenance = ", ".join(str(p.get("uri", "")) for p in rec.provenance if p.get("uri"))
-        
+
         # Freshness / temporal metadata
         # Se observed_at for None ou for idêntico a valid_from (legado sem observed_at explícito),
         # ou se explicitamente None, exibe 'freshness unknown' ou a data correspondente.
@@ -207,14 +207,14 @@ class HybridMemoryRetriever:
             observed_str = dt.strftime("%Y-%m-%d")
         else:
             observed_str = "freshness unknown"
-        
+
         flags: List[str] = []
         ref_time = time.time() if now is None else now
         if rec.valid_until is not None:
             remaining = rec.valid_until - ref_time
             if 0 <= remaining < 7 * 86400:
                 flags.append("expired-soon")
-        
+
         flags_str = (" " + " ".join(flags)) if flags else ""
         conflict_str = (" [conflict: %s]" % ", ".join(sorted(conflict_ids))) if conflict_ids else ""
         return "[memory:%s scope=%s observed=%s provenance=%s%s%s]\n%s" % (

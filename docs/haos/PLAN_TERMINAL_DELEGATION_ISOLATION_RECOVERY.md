@@ -1,7 +1,7 @@
 # Plano verificável: corrigir isolamento do terminal e recuperar o pai
 
-**Status:** proposta operacional/técnica; não implementada nem implantada por este documento.  
-**Escopo:** corrigir vazamento de marcadores de delegação para snapshots bash persistidos, proteger a autoridade parent/child Kanban e restaurar com segurança a sessão pai já contaminada.  
+**Status:** proposta operacional/técnica; não implementada nem implantada por este documento.
+**Escopo:** corrigir vazamento de marcadores de delegação para snapshots bash persistidos, proteger a autoridade parent/child Kanban e restaurar com segurança a sessão pai já contaminada.
 **Restrições:** não executar limpeza/deploy, não remover guardas de autorização, não usar `env -u`, não alterar configs/runtime neste trabalho de planejamento.
 
 ## Objetivo e critérios de conclusão
