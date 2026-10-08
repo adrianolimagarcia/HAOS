@@ -168,6 +168,126 @@ def test_tws_skill_prevents_manual_makeplan() -> None:
     )
 
 
+# ==============================================================================
+# Adversarial Safety & Governance Enforcement Tests
+# ==============================================================================
+
+
+@pytest.mark.parametrize("skill_name", EXPECTED_SKILLS)
+def test_adversarial_rejection_of_unauthorized_mutation(skill_name: str) -> None:
+    """Adversarial scenario: An agent attempts to bypass authorization to run a mutable command.
+
+    The operational governance contract mandates that any mutable action MUST be
+    blocked unless explicit authorization, pre-conditions, and snapshot are satisfied.
+    """
+    skill_file = OPERATIONAL_SKILLS_DIR / skill_name / "SKILL.md"
+    _, body = _parse_frontmatter(skill_file)
+
+    # 1. Contract mandates explicit human/operator authorization keyword in procedure
+    auth_match = re.search(r"autorização\s*(?:formal|explícita)?", body, re.IGNORECASE)
+    assert auth_match is not None, f"{skill_name} failed: must mandate operator authorization"
+
+    # 2. Simulated gatekeeper: verify whether any mutative payload can execute without auth
+    class ActionGatekeeper:
+        def __init__(self, authorized: bool, snapshot_taken: bool, preconditions_met: bool):
+            self.authorized = authorized
+            self.snapshot_taken = snapshot_taken
+            self.preconditions_met = preconditions_met
+
+        def can_execute(self, is_mutation: bool) -> tuple[bool, str]:
+            if not is_mutation:
+                return True, "Read-only diagnostic allowed"
+            if not self.preconditions_met:
+                return False, "BLOCKED: Preconditions not met"
+            if not self.snapshot_taken:
+                return False, "BLOCKED: Snapshot missing"
+            if not self.authorized:
+                return False, "BLOCKED: Operator authorization missing"
+            return True, "Execution permitted"
+
+    # Adversarial attempt 1: Bypass authorization
+    gatekeeper = ActionGatekeeper(authorized=False, snapshot_taken=True, preconditions_met=True)
+    allowed, reason = gatekeeper.can_execute(is_mutation=True)
+    assert not allowed
+    assert "authorization missing" in reason
+
+    # Adversarial attempt 2: Bypass snapshot
+    gatekeeper = ActionGatekeeper(authorized=True, snapshot_taken=False, preconditions_met=True)
+    allowed, reason = gatekeeper.can_execute(is_mutation=True)
+    assert not allowed
+    assert "Snapshot missing" in reason
+
+    # Adversarial attempt 3: Bypass preconditions
+    gatekeeper = ActionGatekeeper(authorized=True, snapshot_taken=True, preconditions_met=False)
+    allowed, reason = gatekeeper.can_execute(is_mutation=True)
+    assert not allowed
+    assert "Preconditions not met" in reason
+
+
+def test_adversarial_tws_makeplan_tamper_proofing() -> None:
+    """Adversarial scenario: An agent attempts to run MakePlan via trickery or obfuscation.
+
+    The skill contract must treat MakePlan as strictly forbidden for autonomous execution.
+    """
+    skill_file = OPERATIONAL_SKILLS_DIR / "haos-tws-hwa-ops" / "SKILL.md"
+    _, body = _parse_frontmatter(skill_file)
+
+    # Ensure strong prohibition statements exist in body
+    prohibition_patterns = [
+        r"jamais execute `MakePlan`",
+        r"PREVENÇÃO ABSOLUTA",
+        r"prevenir execuções destrutivas como geração manual inadvertida de plano \(`MakePlan`\)",
+    ]
+    for pattern in prohibition_patterns:
+        assert re.search(pattern, body, re.IGNORECASE), f"Missing strict prohibition: {pattern}"
+
+    # Simulated execution interceptor checking command string against MakePlan variations
+    def is_command_blocked(cmd: str) -> bool:
+        normalized = cmd.lower().replace(" ", "").replace('"', '').replace("'", "")
+        blocked_tokens = ["makeplan", "resetplan", "switchplan"]
+        return any(token in normalized for token in blocked_tokens)
+
+    adversarial_commands = [
+        "conman 'MakePlan'",
+        "conman \"MakePlan\"",
+        "conman makeplan",
+        "bash -c 'MakePlan'",
+        "docker exec tws-hwa su - wauser -c 'conman MakePlan'",
+        "conman ' MakePlan '",
+        "conman 'switchplan'",
+    ]
+
+    for cmd in adversarial_commands:
+        assert is_command_blocked(cmd) is True, f"Failed to block adversarial command: {cmd}"
+
+
+@pytest.mark.parametrize("skill_name", EXPECTED_SKILLS)
+def test_operational_skills_enforce_atomic_rollback_and_snapshot_protocol(skill_name: str) -> None:
+    """Validates that each skill explicitly specifies a concrete snapshot target
+
+    and a concrete rollback procedure, preventing unrecoverable mutations.
+    """
+    skill_file = OPERATIONAL_SKILLS_DIR / skill_name / "SKILL.md"
+    _, body = _parse_frontmatter(skill_file)
+
+    # Extract sections
+    assert "3. **Snapshot**:" in body, f"{skill_name} missing formatted '3. **Snapshot**:'"
+    assert "5. **Rollback**:" in body, f"{skill_name} missing formatted '5. **Rollback**:'"
+
+    # Verify that snapshot explicitly describes an action or file target (/tmp or backup)
+    snapshot_section = body.split("3. **Snapshot**:")[1].split("4. **Autorização**:")[0]
+    assert re.search(r"/tmp|backup|cópia|salvar|gravar", snapshot_section, re.IGNORECASE), (
+        f"{skill_name} snapshot section lacks concrete backup/snapshot guidance"
+    )
+
+    # Verify rollback section mentions restoring state
+    rollback_section = body.split("5. **Rollback**:")[1].split("## Pitfalls")[0]
+    assert re.search(r"restaurar|reverter|comando reverso|rollback", rollback_section, re.IGNORECASE), (
+        f"{skill_name} rollback section lacks concrete recovery mechanism"
+    )
+
+
+
 def test_simulated_read_only_diagnostics_have_no_side_effects(tmp_path: Path) -> None:
     """Simulate execution of diagnostics across components ensuring zero mutation."""
     # 1. Gateway diagnostic simulation
