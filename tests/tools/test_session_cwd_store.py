@@ -49,6 +49,20 @@ class TestDualWriteSites:
         tt.register_task_env_overrides("acp-sess", {"cwd": "/proj/two"})
         assert tt.get_session_cwd("acp-sess") == "/proj/two"
 
+    def test_get_session_cwd_ignores_nonexistent_path(self, caplog):
+        """Ghost worktree / deleted path on disk is dropped with a warning."""
+        import logging
+        tt.record_session_cwd("ghost-sess", "/path/that/does/not/exist/anywhere")
+        with caplog.at_level(logging.WARNING):
+            resolved = tt._resolve_command_cwd(
+                workdir=None,
+                default_cwd="/tmp",
+                session_key="ghost-sess",
+                env_type="local",
+            )
+        assert resolved == "/tmp"
+        assert any("does not exist" in r.message for r in caplog.records)
+
 
 class TestPostCommandDualWrite:
     """The env's post-command cwd tracking must mirror into the session record."""
@@ -202,14 +216,16 @@ class TestReapedEnvFallbackIsFillOnly:
 class TestCommandCwdReadsTheRecord:
     """_resolve_command_cwd: workdir > session record > default. Nothing else."""
 
-    def test_record_beats_default(self):
-        tt.record_session_cwd("sess-a", "/my/worktree")
+    def test_record_beats_default(self, tmp_path):
+        wt = tmp_path / "my_worktree"
+        wt.mkdir()
+        tt.record_session_cwd("sess-a", str(wt))
         resolved = tt._resolve_command_cwd(
             workdir=None,
             default_cwd="/config/default",
             session_key="sess-a",
         )
-        assert resolved == "/my/worktree"
+        assert resolved == str(wt)
 
 
     def test_other_sessions_record_is_not_consulted(self):

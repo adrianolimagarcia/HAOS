@@ -127,17 +127,17 @@ def _resolve_local_initial_cwd(cwd: str) -> str:
         # ntpath explicitly: with _IS_WINDOWS patched on a POSIX host,
         # os.path.isabs would reject ``C:\Users\x`` and mangle it below.
         if ntpath.isabs(expanded):
-            return expanded
+            return _resolve_safe_cwd(expanded)
     if os.path.isabs(expanded):
-        return expanded
+        return _resolve_safe_cwd(expanded)
     candidate = os.path.abspath(expanded)
     current = os.getcwd()
     # Relative name matching the tail of the current dir: use the current dir.
     if not os.path.isdir(candidate):
         wanted, have = Path(expanded).parts, Path(current).parts
         if wanted and len(wanted) <= len(have) and have[-len(wanted):] == wanted:
-            return current
-    return candidate
+            return _resolve_safe_cwd(current)
+    return _resolve_safe_cwd(candidate)
 
 
 def _windows_to_msys_path(cwd: str) -> str:
@@ -192,6 +192,12 @@ def _resolve_safe_cwd(cwd: str) -> str:
             "root-owned paths leaking into terminal.cwd / TERMINAL_CWD "
             "(#65583).",
             cwd, getattr(os, "getuid", lambda: "?")())
+    elif cwd and not os.path.exists(cwd):
+        logger.warning(
+            "Configured terminal cwd %r does not exist on disk — "
+            "falling back to the nearest usable directory.",
+            cwd,
+        )
     parent = os.path.dirname(cwd) if cwd else ""
     while parent and not _cwd_usable(parent):
         next_parent = os.path.dirname(parent)
@@ -930,6 +936,10 @@ class LocalEnvironment(BaseEnvironment):
                 "falling back to %r so terminal commands keep working.",
                 self.cwd, safe_cwd)
         self.cwd = safe_cwd
+
+    def _wrap_command(self, command: str, cwd: str) -> str:
+        self._recover_cwd()
+        return super()._wrap_command(command, self.cwd)
 
     def _run_bash(self, cmd_string: str, *, login: bool = False, timeout: int = 120,
                   stdin_data: str | None = None) -> subprocess.Popen:
