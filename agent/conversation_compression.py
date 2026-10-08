@@ -2422,6 +2422,34 @@ def _try_acquire_durable_lock(lease: _CompressionLease, try_acquire: Any, commit
         return False
 
 
+def _retry_lock_acquisition_if_unowned(
+    lease: _CompressionLease, try_acquire: Any, commit_fence: Any
+) -> bool:
+    """Retry one atomic claim if a declined lock has no observable owner.
+
+    Covers transient SQLite contention / owner release between claim and
+    inspection. Never bypasses the DB lease: a new competing owner wins
+    atomically, and an unreadable holder state fails closed.
+    """
+    if lease.holder is None or lease.db is None:
+        return False
+    try:
+        existing = lease.db.get_compression_lock_holder(lease.sid)
+    except Exception as exc:
+        logger.warning(
+            "compression lock owner lookup failed for session=%s (%s) — no retry",
+            lease.sid, type(exc).__name__,
+        )
+        return False
+    if existing is not None:
+        return False
+    logger.warning(
+        "compression lock acquisition declined with no recorded holder "
+        "(session=%s); retrying one atomic claim", lease.sid,
+    )
+    return _try_acquire_durable_lock(lease, try_acquire, commit_fence)
+
+
 def _sit_out_lock_contention(
     agent: Any, lease: _CompressionLease, lifecycle: _CompactionLifecycle, system_message: str,
     approx_tokens: Optional[int], attempt_started_at: float,
@@ -2507,6 +2535,10 @@ def _acquire_compression_lease(
                 agent._last_compaction_in_place = False
                 return _abort_lease(agent, lifecycle, system_message, attempt_started_at, "commit_fence_cancelled")
             _lock_acquired = _try_acquire_durable_lock(lease, _try_acquire_lock, commit_fence)
+            if not _lock_acquired:
+                _lock_acquired = _retry_lock_acquisition_if_unowned(
+                    lease, _try_acquire_lock, commit_fence,
+                )
         if not _lock_acquired:
             lease.finish_lock_setup()
             return _sit_out_lock_contention(
