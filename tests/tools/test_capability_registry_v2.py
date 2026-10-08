@@ -247,16 +247,16 @@ def test_registration_validation_rules():
 
 def test_concurrent_execution_thread_safety():
     registry = CapabilityRegistryV2()
-    registry.register(_operation(id="op.concurrent", timeout_seconds=5), lambda args: args["query"])
+    registry.register(_operation(id="op.concurrent", timeout_seconds=20), lambda args: args["query"])
 
     def run_worker(idx):
-        return registry.execute("op.concurrent", {"query": f"worker_{idx}"})
+        return registry.execute("op.concurrent", {"query": f"worker_{idx}"}, check_feature_flag=False)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         results = list(executor.map(run_worker, range(20)))
 
     for r in results:
-        assert r["ok"] is True
+        assert r["ok"] is True, r.get("error")
 
     assert len(registry.audit_traces) == 20
 

@@ -152,7 +152,7 @@ class CapabilityRegistryV2:
         caller_profile: Optional[str] = None,
         fallback_handler=None,
         security_context: Optional[SecurityContext] = None,
-        check_feature_flag: bool = False,
+        check_feature_flag: bool = True,
     ) -> dict:
         started = time.monotonic()
         op = self.get_operation(op_id)
@@ -326,7 +326,13 @@ def _matches_type(value: Any, expected: Any) -> bool:
     return types.get(expected, lambda _v: False)(value)
 
 
+_fork_execution_lock = threading.RLock()
+
 def _run_with_timeout(handler: Callable[..., Any], args: dict, timeout: int | float) -> Any:
+    with _fork_execution_lock:
+        return _run_with_timeout_unlocked(handler, args, timeout)
+
+def _run_with_timeout_unlocked(handler: Callable[..., Any], args: dict, timeout: int | float) -> Any:
     """Run handlers with an active termination guard to prevent zombie worker side effects."""
     try:
         ctx = multiprocessing.get_context("fork")
@@ -379,3 +385,7 @@ def _run_with_timeout(handler: Callable[..., Any], args: dict, timeout: int | fl
         if failure:
             raise failure[0]
         return result[0] if result else None
+
+
+# Shared registry for feature-gated deferred-call validation.
+default_capability_registry = CapabilityRegistryV2()
