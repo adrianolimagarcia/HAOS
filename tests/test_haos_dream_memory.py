@@ -88,12 +88,13 @@ def test_dream_git_store_init_and_commit(tmp_path: Path):
 
 
 def test_dream_consolidator_runs_and_records_cursor(tmp_path: Path, monkeypatch):
-    """Contrato antigo preservado: dry-run conta sem escrever; run grava cursor e commit."""
+    """Contrato preservado: dry-run conta sem escrever; run grava cursor e commit.
+    Usa declaração factual determinística em vez de interrogação/pergunta (T4)."""
     home = tmp_path / ".hermes"
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
 
-    _new_session(home, "20260908_test_dream_session", "Qual o plano de contingência?")
+    _new_session(home, "20260908_test_dream_session", "Definir plano de contingência para failover")
 
     consolidator = DreamConsolidator(hermes_home=home)
     assert consolidator.get_cursor() == 0.0
@@ -350,3 +351,56 @@ def test_dream_dry_run_não_escreve_nada(tmp_path: Path, monkeypatch):
     assert after == before, f"dry_run escreveu algo: {sorted(set(after) - set(before))}"
     assert consolidator.get_cursor() == cursor_before
     assert not (home / "okf").exists()
+
+
+def test_dream_delta_com_segredo_descarta_sessao_sem_staging_nem_projecao(tmp_path: Path, monkeypatch):
+    """T3: segredo em mensagem posterior ao preview descarta a sessão inteira.
+    
+    Garante ausência em staging, instintos, okf e projeções de mental model,
+    mesmo que o preview inicial da sessão seja limpo.
+    """
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    sid = "20261007_secret_session"
+    db = SessionDB(db_path=home / "state.db")
+    db.ensure_session(session_id=sid, source="cli", model="gemini-test")
+    db.set_session_title(sid, "Sessao com token secreto vazado")
+    # Mensagem 1: preview inofensivo e limpo
+    db.append_message(sid, "user", "Configuramos o cluster Kubernetes para alta disponibilidade")
+    # Mensagem 2: resposta
+    db.append_message(sid, "assistant", "Entendido, cluster configurado.")
+    # Mensagem 3: mensagem posterior contendo segredo sintético
+    db.append_message(sid, "user", "Aqui esta o token de acesso: ghp_12345678901234567890abcdef")
+    db.close()
+
+    consolidator = DreamConsolidator(hermes_home=home)
+    res = consolidator.run_dream(dry_run=False)
+
+    assert res["consolidated_count"] == 0
+    assert res["staged_count"] == 0
+    assert res["promoted_count"] == 0
+
+    # Verifica ausência em staging
+    pending = consolidator.staging_store.list_pending()
+    assert len(pending) == 0
+
+    # Verifica ausência em OKF
+    lessons = list((home / "okf").glob("*.md")) if (home / "okf").exists() else []
+    assert len(lessons) == 0
+
+    # Verifica ausência em instintos
+    instincts = consolidator.instinct_store.load_instincts("default")
+    assert len(instincts) == 0
+
+    # Verifica ausência em mental models (banco raggraph.db ou tabela)
+    rag_db = home / "memory" / "raggraph.db"
+    if rag_db.exists():
+        import sqlite3
+        conn = sqlite3.connect(rag_db)
+        cursor = conn.cursor()
+        rows = cursor.execute("SELECT model_id FROM haos_mental_models").fetchall()
+        conn.close()
+        assert len(rows) == 0
+

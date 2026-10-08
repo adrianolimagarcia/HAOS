@@ -44,6 +44,33 @@ def contains_question(text: str) -> bool:
     return False
 
 
+def contains_hypothesis(text: str) -> bool:
+    """Verifica se o texto é formulado como hipótese, suposição ou especulação."""
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    lower = cleaned.lower()
+    hypothesis_markers = (
+        "talvez",
+        "provavelmente",
+        "possivelmente",
+        "hipótese",
+        "hipotese",
+        "hypothesis",
+        "suponho",
+        "supondo",
+        "acho que",
+        "pode ser que",
+        "será que",
+        "não tenho certeza",
+        "nao tenho certeza",
+    )
+    for marker in hypothesis_markers:
+        if re.search(r"\b" + re.escape(marker) + r"\b", lower):
+            return True
+    return False
+
+
 def contains_secrets(text: str) -> bool:
     """Verifica se o texto contém tokens, chaves de API ou segredos."""
     return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
@@ -90,11 +117,13 @@ class MemoryCandidate:
         return self.confidence >= 0.85
 
     def is_eligible_for_auto_promotion(self, min_confidence: float = 0.85) -> bool:
-        """Aprovação automática: confiança >= min_confidence, sem perguntas, sem segredos e sem resumos de compactação."""
+        """Aprovação automática: confiança >= min_confidence, sem perguntas, sem hipóteses, sem segredos e sem resumos de compactação."""
         if self.confidence < min_confidence:
             return False
         text = self.fact or self.content
         if contains_question(text):
+            return False
+        if contains_hypothesis(text):
             return False
         if contains_secrets(text):
             return False
@@ -134,6 +163,8 @@ def validate_candidate(candidate: MemoryCandidate) -> tuple[bool, str]:
         return False, "fato trivial ou vazio"
     if contains_question(text):
         return False, "fato interrogativo ou formulado como questionamento (?)"
+    if contains_hypothesis(text):
+        return False, "fato formulado como hipótese, suposição ou especulação"
     if contains_secrets(text):
         return False, "conteúdo contém chaves de API, senhas ou credenciais confidenciais"
     if contains_compaction_marker(text):
