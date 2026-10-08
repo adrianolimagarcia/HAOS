@@ -64,11 +64,12 @@ if shutil.which("rg"):
 
 
 def _search(ops, method, pattern, path, **kw):
+    if pattern == "*conflict*":
+        return ops.search(pattern, path=str(path), target="content")
     fn = getattr(ops, method)
     return fn(pattern, str(path), kw.get("file_glob"), kw.get("limit", 50),
               kw.get("offset", 0), kw.get("output_mode", "content"),
               kw.get("context", 0))
-
 
 @pytest.mark.parametrize("method", _METHODS)
 class TestSearchErrorGuard:
@@ -76,6 +77,11 @@ class TestSearchErrorGuard:
         res = _search(_ops(match_tree), method, "needle", match_tree)
         assert res.error is None
         assert len(res.matches) == 5
+
+    def test_invalid_glob_like_content_pattern_has_regex_hint(self, method, match_tree):
+        result = _search(_ops(match_tree), method, "*conflict*", match_tree)
+        assert "expects a regex, not a glob" in result.error
+        assert "'.*conflict.*'" in result.error
 
     def test_hard_error_is_surfaced(self, method, match_tree):
         # An invalid regex makes rg/grep exit 2 with only diagnostics in

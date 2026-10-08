@@ -799,6 +799,16 @@ class SearchMixin:
     def _search_content(self, pattern: str, path: str, file_glob: Optional[str],
                         limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
         """Content search: rg, else grep; attaches zero-match steering hints."""
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            # A bare glob is a common mistaken input for a content regex. Keep
+            # regex semantics, but explain the distinction before invoking rg.
+            if "*" in pattern:
+                return SearchResult(
+                    error=(f"Invalid regex pattern {pattern!r}. Content search expects a regex, not a glob; "
+                           "try 'conflict' or '.*conflict.*'."))
+            return SearchResult(error=f"Invalid regex pattern {pattern!r}: {exc}")
         used_rg = self._has_command('rg')
         if used_rg:
             result = self._search_with_rg(pattern, path, file_glob, limit, offset, output_mode, context,

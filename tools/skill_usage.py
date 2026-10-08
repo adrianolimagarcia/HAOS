@@ -231,7 +231,8 @@ def list_agent_created_skill_names() -> List[str]:
     built-ins (which never carry a managed record, so the record gate applies only to local skills). Never hub."""
     prune_builtins = _prune_builtins_enabled()  # read once, before the walk
     return _scan_local_skills(
-        lambda name, _md, bundled, usage: prune_builtins if name in bundled else _is_curator_managed_record(usage.get(name)))
+        lambda name, _md, bundled, usage: (
+            prune_builtins if name in bundled else _is_curator_managed_record(usage.get(name))))
 
 
 def list_archived_skill_names() -> List[str]:
@@ -682,7 +683,8 @@ def curated_report() -> List[Dict[str, Any]]:
     # Pinned-but-unmanaged skills stay visible or their pin silently vanishes from `curator status`; the local-dir
     # guard keeps stale records for deleted dirs from rendering as ghost rows.
     names.update(name for name, rec in data.items()
-                 if rec.get("pinned") and is_curation_eligible(name) and _find_skill_dir(name) is not None)
+                 if isinstance(rec, dict) and rec.get("pinned") and is_curation_eligible(name)
+                 and _find_skill_dir(name) is not None)
     return [_report_row(n, data.get(n), _persisted=n in data, provenance=provenance(n)) for n in sorted(names)]
 
 
