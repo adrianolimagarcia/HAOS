@@ -47,16 +47,38 @@ def local_backend_active() -> bool:
 
 
 def resolve_repo_root(path: Optional[str]) -> Optional[str]:
-    """Return the git toplevel for *path*, or None when not in a work tree."""
+    """Return the primary checkout root for *path*, or None outside a work tree."""
     candidate = os.path.abspath(os.path.expanduser(str(path))) if path else ""
     if not candidate or not os.path.isdir(candidate):
         return None
     try:
-        result = _run_git(["rev-parse", "--show-toplevel"], cwd=candidate)
+        common = _run_git(["rev-parse", "--git-common-dir"], cwd=candidate)
+        if common.returncode != 0:
+            return None
+        raw_common = common.stdout.strip()
+        if not raw_common:
+            return None
+        if os.path.isabs(raw_common):
+            common_dir = os.path.abspath(raw_common)
+        else:
+            common_dir = os.path.abspath(os.path.join(candidate, raw_common))
+
+        # In non-bare repo, common_dir is either /path/to/repo/.git or /path/to/repo if bare.
+        # If common_dir ends with .git, the main checkout root is its parent directory.
+        if os.path.basename(common_dir) == ".git":
+            main_candidate = os.path.dirname(common_dir)
+        else:
+            main_candidate = common_dir
+
+        root = _run_git(["rev-parse", "--show-toplevel"], cwd=main_candidate if os.path.isdir(main_candidate) else candidate)
+        if root.returncode == 0 and root.stdout.strip():
+            return os.path.abspath(root.stdout.strip())
+        if os.path.isdir(main_candidate):
+            return main_candidate
     except Exception as exc:
-        logger.debug("subagent worktree: rev-parse failed: %s", exc)
+        logger.debug("subagent worktree: repository resolution failed: %s", exc)
         return None
-    return (result.stdout.strip() or None) if result.returncode == 0 else None
+    return None
 
 
 def _ensure_gitignore_entry(repo_root: str) -> None:
@@ -73,7 +95,7 @@ def _ensure_gitignore_entry(repo_root: str) -> None:
 
 
 def create_subagent_worktree(parent_cwd: Optional[str], subagent_id: Optional[str] = None) -> Optional[Dict[str, str]]:
-    """Create an isolated worktree for one child; None (silent downgrade) outside git/on failure."""
+    """Create a child worktree; return None only when the cwd is outside git."""
     repo_root = resolve_repo_root(parent_cwd)
     if not repo_root:
         return None
@@ -84,15 +106,16 @@ def create_subagent_worktree(parent_cwd: Optional[str], subagent_id: Optional[st
         wt_path.parent.mkdir(parents=True, exist_ok=True)
         _ensure_gitignore_entry(repo_root)
         base = _run_git(["rev-parse", "HEAD"], cwd=repo_root)
-        base_commit = base.stdout.strip() if base.returncode == 0 else ""
+        if base.returncode != 0:
+            # Unborn HEAD (empty repo with no commits) cannot be branched/worktreed
+            return None
+        base_commit = base.stdout.strip()
         result = _run_git(["worktree", "add", str(wt_path), "-b", branch, "HEAD"], cwd=repo_root)
     except Exception as exc:
-        logger.warning("subagent worktree: creation failed: %s", exc)
-        return None
+        raise RuntimeError(f"subagent worktree creation failed at {wt_path}: {exc}") from exc
     if result.returncode != 0:
-        # Common on repos with zero commits (unborn HEAD) — degrade silently.
-        logger.warning("subagent worktree: git worktree add failed: %s", result.stderr.strip())
-        return None
+        detail = result.stderr.strip() or result.stdout.strip() or f"git exited {result.returncode}"
+        raise RuntimeError(f"subagent worktree creation failed at {wt_path}: {detail}")
     logger.info("subagent worktree created: %s (branch %s)", wt_path, branch)
     return {"path": str(wt_path), "branch": branch, "repo_root": repo_root, "base_commit": base_commit}
 

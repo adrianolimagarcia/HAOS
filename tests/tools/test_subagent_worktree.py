@@ -59,6 +59,19 @@ class SubagentWorktreeTests(unittest.TestCase):
         assert root is not None
         self.assertEqual(Path(root).resolve(), repo.resolve())
 
+    def test_resolve_repo_root_from_linked_worktree(self):
+        """Resolving inside a linked worktree must return the main checkout root, not the worktree."""
+        repo = _make_repo(self.tmp)
+        wt = self.tmp / "linked_wt"
+        _git(["worktree", "add", str(wt), "-b", "linked-branch", "HEAD"], repo)
+        sub = wt / "subdir"
+        sub.mkdir()
+
+        root = sw.resolve_repo_root(str(sub))
+        self.assertIsNotNone(root)
+        assert root is not None
+        self.assertEqual(Path(root).resolve(), repo.resolve())
+
     def test_resolve_repo_root_non_git(self):
         plain = self.tmp / "plain"
         plain.mkdir()
@@ -94,11 +107,26 @@ class SubagentWorktreeTests(unittest.TestCase):
         (Path(info["path"]) / "child.txt").write_text("x", encoding="utf-8")
         self.assertFalse((repo / "child.txt").exists())
 
-    def test_create_unborn_head_returns_none(self):
-        repo = self.tmp / "empty"
-        repo.mkdir()
-        _git(["init", "-q"], repo)
-        self.assertIsNone(sw.create_subagent_worktree(str(repo), "abc"))
+    def test_create_worktree_failure_raises_runtime_error(self):
+        """When git worktree add fails (e.g. invalid branch or git failure), RuntimeError is raised."""
+        repo = _make_repo(self.tmp)
+        with mock.patch("tools.subagent_worktree._run_git") as mock_git:
+            def side_effect(args, cwd):
+                if args == ["rev-parse", "--git-common-dir"]:
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout=".git\n", stderr="")
+                if args == ["rev-parse", "--show-toplevel"]:
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout=f"{repo}\n", stderr="")
+                if args == ["rev-parse", "HEAD"]:
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout="commit123\n", stderr="")
+                if args[0] == "worktree" and args[1] == "add":
+                    return subprocess.CompletedProcess(["git", *args], 128, stdout="", stderr="fatal: some git error")
+                return subprocess.CompletedProcess(["git", *args], 0, stdout="", stderr="")
+
+            mock_git.side_effect = side_effect
+            with self.assertRaises(RuntimeError) as ctx:
+                sw.create_subagent_worktree(str(repo), "fail-id")
+            self.assertIn("subagent worktree creation failed", str(ctx.exception))
+            self.assertIn("fatal: some git error", str(ctx.exception))
 
     # ── finalize_subagent_worktree ─────────────────────────────────────
 

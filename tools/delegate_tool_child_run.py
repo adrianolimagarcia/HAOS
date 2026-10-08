@@ -384,25 +384,17 @@ def _register_child(
     return _subagent_id
 
 def _create_isolated_worktree(parent_agent: Any, parent_task_id: Any, subagent_id: Optional[str]):
-    """Opt-in worktree isolation: own git worktree off the parent's HEAD (the
-    child's terminal starts there). Git-only, local-backend-only; failures
-    degrade silently to the shared workspace. Returns the worktree info or None."""
+    """Opt-in worktree isolation; failures propagate before the child is started."""
     from tools.delegate_tool import _get_worktree_isolation, _resolve_workspace_hint
     if not _get_worktree_isolation():
         return None
-    with _quiet("worktree isolation setup failed: %s"):
-        from tools import subagent_worktree
-        if not subagent_worktree.local_backend_active():
-            logger.debug("worktree isolation skipped: non-local terminal backend")
-            return None
-        _parent_cwd = None
-        with _quiet(None):
-            from tools.terminal_tool import get_session_cwd as _gsc
-            _parent_cwd = _gsc(parent_task_id)
-        return subagent_worktree.create_subagent_worktree(
-            _parent_cwd or _resolve_workspace_hint(parent_agent), subagent_id=subagent_id,
-        )
-    return None
+    from tools import subagent_worktree
+    if not subagent_worktree.local_backend_active():
+        logger.debug("worktree isolation skipped: non-local terminal backend")
+        return None
+    from tools.terminal_tool import get_session_cwd
+    parent_cwd = get_session_cwd(parent_task_id) or _resolve_workspace_hint(parent_agent)
+    return subagent_worktree.create_subagent_worktree(parent_cwd, subagent_id=subagent_id)
 
 def _defer_close_after_timeout(child: Any, child_future: Any) -> None:
     """Hand ``child.close()`` to a Future done-callback and drain its transports.

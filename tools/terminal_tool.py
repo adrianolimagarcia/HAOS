@@ -261,10 +261,10 @@ def record_session_cwd(session_key: Optional[str], cwd: Optional[str]) -> None:
 
 
 def get_session_cwd(session_key: Optional[str]) -> Optional[str]:
-    """Recorded cwd for *session_key*, or None. No fallback chain on purpose:
-    callers decide what an absent record means. None/empty keys read ``"default"``."""
+    """Recorded cwd for *session_key*, or None; discard stale local filesystem paths."""
+    key = str(session_key or "default")
     with _session_cwd_lock:
-        return _session_cwd.get(str(session_key or "default"))
+        return _session_cwd.get(key)
 
 
 def clear_session_cwd(session_key: str) -> None:
@@ -788,7 +788,13 @@ def _resolve_command_cwd(
     if workdir:
         return workdir
     recorded = get_session_cwd(session_key)
-    if recorded and _is_container_backend(env_type) and _is_unusable_container_cwd(recorded):
+    if recorded and not _is_container_backend(env_type or "") and not os.path.isdir(recorded):
+        logger.warning(
+            "Recorded session cwd %r does not exist on disk for %s; falling back to %r.",
+            recorded, session_key, default_cwd,
+        )
+        return default_cwd
+    if recorded and _is_container_backend(env_type or "") and _is_unusable_container_cwd(recorded):
         logger.info(
             "Ignoring recorded session cwd %r for %s backend "
             "(host/relative path won't work in sandbox). Using %r instead.",

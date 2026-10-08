@@ -72,3 +72,12 @@ class TestUsableCwdBehaviorUnchanged:
         # A path whose every component is missing outside any real tree.
         resolved = _resolve_safe_cwd("")
         assert resolved == tempfile.gettempdir()
+
+
+def test_ghost_path_falls_back_with_warning(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        safe = _resolve_safe_cwd("/nonexistent/phantom/worktree/path")
+        assert safe != "/nonexistent/phantom/worktree/path"
+        assert os.path.isdir(safe)
+        assert any("does not exist" in r.message or "falling back" in r.message.lower() for r in caplog.records)
