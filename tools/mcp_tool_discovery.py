@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from tools.mcp_tool_common import _core, _parse_boolish
 from tools import mcp_tool_config as _config
@@ -509,7 +511,8 @@ def discover_mcp_tools(allowed_mcp_names: Optional[List[str]] = None) -> List[st
     if not enabled:
         logger.debug("MCP/A2A adapter disabled by terminal.mcp_a2a.enabled")
         return []
-    servers = _config._load_mcp_config()
+    with _owner_secret_scope():
+        servers = _config._load_mcp_config()
     if not servers:
         logger.debug("No MCP servers configured")
         if required:

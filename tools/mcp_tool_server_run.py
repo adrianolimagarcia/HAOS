@@ -207,6 +207,14 @@ class MCPServerRunMixin:
         self._error = exc
         self._ready.set()
 
+    def _refresh_remote_config(self, config: dict) -> dict:
+        """Reload remote credentials inside the caller's freshly bound owner scope."""
+        if "url" not in config:
+            return config
+        from tools import mcp_tool_config as _config
+        # Re-read placeholders rather than reusing already rendered credentials.
+        return _config._load_mcp_config().get(self.name, config)
+
     async def run(self, config: dict):
         """Long-lived: connecting -> connected -> (degraded -> parked -> revived)*. Unproven drops
         and transport errors charge a rapid-drop budget with jittered backoff; exhausting it (or
@@ -216,6 +224,8 @@ class MCPServerRunMixin:
             return
         self._reconnect_retries = 0
         budget = _RetryBudget()
+        # The first transport attempt is not a reconnect-triggered rebuild.
+        rebuild = False
         while True:
             try:
                 if rebuild:

@@ -184,6 +184,9 @@ def test_reconnect_rerenders_remote_headers_under_the_owners_fresh_scope(tmp_pat
     forever after the owner's secret source came up."""
     from tools.mcp_tool import MCPServerTask
     monkeypatch.setitem(env_loader._SECRET_SOURCES, TOKEN_NAME, "command")
+    home_a = tmp_path / "s6probe-a"
+    home_a.mkdir()
+    (home_a / ".env").write_text(f"{TOKEN_NAME}=value-a\n", encoding="utf-8")
     home_b = tmp_path / "s6probe-b"
     home_b.mkdir()
     (home_b / "config.yaml").write_text(
@@ -209,8 +212,15 @@ def test_reconnect_rerenders_remote_headers_under_the_owners_fresh_scope(tmp_pat
             return "shutdown"
 
     async def _scenario():
-        with _boot_scope(home_b):  # snapshot taken before B's source answered
-            await asyncio.wait_for(_Task("demo").run(dict(REMOTE, headers=dict(REMOTE["headers"]))), timeout=10)
+        from agent.secret_scope import get_secret, current_secret_scope_home
+        # The owner switches to B, then resets to A without losing A's binding.
+        with _boot_scope(home_a):
+            assert get_secret(TOKEN_NAME) == "value-a"
+            with _boot_scope(home_b):  # snapshot before B's source answered
+                await asyncio.wait_for(_Task("demo").run(dict(REMOTE, headers=dict(REMOTE["headers"]))), timeout=10)
+                assert current_secret_scope_home() == str(home_b)
+            assert get_secret(TOKEN_NAME) == "value-a"
+            assert current_secret_scope_home() == str(home_a)
 
     set_multiplex_active(True)
     try:
