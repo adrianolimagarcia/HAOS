@@ -89,7 +89,9 @@ KANBAN_COMPLETE_SCHEMA = _schema(
     "kanban_complete",
     (
         "Mark your current task done with a structured handoff for "
-        "downstream workers and humans. Prefer ``summary`` for a "
+        "downstream workers and humans. Idempotent: calling kanban_complete "
+        "on an already-completed ('done') task succeeds safely without error. "
+        "Prefer ``summary`` for a "
         "human-readable 1-3 sentence description of what you did; put "
         "machine-readable facts in ``metadata`` (changed_files, "
         "tests_run, decisions, findings, etc). At least one of "
@@ -168,6 +170,7 @@ KANBAN_BLOCK_SCHEMA = _schema(
     "kanban_block",
     (
         "Stop work on this task and route it according to WHY you're stuck. "
+        "Idempotent: calling kanban_block on an already-blocked task succeeds safely. "
         "Set ``kind`` to say which: 'dependency' (waiting on another task — "
         "goes to todo and auto-resumes when that task finishes, no human "
         "needed), 'needs_input' (you need a human decision/answer), "
@@ -508,7 +511,8 @@ KANBAN_UNBLOCK_SCHEMA = _schema(
     "kanban_unblock",
     (
         "Unblock a Kanban task. It moves to ready when all parents are done, "
-        "or todo while any parent remains open. Orchestrator-only — only "
+        "or todo while any parent remains open. Idempotent: calling kanban_unblock "
+        "on a task that is not blocked succeeds safely without error. Orchestrator-only — only "
         "profiles with the kanban toolset can unblock routed work; "
         "dispatcher-spawned task workers never see this tool."
     ),
@@ -523,7 +527,8 @@ KANBAN_LINK_SCHEMA = _schema(
     (
         "Add a parent→child dependency edge after both tasks already "
         "exist. The child won't promote to 'ready' until all parents "
-        "are 'done'. Cycles and self-links are rejected."
+        "are 'done'. Cycles and self-links are rejected. "
+        "Idempotent: if the link already exists, returns the existing link successfully."
     ),
     {
         "parent_id": {"type": "string", "description": "Parent task id."},

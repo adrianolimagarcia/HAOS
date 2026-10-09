@@ -585,6 +585,14 @@ def _handle_complete(args: dict, **kw) -> str:
         # judge by calling kanban_complete before acceptance criteria are met. Only enforce when a judge is
         # actually reachable — see _goal_judge_available for why an unavailable judge fails open.
         task = kb.get_task(conn, tid)
+        if task and task.status == "done":
+            run = kb.latest_run(conn, tid)
+            return _ok(
+                task_id=tid,
+                run_id=run.id if run else None,
+                idempotent=True,
+                message=f"Task {tid} is already completed",
+            )
         _goal_gate("kanban_complete", task, tid, (summary or result or "").strip())
         try:
             ok = kb.complete_task(
@@ -645,6 +653,8 @@ def _handle_block(args: dict, **kw) -> str:
         # worker cannot resolve itself; `capability` and `transient` (or an unset kind) route back through
         # kanban_complete, which the judge now gates.
         task = kb.get_task(conn, tid)
+        if task and task.status == "blocked":
+            return _ok(task_id=tid, idempotent=True)
         _check(not (task and task.goal_mode and kind not in _GOAL_MODE_BLOCK_ALLOWED_KINDS),
                f"goal_mode tasks can only block with kind in "
                f"{sorted(_GOAL_MODE_BLOCK_ALLOWED_KINDS)} (got {kind!r}). If the task is actually "
@@ -996,6 +1006,10 @@ def _handle_unblock(args: dict, **kw) -> str:
     tid = str(tid)
     _enforce_worker_task_ownership(tid)
     with _board(args.get("board")) as (kb, conn):
+        task = kb.get_task(conn, tid)
+        _check(task is not None, f"task {tid} not found")
+        if task.status != "blocked":
+            return _ok(task_id=tid, idempotent=True)
         _check(kb.unblock_task(conn, tid), f"could not unblock {tid} (not blocked or unknown)")
         return _ok(task_id=tid, **_fields(kb.get_task(conn, tid), ("status",)))
 
@@ -1008,8 +1022,15 @@ def _handle_link(args: dict, **kw) -> str:
     child_id = args.get("child_id")
     _check(parent_id and child_id, "both parent_id and child_id are required")
     with _board(args.get("board")) as (kb, conn):
+        link_id = f"{parent_id}:{child_id}"
+        existing = conn.execute(
+            "SELECT 1 FROM task_links WHERE parent_id = ? AND child_id = ?",
+            (parent_id, child_id),
+        ).fetchone()
+        if existing:
+            return _ok(link_id=link_id, parent_id=parent_id, child_id=child_id, idempotent=True)
         gated = kb.link_tasks(conn, parent_id=parent_id, child_id=child_id)
-        return _ok(parent_id=parent_id, child_id=child_id, gated=gated,
+        return _ok(link_id=link_id, parent_id=parent_id, child_id=child_id, gated=gated,
                    **({"gated_by": parent_id} if gated else {}))
 
 
