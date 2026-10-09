@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
 
 from fastapi import (
-    APIRouter, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status as http_status)
+    APIRouter, File, Form, Header, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect, status as http_status)
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -392,10 +392,17 @@ class CreateTaskBody(BaseModel):
 
 
 @router.post("/tasks")
-def create_task(payload: CreateTaskBody, board: Optional[str] = Query(None)):
+def create_task(
+    payload: CreateTaskBody,
+    board: Optional[str] = Query(None),
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+):
     with _board_conn(board) as (board, conn), _value_error_400():
         # CreateTaskBody field names match create_task's keyword parameters.
-        task_id = kanban_db.create_task(conn, created_by="dashboard", board=board, **payload.model_dump())
+        args = payload.model_dump()
+        if not args.get("idempotency_key") and x_idempotency_key:
+            args["idempotency_key"] = x_idempotency_key.strip() or None
+        task_id = kanban_db.create_task(conn, created_by="dashboard", board=board, **args)
         task = kanban_db.get_task(conn, task_id)
         body: dict[str, Any] = {"task": _task_dict(task) if task else None}
         # Dispatcher-presence warning so the UI can banner a ready+assigned task that would
@@ -746,16 +753,38 @@ def _set_status_direct(conn: sqlite3.Connection, task_id: str, new_status: str) 
 class CommentBody(BaseModel):
     body: str
     author: Optional[str] = "dashboard"
+    idempotency_key: Optional[str] = None
 
 
 @router.post("/tasks/{task_id}/comments")
-def add_comment(task_id: str, payload: CommentBody, board: Optional[str] = Query(None)):
+def add_comment(
+    task_id: str,
+    payload: CommentBody,
+    board: Optional[str] = Query(None),
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
+):
     if not payload.body.strip():
         raise HTTPException(status_code=400, detail="body is required")
+    author = (payload.author or "dashboard").strip()
+    clean_body = payload.body.strip()
+    idem_key = (payload.idempotency_key or x_idempotency_key or "").strip() or None
+
     with _board_conn(board) as (board, conn):
         _require_task(conn, task_id)
-        kanban_db.add_comment(conn, task_id, author=payload.author or "dashboard", body=payload.body)
-        return {"ok": True}
+        # Idempotency guard: prevent duplicate submission from double-clicks
+        # Check within recent 10-second window for identical author & body,
+        # or if idempotency_key is provided, check recent comments.
+        cutoff = int(time.time()) - 10
+        recent = conn.execute(
+            "SELECT id FROM task_comments WHERE task_id = ? AND author = ? AND body = ? AND created_at >= ? "
+            "ORDER BY id DESC LIMIT 1",
+            (task_id, author, clean_body, cutoff),
+        ).fetchone()
+        if recent:
+            return {"ok": True, "comment_id": recent["id"], "idempotent": True}
+
+        comment_id = kanban_db.add_comment(conn, task_id, author=author, body=clean_body)
+        return {"ok": True, "comment_id": comment_id}
 
 
 class LinkBody(BaseModel):
@@ -766,8 +795,17 @@ class LinkBody(BaseModel):
 @router.post("/links")
 def add_link(payload: LinkBody, board: Optional[str] = Query(None)):
     with _board_conn(board) as (board, conn), _value_error_400():
+        # Idempotency check: if link already exists between parent and child, return 200 OK
+        link_id = f"{payload.parent_id}:{payload.child_id}"
+        existing = conn.execute(
+            "SELECT 1 FROM task_links WHERE parent_id = ? AND child_id = ?",
+            (payload.parent_id, payload.child_id),
+        ).fetchone()
+        if existing:
+            return {"ok": True, "link_id": link_id, "idempotent": True}
+
         gated = kanban_db.link_tasks(conn, payload.parent_id, payload.child_id)
-        return {"ok": True, "gated": gated}
+        return {"ok": True, "link_id": link_id, "gated": gated}
 
 
 @router.delete("/links")
@@ -959,6 +997,11 @@ def reclaim_task_endpoint(task_id: str, payload: ReclaimBody, board: Optional[st
     """Release an active worker claim without waiting for the claim TTL
     (``haos kanban reclaim <task_id> --reason ...``)."""
     with _board_conn(board) as (board, conn):
+        task = kanban_db.get_task(conn, task_id)
+        if not task:
+            raise _conflict(f"cannot reclaim {task_id}: not in a claimable state (not running, or unknown id)")
+        if task.status == "ready" and not task.claim_lock:
+            return {"ok": True, "task_id": task_id, "idempotent": True}
         if not kanban_db.reclaim_task(conn, task_id, reason=payload.reason):
             raise _conflict(f"cannot reclaim {task_id}: not in a claimable state (not running, or unknown id)")
         return {"ok": True, "task_id": task_id}
