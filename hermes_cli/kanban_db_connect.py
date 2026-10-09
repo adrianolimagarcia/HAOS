@@ -672,7 +672,7 @@ def connect(db_path: Optional[Path] = None, *, board: Optional[str] = None) -> s
     ``_INITIALIZED_PATHS``. Path: explicit ``db_path``, else ``board``, else
     :func:`kanban_db_path` (``HERMES_KANBAN_DB`` -> ``HERMES_KANBAN_BOARD`` ->
     ``<root>/kanban/current`` -> ``default``)."""
-    path = db_path if db_path is not None else _kb.kanban_db_path(board=board)
+    path = Path(db_path) if db_path is not None else _kb.kanban_db_path(board=board)
     from agent.delegation_context import kanban_path_is_fenced
     if kanban_path_is_fenced(path):
         # Reads must not enter schema/backfill write transactions. Never create a
