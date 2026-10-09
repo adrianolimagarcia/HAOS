@@ -49,8 +49,9 @@ def _maybe_inject_iteration_budget_warning(agent: Any, messages: Any) -> bool:
 
     # Check Tier 2 (60% steer) first or configured ratio checkpoint.
     # Trigger conditions:
-    # 1. Tier 2 (60% steer): fires once when used >= 0.6 * max_total (or used >= 40 when max_total around 67, since 40/67 ~= 0.597)
-    #    tracked by `agent._steer_60_warned`.
+    # 1. Tier 2 (60% steer): fires once when used >= 0.6 * max_total (or used >= 40 when max_total around 67, since 40/67 ~= 0.597).
+    #    Restricted to standard / long tasks (budget.max_total >= 20) to avoid noisy steer warnings on short-horizon budgets.
+    #    Tracked by `agent._steer_60_warned`.
     # 2. Configured budget_warning_ratio / kanban_worker checkpoint: tracked by `agent._iteration_budget_warning_injected`.
     
     tier2_threshold = min(0.6 * budget.max_total, budget.max_total - 1)
@@ -58,7 +59,8 @@ def _maybe_inject_iteration_budget_warning(agent: Any, messages: Any) -> bool:
         tier2_threshold = min(40, budget.max_total - 1)
 
     tier2_eligible = (
-        not getattr(agent, "_steer_60_warned", False)
+        budget.max_total >= 20
+        and not getattr(agent, "_steer_60_warned", False)
         and budget.used >= tier2_threshold
     )
 

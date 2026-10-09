@@ -67,6 +67,17 @@ def test_tier2_steer_60_warning_triggers_and_is_idempotent():
     assert messages2[0]["content"] == "tool output 2"
 
 
+def test_tier2_ignored_for_short_horizon_budgets():
+    # For small budgets (max_total < 20), Tier 2 steer warning does not fire
+    agent = _make_dummy_agent(used=3, max_total=4)
+    messages = [{"role": "tool", "content": "short output"}]
+
+    injected = _maybe_inject_iteration_budget_warning(agent, messages)
+    assert not injected
+    assert not agent._steer_60_warned
+    assert messages[0]["content"] == "short output"
+
+
 def test_tier2_special_threshold_for_approx_67_iterations():
     # When max_total = 67, 40 iterations is the threshold (~59.7%)
     agent = _make_dummy_agent(used=40, max_total=67)
