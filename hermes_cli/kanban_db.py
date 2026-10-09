@@ -4255,6 +4255,10 @@ from hermes_cli.kanban_db_connect import (  # noqa: E402
     _INITIALIZED_PATHS,
     init_db,
     write_txn,
+    KanbanIdempotencyConflictError,
+    find_idempotency_conflicts,
+    write_idempotency_conflict_report,
+    resolve_idempotency_conflicts_approved,
 )
 from hermes_cli.kanban_db_workspace import (  # noqa: E402
     _cleanup_workspace,

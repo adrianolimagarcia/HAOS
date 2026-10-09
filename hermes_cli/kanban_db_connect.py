@@ -848,6 +848,182 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     ).fetchone() is not None
 
 
+class KanbanIdempotencyConflictError(RuntimeError):
+    """Raised when idx_tasks_idempotency_unique cannot be created due to legacy active conflicts."""
+
+    def __init__(
+        self,
+        conflicts: list[dict[str, Any]],
+        report_path: Optional[Path] = None,
+        message: Optional[str] = None,
+    ):
+        self.conflicts = conflicts
+        self.report_path = report_path
+        msg = message or (
+            f"Kanban migration fail-closed: {len(conflicts)} active duplicate idempotency key(s) detected. "
+            f"No historical cards were mutated or archived. Auditable report written to {report_path or '<unpersisted>'}. "
+            "Explicit approval is required to resolve duplicate cards before idx_tasks_idempotency_unique can be created."
+        )
+        super().__init__(msg)
+
+
+def find_idempotency_conflicts(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Detect duplicate active tasks sharing the same non-null idempotency_key without mutating data."""
+    duplicates = conn.execute(
+        """
+        SELECT idempotency_key, COUNT(*) as cnt
+        FROM tasks
+        WHERE idempotency_key IS NOT NULL AND status != 'archived'
+        GROUP BY idempotency_key
+        HAVING cnt > 1
+        ORDER BY cnt DESC, idempotency_key ASC
+        """
+    ).fetchall()
+    if not duplicates:
+        return []
+
+    conflicts: list[dict[str, Any]] = []
+    has_run_col = "current_run_id" in _column_names(conn, "tasks")
+    for row in duplicates:
+        key = row["idempotency_key"]
+        run_col_select = "current_run_id," if has_run_col else "NULL as current_run_id,"
+        cards_rows = conn.execute(
+            f"""
+            SELECT id, title, status, created_at, assignee, {run_col_select} worker_pid
+            FROM tasks
+            WHERE idempotency_key = ? AND status != 'archived'
+            ORDER BY created_at ASC, id ASC
+            """,
+            (key,),
+        ).fetchall()
+        cards = [
+            {
+                "id": c["id"],
+                "title": c["title"],
+                "status": c["status"],
+                "created_at": c["created_at"],
+                "assignee": c["assignee"],
+                "current_run_id": c["current_run_id"],
+                "worker_pid": c["worker_pid"],
+            }
+            for c in cards_rows
+        ]
+        conflicts.append({
+            "idempotency_key": key,
+            "count": len(cards),
+            "cards": cards,
+        })
+    return conflicts
+
+
+def write_idempotency_conflict_report(
+    conn: sqlite3.Connection,
+    conflicts: list[dict[str, Any]],
+    output_path: Optional[Path] = None,
+) -> Path:
+    """Write an auditable JSON report detailing conflicting active cards."""
+    import json
+
+    if output_path is None:
+        try:
+            from hermes_constants import get_hermes_home
+            logs_dir = get_hermes_home() / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            output_path = logs_dir / f"kanban_idempotency_conflicts_{int(time.time())}.json"
+        except Exception:
+            db_file = _main_db_file(conn)
+            target_dir = Path(db_file).parent if db_file else Path("/tmp")
+            output_path = target_dir / f"kanban_idempotency_conflicts_{int(time.time())}.json"
+
+    report_payload = {
+        "timestamp": int(time.time()),
+        "total_conflict_keys": len(conflicts),
+        "conflicts": conflicts,
+        "policy": "FAIL_CLOSED: No historical cards were mutated or archived automatically.",
+    }
+    output_path.write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
+    return output_path
+
+
+def _ensure_task_idempotency_unique_index(conn: sqlite3.Connection, *, strict: bool = False) -> None:
+    """Ensure `idx_tasks_idempotency_unique` is created with fail-closed error handling.
+
+    Never automatically mutates or archives duplicate cards. If duplicate active
+    keys exist, captures IntegrityError, generates an auditable conflict report,
+    logs an error and refuses index creation.
+    """
+    cols = _column_names(conn, "tasks")
+    if "status" not in cols or "idempotency_key" not in cols:
+        return
+
+    create_sql = (
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency_unique "
+        "ON tasks(idempotency_key) WHERE idempotency_key IS NOT NULL AND status != 'archived'"
+    )
+    try:
+        conn.execute(create_sql)
+    except sqlite3.IntegrityError as exc:
+        conflicts = find_idempotency_conflicts(conn)
+        report_file = write_idempotency_conflict_report(conn, conflicts) if conflicts else None
+        _kb._log.error(
+            "kanban migration fail-closed: IntegrityError creating idx_tasks_idempotency_unique (%s). "
+            "%d duplicate active key(s) detected. No cards were mutated. Audit report written to %s.",
+            exc,
+            len(conflicts),
+            report_file,
+        )
+        if strict or bool(_kb._env_int("HERMES_KANBAN_STRICT_MIGRATION", 0)):
+            raise KanbanIdempotencyConflictError(conflicts, report_path=report_file)
+    except sqlite3.OperationalError:
+        # Index already exists or concurrent DDL
+        pass
+
+
+def resolve_idempotency_conflicts_approved(
+    conn: sqlite3.Connection,
+    resolutions: dict[str, str],
+    *,
+    approved: bool = False,
+) -> dict[str, Any]:
+    """Resolve proven duplicates with specific human operator approval and full event preservation.
+
+    - `resolutions`: mapping of `idempotency_key -> winner_task_id`.
+    - `approved`: explicit boolean requirement. If False, raises PermissionError.
+    - Every duplicate card except the approved winner is archived via `_kb.archive_task`,
+      ensuring that the `archived` event and full lifecycle audit are recorded without loss of events.
+    """
+    if not approved:
+        raise PermissionError("Mutation of historical cards requires explicit approval (approved=True).")
+
+    conflicts = find_idempotency_conflicts(conn)
+    conflicts_by_key = {c["idempotency_key"]: c for c in conflicts}
+
+    archived_ids: list[str] = []
+
+    for key, winner_id in resolutions.items():
+        if key not in conflicts_by_key:
+            continue
+        group = conflicts_by_key[key]
+        card_ids = {c["id"] for c in group["cards"]}
+        if winner_id not in card_ids:
+            raise ValueError(f"Specified winner {winner_id!r} is not an active card for key {key!r}.")
+
+        for c in group["cards"]:
+            cid = c["id"]
+            if cid != winner_id:
+                if _kb.archive_task(conn, cid):
+                    archived_ids.append(cid)
+
+    # Re-attempt creation of idx_tasks_idempotency_unique once duplicates are cleanly resolved
+    _ensure_task_idempotency_unique_index(conn, strict=False)
+
+    return {
+        "resolved_keys": len(resolutions),
+        "archived_cards": archived_ids,
+        "remaining_conflicts": len(find_idempotency_conflicts(conn)),
+    }
+
+
 def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     """Add columns introduced after v1 to legacy DBs (called via ``init_db``)."""
     cols = _column_names(conn, "tasks")
@@ -880,15 +1056,7 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     # keeps re-running here cheap and correct on fresh DBs.
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_tenant ON tasks(tenant)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_idempotency ON tasks(idempotency_key)")
-    if "status" in cols and "idempotency_key" in cols:
-        try:
-            conn.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency_unique "
-                "ON tasks(idempotency_key) "
-                "WHERE idempotency_key IS NOT NULL AND status != 'archived'"
-            )
-        except (sqlite3.IntegrityError, sqlite3.OperationalError):
-            pass
+    _ensure_task_idempotency_unique_index(conn)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id)")
 
     # task_events.run_id back-fills as NULL for historical events (they predate

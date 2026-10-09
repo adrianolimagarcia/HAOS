@@ -168,3 +168,124 @@ def test_multiple_tasks_with_null_idempotency_key_coexist(tmp_path):
         assert rows["cnt"] == 3
     finally:
         conn.close()
+
+
+def test_migration_fail_closed_on_legacy_duplicates_without_mutating_cards(tmp_path, monkeypatch):
+    """REGRA OBRIGATORIA: Never auto-archive or auto-delete duplicate cards.
+    
+    If a legacy database contains multiple non-archived rows with the same idempotency key:
+    1. Migration must NOT mutate or archive any historical cards.
+    2. Conflict is detected and written to an auditable JSON report.
+    3. In strict mode, KanbanIdempotencyConflictError is raised.
+    4. Unique index is NOT created while conflicts remain unresolved.
+    """
+    db_path = tmp_path / "legacy_dups_fail_closed.db"
+    raw_conn = sqlite3.connect(str(db_path))
+    raw_conn.row_factory = sqlite3.Row
+    raw_conn.executescript(kb.SCHEMA_SQL)
+
+    # Insert two active tasks sharing the same idempotency key
+    raw_conn.execute(
+        "INSERT INTO tasks (id, title, status, created_at, idempotency_key) "
+        "VALUES ('card_a', 'Card A', 'ready', 100, 'dup_key_omega')"
+    )
+    raw_conn.execute(
+        "INSERT INTO tasks (id, title, status, created_at, idempotency_key) "
+        "VALUES ('card_b', 'Card B', 'todo', 200, 'dup_key_omega')"
+    )
+    raw_conn.commit()
+    raw_conn.close()
+
+    # Enable strict migration flag to verify fail-closed exception
+    monkeypatch.setenv("HERMES_KANBAN_STRICT_MIGRATION", "1")
+
+    report_out = tmp_path / "conflict_report.json"
+    with pytest.raises(kbc.KanbanIdempotencyConflictError) as exc_info:
+        conn = kbc.connect(db_path)
+
+    err = exc_info.value
+    assert len(err.conflicts) == 1
+    assert err.conflicts[0]["idempotency_key"] == "dup_key_omega"
+    assert err.conflicts[0]["count"] == 2
+
+    # Verify that NO historical cards were mutated or archived
+    verify_conn = sqlite3.connect(str(db_path))
+    verify_conn.row_factory = sqlite3.Row
+    rows = verify_conn.execute(
+        "SELECT id, status FROM tasks WHERE idempotency_key = 'dup_key_omega' ORDER BY id"
+    ).fetchall()
+    status_by_id = {r["id"]: r["status"] for r in rows}
+    assert status_by_id["card_a"] == "ready"  # INTACT!
+    assert status_by_id["card_b"] == "todo"   # INTACT!
+
+    # Verify unique index was NOT created
+    indexes = {
+        r["name"]
+        for r in verify_conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
+    }
+    assert "idx_tasks_idempotency_unique" not in indexes
+    verify_conn.close()
+
+
+def test_resolve_idempotency_conflicts_approved_preserves_events(tmp_path):
+    """Resolving proven duplicates requires explicit approval and archives losers via archive_task,
+    recording full 'archived' events with zero loss of events and enabling idx_tasks_idempotency_unique."""
+    db_path = tmp_path / "resolve_approved.db"
+    conn = kbc.connect(db_path)
+    try:
+        # Create initial legacy-like state before unique index
+        # Drop unique index temporarily to insert duplicates for testing resolution
+        conn.execute("DROP INDEX IF EXISTS idx_tasks_idempotency_unique")
+        conn.execute(
+            "INSERT INTO tasks (id, title, status, created_at, idempotency_key) "
+            "VALUES ('dup_1', 'Original Card', 'ready', 100, 'shared_key')"
+        )
+        conn.execute(
+            "INSERT INTO tasks (id, title, status, created_at, idempotency_key) "
+            "VALUES ('dup_2', 'Duplicate Card', 'ready', 200, 'shared_key')"
+        )
+        conn.commit()
+
+        # Attempting mutation without approved=True must raise PermissionError
+        with pytest.raises(PermissionError):
+            kbc.resolve_idempotency_conflicts_approved(conn, {"shared_key": "dup_2"}, approved=False)
+
+        # Resolving with approved=True keeps winner ('dup_2') and archives loser ('dup_1')
+        result = kbc.resolve_idempotency_conflicts_approved(
+            conn, {"shared_key": "dup_2"}, approved=True
+        )
+        assert result["resolved_keys"] == 1
+        assert result["archived_cards"] == ["dup_1"]
+        assert result["remaining_conflicts"] == 0
+
+        # Verify winner status remains active
+        winner = conn.execute("SELECT status FROM tasks WHERE id = 'dup_2'").fetchone()
+        assert winner["status"] == "ready"
+
+        # Verify loser was archived
+        loser = conn.execute("SELECT status FROM tasks WHERE id = 'dup_1'").fetchone()
+        assert loser["status"] == "archived"
+
+        # Verify full event preservation in task_events
+        events = conn.execute(
+            "SELECT kind FROM task_events WHERE task_id = 'dup_1' ORDER BY id"
+        ).fetchall()
+        event_kinds = [e["kind"] for e in events]
+        assert "archived" in event_kinds
+
+        # Verify idx_tasks_idempotency_unique is now active and enforced
+        indexes = {
+            r["name"]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
+        }
+        assert "idx_tasks_idempotency_unique" in indexes
+
+        # Inserting a duplicate active task now fails closed via IntegrityError
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO tasks (id, title, status, created_at, idempotency_key) "
+                "VALUES ('dup_3', 'Illegal Dupe', 'ready', 300, 'shared_key')"
+            )
+            conn.commit()
+    finally:
+        conn.close()
