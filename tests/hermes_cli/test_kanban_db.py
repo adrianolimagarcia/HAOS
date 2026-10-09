@@ -167,6 +167,7 @@ def test_connect_migrates_legacy_db_before_optional_column_indexes(tmp_path):
     assert "idx_tasks_session_id" in indexes
     assert "idx_tasks_tenant" in indexes
     assert "idx_tasks_idempotency" in indexes
+    assert "idx_tasks_idempotency_unique" in indexes
     assert "idx_events_run" in indexes
 
 

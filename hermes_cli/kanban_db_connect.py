@@ -880,6 +880,15 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
     # keeps re-running here cheap and correct on fresh DBs.
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_tenant ON tasks(tenant)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_idempotency ON tasks(idempotency_key)")
+    if "status" in cols and "idempotency_key" in cols:
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_idempotency_unique "
+                "ON tasks(idempotency_key) "
+                "WHERE idempotency_key IS NOT NULL AND status != 'archived'"
+            )
+        except (sqlite3.IntegrityError, sqlite3.OperationalError):
+            pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id)")
 
     # task_events.run_id back-fills as NULL for historical events (they predate
