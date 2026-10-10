@@ -82,14 +82,17 @@ _EXPLICIT = (
     "talvez", "provavelmente", "possivelmente", "hipótese", "hipotese",
     "hipoteticamente", "suponho", "supondo", "suposição", "suposicao",
     "acho que", "pode ser que", "não tenho certeza", "nao tenho certeza",
+    "será que", "sera que", "especula-se", "especulativo",
     "maybe", "perhaps", "probably", "possibly", "hypothesis", "hypothetical",
     "hypothetically", "suppose", "supposing", "i think", "i suspect",
     "might be", "could be that", "not sure",
+    "speculation", "speculative",
 )
 _IMPLICIT = (
     "deve ser", "parece que", "aparentemente", "suspeita-se", "suspeito que",
-    "suspeita que", "seems that", "seem to", "appears to", "apparently",
-    "presumably", "is suspected to",
+    "suspeita que", "suspects that", "suspected that", "suspect that", "is suspected that",
+    "is suspected to", "seems that", "seem to", "appears to", "apparently",
+    "presumably",
 )
 _ATTRIBUTION = ("disse que", "afirmou que", "alega que", "alegou que", "segundo ", "reported that", "said that", "claims that", "according to ")
 _REFUTATION = ("refutou a hipótese", "ficou comprovado que não era", "refutou", "refutada", "refutado", "desmentiu", "desmentido", "refuted", "disproven", "disproved")

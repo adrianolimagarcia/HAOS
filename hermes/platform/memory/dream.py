@@ -62,6 +62,7 @@ def _sanitize_session_preview(text: str) -> str:
 
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
 from hermes.platform.context.memory.candidate import MemoryCandidate, contains_secrets, contains_question, contains_hypothesis
+from hermes.platform.context.memory.classifier import AssertionClassification, AssertionType, classify_assertion
 from hermes.platform.context.memory.mental_model_client import MentalModelClient
 from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
 from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
@@ -242,6 +243,35 @@ class _CanonicalLessonWriter:
     def write_candidate(self, candidate: MemoryCandidate) -> bool:
         from hermes.platform.memory.okf import OKFStore
         from hermes.platform.memory.ragflow_engine import separation_gate
+        from hermes.platform.context.memory.classifier import AssertionType, classify_assertion
+
+        # Gate de classificação / verificação no destination writer canônico:
+        # Bloqueia explicitamente HYPOTHESIS, FACT_UNVERIFIED e REFUTED.
+        # Aceita apenas FACT_VERIFIED com evidências (evidence_refs válido).
+        classification = candidate.classification
+        if classification is None:
+            evidence = candidate.provenance if candidate.provenance else ([f"session://{self.session_id}"] if self.session_id else [])
+            classification = classify_assertion(
+                candidate.fact, evidence_refs=evidence, source_provenance=f"session://{self.session_id}"
+            )
+            candidate.classification = classification
+
+        if classification.assertion_type in (
+            AssertionType.HYPOTHESIS,
+            AssertionType.FACT_UNVERIFIED,
+            AssertionType.REFUTED,
+        ) or classification.assertion_type != AssertionType.FACT_VERIFIED:
+            logger.warning(
+                "CanonicalLessonWriter blocked candidate: assertion_type=%s not FACT_VERIFIED",
+                classification.assertion_type.value,
+            )
+            return False
+
+        evidence_refs = getattr(classification, "evidence_refs", None) or []
+        valid_evidences = [e for e in evidence_refs if str(e).strip()]
+        if not valid_evidences:
+            logger.warning("CanonicalLessonWriter blocked candidate: no valid evidence_refs")
+            return False
 
         store = OKFStore(self.okf_dir)
         cand_fact = candidate.fact.strip()
@@ -643,6 +673,22 @@ class DreamConsolidator:
                 session_uri = f"session://{sid}"
                 key = candidate_key(lesson)
 
+                # Gate de classificação / assertion type:
+                # Classifica antes da promoção/ingestão no dream
+                classification = classify_assertion(
+                    lesson, evidence_refs=[session_uri], source_provenance=session_uri
+                )
+                if classification.assertion_type in (
+                    AssertionType.HYPOTHESIS,
+                    AssertionType.FACT_UNVERIFIED,
+                    AssertionType.REFUTED,
+                ) or classification.assertion_type != AssertionType.FACT_VERIFIED:
+                    logger.debug(
+                        "Skipped non-FACT_VERIFIED assertion in dream extraction (session %s): %s (%s)",
+                        sid, lesson, classification.assertion_type.value,
+                    )
+                    continue
+
                 # Reforço é recorrência ENTRE sessões: a mesma sessão reprocessada não
                 # reforça, e lição já promovida não é re-ingerida.
                 existing = self.staging_store.get(key)
@@ -672,6 +718,7 @@ class DreamConsolidator:
                     source_uri=session_uri,
                     confidence=confidence,
                     scope="project",
+                    classification=classification,
                 )
                 consolidated += 1
 

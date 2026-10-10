@@ -121,7 +121,10 @@ class MemoryCandidate:
                 return False
             if self.classification.assertion_type != AssertionType.FACT_VERIFIED:
                 return False
-            if len(self.classification.evidence_refs) == 0:
+            # Aceitar apenas FACT_VERIFIED com evidências (evidence_refs válido e não vazio)
+            evidence = getattr(self.classification, "evidence_refs", None) or []
+            valid_evidence = [e for e in evidence if str(e).strip()]
+            if not valid_evidence:
                 return False
             # Não pode conter perguntas
             if contains_question(text):
@@ -194,6 +197,14 @@ def validate_candidate(candidate: MemoryCandidate) -> tuple[bool, str]:
             return False, "fato refutado por evidência conclusiva (REFUTED)"
         if candidate.classification.assertion_type == AssertionType.HYPOTHESIS:
             return False, "fato formulado como hipótese, suposição ou especulação (HYPOTHESIS)"
+        if candidate.classification.assertion_type == AssertionType.FACT_UNVERIFIED:
+            return False, "fato não verificado independentemente (FACT_UNVERIFIED)"
+        if candidate.classification.assertion_type != AssertionType.FACT_VERIFIED:
+            return False, f"tipo de asserção não aceito para promoção: {candidate.classification.assertion_type}"
+        evidence = getattr(candidate.classification, "evidence_refs", None) or []
+        valid_evidence = [e for e in evidence if str(e).strip()]
+        if not valid_evidence:
+            return False, "fato sem referências de evidência válidas (evidence_refs)"
 
     if contains_question(text):
         return False, "fato interrogativo ou formulado como questionamento (?)"

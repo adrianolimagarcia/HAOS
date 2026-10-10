@@ -363,6 +363,43 @@ class MemoryReconciler:
         if not is_valid:
             return {"status": "rejected", "item": None, "reason": reason}
 
+        # Gate de classificação / assertion type:
+        # Bloquear HYPOTHESIS, FACT_UNVERIFIED e REFUTED.
+        # Permitir promoção apenas para FACT_VERIFIED com evidence_refs válido.
+        classification = getattr(candidate, "classification", None)
+        if classification is None:
+            from hermes.platform.context.memory.classifier import classify_assertion
+            prov = getattr(candidate, "provenance", []) or []
+            src = getattr(candidate, "source_uri", "") or ""
+            evidence = list(prov) if prov else ([src] if src else [])
+            classification = classify_assertion(
+                getattr(candidate, "fact", "") or getattr(candidate, "content", ""),
+                evidence_refs=evidence,
+                source_provenance=src,
+            )
+            candidate.classification = classification
+
+        from hermes.platform.context.memory.classifier import AssertionType
+        if classification.assertion_type in (
+            AssertionType.HYPOTHESIS,
+            AssertionType.FACT_UNVERIFIED,
+            AssertionType.REFUTED,
+        ) or classification.assertion_type != AssertionType.FACT_VERIFIED:
+            return {
+                "status": "rejected",
+                "item": None,
+                "reason": f"Classification assertion type {classification.assertion_type.value} is blocked from promotion",
+            }
+
+        evidence_refs = getattr(classification, "evidence_refs", None) or []
+        valid_evidences = [e for e in evidence_refs if str(e).strip()]
+        if not valid_evidences:
+            return {
+                "status": "rejected",
+                "item": None,
+                "reason": "FACT_VERIFIED candidate lacks valid evidence_refs for promotion",
+            }
+
         # Gate de promoção automática (correções explícitas com supersedes têm prioridade de governança)
         is_explicit_supersedes = bool(getattr(candidate, "supersedes", None))
         is_casual = (
