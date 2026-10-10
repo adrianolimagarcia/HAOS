@@ -19,6 +19,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
+from pathlib import Path
 
 from hermes_constants import get_hermes_home
 from tools.daemon_pool import DaemonThreadPoolExecutor
@@ -141,7 +142,11 @@ def _persist_dispatch(record: Dict[str, Any]) -> None:
         owner_started_at = None
     task_payload = {
         key: record.get(key)
-        for key in ("goal", "goals", "context", "toolsets", "role", "model", "is_batch", "task_indexes", *_ROUTING_KEYS)
+        for key in (
+            "goal", "goals", "context", "toolsets", "role", "model", "is_batch", "task_indexes",
+            "worktree_path", "worktree_branch", "worktree_base",
+            *_ROUTING_KEYS
+        )
         if key in record}
     with _DB_LOCK, _transaction() as conn:
         conn.execute("""INSERT OR REPLACE INTO async_delegations
@@ -179,6 +184,12 @@ def _prune_durable_records() -> None:
                      WHERE state NOT IN ('running','finalizing') AND delivery_state='pending'
                      ORDER BY updated_at ASC LIMIT ?
                    )""", (pending_count - _MAX_DURABLE_PENDING,))
+
+    try:
+        from tools.subagent_worktree_gc import garbage_collect_subagent_worktrees
+        garbage_collect_subagent_worktrees()
+    except Exception as exc:
+        logger.debug("subagent worktree gc in _prune_durable_records failed (best-effort): %s", exc)
 
 
 def _persist_completion(event: Dict[str, Any], result: Dict[str, Any]) -> None:
@@ -245,21 +256,63 @@ def recover_abandoned_delegations() -> int:
                 done = sum(1 for r in recovered_results if r.get("status") != "unknown")
                 error = (f"Delegation owner exited before the unit finished; {done}/{len(recovered_results)} child "
                          "results were recorded and are included below, the rest are unknown.")
+
+            # Orphan worktree reconciliation
+            worktree_info = None
+            wt_path = task.get("worktree_path")
+            wt_branch = task.get("worktree_branch")
+            wt_base = task.get("worktree_base")
+            if wt_path:
+                worktree_info = {"path": wt_path, "branch": wt_branch, "base_commit": wt_base}
+            else:
+                # Check for matching .worktrees/subagent-<delegation_id>* in repo roots
+                try:
+                    from tools.subagent_worktree import resolve_repo_root
+                    repo_root = resolve_repo_root(os.getcwd())
+                    if repo_root:
+                        wt_dir = Path(repo_root) / ".worktrees"
+                        if wt_dir.is_dir():
+                            for p in wt_dir.iterdir():
+                                if p.is_dir() and delegation_id in p.name:
+                                    worktree_info = {"path": str(p), "branch": "", "base_commit": ""}
+                                    break
+                except Exception:
+                    worktree_info = None
+
+            status = "unknown"
+            if worktree_info and worktree_info.get("path"):
+                try:
+                    from tools.subagent_worktree import reconcile_orphan_worktree
+                    recon = reconcile_orphan_worktree(worktree_info)
+                    if recon.get("action") == "pruned":
+                        error += f" Isolated worktree was clean and has been pruned."
+                    elif recon.get("action") == "preserved":
+                        status = "recovered_with_work"
+                        diff_text = f"\nDiffstat:\n{recon['diffstat']}" if recon.get("diffstat") else ""
+                        error = (
+                            f"Process exited before recording a terminal result. "
+                            f"Preserved worktree on branch '{recon.get('branch')}' "
+                            f"with {recon.get('commits', 0)} commit(s) "
+                            f"(checkpointed={recon.get('checkpointed', False)}).{diff_text}"
+                        )
+                except Exception as exc:
+                    logger.debug("reconcile_orphan_worktree during recovery failed: %s", exc)
+
             event = {
                 "type": "async_delegation", "delegation_id": delegation_id, "session_key": session_key,
                 "origin_ui_session_id": origin_ui, "origin_session_id": origin_sid or "",
                 "parent_session_id": parent_id, "goal": task.get("goal", ""), "goals": task.get("goals"),
                 "context": task.get("context"), "toolsets": task.get("toolsets"), "role": task.get("role"),
                 "model": task.get("model"), "is_batch": bool(task.get("is_batch")),
-                "status": "unknown", "summary": None, "error": error,
+                "status": status, "summary": None, "error": error,
                 **({"results": recovered_results} if recovered_results else {}),
                 "dispatched_at": dispatched_at, "completed_at": now,
                 **{k: task[k] for k in _ROUTING_KEYS if task.get(k)}}
-            result = {"status": "unknown", "summary": None, "error": event["error"],
+            result = {"status": status, "summary": None, "error": event["error"],
                       **({"results": recovered_results} if recovered_results else {})}
-            conn.execute("""UPDATE async_delegations SET state='unknown', completed_at=?,
+            conn.execute("""UPDATE async_delegations SET state=?, completed_at=?,
                    updated_at=?, event_json=?, result_json=?, delivery_state='pending'
-                   WHERE delegation_id=?""", (now, now, json.dumps(event), json.dumps(result), delegation_id))
+                   WHERE delegation_id=?""", (status, now, now, json.dumps(event), json.dumps(result), delegation_id))
             recovered += 1
     return recovered
 

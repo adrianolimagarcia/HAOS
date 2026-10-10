@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from hermes_cli._subprocess_compat import harden_git_argv, noninteractive_git_env
+from tools.subagent_worktree_gc import garbage_collect_subagent_worktrees
 
 logger = logging.getLogger(__name__)
 
@@ -214,3 +215,150 @@ def build_worktree_context_note(info: Dict[str, str]) -> str:
         "changes to your branch when done; the parent agent will review and merge your branch. If "
         "you make no commits and leave the tree clean, the worktree is discarded automatically."
     )
+
+
+def reconcile_orphan_worktree(info_or_path: Any, repo_root: Optional[str] = None) -> Dict[str, Any]:
+    """Reconcile an orphan worktree left behind by a crashed parent or subagent process.
+
+    Behavior:
+    1. If clean and 0 commits ahead of base:
+       Prune worktree (git worktree remove --force) and delete branch (git branch -D).
+       Returns dict(action="pruned", branch=..., path=...).
+    2. If dirty (uncommitted changes):
+       Auto-checkpoint with commit message 'chore(recovery): auto-checkpoint uncommitted work prior to process crash'.
+       Mark checkpointed = True.
+    3. If has commits (or newly committed via auto-checkpoint):
+       Extract commit count (git rev-list --count), diffstat (git diff --stat) and changed files (git diff --name-only).
+       Preserve worktree and branch.
+       Returns dict(action="preserved", branch=..., path=..., commits=..., diffstat=..., files=..., checkpointed=...).
+    """
+    if isinstance(info_or_path, dict):
+        path = str(info_or_path.get("path") or "")
+        branch = str(info_or_path.get("branch") or "")
+        base = str(info_or_path.get("base_commit") or "")
+        root = str(info_or_path.get("repo_root") or "") or repo_root
+    else:
+        path = str(info_or_path or "")
+        branch = ""
+        base = ""
+        root = repo_root
+
+    path = os.path.abspath(os.path.expanduser(path)) if path else ""
+    if not path or not os.path.isdir(path):
+        return {
+            "action": "pruned",
+            "branch": branch,
+            "path": path,
+            "commits": 0,
+            "diffstat": "",
+            "files": [],
+            "checkpointed": False,
+        }
+
+    # Discover branch if missing
+    if not branch:
+        branch_proc = _run_git(["branch", "--show-current"], cwd=path)
+        if branch_proc.returncode == 0 and branch_proc.stdout.strip():
+            branch = branch_proc.stdout.strip()
+        else:
+            # Fallback for detached HEAD or symbolic-ref
+            sym_proc = _run_git(["symbolic-ref", "--short", "HEAD"], cwd=path)
+            if sym_proc.returncode == 0 and sym_proc.stdout.strip():
+                branch = sym_proc.stdout.strip()
+
+    # Discover repo_root if missing
+    if not root:
+        root = resolve_repo_root(path)
+    if not root:
+        root = path
+
+    # Check dirty
+    status_proc = _run_git(["status", "--porcelain"], cwd=path)
+    is_dirty = bool(status_proc.returncode != 0 or status_proc.stdout.strip())
+    checkpointed = False
+
+    if is_dirty:
+        _run_git(["add", "-A"], cwd=path)
+        commit_res = _run_git(
+            [
+                "-c", "user.name=Hermes Recovery",
+                "-c", "user.email=recovery@hermes.local",
+                "commit", "-m",
+                "chore(recovery): auto-checkpoint uncommitted work prior to process crash",
+            ],
+            cwd=path,
+        )
+        if commit_res.returncode == 0:
+            checkpointed = True
+
+    # Determine base for diff/commits
+    if not base:
+        base = "HEAD~1" if checkpointed else "HEAD"
+
+    # Count commits ahead of base
+    ref = branch if branch else "HEAD"
+    rev_range = f"{base}..{ref}" if base and base != "HEAD" else None
+
+    commits_ahead = 0
+    if rev_range:
+        cnt_proc = _run_git(["rev-list", "--count", rev_range], cwd=path)
+        if cnt_proc.returncode == 0 and cnt_proc.stdout.strip().isdigit():
+            commits_ahead = int(cnt_proc.stdout.strip())
+    else:
+        merge_base_proc = _run_git(["merge-base", "HEAD", "main"], cwd=path)
+        if merge_base_proc.returncode == 0 and merge_base_proc.stdout.strip():
+            mb = merge_base_proc.stdout.strip()
+            cnt_proc = _run_git(["rev-list", "--count", f"{mb}..HEAD"], cwd=path)
+            if cnt_proc.returncode == 0 and cnt_proc.stdout.strip().isdigit():
+                commits_ahead = int(cnt_proc.stdout.strip())
+        elif checkpointed:
+            commits_ahead = 1
+
+    post_status = _run_git(["status", "--porcelain"], cwd=path)
+    still_dirty = bool(post_status.returncode != 0 or post_status.stdout.strip())
+
+    if commits_ahead == 0 and not still_dirty and not checkpointed:
+        try:
+            _run_git(["worktree", "remove", "--force", path], cwd=root)
+            if branch:
+                _run_git(["branch", "-D", branch], cwd=root)
+        except Exception as exc:
+            logger.debug("reconcile_orphan_worktree: prune failed: %s", exc)
+        return {
+            "action": "pruned",
+            "branch": branch,
+            "path": path,
+            "commits": 0,
+            "diffstat": "",
+            "files": [],
+            "checkpointed": False,
+        }
+
+    diff_target = base if base and base != "HEAD" else "HEAD~1" if commits_ahead > 0 else "HEAD"
+    diffstat_proc = _run_git(["diff", "--stat", f"{diff_target}..HEAD"], cwd=path)
+    diffstat = diffstat_proc.stdout.strip() if diffstat_proc.returncode == 0 else ""
+
+    files_proc = _run_git(["diff", "--name-only", f"{diff_target}..HEAD"], cwd=path)
+    files = [f for f in files_proc.stdout.splitlines() if f.strip()] if files_proc.returncode == 0 else []
+
+    return {
+        "action": "preserved",
+        "branch": branch,
+        "path": path,
+        "commits": commits_ahead,
+        "diffstat": diffstat,
+        "files": files,
+        "checkpointed": checkpointed,
+    }
+
+
+__all__ = [
+    "resolve_repo_root",
+    "local_backend_active",
+    "create_subagent_worktree",
+    "finalize_subagent_worktree",
+    "unproven_worktree_payload",
+    "build_worktree_context_note",
+    "reconcile_orphan_worktree",
+    "garbage_collect_subagent_worktrees",
+]
