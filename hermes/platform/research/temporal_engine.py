@@ -87,7 +87,7 @@ def compute_temporal_window(
         days = 7
     elif "90" in req_lower or "3month" in req_lower or "quarter" in req_lower:
         days = 90
-    elif "24h" in req_lower or "day" in req_lower or "today" in req_lower:
+    elif req_lower in ("24h", "last24h", "lastday", "day", "today", "yesterday"):
         days = 1
     elif "30" in req_lower or "month" in req_lower:
         days = 30
