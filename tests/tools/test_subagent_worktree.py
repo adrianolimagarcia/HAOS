@@ -432,5 +432,52 @@ class DelegationConfigGateTests(unittest.TestCase):
             self.assertTrue(delegate_tool._get_worktree_isolation())
 
 
+class ReconcileOrphanWorktreeTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_reconcile_prunes_clean_zero_commits(self):
+        repo = _make_repo(Path(self.tmp.name))
+        info = sw.create_subagent_worktree(str(repo), "clean_orphan")
+        assert info is not None
+        res = sw.reconcile_orphan_worktree(info)
+        self.assertEqual(res["action"], "pruned")
+        self.assertFalse(os.path.exists(info["path"]))
+
+    def test_reconcile_auto_checkpoints_dirty_orphan(self):
+        repo = _make_repo(Path(self.tmp.name))
+        info = sw.create_subagent_worktree(str(repo), "dirty_orphan")
+        assert info is not None
+        uncommitted_file = Path(info["path"]) / "uncommitted.txt"
+        uncommitted_file.write_text("saved work before crash\n")
+        res = sw.reconcile_orphan_worktree(info)
+        self.assertEqual(res["action"], "preserved")
+        self.assertTrue(res["checkpointed"])
+        self.assertGreaterEqual(res["commits"], 1)
+        self.assertIn("uncommitted.txt", res["files"])
+        self.assertTrue(os.path.exists(info["path"]))
+
+    def test_reconcile_preserves_commits_ahead(self):
+        repo = _make_repo(Path(self.tmp.name))
+        info = sw.create_subagent_worktree(str(repo), "committed_orphan")
+        assert info is not None
+        wt = Path(info["path"])
+        committed_file = wt / "work.txt"
+        committed_file.write_text("feature work\n")
+        _git(["add", "work.txt"], wt)
+        _git(["config", "user.email", "child@test"], wt)
+        _git(["config", "user.name", "Child"], wt)
+        _git(["commit", "-q", "-m", "feat: some subagent commit"], wt)
+        res = sw.reconcile_orphan_worktree(info)
+        self.assertEqual(res["action"], "preserved")
+        self.assertFalse(res["checkpointed"])
+        self.assertGreaterEqual(res["commits"], 1)
+        self.assertIn("work.txt", res["files"])
+        self.assertTrue(os.path.exists(info["path"]))
+
+
 if __name__ == "__main__":
     unittest.main()
