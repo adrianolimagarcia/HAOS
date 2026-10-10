@@ -482,16 +482,18 @@ class DreamConsolidator:
                 for s in recent_sessions:
                     sid = s.get("id", "")
                     started_at = s.get("started_at") or 0.0
+                    updated_at = s.get("updated_at") or s.get("last_active") or started_at
                     last_sess_ts = per_session_cursor.get(sid, 0.0)
 
                     # Leitura incremental: busca mensagens com timestamp > last_sess_ts
                     msgs = _sdb.get_messages(sid)
                     delta_msgs = [m for m in msgs if (m.get("timestamp") or started_at) > last_sess_ts]
                     if not delta_msgs:
-                        if started_at > last_cursor and (s.get("preview") or "").strip():
+                        effective_ts = max(started_at, updated_at)
+                        if effective_ts > last_cursor and (s.get("preview") or "").strip() and not last_sess_ts:
                             # Sessão nova sem messages explícitas mas com preview
                             candidates.append(s)
-                            session_deltas[sid] = {"delta_text": s.get("preview") or "", "max_msg_ts": started_at}
+                            session_deltas[sid] = {"delta_text": s.get("preview") or "", "max_msg_ts": effective_ts}
                         continue
 
                     # Constrói texto limitado pelos tetos (1,2k por msg, 7k por sessão).
@@ -542,7 +544,7 @@ class DreamConsolidator:
         else:
             candidates = [
                 s for s in recent_sessions
-                if (s.get("started_at") or 0.0) > last_cursor
+                if (s.get("updated_at") or s.get("last_active") or s.get("started_at") or 0.0) > last_cursor
             ]
 
         if not candidates:
@@ -570,7 +572,8 @@ class DreamConsolidator:
             sid = s.get("id", "")
             title = s.get("title") or "Session"
             started_at = s.get("started_at") or time.time()
-            max_ts = max(max_ts, started_at)
+            updated_at = s.get("updated_at") or s.get("last_active") or started_at
+            max_ts = max(max_ts, started_at, updated_at)
 
             # Check if this session generated key operational decisions or learnings
             delta_info = session_deltas.get(sid, {})

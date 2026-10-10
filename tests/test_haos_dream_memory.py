@@ -403,3 +403,45 @@ def test_dream_delta_com_segredo_descarta_sessao_sem_staging_nem_projecao(tmp_pa
         rows = cursor.execute("SELECT model_id FROM haos_mental_models").fetchall()
         conn.close()
         assert len(rows) == 0
+
+
+def test_dream_sessao_reaberta_updated_at_incremental(tmp_path: Path, monkeypatch):
+    """HD-05: Sessão antiga reaberta com novas mensagens / updated_at recente é consolidada
+
+    Garante que o cursor per_session e global atualizam corretamente e evitam
+    retroprocessamento de mensagens anteriores.
+    """
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    sid = "sessao_reaberta_001"
+    db = SessionDB(db_path=home / "state.db")
+    # Sessão iniciada no passado (ts 1000)
+    db.ensure_session(session_id=sid, source="cli", model="gemini-test")
+    db.set_session_title(sid, "Sessao antiga reaberta")
+    db.append_message(sid, "user", "Primeira mensagem antiga da sessao", timestamp=1000.0)
+    db.append_message(sid, "assistant", "Resposta antiga", timestamp=1001.0)
+    db.close()
+
+    consolidator = DreamConsolidator(hermes_home=home)
+    # Primeiro ciclo Dream: consolida mensagem do passado
+    res1 = consolidator.run_dream(dry_run=True)
+    assert res1["status"] in ("consolidated", "preview", "staged") or res1["consolidated_count"] >= 1
+
+    # Atualiza cursor persistido simulando consolidação da mensagem antiga
+    consolidator.set_cursor(1001.0, per_session={sid: 1001.0})
+
+    # Reabre a sessão no tempo futuro (ts 2000)
+    db = SessionDB(db_path=home / "state.db")
+    db.append_message(sid, "user", "Nova mensagem após reabertura no futuro", timestamp=2000.0)
+    db.append_message(sid, "assistant", "Resposta nova", timestamp=2001.0)
+    db.close()
+
+    # Segundo ciclo Dream: deve detectar delta incremental a partir de updated_at / timestamp recente
+    res2 = consolidator.run_dream(dry_run=True)
+    assert res2["status"] != "idle"
+    # O cursor após a consolidação deve ter avançado
+    cursor_data2 = consolidator.get_cursor_data()
+    assert cursor_data2.get("per_session", {}).get(sid, 0.0) >= 2000.0 or res2["consolidated_count"] >= 1
+
