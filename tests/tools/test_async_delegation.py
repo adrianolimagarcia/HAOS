@@ -1167,12 +1167,42 @@ def test_persist_failure_still_delivers_result_and_frees_slot(monkeypatch):
     evt = _drain_for(res["delegation_id"])
 
     assert evt is not None and evt["status"] == "completed" and evt["summary"] == "done"
+    assert evt.get("durable_write_failed") is True
     deadline = time.monotonic() + 2.0
     while ad.active_count() and time.monotonic() < deadline:
         time.sleep(0.02)
     assert ad.active_count() == 0
     with ad._records_lock:
         assert ad._records[res["delegation_id"]]["status"] == "completed"
+
+
+def test_persist_retry_succeeds_on_transient_failures(monkeypatch):
+    """A transient SQLite lock/failure succeeds on retry (e.g. 3rd attempt) without flagging durable_write_failed."""
+    attempts = 0
+    real_persist = ad._persist_completion
+
+    def flaky_persist(event, result):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise RuntimeError("database is locked (transient)")
+        return real_persist(event, result)
+
+    monkeypatch.setattr(ad, "_persist_completion", flaky_persist)
+    res = ad.dispatch_async_delegation(
+        goal="g", context=None, toolsets=None, role="leaf", model="m", session_key="",
+        runner=lambda: {"status": "completed", "summary": "done"}, max_async_children=1,
+    )
+    evt = _drain_for(res["delegation_id"])
+
+    assert evt is not None and evt["status"] == "completed" and evt["summary"] == "done"
+    assert "durable_write_failed" not in evt
+    assert attempts == 3
+    deadline = time.monotonic() + 2.0
+    while ad.active_count() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert ad.active_count() == 0
+
 
 
 def test_prune_never_evicts_live_records():

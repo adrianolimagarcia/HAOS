@@ -728,11 +728,17 @@ def _push_completion_event(record: Dict[str, Any], result: Dict[str, Any], statu
         **({} if is_batch else {"exit_reason": result.get("exit_reason")}),
         **{k: record[k] for k in _ROUTING_KEYS if record.get(k)},
         **{k: result[k] for k in _STALL_META_KEYS if k in result}}
-    try:
-        _persist_completion(evt, result)
-    except Exception as exc:  # noqa: BLE001 — a lost durable row is recoverable; a lost result + leaked slot is not
-        logger.error(f"Async delegation{label} %s: durable completion write failed; delivering in-memory "
-                     "only (a restart may report this unit as unknown): %s", record.get("delegation_id"), exc)
+    for attempt in range(3):
+        try:
+            _persist_completion(evt, result)
+            break
+        except Exception as exc:  # noqa: BLE001 — transient SQLite lock retries; failure drops to memory-only delivery
+            if attempt == 2:
+                evt["durable_write_failed"] = True
+                logger.error(f"Async delegation{label} %s: durable completion write failed; delivering in-memory "
+                             "only (a restart may report this unit as unknown): %s", record.get("delegation_id"), exc)
+            else:
+                time.sleep(0.05 * (2 ** attempt))
     try:
         process_registry.completion_queue.put(evt)
     except Exception as exc:  # pragma: no cover
