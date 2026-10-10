@@ -12,6 +12,17 @@ from hermes.platform.context.memory.classifier import (
 from hermes.platform.context.memory.candidate import contains_hypothesis
 
 
+@pytest.fixture(autouse=True)
+def setup_unit_test_evidence():
+    from hermes.platform.context.memory.evidence import (
+        bootstrap_eval_fixture_registry,
+        get_default_evidence_registry,
+    )
+    reg = get_default_evidence_registry()
+    bootstrap_eval_fixture_registry(reg)
+    yield
+
+
 @pytest.mark.parametrize("text", [
     "Talvez o banco esteja lento.", "Provavelmente há um erro.",
     "Possivelmente o cache expirou.", "Esta é uma hipótese.",

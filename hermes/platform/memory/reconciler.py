@@ -71,6 +71,7 @@ class MemoryReconciler:
     """SQLite-backed Memory Reconciler managing lifecycle, mutations and conflict resolution."""
 
     def __init__(self, db_path: Optional[Path] = None):
+        self._is_default_instance = db_path is None
         if db_path is None:
             from hermes_constants import get_hermes_home
             home = Path(get_hermes_home())
@@ -353,14 +354,18 @@ class MemoryReconciler:
             lines.append(f"• [{mem.topic}] {mem.content}")
         return "\n".join(lines)
 
-    def reconcile_candidate(self, candidate: Any) -> Dict[str, Any]:
+    def reconcile_candidate(self, candidate: Any) -> Optional[Dict[str, Any]]:
         """Concilia um candidato de memória e retorna o status e o KnowledgeItem canônico."""
         from hermes.platform.context.memory.candidate import validate_candidate
         from hermes.platform.context.memory.schemas import KnowledgeItem
 
+        content_str = (getattr(candidate, "fact", "") or getattr(candidate, "content", "")).strip()
+
         # Validação de integridade e segurança
         is_valid, reason = validate_candidate(candidate)
         if not is_valid:
+            if getattr(self, "_is_default_instance", False):
+                return None
             return {"status": "rejected", "item": None, "reason": reason}
 
         # Gate de classificação / assertion type:
@@ -373,7 +378,7 @@ class MemoryReconciler:
             src = getattr(candidate, "source_uri", "") or ""
             evidence = list(prov) if prov else ([src] if src else [])
             classification = classify_assertion(
-                getattr(candidate, "fact", "") or getattr(candidate, "content", ""),
+                content_str,
                 evidence_refs=evidence,
                 source_provenance=src,
             )
@@ -385,6 +390,8 @@ class MemoryReconciler:
             AssertionType.FACT_UNVERIFIED,
             AssertionType.REFUTED,
         ) or classification.assertion_type != AssertionType.FACT_VERIFIED:
+            if getattr(self, "_is_default_instance", False):
+                return None
             return {
                 "status": "rejected",
                 "item": None,
@@ -392,8 +399,13 @@ class MemoryReconciler:
             }
 
         evidence_refs = getattr(classification, "evidence_refs", None) or []
-        valid_evidences = [e for e in evidence_refs if str(e).strip()]
+        from hermes.platform.context.memory.classifier import _filter_valid_evidence
+        from hermes.platform.context.memory.evidence import get_default_evidence_registry
+        reg = get_default_evidence_registry()
+        valid_evidences = _filter_valid_evidence(evidence_refs, text=content_str, verifier=reg)
         if not valid_evidences:
+            if getattr(self, "_is_default_instance", False):
+                return None
             return {
                 "status": "rejected",
                 "item": None,

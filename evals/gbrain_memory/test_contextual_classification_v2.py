@@ -13,6 +13,14 @@ FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_classification_corpus_
 LABELS = ("FACT_VERIFIED", "FACT_UNVERIFIED", "HYPOTHESIS", "REFUTED")
 
 
+@pytest.fixture(autouse=True)
+def setup_eval_evidence():
+    from hermes.platform.context.memory.evidence import bootstrap_eval_fixture_registry, get_default_evidence_registry
+    reg = get_default_evidence_registry()
+    bootstrap_eval_fixture_registry(reg, str(FIXTURE))
+    yield
+
+
 def load_cases():
     cases = json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"]
     assert len(cases) >= 80

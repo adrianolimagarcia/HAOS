@@ -32,6 +32,8 @@ from hermes.platform.memory.reconciler import MemoryReconciler
 
 class TestDreamCuratorGate(unittest.TestCase):
     def setUp(self):
+        from hermes.platform.context.memory.evidence import bootstrap_eval_fixture_registry
+        bootstrap_eval_fixture_registry()
         self.temp_dir = TemporaryDirectory()
         self.path = Path(self.temp_dir.name)
         self.staging_store = MemoryStagingStore(self.path / "staging")

@@ -63,12 +63,14 @@ class MemoryRouter:
         self,
         consolidator: Optional[MemoryConsolidator] = None,
         staging_store: Optional[MemoryStagingStore] = None,
+        verifier: Optional[Any] = None,
     ):
         self.consolidator = consolidator or MemoryConsolidator()
         # Degrau de staging (P11): onde o candidato de baixa confiança espera
         # persistido até ser promovido. Passe staging_store=None para não persistir
         # (o candidato ainda vira "pending", mas nada é gravado).
         self.staging_store = staging_store if staging_store is not None else MemoryStagingStore()
+        self.verifier = verifier
 
     def classify_destination(self, fact: str) -> DestinationType:
         """Classifica o fato segundo as regras de negócio."""
@@ -116,6 +118,7 @@ class MemoryRouter:
                 fact,
                 evidence_refs=evidence_refs,
                 source_provenance=source_uri.strip() if source_uri else "",
+                verifier=getattr(self, "verifier", None),
             )
         return MemoryCandidate(
             fact=fact.strip(),

@@ -164,6 +164,78 @@ class MemoryCandidate:
             data["classification"] = None
         return data
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "MemoryCandidate":
+        """Deserializa dicionário primitivo para MemoryCandidate com validação fail-closed."""
+        if not isinstance(data, dict):
+            raise TypeError(f"MemoryCandidate.from_dict requires dict, got {type(data).__name__}")
+
+        # Validar integridade e sanitizar campos essenciais
+        raw_classification = data.get("classification")
+        classification_obj = None
+        if raw_classification is not None:
+            if isinstance(raw_classification, dict):
+                classification_obj = AssertionClassification.from_dict(raw_classification)
+            elif isinstance(raw_classification, AssertionClassification):
+                classification_obj = raw_classification
+
+        raw_prov = data.get("provenance", [])
+        if isinstance(raw_prov, (list, tuple)):
+            provenance = [str(p) for p in raw_prov if p is not None]
+        elif isinstance(raw_prov, str):
+            provenance = [raw_prov] if raw_prov else []
+        else:
+            provenance = []
+
+        try:
+            confidence = float(data.get("confidence", 0.5))
+        except (ValueError, TypeError):
+            confidence = 0.5
+
+        try:
+            created_at = float(data.get("created_at", time.time()))
+        except (ValueError, TypeError):
+            created_at = time.time()
+
+        try:
+            proof_count = int(data.get("proof_count", 1))
+        except (ValueError, TypeError):
+            proof_count = 1
+
+        valid_from = data.get("valid_from")
+        if valid_from is not None:
+            try:
+                valid_from = float(valid_from)
+            except (ValueError, TypeError):
+                valid_from = None
+
+        valid_until = data.get("valid_until")
+        if valid_until is not None:
+            try:
+                valid_until = float(valid_until)
+            except (ValueError, TypeError):
+                valid_until = None
+
+        return cls(
+            id=str(data.get("id") or uuid.uuid4()),
+            fact=str(data.get("fact", "") or ""),
+            content=str(data.get("content", "") or ""),
+            source_uri=str(data.get("source_uri", "") or ""),
+            confidence=confidence,
+            scope=data.get("scope", "project"),
+            category=str(data.get("category", "project") or "project"),
+            proposed_destination=data.get("proposed_destination", "working"),
+            provenance=provenance,
+            created_at=created_at,
+            status=data.get("status", "pending"),
+            proof_count=proof_count,
+            valid_from=valid_from,
+            valid_until=valid_until,
+            supersedes=data.get("supersedes"),
+            superseded_by=data.get("superseded_by"),
+            classification=classification_obj,
+        )
+
 
 def validate_candidate(candidate: MemoryCandidate) -> tuple[bool, str]:
     """Valida um candidato contra as políticas de integridade e segurança do HAOS.
