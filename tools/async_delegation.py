@@ -115,10 +115,10 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     reconcile_state_schema(conn)
 
 
-def _transaction():
+def _transaction(*, immediate: bool = True):
     from hermes_cli.sqlite_util import transaction
 
-    return transaction(_connect())
+    return transaction(_connect(), immediate=immediate)
 
 
 def _capture_routing_origin() -> Dict[str, Any]:
@@ -420,7 +420,7 @@ def _event_delivery(fn, evt: Dict[str, Any], claim_id: str) -> None:
 
 
 def get_durable_delegation(delegation_id: str) -> Optional[Dict[str, Any]]:
-    with _DB_LOCK, _transaction() as conn:
+    with _DB_LOCK, _transaction(immediate=False) as conn:
         row = conn.execute("""SELECT origin_session, state, dispatched_at, completed_at,
                       result_json, delivery_state, delivery_attempts,
                       origin_session_id

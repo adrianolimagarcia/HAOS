@@ -110,4 +110,11 @@ def write_txn(conn: sqlite3.Connection):
             pass
         raise
     else:
-        conn.execute("COMMIT")
+        try:
+            conn.execute("COMMIT")
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.OperationalError:
+                pass
+            raise

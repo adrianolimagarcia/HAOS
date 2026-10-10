@@ -134,3 +134,58 @@ def test_plugin_db_wal_goes_through_the_shared_fallback(monkeypatch, tmp_path):
     finally:
         conn.close()
     assert seen == ["plugin-data/board/data.db"]
+
+
+def test_write_txn_commits_on_success_and_rolls_back_on_error(tmp_path):
+    db = tmp_path / "write_txn.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE t (val INT)")
+    conn.commit()
+
+    # Success case: commits and connection remains usable
+    with sqlite_util.write_txn(conn) as c:
+        c.execute("INSERT INTO t VALUES (10)")
+    assert conn.execute("SELECT val FROM t").fetchall() == [(10,)]
+
+    # Error case: rolls back and raises original error
+    with pytest.raises(RuntimeError, match="abort write"):
+        with sqlite_util.write_txn(conn) as c:
+            c.execute("INSERT INTO t VALUES (20)")
+            raise RuntimeError("abort write")
+    assert conn.execute("SELECT val FROM t").fetchall() == [(10,)]
+
+    # Connection remains usable for another write_txn
+    with sqlite_util.write_txn(conn) as c:
+        c.execute("INSERT INTO t VALUES (30)")
+    assert conn.execute("SELECT val FROM t").fetchall() == [(10,), (30,)]
+    conn.close()
+
+
+def test_write_txn_rolls_back_if_commit_fails(tmp_path):
+    class FailingCommitConnection:
+        def __init__(self, real_conn):
+            self._real = real_conn
+            self.rolled_back = False
+
+        def execute(self, sql, *args, **kwargs):
+            cmd = str(sql).strip().upper()
+            if cmd == "COMMIT":
+                raise sqlite3.OperationalError("disk I/O error on commit")
+            if cmd == "ROLLBACK":
+                self.rolled_back = True
+            return self._real.execute(sql, *args, **kwargs)
+
+    db = tmp_path / "commit_fail.db"
+    real_conn = sqlite3.connect(db)
+    real_conn.execute("CREATE TABLE t (val INT)")
+    real_conn.commit()
+
+    wrapped = FailingCommitConnection(real_conn)
+
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error on commit"):
+        with sqlite_util.write_txn(wrapped) as c:  # type: ignore[arg-type]
+            c.execute("INSERT INTO t VALUES (42)")
+
+    assert wrapped.rolled_back is True
+    real_conn.close()
+

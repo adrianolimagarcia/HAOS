@@ -1191,3 +1191,88 @@ def test_prune_never_evicts_live_records():
 
     assert {"live-stalling", "live-finalizing", "live-running"} <= survivors
     assert "done-0" not in survivors and len(survivors - {"live-stalling", "live-finalizing", "live-running"}) == ad._MAX_RETAINED_COMPLETED
+
+
+def test_transaction_uses_immediate_mode_by_default(monkeypatch, tmp_path):
+    """HD-01 / HD-02: _transaction() in tools.async_delegation must execute with BEGIN IMMEDIATE
+    by default to prevent SQLite concurrency deadlocks and SQLITE_BUSY under parallel writes.
+    """
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    executed_statements = []
+
+    from hermes_cli import sqlite_util
+
+    real_transaction = sqlite_util.transaction
+
+    def spy_transaction(conn, *, immediate=False):
+        executed_statements.append("BEGIN IMMEDIATE" if immediate else "DEFERRED")
+        return real_transaction(conn, immediate=immediate)
+
+    monkeypatch.setattr(sqlite_util, "transaction", spy_transaction)
+
+    with ad._transaction() as conn:
+        conn.execute("SELECT 1")
+
+    assert "BEGIN IMMEDIATE" in executed_statements
+
+
+def test_concurrent_finalize_sqlite_immediate_under_threads(tmp_path, monkeypatch):
+    """HD-01: multiple concurrent threads finalizing delegations in state.db
+    acquire write locks cleanly via BEGIN IMMEDIATE without locking or corruption.
+    """
+    import concurrent.futures
+    import json
+    import os
+    import time
+    from tools import async_delegation as ad_mod
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+
+    # Initialize tables and seed records in running state
+    num_tasks = 10
+    task_ids = [f"task-{i}" for i in range(num_tasks)]
+    now = time.time()
+
+    with ad_mod._DB_LOCK, ad_mod._transaction() as conn:
+        for tid in task_ids:
+            conn.execute(
+                """INSERT OR REPLACE INTO async_delegations
+                   (delegation_id, origin_session, origin_ui_session_id,
+                    parent_session_id, state, dispatched_at, updated_at,
+                    delivery_state, delivery_attempts, owner_pid,
+                    owner_started_at, task_json, origin_session_id)
+                   VALUES (?, ?, ?, ?, 'running', ?, ?, 'pending', 0, ?, ?, ?, ?)""",
+                (tid, "cli:test", "ui-1", None, now, now, os.getpid(), now, json.dumps({"task": tid}), "sess-1"),
+            )
+
+    with ad_mod._records_lock:
+        for tid in task_ids:
+            ad_mod._records[tid] = {
+                "delegation_id": tid,
+                "status": "running",
+                "dispatched_at": now,
+                "completed_at": None,
+                "result": None,
+                "origin_session": "cli:test",
+                "origin_ui_session_id": "ui-1",
+                "event": {"task": tid},
+                "units": [{"task_id": tid, "status": "running"}],
+            }
+
+    # Finalize all concurrently
+    def run_finalize(tid):
+        ad_mod._finalize(tid, {"summary": f"result-{tid}", "error": None}, "completed")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+        futures = [pool.submit(run_finalize, tid) for tid in task_ids]
+        for f in concurrent.futures.as_completed(futures):
+            f.result()
+
+    # Verify all records transitioned to completed in state.db
+    with ad_mod._DB_LOCK, ad_mod._transaction(immediate=False) as conn:
+        rows = conn.execute("SELECT delegation_id, state, result_json FROM async_delegations").fetchall()
+        assert len(rows) == num_tasks
+        for tid, state, res_json in rows:
+            assert state == "completed"
+            assert json.loads(res_json)["summary"] == f"result-{tid}"
+
