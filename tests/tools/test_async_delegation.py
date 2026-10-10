@@ -1191,3 +1191,89 @@ def test_prune_never_evicts_live_records():
 
     assert {"live-stalling", "live-finalizing", "live-running"} <= survivors
     assert "done-0" not in survivors and len(survivors - {"live-stalling", "live-finalizing", "live-running"}) == ad._MAX_RETAINED_COMPLETED
+
+
+def test_concurrent_batch_children_rendezvous_delivers_single_completion_and_consistent_record(monkeypatch):
+    """N children of the same batch/group finishing concurrently at a barrier deliver exactly
+    one completion event for the unit, never produce duplicate claims in completion_queue,
+    and leave a consistent record snapshot under _records_lock (t_4d6d3943)."""
+    n_children = 5
+    barrier = threading.Barrier(n_children)
+
+    def racer_child(task_index, goal, child=None, parent_agent=None, **kw):
+        barrier.wait(timeout=5)
+        return {
+            "task_index": task_index,
+            "status": "completed",
+            "summary": f"done task {task_index}: {goal}",
+            "api_calls": 1,
+            "duration_seconds": 0.05,
+            "model": "m",
+            "exit_reason": "completed",
+        }
+
+    from unittest.mock import MagicMock
+    import tools.delegate_tool as dt
+
+    parent = MagicMock()
+    parent._delegate_depth = 0
+    parent.session_id = "test-sess-race"
+    parent._interrupt_requested = False
+    parent._active_children = []
+    parent._active_children_lock = None
+
+    def build_child(**kw):
+        c = MagicMock()
+        c._delegate_role = "leaf"
+        c._subagent_id = f"sub-{kw['task_index']}"
+        return c
+
+    creds = {
+        "model": "m",
+        "provider": None,
+        "base_url": None,
+        "api_key": None,
+        "api_mode": None,
+        "command": None,
+        "args": None,
+    }
+    monkeypatch.setattr(dt, "_build_child_agent", build_child)
+    monkeypatch.setattr(dt, "_run_single_child", racer_child)
+    monkeypatch.setattr(dt, "_resolve_delegation_credentials", lambda *a, **k: creds)
+
+    tasks = [{"goal": f"race task {i}"} for i in range(n_children)]
+    handle_raw = dt.delegate_task(tasks=tasks, background=True, parent_agent=parent)
+    handle = json.loads(handle_raw)
+    assert handle["status"] == "dispatched"
+    delegation_id = handle["delegation_id"]
+
+    evt = _drain_one(timeout=10.0)
+    assert evt is not None
+    assert evt["type"] == "async_delegation"
+    assert evt["delegation_id"] == delegation_id
+    assert evt["status"] == "completed"
+    assert evt["is_batch"] is True
+    assert len(evt["results"]) == n_children
+    assert sorted(r["task_index"] for r in evt["results"]) == list(range(n_children))
+
+    # (a) Exactly 1 completion event for this unit delivered to queue (not N events)
+    assert _drain_one(timeout=0.5) is None
+    assert process_registry.completion_queue.empty()
+
+    # (b) No duplicate claims or replay conflicts for this delivery
+    claim1 = ad.claim_event_delivery(evt, "consumer-1")
+    assert claim1 is not None and claim1 != ""
+    claim2 = ad.claim_event_delivery(evt, "consumer-2")
+    assert claim2 is None
+    ad.complete_event_delivery(evt, claim1)
+
+    # (c) Snapshot under _records_lock is consistent
+    with ad._records_lock:
+        record = ad._records.get(delegation_id)
+        assert record is not None
+        assert record["status"] == "completed"
+        assert record["completed_at"] is not None
+        assert record["completed_at"] >= record["dispatched_at"]
+        assert record["interrupt_fn"] is None
+        assert record["progress_fn"] is None
+
