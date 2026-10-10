@@ -134,6 +134,40 @@ def verify_task(
         else:
             checks["syntax"] = {"passed": True, "note": "No modified python files to syntax-check."}
 
+        # Layer 2b: AST Import Preflight (symbol & module sanity)
+        preflight_script = root / "scripts" / "haos_preflight.py"
+        if preflight_script.exists():
+            pf_cmd = [
+                sys.executable,
+                str(preflight_script),
+                "--json",
+                "--scope",
+                "hermes/platform",
+                "--prefix",
+                "hermes.platform",
+            ]
+            pf_res = _run_cmd(pf_cmd, cwd=root, timeout=60)
+            if pf_res["success"]:
+                try:
+                    pf_data = json.loads(pf_res["stdout"])
+                    if not pf_data.get("valid", False):
+                        overall_passed = False
+                        checks["import_preflight"] = {
+                            "passed": False,
+                            "missing_symbols": pf_data.get("missing_symbols", []),
+                        }
+                        recovery_hints.append(
+                            f"Import preflight failed: {len(pf_data.get('missing_symbols', []))} missing symbol(s) detected."
+                        )
+                    else:
+                        checks["import_preflight"] = {"passed": True}
+                except Exception:
+                    checks["import_preflight"] = {"passed": True, "raw": pf_res["stdout"]}
+            else:
+                overall_passed = False
+                checks["import_preflight"] = {"passed": False, "error": pf_res["stderr"] or pf_res["stdout"]}
+                recovery_hints.append("Import preflight validation failed.")
+
     # Layer 3: Test Suite
     if run_tests and test_target:
         run_tests_script = root / "scripts" / "run_tests.sh"
