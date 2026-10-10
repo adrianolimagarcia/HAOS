@@ -22,7 +22,7 @@ class AssertionClassification:
     """Classification plus provenance and temporal metadata for an assertion."""
 
     assertion_type: AssertionType
-    confidence: float
+    confidence: float = 0.0
     rationale_codes: List[str] = field(default_factory=list)
     evidence_refs: List[str] = field(default_factory=list)
     source_provenance: str = ""
