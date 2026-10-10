@@ -45,60 +45,10 @@ def contains_question(text: str) -> bool:
 
 
 def contains_hypothesis(text: str) -> bool:
-    """Verifica se o texto é formulado como hipótese, suposição ou especulação."""
-    cleaned = text.strip()
-    if not cleaned:
-        return False
-    lower = cleaned.lower()
-    hypothesis_markers = (
-        # Português
-        "talvez",
-        "provavelmente",
-        "possivelmente",
-        "hipótese",
-        "hipotese",
-        "hipoteticamente",
-        "suponho",
-        "supondo",
-        "suposição",
-        "suposicao",
-        "acho que",
-        "pode ser que",
-        "será que",
-        "não tenho certeza",
-        "nao tenho certeza",
-        "suspeita-se",
-        "suspeito que",
-        "suspeita que",
-        "aparentemente",
-        "especula-se",
-        "especulativo",
-        # Inglês
-        "maybe",
-        "perhaps",
-        "probably",
-        "possibly",
-        "hypothesis",
-        "hypothetical",
-        "hypothetically",
-        "suppose",
-        "supposing",
-        "i think that",
-        "i think",
-        "suspect that",
-        "suspects that",
-        "suspected that",
-        "presumably",
-        "speculation",
-        "speculative",
-        "not sure",
-        "might be",
-        "could be that",
-    )
-    for marker in hypothesis_markers:
-        if re.search(r"\b" + re.escape(marker) + r"\b", lower):
-            return True
-    return False
+    """Compatibilidade: filtro contextual de linguagem hipotética."""
+    from hermes.platform.context.memory.classifier import AssertionType, classify_assertion
+
+    return classify_assertion(text).assertion_type == AssertionType.HYPOTHESIS
 
 
 def contains_secrets(text: str) -> bool:
