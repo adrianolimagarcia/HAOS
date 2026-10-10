@@ -334,6 +334,134 @@ def test_stalled_runner_is_interrupted_then_finalized(monkeypatch):
     assert _drain_one(timeout=0.5) is None
 
 
+def test_stale_monitor_sweep_running_stalling_stalled_lifecycle(monkeypatch):
+    """Invariant: stale monitor loop drives running -> stalling -> stalled without real sleep.
+
+    Simulates clock advancement with monkeypatched time.time across sweeps:
+    1. Initially running delegation without progress passes idle threshold -> transitions to 'stalling',
+       calls interrupt_fn.
+    2. Grace window elapses without completion -> transitions to 'stalled', force-finalizes with
+       a synthetic terminal event on completion_queue, and persists state in async_delegations SQLite.
+    """
+    current_time = [1000.0]
+    monkeypatch.setattr(time, "time", lambda: current_time[0])
+    monkeypatch.setattr(ad, "_STALE_CHECK_INTERVAL", 0.001)
+
+    gate = threading.Event()
+    interrupted = threading.Event()
+
+    def stuck_runner():
+        gate.wait(timeout=10)
+        return {"status": "completed", "summary": "too late"}
+
+    # Prevent background monitor thread from running concurrently;
+    # we exercise _stale_monitor_loop / _sweep_stale_locked deterministically.
+    monkeypatch.setattr(ad, "_ensure_stale_monitor", lambda: None)
+
+    res = ad.dispatch_async_delegation(
+        goal="deterministic stale child",
+        context="ctx test",
+        toolsets=None,
+        role="leaf",
+        model="test-model",
+        session_key="session-stale-test",
+        runner=stuck_runner,
+        interrupt_fn=interrupted.set,
+        max_async_children=1,
+        progress_fn=lambda: ("frozen_token", False),
+    )
+    assert res["status"] == "dispatched"
+    delegation_id = res["delegation_id"]
+
+    # Verify initial state in memory and SQLite ledger
+    with ad._records_lock:
+        record = ad._records[delegation_id]
+        assert record["status"] == "running"
+        assert record.get("_started") is True
+
+    with ad._transaction() as conn:
+        row = conn.execute(
+            "SELECT state, delivery_state FROM async_delegations WHERE delegation_id=?",
+            (delegation_id,),
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "running"
+        assert row[1] == "pending"
+
+    # Advance time slightly: less than _STALE_IDLE_SECONDS -> stays running
+    current_time[0] += 10.0
+    with ad._records_lock:
+        stalled, expired, any_monitorable = ad._sweep_stale_locked(current_time[0])
+    assert stalled == []
+    assert expired == []
+    assert any_monitorable is True
+    with ad._records_lock:
+        assert ad._records[delegation_id]["status"] == "running"
+    assert not interrupted.is_set()
+
+    # Advance time past idle limit -> enters 'stalling' and calls interrupt_fn
+    current_time[0] += ad._STALE_IDLE_SECONDS
+    with ad._records_lock:
+        stalled, expired, any_monitorable = ad._sweep_stale_locked(current_time[0])
+    assert len(stalled) == 1
+    assert stalled[0][0] == delegation_id
+    assert expired == []
+    assert any_monitorable is True
+
+    # In memory status is now stalling
+    with ad._records_lock:
+        assert ad._records[delegation_id]["status"] == "stalling"
+
+    # Now let's run _stale_monitor_loop in a thread with mock time
+    # To run a single or controlled pass of _stale_monitor_loop:
+    # Notice _stale_monitor_loop calls _call_interrupt and when expired calls _finalize
+    # Let's test running _stale_monitor_loop when expiring past grace window:
+    ad._monitor_stop.clear()
+
+    # Move time past grace window
+    current_time[0] += ad._STALL_GRACE_SECONDS + 1.0
+
+    monitor_thread = threading.Thread(target=ad._stale_monitor_loop, daemon=True)
+    monitor_thread.start()
+
+    # Once finalization occurs, any_monitorable becomes False and _stale_monitor_loop exits!
+    monitor_thread.join(timeout=5.0)
+    assert not monitor_thread.is_alive()
+
+    try:
+        # Check completion queue has the stalled event
+        evt = _drain_for(delegation_id, timeout=2.0)
+        assert evt is not None
+        assert evt["type"] == "async_delegation"
+        assert evt["delegation_id"] == delegation_id
+        assert evt["status"] == "stalled"
+        assert evt["exit_reason"] == "stalled"
+        assert evt["stall_phase"] == "idle"
+        assert evt["stall_grace_seconds"] == ad._STALL_GRACE_SECONDS
+        assert "stopped responding" in evt["error"]
+
+        # Check SQLite ledger persistence
+        with ad._transaction() as conn:
+            row = conn.execute(
+                "SELECT state, delivery_state, completed_at, event_json, result_json FROM async_delegations WHERE delegation_id=?",
+                (delegation_id,),
+            ).fetchone()
+            assert row is not None
+            assert row[0] == "stalled"
+            assert row[1] == "pending"
+            assert row[2] is not None
+            persisted_evt = json.loads(row[3])
+            assert persisted_evt["status"] == "stalled"
+            assert persisted_evt["delegation_id"] == delegation_id
+            persisted_res = json.loads(row[4])
+            assert persisted_res["status"] == "stalled"
+            assert persisted_res["exit_reason"] == "stalled"
+
+        assert ad.active_count() == 0
+    finally:
+        gate.set()
+
+
 def test_progressing_runner_is_never_stalled(monkeypatch):
     """A child that keeps advancing is left alone no matter how long it runs."""
     _fast_stale_monitor(monkeypatch)
