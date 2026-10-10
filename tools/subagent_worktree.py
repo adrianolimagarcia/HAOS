@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from hermes_cli._subprocess_compat import harden_git_argv, noninteractive_git_env
+from tools.subagent_worktree_gc import garbage_collect_subagent_worktrees
 
 logger = logging.getLogger(__name__)
 
@@ -214,3 +215,14 @@ def build_worktree_context_note(info: Dict[str, str]) -> str:
         "changes to your branch when done; the parent agent will review and merge your branch. If "
         "you make no commits and leave the tree clean, the worktree is discarded automatically."
     )
+
+
+__all__ = [
+    "resolve_repo_root",
+    "local_backend_active",
+    "create_subagent_worktree",
+    "finalize_subagent_worktree",
+    "unproven_worktree_payload",
+    "build_worktree_context_note",
+    "garbage_collect_subagent_worktrees",
+]

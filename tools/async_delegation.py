@@ -180,6 +180,12 @@ def _prune_durable_records() -> None:
                      ORDER BY updated_at ASC LIMIT ?
                    )""", (pending_count - _MAX_DURABLE_PENDING,))
 
+    try:
+        from tools.subagent_worktree_gc import garbage_collect_subagent_worktrees
+        garbage_collect_subagent_worktrees()
+    except Exception as exc:
+        logger.debug("subagent worktree gc in _prune_durable_records failed (best-effort): %s", exc)
+
 
 def _persist_completion(event: Dict[str, Any], result: Dict[str, Any]) -> None:
     now = time.time()
