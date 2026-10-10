@@ -12,6 +12,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
+from hermes.platform.context.memory.classifier import AssertionClassification, AssertionType
+
 ScopeType = Literal["private", "team", "project", "global"]
 DestinationType = Literal["working", "task", "obsidian", "skill", "core_user", "core_agent"]
 StatusType = Literal["pending", "consolidated", "rejected"]
@@ -81,6 +83,7 @@ class MemoryCandidate:
     valid_until: Optional[float] = None
     supersedes: Optional[str] = None
     superseded_by: Optional[str] = None
+    classification: Optional[AssertionClassification] = None
 
     def __post_init__(self) -> None:
         if not self.fact and self.content:
@@ -100,20 +103,41 @@ class MemoryCandidate:
         """Aprovação automática: confiança >= min_confidence, sem perguntas, sem hipóteses, sem segredos e sem resumos de compactação."""
         if self.confidence < min_confidence:
             return False
+
+        # Verificação estrita de sanitização e segurança
         text = self.fact or self.content
-        if contains_question(text):
-            return False
-        if contains_hypothesis(text):
-            return False
         if contains_secrets(text):
             return False
         if contains_compaction_marker(text):
+            return False
+
+        # Se classificação tipada estiver presente:
+        if self.classification is not None:
+            if self.classification.assertion_type in (
+                AssertionType.HYPOTHESIS,
+                AssertionType.REFUTED,
+                AssertionType.FACT_UNVERIFIED,
+            ):
+                return False
+            if self.classification.assertion_type != AssertionType.FACT_VERIFIED:
+                return False
+            if len(self.classification.evidence_refs) == 0:
+                return False
+            # Não pode conter perguntas
+            if contains_question(text):
+                return False
+            return True
+
+        # Caminho legado sem classification:
+        if contains_question(text):
+            return False
+        if contains_hypothesis(text):
             return False
         return True
 
     def to_dict(self) -> Dict[str, Any]:
         """Serializa o candidato em dicionário primitivo."""
-        return {
+        data: Dict[str, Any] = {
             "id": self.id,
             "fact": self.fact or self.content,
             "content": self.content or self.fact,
@@ -131,6 +155,11 @@ class MemoryCandidate:
             "supersedes": self.supersedes,
             "superseded_by": self.superseded_by,
         }
+        if self.classification is not None:
+            data["classification"] = self.classification.to_dict()
+        else:
+            data["classification"] = None
+        return data
 
 
 def validate_candidate(candidate: MemoryCandidate) -> tuple[bool, str]:
@@ -141,10 +170,6 @@ def validate_candidate(candidate: MemoryCandidate) -> tuple[bool, str]:
     text = (candidate.fact or candidate.content or "").strip()
     if len(text) < 5:
         return False, "fato trivial ou vazio"
-    if contains_question(text):
-        return False, "fato interrogativo ou formulado como questionamento (?)"
-    if contains_hypothesis(text):
-        return False, "fato formulado como hipótese, suposição ou especulação"
     if contains_secrets(text):
         return False, "conteúdo contém chaves de API, senhas ou credenciais confidenciais"
     if contains_compaction_marker(text):
@@ -162,5 +187,17 @@ def validate_candidate(candidate: MemoryCandidate) -> tuple[bool, str]:
     )
     if any(trigger in lower for trigger in injection_triggers):
         return False, "tentativa de injeção de prompt ou instrução adversária detectada"
+
+    # Verificação baseada em classification tipada (se fornecida)
+    if candidate.classification is not None:
+        if candidate.classification.assertion_type == AssertionType.REFUTED:
+            return False, "fato refutado por evidência conclusiva (REFUTED)"
+        if candidate.classification.assertion_type == AssertionType.HYPOTHESIS:
+            return False, "fato formulado como hipótese, suposição ou especulação (HYPOTHESIS)"
+
+    if contains_question(text):
+        return False, "fato interrogativo ou formulado como questionamento (?)"
+    if contains_hypothesis(text):
+        return False, "fato formulado como hipótese, suposição ou especulação"
 
     return True, "ok"

@@ -102,6 +102,7 @@ class MemoryRouter:
         source_uri: str,
         confidence: float = 0.9,
         scope: ScopeType = "project",
+        classification: Optional[Any] = None,
     ) -> MemoryCandidate:
         """Roteia o fato construindo um MemoryCandidate com o proposed_destination correto."""
         destination = self.classify_destination(fact)
@@ -113,6 +114,7 @@ class MemoryRouter:
             proposed_destination=destination,
             provenance=[source_uri.strip()] if source_uri else [],
             status="pending",
+            classification=classification,
         )
 
     def stage_candidate(self, candidate: MemoryCandidate, reason: str = "") -> bool:

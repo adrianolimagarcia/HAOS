@@ -34,6 +34,49 @@ class AssertionClassification:
     raw_text: str = ""
     is_cited: bool = False
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "assertion_type": self.assertion_type.value if isinstance(self.assertion_type, AssertionType) else str(self.assertion_type),
+            "confidence": float(self.confidence),
+            "rationale_codes": list(self.rationale_codes),
+            "evidence_refs": list(self.evidence_refs),
+            "source_provenance": self.source_provenance,
+            "assertion_id": self.assertion_id,
+            "refuted_assertion_id": self.refuted_assertion_id,
+            "observed_at": self.observed_at,
+            "valid_from": self.valid_from,
+            "valid_until": self.valid_until,
+            "is_cited": bool(self.is_cited),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> AssertionClassification:
+        raw_type = data.get("assertion_type", AssertionType.FACT_UNVERIFIED)
+        if isinstance(raw_type, str):
+            try:
+                assertion_type = AssertionType(raw_type)
+            except ValueError:
+                assertion_type = AssertionType.FACT_UNVERIFIED
+        elif isinstance(raw_type, AssertionType):
+            assertion_type = raw_type
+        else:
+            assertion_type = AssertionType.FACT_UNVERIFIED
+
+        return cls(
+            assertion_type=assertion_type,
+            confidence=float(data.get("confidence", 0.0)),
+            rationale_codes=list(data.get("rationale_codes", [])),
+            evidence_refs=list(data.get("evidence_refs", [])),
+            source_provenance=data.get("source_provenance"),
+            assertion_id=data.get("assertion_id"),
+            refuted_assertion_id=data.get("refuted_assertion_id"),
+            observed_at=data.get("observed_at"),
+            valid_from=data.get("valid_from"),
+            valid_until=data.get("valid_until"),
+            is_cited=bool(data.get("is_cited", False)),
+        )
+
+
 
 _EXPLICIT = (
     "talvez", "provavelmente", "possivelmente", "hipótese", "hipotese",
