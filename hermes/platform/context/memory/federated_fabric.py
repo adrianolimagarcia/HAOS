@@ -183,6 +183,7 @@ class FederatedMemoryCoordinator:
         graphrag_store: Optional[GraphRAGStore] = None,
         embedder: Optional[Embedder] = None,
         vector_index: Optional[SQLiteVectorIndex] = None,
+        canonical_store: Optional[CanonicalMemoryStore] = None,
         projection_lease_seconds: float = 60.0,
         auto_start_worker: bool = False,
     ) -> None:
@@ -204,7 +205,7 @@ class FederatedMemoryCoordinator:
         self._owns_decision_store = decision_store is None
         self.decisions = decision_store or DecisionStore(ledger_root / "memory" / "decisions.db")
         self.event_bus = event_bus or KnowledgeEventBus()
-        self.canonical_store = CanonicalMemoryStore(ledger_root / "memory" / "fabric.db")
+        self.canonical_store = canonical_store or CanonicalMemoryStore(ledger_root / "memory" / "fabric.db")
 
         # Store persistente do grafo (GOV-008): quando o fabric sincroniza
         # conhecimento, cada KnowledgeEvent publicado é espelhado no store
@@ -724,6 +725,10 @@ class FederatedMemoryCoordinator:
             for record in self.canonical_store.list_records(tuple(sorted(VALID_SCOPES)))
         ]
         return self.vector_index.reindex(records, self.embedder, force=force)
+
+    def sync_vectors(self, *, force: bool = False) -> int:
+        """Alias for reindex_vectors, supporting incremental and idempotent synchronization."""
+        return self.reindex_vectors(force=force)
 
     def pending_vector_reindex(self) -> int:
         """Active records that still have no vector under the current model."""

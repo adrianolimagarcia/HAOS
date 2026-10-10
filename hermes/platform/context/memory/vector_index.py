@@ -485,12 +485,21 @@ class SQLiteVectorIndex:
     # -- reindex policy ------------------------------------------------------
 
     def indexed_ids(self) -> set[str]:
-        return {
-            row[0]
-            for row in self.db.execute(
-                "SELECT record_id FROM memory_vectors WHERE model_version=?", (self.model_version,)
-            )
-        }
+        try:
+            with sqlite3.connect(self.path, timeout=5.0) as conn:
+                return {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT record_id FROM memory_vectors WHERE model_version=?", (self.model_version,)
+                    )
+                }
+        except Exception:
+            return {
+                row[0]
+                for row in self.db.execute(
+                    "SELECT record_id FROM memory_vectors WHERE model_version=?", (self.model_version,)
+                )
+            }
 
     def needs_reindex(self, record_ids: Iterable[str]) -> int:
         """How many of *record_ids* have no vector for the current model."""
@@ -606,6 +615,12 @@ class SQLiteVectorIndex:
         return [record_id for _, record_id in sorted(scored, reverse=True)[:limit]]
 
     def count(self) -> int:
-        return self.db.execute(
-            "SELECT COUNT(*) FROM memory_vectors WHERE model_version=?", (self.model_version,)
-        ).fetchone()[0]
+        try:
+            with sqlite3.connect(self.path, timeout=5.0) as conn:
+                return conn.execute(
+                    "SELECT COUNT(*) FROM memory_vectors WHERE model_version=?", (self.model_version,)
+                ).fetchone()[0]
+        except Exception:
+            return self.db.execute(
+                "SELECT COUNT(*) FROM memory_vectors WHERE model_version=?", (self.model_version,)
+            ).fetchone()[0]
