@@ -95,6 +95,7 @@ def _completion_event(*, started_at, session_id="proc_reused"):
 
 
 def _stop_after_sleeps(monkeypatch, runner, count):
+    runner._running = True
     sleep_calls = 0
 
     async def _bounded_sleep(_delay):
@@ -990,3 +991,87 @@ def test_watch_drain_retries_transport_failure(monkeypatch, isolated_registry):
     asyncio.run(runner._async_delegation_watcher(interval=0))
     assert adapter.handle_message.await_count == 2
     assert isolated_registry.completion_queue.empty()
+
+
+def test_async_delegation_backpressure_retention_and_exact_once_delivery_when_parent_idle(
+    monkeypatch, isolated_registry,
+):
+    """E2E backpressure test: async_delegation arriving while parent is in active turn
+
+    is retained/re-enqueued via _completion_delivery_ready + _preflight_completion_delivery;
+    when parent becomes idle, it is delivered exactly once (no duplication, no false dedup).
+    """
+    from tools import async_delegation
+
+    isolated = queue.Queue()
+    monkeypatch.setattr(isolated_registry, "completion_queue", isolated)
+
+    parent_session_id = "parent_active_turn_session"
+    event = _async_event("deleg_backpressure_e2e")
+    event["parent_session_id"] = parent_session_id
+    _persist_pending_completion(event)
+    isolated.put(dict(event))
+
+    adapter = SimpleNamespace(handle_message=AdmittingHandler())
+    runner = _runner(adapter)
+
+    # 1) Parent turn is active (e.g. parent session DB lookup returns busy / in-flight or classification says retry)
+    # When _session_db is None or lookup fails, _classify_completion_target returns "retry"
+    runner._session_db = None
+
+    # While parent is not ready (retry / backpressure):
+    # _completion_delivery_ready should report not ready
+    assert asyncio.run(runner._completion_delivery_ready(dict(event))) is False
+
+    # _preflight_completion_delivery should report proceed=False, early_result=False
+    claim_busy = asyncio.run(runner._preflight_completion_delivery(dict(event)))
+    assert claim_busy.proceed is False
+    assert claim_busy.early_result is False
+    assert claim_busy.claim_id == ""
+
+    # Running watcher turn while busy: event is retained in queue, delivery suppressed
+    _stop_after_sleeps(monkeypatch, runner, count=2)
+    asyncio.run(runner._async_delegation_watcher(interval=0))
+
+    adapter.handle_message.assert_not_awaited()
+    assert not isolated.empty()
+    row_busy = async_delegation.get_durable_delegation(event["delegation_id"])
+    assert row_busy["delivery_state"] == "pending"
+    assert row_busy["delivery_attempts"] == 0
+    assert len(runner._completion_deliveries_delivered) == 0
+
+    # 2) Parent becomes idle and live (session exists and ended_at is None)
+    runner._session_db = SimpleNamespace(
+        get_session=AsyncMock(return_value={"ended_at": None, "end_reason": None})
+    )
+
+    # Now _completion_delivery_ready reports ready
+    assert asyncio.run(runner._completion_delivery_ready(dict(event))) is True
+
+    # Now _preflight_completion_delivery reports proceed=True with an acquired durable claim
+    claim_idle = asyncio.run(runner._preflight_completion_delivery(dict(event)))
+    assert claim_idle.proceed is True
+    assert claim_idle.early_result is None
+    assert claim_idle.claim_id != ""
+    # Release preflight claim so watcher can claim it during its own preflight (defer reverts delivery_attempts)
+    runner._settle_durable_claim("defer", claim_idle.delegation_id, claim_idle.claim_id)
+
+    # Watcher runs again: event is popped and delivered
+    _stop_after_sleeps(monkeypatch, runner, count=2)
+    asyncio.run(runner._async_delegation_watcher(interval=0))
+
+    adapter.handle_message.assert_awaited_once()
+    assert isolated.empty()
+    row_idle = async_delegation.get_durable_delegation(event["delegation_id"])
+    assert row_idle["delivery_state"] == "delivered"
+    assert row_idle["delivery_attempts"] == 1
+    assert runner._completion_delivery_identity(event) in runner._completion_deliveries_delivered
+
+    # 3) Replay attempt after delivery: suppressed as already delivered (no double delivery)
+    isolated.put(dict(event))
+    _stop_after_sleeps(monkeypatch, runner, count=2)
+    asyncio.run(runner._async_delegation_watcher(interval=0))
+
+    # Delivery count must remain 1
+    adapter.handle_message.assert_awaited_once()
+
