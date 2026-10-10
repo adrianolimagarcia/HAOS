@@ -35,7 +35,7 @@ def test_implicit_uncertainty_is_hypothesis(text):
 
 def test_reported_quote_with_uncertainty_classifies_attribution():
     result = classify_assertion('O relatório disse que: “talvez o serviço caiu”.')
-    assert result.assertion_type is AssertionType.FACT_VERIFIED
+    assert result.assertion_type is AssertionType.FACT_UNVERIFIED
     assert result.is_cited
     assert "CITATION_ATTRIBUTION" in result.rationale_codes
 

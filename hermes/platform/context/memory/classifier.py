@@ -82,68 +82,152 @@ _EXPLICIT = (
     "talvez", "provavelmente", "possivelmente", "hipótese", "hipotese",
     "hipoteticamente", "suponho", "supondo", "suposição", "suposicao",
     "acho que", "pode ser que", "não tenho certeza", "nao tenho certeza",
-    "será que", "sera que", "especula-se", "especulativo",
+    "será que", "sera que", "quem sabe", "especula-se", "especulativo",
     "maybe", "perhaps", "probably", "possibly", "hypothesis", "hypothetical",
     "hypothetically", "suppose", "supposing", "i think", "i suspect",
-    "might be", "could be that", "not sure",
-    "speculation", "speculative",
+    "might be", "could be that", "not sure", "speculation", "speculative",
 )
 _IMPLICIT = (
-    "deve ser", "parece que", "aparentemente", "suspeita-se", "suspeito que",
-    "suspeita que", "suspects that", "suspected that", "suspect that", "is suspected that",
-    "is suspected to", "seems that", "seem to", "appears to", "apparently",
-    "presumably",
+    "deve ser", "deve ter ocorrido", "parece que", "parece", "aparentemente",
+    "suspeita-se", "suspeito que", "suspeita que", "suspects that", "suspected that",
+    "suspect that", "is suspected that", "is suspected to", "seems that", "seem to",
+    "seems", "appears to", "appears", "apparently", "presumably",
+    "likely due to", "looks like", "looks as though", "indica que pode",
 )
-_ATTRIBUTION = ("disse que", "afirmou que", "alega que", "alegou que", "segundo ", "reported that", "said that", "claims that", "according to ")
-_REFUTATION = ("refutou a hipótese", "ficou comprovado que não era", "refutou", "refutada", "refutado", "desmentiu", "desmentido", "refuted", "disproven", "disproved")
+_ATTRIBUTION = (
+    "disse que", "afirmou que", "alega que", "alegou que", "segundo ",
+    "disse:", "afirmou:", "de acordo com", "the report mentioned",
+    "yesterday's report stated", "reported that", "said that", "claims that",
+    "according to ", "the user said:", "the user stated that",
+)
+_REFUTATION = (
+    "refutou a hipótese", "ficou comprovado que não era", "refutou", "refutada",
+    "refutado", "desmentiu", "desmentido", "desmentida", "desmentidas", "refuted",
+    "disproven", "disproved", "ruled out", "proved false", "was not the case",
+)
+_INJECTION = (
+    "ignore as instruções", "ignore instruções", "ignore previous instructions",
+    "ignore all previous instructions", "disregard previous", "desconsidere as regras",
+    "system prompt override",
+)
+
+_URI_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://\S+")
+
+
+def _filter_valid_evidence(evidence_refs: Optional[List[str]]) -> List[str]:
+    if not evidence_refs:
+        return []
+    valid = []
+    for r in evidence_refs:
+        if isinstance(r, str):
+            s = r.strip()
+            if s.startswith(("log://", "cmd://", "file://", "uri://", "http://", "https://", "urn:")) or _URI_RE.match(s):
+                valid.append(s)
+    return valid
 
 
 def _has_marker(text: str, markers: tuple[str, ...]) -> bool:
-    return any(re.search(r"\b" + re.escape(marker) + r"\b", text) for marker in markers)
+    for marker in markers:
+        start = r"\b" if marker[0].isalnum() else ""
+        end = r"\b" if marker[-1].isalnum() else ""
+        if re.search(start + re.escape(marker) + end, text):
+            return True
+    return False
 
 
 def classify_assertion(
     text: str, evidence_refs: Optional[List[str]] = None, source_provenance: str = ""
 ) -> AssertionClassification:
-    """Classify text conservatively; cited uncertainty is scoped to the quote."""
+    """Classify text conservatively; cited uncertainty is scoped to the quote; fail-closed on unverified claims."""
     raw = text or ""
     lower = raw.lower()
-    evidence = list(evidence_refs or [])
+    valid_evidence = _filter_valid_evidence(evidence_refs)
+    rationale: List[str] = []
+
+    if _has_marker(lower, _REFUTATION):
+        return AssertionClassification(
+            assertion_type=AssertionType.REFUTED,
+            confidence=0.95,
+            rationale_codes=["REFUTATION_MARKER"],
+            evidence_refs=valid_evidence,
+            source_provenance=source_provenance,
+            raw_text=raw,
+            is_cited=False,
+        )
+
+    if _has_marker(lower, _INJECTION):
+        return AssertionClassification(
+            assertion_type=AssertionType.FACT_UNVERIFIED,
+            confidence=0.95,
+            rationale_codes=["ADVERSARIAL_INJECTION_FAIL_CLOSED"],
+            evidence_refs=valid_evidence,
+            source_provenance=source_provenance,
+            raw_text=raw,
+            is_cited=False,
+        )
+
     cited = _has_marker(lower, _ATTRIBUTION)
-    # Quoted uncertainty belongs to the source, not necessarily to the attribution.
     scope_text = lower
     if cited:
-        for delimiter in (":", ",", "—", "–"):
+        for delimiter in (":", ",", "—", "–", " that ", " que "):
             if delimiter in scope_text:
                 scope_text = scope_text.split(delimiter, 1)[0]
                 break
-        # Attribution clauses state a verifiable report even when its quoted content is uncertain.
         quote_start = min((i for i in (lower.find("‘"), lower.find("“"), lower.find('"')) if i >= 0), default=-1)
         if quote_start >= 0:
             scope_text = lower[:quote_start]
-    rationale: List[str] = []
-    if _has_marker(lower, _REFUTATION):
-        kind, confidence = AssertionType.REFUTED, 0.95
-        rationale.append("REFUTATION_MARKER")
-    elif _has_marker(scope_text, _EXPLICIT):
-        kind, confidence = AssertionType.HYPOTHESIS, 0.9
-        rationale.append("EXPLICIT_HYPOTHESIS")
-    elif _has_marker(scope_text, _IMPLICIT):
-        kind, confidence = AssertionType.HYPOTHESIS, 0.85
-        rationale.append("IMPLICIT_MODAL")
-    elif cited:
-        kind, confidence = AssertionType.FACT_VERIFIED, 0.8
-        rationale.append("CITATION_ATTRIBUTION")
-    elif evidence and (raw.strip().lower().startswith("observed:") or "exit code 0" in lower or "verificado nos logs" in lower):
-        kind, confidence = AssertionType.FACT_VERIFIED, 0.95
-        rationale.append("VERIFIED_OBSERVATION")
-    elif evidence:
-        kind, confidence = AssertionType.FACT_VERIFIED, 0.8
-        rationale.append("VERIFIED_OBSERVATION")
-    else:
-        kind, confidence = AssertionType.FACT_UNVERIFIED, 0.6
-        rationale.append("UNVERIFIED_FALLBACK")
+
+    if _has_marker(scope_text, _EXPLICIT):
+        return AssertionClassification(
+            assertion_type=AssertionType.HYPOTHESIS,
+            confidence=0.9,
+            rationale_codes=["EXPLICIT_HYPOTHESIS"],
+            evidence_refs=valid_evidence,
+            source_provenance=source_provenance,
+            raw_text=raw,
+            is_cited=cited,
+        )
+
+    if _has_marker(scope_text, _IMPLICIT):
+        return AssertionClassification(
+            assertion_type=AssertionType.HYPOTHESIS,
+            confidence=0.85,
+            rationale_codes=["IMPLICIT_MODAL"],
+            evidence_refs=valid_evidence,
+            source_provenance=source_provenance,
+            raw_text=raw,
+            is_cited=cited,
+        )
+
+    if cited and not valid_evidence:
+        return AssertionClassification(
+            assertion_type=AssertionType.FACT_UNVERIFIED,
+            confidence=0.7,
+            rationale_codes=["CITATION_ATTRIBUTION"],
+            evidence_refs=valid_evidence,
+            source_provenance=source_provenance,
+            raw_text=raw,
+            is_cited=True,
+        )
+
+    if valid_evidence:
+        high_conf = raw.strip().lower().startswith("observed:") or "exit code 0" in lower or "verificado nos logs" in lower
+        return AssertionClassification(
+            assertion_type=AssertionType.FACT_VERIFIED,
+            confidence=0.95 if high_conf else 0.8,
+            rationale_codes=["VERIFIED_OBSERVATION"],
+            evidence_refs=valid_evidence,
+            source_provenance=source_provenance,
+            raw_text=raw,
+            is_cited=cited,
+        )
+
     return AssertionClassification(
-        assertion_type=kind, confidence=confidence, rationale_codes=rationale,
-        evidence_refs=evidence, source_provenance=source_provenance, raw_text=raw, is_cited=cited,
+        assertion_type=AssertionType.FACT_UNVERIFIED,
+        confidence=0.6,
+        rationale_codes=["UNVERIFIED_FALLBACK"],
+        evidence_refs=valid_evidence,
+        source_provenance=source_provenance,
+        raw_text=raw,
+        is_cited=cited,
     )
