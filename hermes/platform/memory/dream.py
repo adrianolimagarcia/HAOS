@@ -62,6 +62,7 @@ def _sanitize_session_preview(text: str) -> str:
 
 from hermes_cli._subprocess_compat import IS_WINDOWS, harden_git_argv, noninteractive_git_env, windows_hide_flags
 from hermes.platform.context.memory.candidate import MemoryCandidate, contains_secrets, contains_question, contains_hypothesis
+from hermes.platform.context.memory.classifier import AssertionClassification, AssertionType, classify_assertion
 from hermes.platform.context.memory.mental_model_client import MentalModelClient
 from hermes.platform.context.memory.router import MemoryRouter, STAGE_REASON_CONFLICT
 from hermes.platform.context.memory.staging import MemoryStagingStore, PROMOTED, candidate_key
@@ -220,7 +221,8 @@ class _CanonicalLessonWriter:
     def __init__(self, okf_dir: Path, session_id: str, title: str,
                  model: str = "", evidence_span: str = "",
                  extracted_at: Optional[str] = None,
-                 provenance: Optional[List[str]] = None):
+                 provenance: Optional[List[str]] = None,
+                 verifier: Optional[Any] = None):
         self.okf_dir = Path(okf_dir)
         self.session_id = session_id
         self.session_title = title
@@ -228,6 +230,7 @@ class _CanonicalLessonWriter:
         self.evidence_span = evidence_span
         self.extracted_at = extracted_at
         self.provenance = provenance
+        self.verifier = verifier
         self.last_written: Optional[Path] = None
 
     def get_existing_facts(self, destination: str) -> List[Dict[str, str]]:
@@ -242,6 +245,64 @@ class _CanonicalLessonWriter:
     def write_candidate(self, candidate: MemoryCandidate) -> bool:
         from hermes.platform.memory.okf import OKFStore
         from hermes.platform.memory.ragflow_engine import separation_gate
+        from hermes.platform.context.memory.classifier import AssertionType, classify_assertion
+        from hermes.platform.context.memory.candidate import validate_candidate
+        from hermes.platform.context.memory.evidence import get_default_evidence_registry
+
+        # Gate de verificação de evidência no registry canônico
+        candidate_fact = (candidate.fact or candidate.content or "").strip()
+        reg = self.verifier or get_default_evidence_registry()
+        evidence_refs = []
+        if candidate.classification and getattr(candidate.classification, "evidence_refs", None):
+            evidence_refs = list(candidate.classification.evidence_refs)
+        elif getattr(candidate, "provenance", None):
+            evidence_refs = list(candidate.provenance)
+
+        # Se houver evidências, checar se alguma é devidamente verificada e atestada para o fato
+        has_attested_evidence = False
+        if evidence_refs:
+            for ref in evidence_refs:
+                if isinstance(ref, str) and hasattr(reg, "verify") and reg.verify(ref, statement=candidate_fact):
+                    has_attested_evidence = True
+                    break
+
+        # 0. Validação de integridade do candidato
+        is_valid, reason = validate_candidate(candidate)
+        if not is_valid:
+            # Se o motivo for exclusivamente formular como hipótese/suposição, mas possui prova atestada válida
+            if has_attested_evidence and "hipótese" in reason:
+                logger.info("CanonicalLessonWriter overriding hypothesis rejection due to verified attestation in registry")
+            else:
+                logger.warning("CanonicalLessonWriter blocked candidate by candidate validation: %s", reason)
+                return False
+
+        # Gate de classificação / verificação no destination writer canônico:
+        # Bloqueia explicitamente HYPOTHESIS, FACT_UNVERIFIED e REFUTED.
+        # Aceita apenas FACT_VERIFIED com evidências (evidence_refs válido).
+        classification = candidate.classification
+        if classification is None:
+            evidence = candidate.provenance if candidate.provenance else ([f"session://{self.session_id}"] if self.session_id else [])
+            classification = classify_assertion(
+                candidate.fact, evidence_refs=evidence, source_provenance=f"session://{self.session_id}", verifier=self.verifier
+            )
+            candidate.classification = classification
+
+        if classification.assertion_type in (
+            AssertionType.HYPOTHESIS,
+            AssertionType.FACT_UNVERIFIED,
+            AssertionType.REFUTED,
+        ) or classification.assertion_type != AssertionType.FACT_VERIFIED:
+            logger.warning(
+                "CanonicalLessonWriter blocked candidate: assertion_type=%s not FACT_VERIFIED",
+                classification.assertion_type.value,
+            )
+            return False
+
+        from hermes.platform.context.memory.classifier import _filter_valid_evidence
+        valid_evidences = _filter_valid_evidence(evidence_refs, text=candidate_fact, verifier=reg)
+        if not valid_evidences:
+            logger.warning("CanonicalLessonWriter blocked candidate: no valid evidence_refs")
+            return False
 
         store = OKFStore(self.okf_dir)
         cand_fact = candidate.fact.strip()
@@ -319,6 +380,9 @@ class _CanonicalLessonWriter:
         return skill_name_from_lesson(candidate.fact)
 
 
+CanonicalLessonWriter = _CanonicalLessonWriter
+
+
 class DreamConsolidator:
     """Orchestrates memory consolidation across recent sessions."""
 
@@ -340,7 +404,32 @@ class DreamConsolidator:
 
         # Pipeline de memória (P11): staging persistente + roteamento determinístico.
         self.staging_store = MemoryStagingStore(self.memory_dir / "staging")
-        self.router = MemoryRouter(staging_store=self.staging_store)
+
+        def _fetch_home_session_messages(session_id: str):
+            sdb_path = self.home / "state.db"
+            if not sdb_path.exists():
+                return None
+            try:
+                from hermes_state import SessionDB
+                sdb = SessionDB(db_path=sdb_path, read_only=True)
+                try:
+                    return sdb.get_messages(session_id)
+                finally:
+                    sdb.close()
+            except Exception:
+                return None
+
+        from hermes.platform.context.memory.evidence import EvidenceRegistry
+        from hermes.platform.context.memory.evidence_session_resolver import SessionProvenanceResolver
+        from hermes.platform.context.memory.evidence_file_resolver import FileProvenanceResolver
+
+        self.evidence_registry = EvidenceRegistry(
+            resolvers=[
+                SessionProvenanceResolver(store=_fetch_home_session_messages),
+                FileProvenanceResolver(allowed_roots=[self.home]),
+            ]
+        )
+        self.router = MemoryRouter(staging_store=self.staging_store, verifier=self.evidence_registry)
         self.instinct_store = InstinctStore(self.memory_dir / "instincts")
         self.mental_model_client = MentalModelClient(self.home)
 
@@ -643,6 +732,23 @@ class DreamConsolidator:
                 session_uri = f"session://{sid}"
                 key = candidate_key(lesson)
 
+                # Gate de classificação / assertion type:
+                # Classifica antes da promoção/ingestão no dream
+                classification = classify_assertion(
+                    lesson, evidence_refs=[session_uri], source_provenance=session_uri,
+                    verifier=self.evidence_registry,
+                )
+                if classification.assertion_type in (
+                    AssertionType.HYPOTHESIS,
+                    AssertionType.FACT_UNVERIFIED,
+                    AssertionType.REFUTED,
+                ) or classification.assertion_type != AssertionType.FACT_VERIFIED:
+                    logger.debug(
+                        "Skipped non-FACT_VERIFIED assertion in dream extraction (session %s): %s (%s)",
+                        sid, lesson, classification.assertion_type.value,
+                    )
+                    continue
+
                 # Reforço é recorrência ENTRE sessões: a mesma sessão reprocessada não
                 # reforça, e lição já promovida não é re-ingerida.
                 existing = self.staging_store.get(key)
@@ -672,6 +778,7 @@ class DreamConsolidator:
                     source_uri=session_uri,
                     confidence=confidence,
                     scope="project",
+                    classification=classification,
                 )
                 consolidated += 1
 
@@ -685,6 +792,7 @@ class DreamConsolidator:
                     model=s.get("model") or "", evidence_span=first_sentence,
                     extracted_at=datetime.now(timezone.utc).isoformat(),
                     provenance=[*prior_sessions, session_uri],
+                    verifier=self.evidence_registry,
                 )
                 if self.router.process_candidate(candidate, writer):
                     self.staging_store.stage_candidate(candidate, reason="recurrence_promotion")
