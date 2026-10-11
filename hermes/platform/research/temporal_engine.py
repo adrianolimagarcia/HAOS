@@ -8,8 +8,18 @@ from __future__ import annotations
 
 import datetime
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
+
+from hermes.platform.research.temporal_connectors import (
+    search_hackernews,
+    search_reddit,
+    search_web,
+)
+from hermes.platform.research.temporal_utils import (
+    normalize_url,
+    parse_timestamp_to_utc,
+)
 
 logger = logging.getLogger("hermes.platform.research.temporal_engine")
 
@@ -43,6 +53,8 @@ class TemporalFinding:
     source_ids: List[int] = field(default_factory=list)
     published_at: Optional[str] = None
     freshness: str = "unverified"  # in_window, historical_context, unverified
+    url: Optional[str] = None
+    source_channel: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -106,11 +118,12 @@ def execute_temporal_research(
     window_spec: str = "last30days",
     channels: Optional[List[str]] = None,
     reference_time: Optional[datetime.datetime] = None,
+    limit_per_channel: int = 5,
 ) -> TemporalResearchResult:
     """Execute temporal research workflow conforming to the contract.
 
     Integrates channels, evaluates temporal freshness, avoids fabricating dates,
-    and returns a structured TemporalResearchResult.
+    deduplicates findings across sources, and returns a structured TemporalResearchResult.
     """
     ref = reference_time or datetime.datetime.now(datetime.timezone.utc)
     if ref.tzinfo is None:
@@ -119,27 +132,90 @@ def execute_temporal_research(
         ref = ref.astimezone(datetime.timezone.utc)
 
     window = compute_temporal_window(window_spec, reference_time=ref)
+    start_utc_dt = parse_timestamp_to_utc(window.start_utc) or ref
+    end_utc_dt = parse_timestamp_to_utc(window.end_utc) or ref
+
     target_channels = channels or ["web-search"]
 
     coverage: List[CoverageItem] = []
-    findings: List[TemporalFinding] = []
+    raw_findings: List[Dict[str, Any]] = []
 
     for ch in target_channels:
+        ch_name = ch.strip().lower()
+        items: List[Dict[str, Any]] = []
+        status: str = "ok"
+        reason: Optional[str] = None
+
+        if ch_name in ("web-search", "web", "google"):
+            items, status, reason = search_web(
+                goal,
+                limit=limit_per_channel,
+                start_utc_dt=start_utc_dt,
+                end_utc_dt=end_utc_dt,
+            )
+        elif ch_name == "reddit":
+            items, status, reason = search_reddit(
+                goal,
+                limit=limit_per_channel,
+                start_utc_dt=start_utc_dt,
+                end_utc_dt=end_utc_dt,
+            )
+        elif ch_name in ("hackernews", "hacker-news", "hn"):
+            items, status, reason = search_hackernews(
+                goal,
+                limit=limit_per_channel,
+                start_utc_dt=start_utc_dt,
+                end_utc_dt=end_utc_dt,
+            )
+        elif ch_name in ("x-twitter", "twitter", "youtube", "polymarket"):
+            status = "bypassed"
+            reason = "skipped_no_credentials"
+            items = []
+        else:
+            status = "bypassed"
+            reason = f"unsupported_channel_{ch}"
+            items = []
+
         coverage.append(
             CoverageItem(
                 channel=ch,
-                status="ok",
-                result_count=0,
-                reason=None,
+                status=status,
+                result_count=len(items),
+                reason=reason,
             )
         )
+        raw_findings.extend(items)
+
+    # Deduplicate findings by normalized URL, or claim text if URL missing
+    seen_keys = set()
+    deduped_findings: List[TemporalFinding] = []
+    source_counter = 1
+
+    for rf in raw_findings:
+        url_norm = normalize_url(rf.get("url") or "")
+        key = ("url", url_norm) if url_norm else ("claim", rf.get("claim", "").strip().lower())
+
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        finding = TemporalFinding(
+            claim=rf.get("claim", ""),
+            source_ids=[source_counter],
+            published_at=rf.get("published_at"),
+            freshness=rf.get("freshness", "unverified"),
+            url=url_norm if url_norm else None,
+            source_channel=rf.get("source_channel"),
+        )
+        deduped_findings.append(finding)
+        source_counter += 1
 
     return TemporalResearchResult(
         contract_version=CONTRACT_VERSION,
         window=window,
         cutoff_utc=ref.isoformat(),
         coverage=coverage,
-        findings=findings,
+        findings=deduped_findings,
         disagreements=[],
         evidence_gaps=[],
     )
