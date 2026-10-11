@@ -170,6 +170,113 @@ class TestMemoryCandidatesAndRouting(unittest.TestCase):
         self.assertIn("turn://2", pending[0]["provenance"])
         self.assertAlmostEqual(pending[0]["confidence"], 0.5)
 
+    def test_gate_blocks_hypothesis_unverified_refuted(self):
+        """Gate Dream/Curator e MemoryRouter: bloqueia HYPOTHESIS, FACT_UNVERIFIED e REFUTED, aceitando apenas FACT_VERIFIED com evidências."""
+        from hermes.platform.context.memory.classifier import AssertionClassification, AssertionType
+        from hermes.platform.context.memory.router import (
+            STAGE_REASON_BLOCKED_ASSERTION_TYPE,
+            STAGE_REASON_MISSING_EVIDENCE,
+        )
+        from hermes.platform.context.memory.staging import candidate_key
+        router = MemoryRouter()
+
+        class MockProvider:
+            def __init__(self):
+                self.saved = []
+
+            def write_candidate(self, candidate):
+                self.saved.append(candidate)
+                return True
+
+            def get_existing_facts(self, destination):
+                return []
+
+        provider = MockProvider()
+
+        # 1. HYPOTHESIS explícita via classification é bloqueada e estagiada
+        c_hyp = MemoryCandidate(
+            fact="User prefers pytest over unittest",
+            source_uri="turn://hyp-1",
+            confidence=0.95,
+            classification=AssertionClassification(
+                assertion_type=AssertionType.HYPOTHESIS,
+                confidence=0.95,
+                evidence_refs=["turn://hyp-1"],
+            ),
+        )
+        self.assertFalse(router.process_candidate(c_hyp, provider))
+        self.assertEqual(c_hyp.status, "pending")
+        staged_hyp = router.staging_store.get(candidate_key(c_hyp.fact))
+        self.assertIsNotNone(staged_hyp)
+        self.assertEqual(staged_hyp["gate"], STAGE_REASON_BLOCKED_ASSERTION_TYPE)
+
+        # 2. FACT_UNVERIFIED é bloqueado e estagiado
+        c_unv = MemoryCandidate(
+            fact="User prefers postgresql for backend",
+            source_uri="turn://unv-1",
+            confidence=0.95,
+            classification=AssertionClassification(
+                assertion_type=AssertionType.FACT_UNVERIFIED,
+                confidence=0.95,
+                evidence_refs=["turn://unv-1"],
+            ),
+        )
+        self.assertFalse(router.process_candidate(c_unv, provider))
+        self.assertEqual(c_unv.status, "pending")
+        staged_unv = router.staging_store.get(candidate_key(c_unv.fact))
+        self.assertIsNotNone(staged_unv)
+        self.assertEqual(staged_unv["gate"], STAGE_REASON_BLOCKED_ASSERTION_TYPE)
+
+        # 3. REFUTED é bloqueado e estagiado
+        c_ref = MemoryCandidate(
+            fact="User prefers docker over podman",
+            source_uri="turn://ref-1",
+            confidence=0.95,
+            classification=AssertionClassification(
+                assertion_type=AssertionType.REFUTED,
+                confidence=0.95,
+                evidence_refs=["turn://ref-1"],
+            ),
+        )
+        self.assertFalse(router.process_candidate(c_ref, provider))
+        self.assertEqual(c_ref.status, "pending")
+        staged_ref = router.staging_store.get(candidate_key(c_ref.fact))
+        self.assertIsNotNone(staged_ref)
+        self.assertEqual(staged_ref["gate"], STAGE_REASON_BLOCKED_ASSERTION_TYPE)
+
+        # 4. FACT_VERIFIED sem evidências é bloqueado
+        c_no_ev = MemoryCandidate(
+            fact="User prefers rust for performance",
+            source_uri="turn://noev-1",
+            confidence=0.95,
+            classification=AssertionClassification(
+                assertion_type=AssertionType.FACT_VERIFIED,
+                confidence=0.95,
+                evidence_refs=[],
+            ),
+        )
+        self.assertFalse(router.process_candidate(c_no_ev, provider))
+        self.assertEqual(c_no_ev.status, "pending")
+        staged_noev = router.staging_store.get(candidate_key(c_no_ev.fact))
+        self.assertIsNotNone(staged_noev)
+        self.assertEqual(staged_noev["gate"], STAGE_REASON_MISSING_EVIDENCE)
+
+        # 5. FACT_VERIFIED com evidências válidas é promovido com sucesso
+        c_ok = MemoryCandidate(
+            fact="User prefers rust for performance critical tasks",
+            source_uri="turn://ok-1",
+            confidence=0.95,
+            classification=AssertionClassification(
+                assertion_type=AssertionType.FACT_VERIFIED,
+                confidence=0.95,
+                evidence_refs=["turn://ok-1"],
+            ),
+        )
+        self.assertTrue(router.process_candidate(c_ok, provider))
+        self.assertEqual(c_ok.status, "consolidated")
+        self.assertEqual(len(provider.saved), 1)
+        self.assertEqual(provider.saved[0].fact, c_ok.fact)
+
 
 if __name__ == "__main__":
     unittest.main()

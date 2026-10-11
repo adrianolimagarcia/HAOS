@@ -225,12 +225,15 @@ class MemoryStagingStore:
                 "created_at": now,
                 "last_seen_at": now,
                 "promoted_path": None,
+                "classification": candidate.classification.to_dict() if candidate.classification is not None else None,
             }
         else:
             rec["confidence"] = max(float(rec.get("confidence") or 0.0), candidate.confidence)
             rec["status"] = PENDING
             rec["gate"] = reason
             rec["last_seen_at"] = now
+            if candidate.classification is not None:
+                rec["classification"] = candidate.classification.to_dict()
             merged = list(rec.get("provenance") or [])
             for prov in candidate.provenance:
                 if prov not in merged:

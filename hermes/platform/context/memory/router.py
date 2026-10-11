@@ -15,12 +15,15 @@ import re
 from typing import Any, Dict, List, Optional
 
 from hermes.platform.context.memory.candidate import DestinationType, MemoryCandidate, ScopeType
+from hermes.platform.context.memory.classifier import AssertionClassification, AssertionType, classify_assertion
 from hermes.platform.context.memory.consolidation import MemoryConsolidator
 from hermes.platform.context.memory.staging import MemoryStagingStore
 
 # Razões de staging persistidas no MemoryStagingStore (gate auditável).
 STAGE_REASON_LOW_CONFIDENCE = "below_confidence_threshold"
 STAGE_REASON_CONFLICT = "conflict_with_canonical"
+STAGE_REASON_BLOCKED_ASSERTION_TYPE = "blocked_assertion_type"
+STAGE_REASON_MISSING_EVIDENCE = "missing_evidence_refs"
 
 # O limiar de consolidação direta vive em MemoryCandidate.is_high_confidence()
 # (>= 0.85, candidate.py) — o router só o aplica via process_candidate; o reforço
@@ -60,12 +63,14 @@ class MemoryRouter:
         self,
         consolidator: Optional[MemoryConsolidator] = None,
         staging_store: Optional[MemoryStagingStore] = None,
+        verifier: Optional[Any] = None,
     ):
         self.consolidator = consolidator or MemoryConsolidator()
         # Degrau de staging (P11): onde o candidato de baixa confiança espera
         # persistido até ser promovido. Passe staging_store=None para não persistir
         # (o candidato ainda vira "pending", mas nada é gravado).
         self.staging_store = staging_store if staging_store is not None else MemoryStagingStore()
+        self.verifier = verifier
 
     def classify_destination(self, fact: str) -> DestinationType:
         """Classifica o fato segundo as regras de negócio."""
@@ -102,9 +107,19 @@ class MemoryRouter:
         source_uri: str,
         confidence: float = 0.9,
         scope: ScopeType = "project",
+        classification: Optional[Any] = None,
     ) -> MemoryCandidate:
         """Roteia o fato construindo um MemoryCandidate com o proposed_destination correto."""
         destination = self.classify_destination(fact)
+        # Classificação contextual determinística se não fornecida explicitamente
+        if classification is None:
+            evidence_refs = [source_uri.strip()] if source_uri and str(source_uri).strip() else []
+            classification = classify_assertion(
+                fact,
+                evidence_refs=evidence_refs,
+                source_provenance=source_uri.strip() if source_uri else "",
+                verifier=getattr(self, "verifier", None),
+            )
         return MemoryCandidate(
             fact=fact.strip(),
             source_uri=source_uri.strip(),
@@ -113,6 +128,7 @@ class MemoryRouter:
             proposed_destination=destination,
             provenance=[source_uri.strip()] if source_uri else [],
             status="pending",
+            classification=classification,
         )
 
     def stage_candidate(self, candidate: MemoryCandidate, reason: str = "") -> bool:
@@ -135,6 +151,9 @@ class MemoryRouter:
         """Processa o candidato aplicando verificações de conflito e consolidação no memory_provider.
 
         Contrato:
+        - gate de classificação: se classification estiver presente (ou inferida),
+          bloqueia explicitamente a promoção de HYPOTHESIS, FACT_UNVERIFIED e REFUTED.
+          Apenas FACT_VERIFIED com evidence_refs válido pode ser promovido.
         - confiança abaixo do limiar de ``MemoryCandidate.is_high_confidence()`` (0.85):
           o candidato NÃO é descartado — vira ``status="pending"`` e é PERSISTIDO no
           staging store (degrau de staging, P11). Retorna False (não consolidou).
@@ -142,6 +161,29 @@ class MemoryRouter:
           o chamador decide o que fazer (no dream, o candidato volta para o staging).
         - confiança alta, sem conflito: consolida no memory_provider e retorna True.
         """
+        # Gate de classificação / assertion type:
+        # Se classification ausente no candidato, computa sob demanda
+        if candidate.classification is None:
+            text = candidate.fact or candidate.content or ""
+            evidence = candidate.provenance if candidate.provenance else []
+            candidate.classification = classify_assertion(
+                text, evidence_refs=evidence, source_provenance=candidate.source_uri
+            )
+
+        if candidate.classification is not None:
+            atype = candidate.classification.assertion_type
+            if atype in (AssertionType.HYPOTHESIS, AssertionType.FACT_UNVERIFIED, AssertionType.REFUTED):
+                self.stage_candidate(candidate, reason=STAGE_REASON_BLOCKED_ASSERTION_TYPE)
+                return False
+            if atype != AssertionType.FACT_VERIFIED:
+                self.stage_candidate(candidate, reason=STAGE_REASON_BLOCKED_ASSERTION_TYPE)
+                return False
+            evidence = getattr(candidate.classification, "evidence_refs", None) or []
+            valid_evidence = [e for e in evidence if str(e).strip()]
+            if not valid_evidence:
+                self.stage_candidate(candidate, reason=STAGE_REASON_MISSING_EVIDENCE)
+                return False
+
         # Degrau de staging: candidato abaixo do limiar espera em vez de ser jogado fora.
         # A promoção vem de fora: recorrência entre sessões (InstinctStore no dream)
         # eleva a confiança até este limiar. Retorno False = não consolidou (o chamador
