@@ -105,7 +105,14 @@ def _overview(store) -> dict:
         and isinstance(e.payload, dict)
         and isinstance(e.payload.get("bot_id"), str)
     }
-    for bot_id in sorted(identity_ids - seen):
+    deleted_ids = {
+        e.payload.get("bot_id")
+        for e in store.get_all()
+        if e.name == "bot.spec.deleted"
+        and isinstance(e.payload, dict)
+        and isinstance(e.payload.get("bot_id"), str)
+    }
+    for bot_id in sorted(identity_ids - seen - deleted_ids):
         active = identities.get_active_version(bot_id)
         if active is not None:
             bots.append({
