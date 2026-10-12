@@ -229,6 +229,71 @@ def _get_read_only_store():
     return ReadOnlyEvents()
 
 
+def _botspec_to_agent_dict(spec, bot_manager) -> dict:
+    """Map a canonical BotSpec to the AgentConfigDTO shape the frontend expects.
+
+    Single source of truth: the event store via BotSpecManager. No fictional
+    defaults -- an empty registry yields an empty list, honestly.
+    """
+    paused = bot_manager.is_paused(spec.id)
+    task_defaults = spec.task_defaults if isinstance(spec.task_defaults, dict) else {}
+    policy = spec.policy
+    tools = list(policy.tools) if policy is not None and policy.tools else ["read_file", "terminal", "git"]
+    domain = spec.capabilities[0] if spec.capabilities else "General"
+    return {
+        "id": spec.id,
+        "name": spec.name,
+        "role": str(task_defaults.get("role", "builder")),
+        "domain": domain,
+        "description": spec.description or "",
+        "status": "disabled" if paused else "active",
+        "model": {"inherit": True, "provider": None, "model_name": None, "temperature": 0.2, "max_tokens": 4096},
+        "capabilities": {"allowed_tools": tools, "max_risk_tier": "MEDIUM", "allowed_write_paths": []},
+        "memory": {"working": True, "session": True, "project": True, "domain": False, "global_civ": False},
+        "budget": {"max_tokens": 150000, "timeout_seconds": 1800, "max_cost_usd": 5.0, "max_iterations": 25},
+        "policies": {"require_human_approval": ["merge", "deploy"], "risk_tolerance": "CONSERVATIVE"},
+    }
+
+
+def _enrich_agent_dict(agent_dict: dict, session_model) -> dict:
+    """Attach effective model resolution, preserving the existing enrichment."""
+    eff_model, source = _resolve_agent_model(agent_dict.get("model", {}), session_model=session_model)
+    enriched = dict(agent_dict)
+    enriched["effective_model"] = eff_model
+    enriched["model_source"] = source
+    return enriched
+
+
+def _agent_dict_to_botspec_update(agent_dict: dict, existing):
+    """Build an updated BotSpec from a frontend AgentConfigDTO dict.
+
+    Preserves everything the DTO does not carry (routines, triggers,
+    identity, policy, version).
+    """
+    from dataclasses import replace
+
+    task_defaults = dict(existing.task_defaults) if isinstance(existing.task_defaults, dict) else {}
+    task_defaults["role"] = agent_dict.get("role", task_defaults.get("role", "builder"))
+    return replace(
+        existing,
+        name=agent_dict.get("name", existing.name),
+        description=agent_dict.get("description", existing.description),
+        capabilities=[(agent_dict.get("domain") or "general").strip() or "general"],
+        task_defaults=task_defaults,
+    )
+
+
+def _check_global_civ_invariant(agent_dict: dict) -> None:
+    """Enforce constitutional invariant: only PROMOTER writes GLOBAL memory."""
+    if agent_dict.get("memory", {}).get("global_civ"):
+        role = str(agent_dict.get("role", "")).lower()
+        if role != "promoter":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Role '{agent_dict.get('role')}' is strictly forbidden from writing to GLOBAL memory scope. Only PROMOTER agents may write to civilization-level memory.",
+            )
+
+
 @router.get("/api/civilization/overview")
 def civilization_overview(request: Request, profile: Optional[str] = None):
     """Return an allowlisted projection summary."""
@@ -411,86 +476,6 @@ AVAILABLE_MODELS = [
     },
 ]
 
-DEFAULT_CIV_AGENTS = [
-    {
-        "id": "architect-001",
-        "name": "Software Architect",
-        "role": "planner",
-        "domain": "Software Architecture",
-        "description": "System design, architectural constraints and decomposition.",
-        "status": "active",
-        "model": {"inherit": True, "provider": None, "model_name": None, "temperature": 0.2, "max_tokens": 4096},
-        "capabilities": {"allowed_tools": ["read_file", "terminal", "git"], "max_risk_tier": "MEDIUM", "allowed_write_paths": []},
-        "memory": {"working": True, "session": True, "project": True, "domain": True, "global_civ": False},
-        "budget": {"max_tokens": 200000, "timeout_seconds": 1800, "max_cost_usd": 5.0, "max_iterations": 25},
-        "policies": {"require_human_approval": ["merge", "deploy"], "risk_tolerance": "CONSERVATIVE"},
-    },
-    {
-        "id": "builder-002",
-        "name": "Code Builder",
-        "role": "builder",
-        "domain": "Implementation",
-        "description": "Implementation, refactoring, and code generation.",
-        "status": "active",
-        "model": {"inherit": True, "provider": None, "model_name": None, "temperature": 0.3, "max_tokens": 8192},
-        "capabilities": {"allowed_tools": ["read_file", "write_file", "edit_file", "terminal", "git"], "max_risk_tier": "HIGH", "allowed_write_paths": ["."]},
-        "memory": {"working": True, "session": True, "project": True, "domain": False, "global_civ": False},
-        "budget": {"max_tokens": 300000, "timeout_seconds": 2400, "max_cost_usd": 8.0, "max_iterations": 40},
-        "policies": {"require_human_approval": ["deploy"], "risk_tolerance": "BALANCED"},
-    },
-    {
-        "id": "critic-003",
-        "name": "Adversarial Critic",
-        "role": "critic",
-        "domain": "Verification & Code Review",
-        "description": "Adversarial reviews, edge cases, and design flaw detection.",
-        "status": "active",
-        "model": {"inherit": True, "provider": None, "model_name": None, "temperature": 0.1, "max_tokens": 4096},
-        "capabilities": {"allowed_tools": ["read_file", "git"], "max_risk_tier": "READ", "allowed_write_paths": []},
-        "memory": {"working": True, "session": True, "project": True, "domain": False, "global_civ": False},
-        "budget": {"max_tokens": 150000, "timeout_seconds": 1200, "max_cost_usd": 3.0, "max_iterations": 15},
-        "policies": {"require_human_approval": [], "risk_tolerance": "CONSERVATIVE"},
-    },
-    {
-        "id": "validator-004",
-        "name": "Quality Validator",
-        "role": "validator",
-        "domain": "Testing & QA",
-        "description": "Deterministic test suite execution, regression analysis.",
-        "status": "active",
-        "model": {"inherit": True, "provider": None, "model_name": None, "temperature": 0.0, "max_tokens": 4096},
-        "capabilities": {"allowed_tools": ["read_file", "terminal", "git"], "max_risk_tier": "LOW", "allowed_write_paths": []},
-        "memory": {"working": True, "session": True, "project": True, "domain": False, "global_civ": False},
-        "budget": {"max_tokens": 150000, "timeout_seconds": 1200, "max_cost_usd": 3.0, "max_iterations": 20},
-        "policies": {"require_human_approval": ["merge"], "risk_tolerance": "CONSERVATIVE"},
-    },
-    {
-        "id": "promoter-005",
-        "name": "Civilization Promoter",
-        "role": "promoter",
-        "domain": "Civilization Memory & Skills",
-        "description": "Curates and promotes verified knowledge into civilization global memory.",
-        "status": "active",
-        "model": {"inherit": True, "provider": None, "model_name": None, "temperature": 0.1, "max_tokens": 4096},
-        "capabilities": {"allowed_tools": ["read_file", "write_file", "git"], "max_risk_tier": "HIGH", "allowed_write_paths": [".hermes/obsidian_vault"]},
-        "memory": {"working": True, "session": True, "project": True, "domain": True, "global_civ": True},
-        "budget": {"max_tokens": 200000, "timeout_seconds": 1800, "max_cost_usd": 5.0, "max_iterations": 25},
-        "policies": {"require_human_approval": ["memory_promotion"], "risk_tolerance": "CONSERVATIVE"},
-    },
-    {
-        "id": "security-006",
-        "name": "Security Auditor",
-        "role": "security",
-        "domain": "Security & Vulnerability Analysis",
-        "description": "Vulnerability scanning, secret leakage prevention, path traversal checks.",
-        "status": "active",
-        "model": {"inherit": True, "provider": None, "model_name": None, "temperature": 0.1, "max_tokens": 4096},
-        "capabilities": {"allowed_tools": ["read_file", "git"], "max_risk_tier": "READ", "allowed_write_paths": []},
-        "memory": {"working": True, "session": True, "project": True, "domain": False, "global_civ": False},
-        "budget": {"max_tokens": 150000, "timeout_seconds": 1200, "max_cost_usd": 3.0, "max_iterations": 20},
-        "policies": {"require_human_approval": ["deploy"], "risk_tolerance": "CONSERVATIVE"},
-    },
-]
 
 DEFAULT_CIV_MISSIONS = [
     {
@@ -649,30 +634,8 @@ def _resolve_agent_model(
     return global_default, "GLOBAL_DEFAULT"
 
 
-def _civ_agents_path() -> Path:
-    return Path(get_hermes_home()) / "civ_agents.json"
-
-
 def _civ_missions_path() -> Path:
     return Path(get_hermes_home()) / "civ_missions.json"
-
-
-def _load_agents() -> List[dict]:
-    p = _civ_agents_path()
-    if p.is_file():
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                return data
-        except Exception:
-            pass
-    return [dict(a) for a in DEFAULT_CIV_AGENTS]
-
-
-def _save_agents(agents: List[dict]) -> None:
-    p = _civ_agents_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(agents, indent=2), encoding="utf-8")
 
 
 def _load_missions() -> List[dict]:
@@ -827,18 +790,16 @@ def get_available_models(request: Request, profile: Optional[str] = None):
 
 @router.get("/api/civilization/agents")
 def get_civilization_agents(request: Request, profile: Optional[str] = None):
-    """List configured agents with effective model cascade resolutions."""
+    """List registered civilization bots from the canonical event store."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agents = _load_agents()
+        store = _get_read_only_store()
+        agents = []
+        if store is not None:
+            bot_manager = BotSpecManager(store)
+            agents = [_botspec_to_agent_dict(spec, bot_manager) for spec in bot_manager.list()]
         session_model = _get_session_model()
-        results = []
-        for a in agents:
-            eff_model, source = _resolve_agent_model(a.get("model", {}), session_model=session_model)
-            enriched = dict(a)
-            enriched["effective_model"] = eff_model
-            enriched["model_source"] = source
-            results.append(enriched)
+        results = [_enrich_agent_dict(a, session_model) for a in agents]
         return {"agents": results, "session_model": session_model}
 
 
@@ -847,100 +808,105 @@ def get_civilization_agent_detail(request: Request, agent_id: str, profile: Opti
     """Retrieve detailed agent configuration with resolution breakdown."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agents = _load_agents()
-        agent = next((a for a in agents if a["id"] == agent_id), None)
-        if not agent:
+        store = _get_read_only_store()
+        if store is None:
             raise HTTPException(status_code=404, detail="Agent not found")
-        session_model = _get_session_model()
-        eff_model, source = _resolve_agent_model(agent.get("model", {}), session_model=session_model)
-        res = dict(agent)
-        res["effective_model"] = eff_model
-        res["model_source"] = source
-        return res
+        bot_manager = BotSpecManager(store)
+        spec = bot_manager.get(agent_id)
+        if spec is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return _enrich_agent_dict(_botspec_to_agent_dict(spec, bot_manager), _get_session_model())
 
 
 @router.post("/api/civilization/agents")
 def create_civilization_agent(request: Request, body: AgentConfigDTO, profile: Optional[str] = None):
-    """Create a new agent enforcing constitutional invariants."""
+    """Create a new bot registered in the canonical event store."""
     _require_token(request)
     with _config_profile_scope(profile):
         agent_dict = body.model_dump()
         if not agent_dict["id"].strip():
             raise HTTPException(status_code=400, detail="agent id cannot be empty")
-        # Enforce Constitutional Invariant: Only PROMOTER may write to GLOBAL memory scope
-        if agent_dict.get("memory", {}).get("global_civ"):
-            role = str(agent_dict.get("role", "")).lower()
-            if role != "promoter":
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Role '{agent_dict.get('role')}' is strictly forbidden from writing to GLOBAL memory scope. Only PROMOTER agents may write to civilization-level memory.",
+        _check_global_civ_invariant(agent_dict)
+        from hermes.platform.civilization.delegation import create_bot
+
+        new_id = agent_dict["id"].strip()
+        domain = (agent_dict.get("domain") or "general").strip() or "general"
+        with EventStore(str(default_event_store_path())) as store:
+            try:
+                create_bot(
+                    new_id,
+                    domain,
+                    description=agent_dict.get("description", ""),
+                    event_store=store,
                 )
-        agents = _load_agents()
-        if any(a["id"] == agent_dict["id"] for a in agents):
-            raise HTTPException(status_code=409, detail=f"Agent with id '{agent_dict['id']}' already exists")
-        agents.append(agent_dict)
-        _save_agents(agents)
-        _maybe_append_event("civ.bot.spec-created", {"agent_id": agent_dict["id"], "name": agent_dict["name"]})
-        session_model = _get_session_model()
-        eff_model, source = _resolve_agent_model(agent_dict.get("model", {}), session_model=session_model)
-        agent_dict["effective_model"] = eff_model
-        agent_dict["model_source"] = source
-        return agent_dict
+            except ValueError as exc:
+                if "already exists" in str(exc).lower():
+                    raise HTTPException(status_code=409, detail=f"Agent with id '{new_id}' already exists")
+                raise HTTPException(status_code=400, detail=str(exc))
+            bot_manager = BotSpecManager(store)
+            spec = bot_manager.get(new_id)
+            result = _enrich_agent_dict(_botspec_to_agent_dict(spec, bot_manager), _get_session_model())
+        return result
 
 
 @router.put("/api/civilization/agents/{agent_id}")
 def update_civilization_agent(request: Request, agent_id: str, body: AgentConfigDTO, profile: Optional[str] = None):
-    """Update an existing agent configuration enforcing constitutional invariants."""
+    """Update an existing bot in the canonical event store."""
     _require_token(request)
     with _config_profile_scope(profile):
         agent_dict = body.model_dump()
         if agent_dict["id"] != agent_id:
             raise HTTPException(status_code=400, detail="Agent id is immutable")
-        if agent_dict.get("memory", {}).get("global_civ"):
-            role = str(agent_dict.get("role", "")).lower()
-            if role != "promoter":
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Role '{agent_dict.get('role')}' is strictly forbidden from writing to GLOBAL memory scope. Only PROMOTER agents may write to civilization-level memory.",
-                )
-        agents = _load_agents()
-        idx = next((i for i, a in enumerate(agents) if a["id"] == agent_id), None)
-        if idx is None:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        agents[idx] = agent_dict
-        _save_agents(agents)
-        _maybe_append_event("civ.bot.spec-updated", {"agent_id": agent_id, "name": agent_dict["name"]})
-        session_model = _get_session_model()
-        eff_model, source = _resolve_agent_model(agent_dict.get("model", {}), session_model=session_model)
-        agent_dict["effective_model"] = eff_model
-        agent_dict["model_source"] = source
-        return agent_dict
+        _check_global_civ_invariant(agent_dict)
+        with EventStore(str(default_event_store_path())) as store:
+            bot_manager = BotSpecManager(store)
+            existing = bot_manager.get(agent_id)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Agent not found")
+            updated = _agent_dict_to_botspec_update(agent_dict, existing)
+            try:
+                bot_manager.update(updated)
+            except (KeyError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            result = _enrich_agent_dict(_botspec_to_agent_dict(updated, bot_manager), _get_session_model())
+        return result
 
 
 @router.post("/api/civilization/agents/{agent_id}/lifecycle")
 def set_agent_lifecycle(request: Request, agent_id: str, body: AgentLifecycleDTO, profile: Optional[str] = None):
-    """Enable/disable a declarative agent; this does not stop a runtime worker."""
+    """Pause/resume a bot; this does not stop a runtime worker."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agents = _load_agents()
-        agent = next((a for a in agents if a["id"] == agent_id), None)
-        if agent is None:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        agent["status"] = "active" if body.enabled else "disabled"
-        _save_agents(agents)
-        model, source = _resolve_agent_model(agent.get("model", {}), session_model=_get_session_model())
-        return {**agent, "effective_model": model, "model_source": source}
+        with EventStore(str(default_event_store_path())) as store:
+            bot_manager = BotSpecManager(store)
+            if bot_manager.get(agent_id) is None:
+                raise HTTPException(status_code=404, detail="Agent not found")
+            if body.enabled:
+                bot_manager.resume(agent_id)
+            else:
+                bot_manager.pause(agent_id)
+            spec = bot_manager.get(agent_id)
+            result = _enrich_agent_dict(_botspec_to_agent_dict(spec, bot_manager), _get_session_model())
+        return result
 
 
 def _validate_mission_agents(mission: dict) -> None:
     """Check both assignment surfaces so workflow-only agents cannot bypass disabling."""
     references = set(mission.get("agents", []))
     references.update(n["agent_id"] for n in (mission.get("workflow") or {}).get("nodes", []))
-    agents = {a["id"]: a for a in _load_agents()}
+    store = _get_read_only_store()
+    known: set = set()
+    paused: set = set()
+    if store is not None:
+        bot_manager = BotSpecManager(store)
+        for spec in bot_manager.list():
+            known.add(spec.id)
+            if bot_manager.is_paused(spec.id):
+                paused.add(spec.id)
     for agent_id in sorted(references):
-        if agent_id not in agents:
+        if agent_id not in known:
             raise HTTPException(status_code=400, detail=f"Unknown mission agent: {agent_id}")
-        if agents[agent_id].get("status", "active") != "active":
+        if agent_id in paused:
             raise HTTPException(status_code=409, detail=f"Mission agent is disabled: {agent_id}")
 
 
@@ -949,26 +915,21 @@ def duplicate_civilization_agent(request: Request, agent_id: str, profile: Optio
     """Clone an agent configuration under a new unique ID."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agents = _load_agents()
-        agent = next((a for a in agents if a["id"] == agent_id), None)
-        if not agent:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        new_id = f"{agent_id}-copy"
-        counter = 1
-        while any(a["id"] == new_id for a in agents):
-            counter += 1
-            new_id = f"{agent_id}-copy-{counter}"
-        cloned = dict(agent)
-        cloned["id"] = new_id
-        cloned["name"] = f"{agent.get('name', agent_id)} (Copy)"
-        agents.append(cloned)
-        _save_agents(agents)
-        _maybe_append_event("civ.bot.spec-duplicated", {"source_id": agent_id, "new_id": new_id})
-        session_model = _get_session_model()
-        eff_model, source = _resolve_agent_model(cloned.get("model", {}), session_model=session_model)
-        cloned["effective_model"] = eff_model
-        cloned["model_source"] = source
-        return cloned
+        with EventStore(str(default_event_store_path())) as store:
+            bot_manager = BotSpecManager(store)
+            if bot_manager.get(agent_id) is None:
+                raise HTTPException(status_code=404, detail="Agent not found")
+            new_id = f"{agent_id}-copy"
+            counter = 1
+            while bot_manager.get(new_id) is not None:
+                counter += 1
+                new_id = f"{agent_id}-copy-{counter}"
+            try:
+                new_spec = bot_manager.duplicate(agent_id, new_id)
+            except (KeyError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            result = _enrich_agent_dict(_botspec_to_agent_dict(new_spec, bot_manager), _get_session_model())
+        return result
 
 
 @router.post("/api/civilization/agents/{agent_id}/export")
@@ -976,41 +937,52 @@ def export_civilization_agent(request: Request, agent_id: str, profile: Optional
     """Export agent configuration as portable JSON."""
     _require_token(request)
     with _config_profile_scope(profile):
-        agents = _load_agents()
-        agent = next((a for a in agents if a["id"] == agent_id), None)
-        if not agent:
+        store = _get_read_only_store()
+        if store is None:
             raise HTTPException(status_code=404, detail="Agent not found")
-        return agent
+        bot_manager = BotSpecManager(store)
+        spec = bot_manager.get(agent_id)
+        if spec is None:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return _botspec_to_agent_dict(spec, bot_manager)
 
 
 @router.post("/api/civilization/agents/import")
 def import_civilization_agent(request: Request, body: AgentConfigDTO, profile: Optional[str] = None):
-    """Import and validate an agent JSON specification."""
+    """Import and validate an agent JSON specification (upsert into registry)."""
     _require_token(request)
     with _config_profile_scope(profile):
         agent_dict = body.model_dump()
         if not agent_dict["id"].strip():
             raise HTTPException(status_code=400, detail="agent id cannot be empty")
-        if agent_dict.get("memory", {}).get("global_civ"):
-            role = str(agent_dict.get("role", "")).lower()
-            if role != "promoter":
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Role '{agent_dict.get('role')}' is strictly forbidden from writing to GLOBAL memory scope. Only PROMOTER agents may write to civilization-level memory.",
-                )
-        agents = _load_agents()
-        idx = next((i for i, a in enumerate(agents) if a["id"] == agent_dict["id"]), None)
-        if idx is not None:
-            agents[idx] = agent_dict
-        else:
-            agents.append(agent_dict)
-        _save_agents(agents)
-        _maybe_append_event("civ.bot.spec-imported", {"agent_id": agent_dict["id"]})
-        session_model = _get_session_model()
-        eff_model, source = _resolve_agent_model(agent_dict.get("model", {}), session_model=session_model)
-        agent_dict["effective_model"] = eff_model
-        agent_dict["model_source"] = source
-        return agent_dict
+        _check_global_civ_invariant(agent_dict)
+        from hermes.platform.civilization.delegation import create_bot
+
+        new_id = agent_dict["id"].strip()
+        domain = (agent_dict.get("domain") or "general").strip() or "general"
+        with EventStore(str(default_event_store_path())) as store:
+            bot_manager = BotSpecManager(store)
+            existing = bot_manager.get(new_id)
+            if existing is not None:
+                updated = _agent_dict_to_botspec_update(agent_dict, existing)
+                try:
+                    bot_manager.update(updated)
+                except (KeyError, ValueError) as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                spec = updated
+            else:
+                try:
+                    create_bot(
+                        new_id,
+                        domain,
+                        description=agent_dict.get("description", ""),
+                        event_store=store,
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                spec = bot_manager.get(new_id)
+            result = _enrich_agent_dict(_botspec_to_agent_dict(spec, bot_manager), _get_session_model())
+        return result
 
 
 @router.get("/api/civilization/missions")

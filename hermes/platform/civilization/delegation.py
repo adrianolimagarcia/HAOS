@@ -10,6 +10,7 @@ This module unifies the 4 tiers of HAOS Civilization:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 import uuid
@@ -412,6 +413,104 @@ def _create_bot(manager: BotSpecManager, identity_manager: IdentityManager, doma
     return bot_id
 
 
+# ---------------------------------------------------------------------------
+# Intelligent auto-create decider (v1: deterministic heuristic).
+#
+# Before the auto-router materializes a brand-new specialist bot, it must pass
+# through this decider:
+#   1. Dedupe: does an already-registered, non-paused bot cover the task?
+#   2. Necessity: does the task really warrant a dedicated bot with its own
+#      SOUL, or is it simple enough for the generic-bot generalist?
+#
+# v2 UPGRADE PATH: swap the body of should_create_dedicated_bot() for an LLM
+# judge call (cheap/fast tier model). The signature is the contract -- callers
+# do not change.
+# ---------------------------------------------------------------------------
+
+#: Kill-switch for automatic bot creation. Default ON preserves the historical
+#: behavior. When OFF (0/false/no), the router NEVER creates bots and routes
+#: everything it cannot match to the generic-bot generalist.
+_AUTO_CREATE_ENV = "HAOS_CIV_AUTO_CREATE"
+
+#: Task text shorter than this is assumed simple; goes to generic-bot.
+_SIMPLE_TASK_CHAR_THRESHOLD = 200
+
+#: Patterns (lowercase substrings) identifying simple/routine tasks that never
+#: warrant a dedicated specialist bot.
+_SIMPLE_TASK_PATTERNS = (
+    "status",
+    "health check",
+    "healthcheck",
+    "ping",
+    "list files",
+    "what is",
+    "what's",
+    "summarize",
+    "summary of",
+    "read the file",
+    "show me",
+)
+
+
+def _auto_create_allowed() -> bool:
+    """Return False only when HAOS_CIV_AUTO_CREATE is explicitly disabled."""
+    return os.environ.get(_AUTO_CREATE_ENV, "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _find_covering_bot(task_text: str, manager, available: set):
+    """Dedupe (v1): return the id of an existing bot whose capabilities or
+    description suitably cover the task, else None.
+
+    Cheap keyword/capability overlap check -- no LLM needed. Compares the
+    task's significant words against each registered bot's capabilities, id
+    tokens, and description words. Skips the generic-bot itself (it is the
+    fallback, not a dedupe target).
+
+    Scoring is weighted: a capability or id-token match is specific (2 pts),
+    a description-word match is generic (1 pt). Threshold 2 means a single
+    capability/id hit suffices, but a lone description word does not.
+    """
+    from hermes.platform.bots.builtin import GENERIC_BOT_ID
+
+    words = {w for w in re.findall(r"[a-z0-9]+", task_text.lower()) if len(w) > 3}
+    if not words:
+        return None
+    best_id, best_score = None, 0
+    for spec in manager.list():
+        if spec.id not in available or spec.id == GENERIC_BOT_ID:
+            continue
+        score = 0
+        score += 2 * len(words & set(spec.capabilities))
+        score += 2 * len(words & set(re.findall(r"[a-z0-9]+", spec.id.lower())))
+        desc_words = {w for w in re.findall(r"[a-z0-9]+", (spec.description or "").lower()) if len(w) > 3}
+        score += len(words & desc_words)
+        if score > best_score:
+            best_id, best_score = spec.id, score
+    return best_id if best_score >= 2 else None
+
+
+def should_create_dedicated_bot(task, existing_bots) -> bool:
+    """Necessity check (v1 heuristic): does this task warrant a dedicated bot?
+
+    Returns False (-> route to generic-bot) when the task looks simple or
+    routine: short text or matching simple-task patterns. Returns True when
+    the task looks specialized and non-trivial enough to deserve its own SOUL.
+
+    v2 UPGRADE PATH: replace this body with an LLM judge call using a
+    cheap/fast tier model. Signature stays: (task, existing_bots) -> bool.
+    `existing_bots` is the list of registered bot ids, provided so the judge
+    can reason about coverage without extra lookups.
+    """
+    text = "%s %s" % (task.get("goal", ""), task.get("context", ""))
+    text = text.strip()
+    lowered = text.lower()
+    if len(text) < _SIMPLE_TASK_CHAR_THRESHOLD:
+        return False
+    if any(p in lowered for p in _SIMPLE_TASK_PATTERNS):
+        return False
+    return True
+
+
 def create_bot(
     bot_id: str,
     domain: str,
@@ -530,9 +629,31 @@ def route_task(
         store.append(Event(name=_FAILED, payload=fail_payload, correlation_id=provisional_leaf_id))
         raise PermissionError(f"Task requires explicit approval under rule '{decision.rule_id}': {decision.reason}")
 
-    # Cleared by the constitution: now materialize the auto-created specialist.
+    # Cleared by the constitution: decide whether a new specialist bot is
+    # really warranted, or whether an existing bot (dedupe) or the generic
+    # generalist covers the task. The constitutional guard above already ran;
+    # nothing below creates bots on a denied task.
     if bot_id is None:
-        bot_id = _create_bot(manager, identities, task_domain, str(task.get("goal", "")))
+        from hermes.platform.bots.builtin import GENERIC_BOT_ID, ensure_builtin_bots
+
+        ensure_builtin_bots(store)
+        available = _active_bots(manager)  # refresh: builtins now guaranteed present
+        task_text = f"{task.get('goal', '')} {task.get('context', '')}"
+        covering = _find_covering_bot(task_text, manager, available)
+        if covering is not None:
+            bot_id, reason = covering, "dedupe-match"
+            spec = manager.get(bot_id)
+            if spec and spec.capabilities:
+                task_domain = spec.capabilities[0]
+        elif not _auto_create_allowed():
+            bot_id, reason = GENERIC_BOT_ID, "generic-fallback"
+            task_domain = "general"
+        elif not should_create_dedicated_bot(task, sorted(available)):
+            bot_id, reason = GENERIC_BOT_ID, "generic-fallback"
+            task_domain = "general"
+        else:
+            bot_id = _create_bot(manager, identities, task_domain, str(task.get("goal", "")))
+            # reason stays "auto-created-specialist"
 
     leaf_id = task.get("leaf_id") or f"shadow-{bot_id}-{uuid.uuid4().hex[:10]}"
     version = identities.get_active_version(bot_id)
