@@ -545,10 +545,15 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
             _core._bump_server_error(server_name)
             logger.error("MCP tool %s/%s call failed: %s", server_name, tool_name, exc)
         session_expired = partial(_handle_session_expired_and_retry, call_may_have_side_effects=not read_only)
-        return _dispatch(
+        raw_res = _dispatch(
             server_name, server, op, _call, tool_timeout,
             (_handle_stdio_child_exited_and_retry, _handle_auth_error_and_retry, session_expired),
             _on_failure, record_outcome=True)
+        try:
+            from hermes.platform.mcp.spill import apply_mcp_result_budget
+            return apply_mcp_result_budget(raw_res, tool_name=f"{server_name}_{tool_name}")
+        except Exception:
+            return raw_res
     return _handler
 
 

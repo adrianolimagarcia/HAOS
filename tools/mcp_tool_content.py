@@ -28,8 +28,13 @@ _MCP_RESOURCE_MAX_BYTES = 50 * 1024 * 1024
 _MCP_RESOURCE_MAX_B64_CHARS = _MCP_RESOURCE_MAX_BYTES * 4 // 3 + 4
 
 
-def _truncate_mcp_text_result(text: str, max_chars: int = _MCP_HARD_RESULT_CAP_CHARS) -> str:
+def _truncate_mcp_text_result(text: str, max_chars: int = _MCP_HARD_RESULT_CAP_CHARS, tool_name: str = "mcp_result") -> str:
     """Bound pathological MCP text before it propagates (#56059)."""
+    try:
+        from hermes.platform.mcp.spill import apply_mcp_result_budget
+        text = apply_mcp_result_budget(text, tool_name=tool_name)
+    except Exception:
+        pass
     return truncate_head_tail(text, max_chars, label="MCP RESULT")
 
 
