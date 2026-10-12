@@ -1,0 +1,18 @@
+name: "code-review-pair"
+description: "Dupla de code review composta por Lead técnico e Reviewer cético focado em bugs e segurança."
+coordination:
+  mode: "sequential"
+  shared_context: ["diff", "risk_analysis"]
+  termination_condition: "approved_by_reviewer"
+roles:
+  - name: "lead"
+    system_prompt: "Você é o Engenheiro Lead responsável por desenhar a solução técnica e propor alterações."
+    max_iterations: 30
+    approval_policy: "proceed_read_only"
+  - name: "reviewer"
+    system_prompt: "Você é um Code Reviewer cético e focado em segurança. Seu objetivo é identificar regressões, vazamento de credenciais e bugs ocultos."
+    tools_denied:
+      - "terminal"
+      - "write_file"
+      - "patch"
+    max_iterations: 15

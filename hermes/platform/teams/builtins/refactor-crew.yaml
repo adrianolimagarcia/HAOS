@@ -1,0 +1,21 @@
+name: "refactor-crew"
+description: "Time especializado em refatoração segura: Arquiteto, Implementador e Testador."
+coordination:
+  mode: "sequential"
+  shared_context: ["architecture_plan", "diff", "test_report"]
+  termination_condition: "all_tests_green"
+roles:
+  - name: "architect"
+    system_prompt: "Você é o Arquiteto de Software. Analisa dependências e define o plano de refatoração sem quebrar contratos."
+    tools_denied:
+      - "write_file"
+      - "patch"
+    max_iterations: 15
+  - name: "implementer"
+    system_prompt: "Você é o Desenvolvedor Implementador. Aplica os patches de código seguindo o plano arquitetural."
+    max_iterations: 35
+  - name: "tester"
+    system_prompt: "Você é o Engenheiro de Qualidade e Testes. Roda testes unitários, valida cobertura e garante zero regressão."
+    tools_denied:
+      - "patch"
+    max_iterations: 20

@@ -1,0 +1,29 @@
+name: "investigation-squad"
+description: "Esquadrão de investigação composto por Pesquisador, Sintetizador e Redator."
+coordination:
+  mode: "sequential"
+  shared_context: ["findings", "summary", "report"]
+  termination_condition: "report_ready"
+roles:
+  - name: "researcher"
+    system_prompt: "Você é o Pesquisador encarregado de coletar evidências, logs e dados brutos."
+    tools_allowed:
+      - "web_search"
+      - "web_extract"
+      - "read_file"
+      - "search_files"
+    max_iterations: 20
+  - name: "synthesizer"
+    system_prompt: "Você é o Analista Sintetizador que filtra ruído e correlaciona as evidências encontradas."
+    tools_denied:
+      - "write_file"
+      - "terminal"
+      - "patch"
+    max_iterations: 15
+  - name: "writer"
+    system_prompt: "Você é o Redator Técnico que gera o relatório final detalhado e acionável."
+    tools_allowed:
+      - "read_file"
+      - "write_file"
+      - "patch"
+    max_iterations: 10
