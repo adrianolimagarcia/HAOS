@@ -387,6 +387,8 @@ export default function CivilizationPage() {
 
   const counts = {
     bots: data?.bots.length ?? 0,
+    botsActive: data?.bots.filter(b => b.status === "active").length ?? 0,
+    botsPaused: data?.bots.filter(b => b.status !== "active").length ?? 0,
     councils: data?.councils.length ?? 0,
     leaves: data?.leaves.length ?? 0,
     decisions: data?.decisions.length ?? 0,
@@ -468,15 +470,15 @@ export default function CivilizationPage() {
 
         <section className="civ-metrics" aria-label="Resumo da civilização">
           {([
-            ["BOTS", counts.bots, Bot],
-            ["CONSELHOS", counts.councils, Users],
-            ["LEAVES", counts.leaves, GitBranch],
-            ["DECISÕES", counts.decisions, ShieldCheck],
-          ] as const).map(([label, count, Icon]) => (
+            ["BOTS", counts.botsActive, Bot, counts.botsPaused > 0 ? `${counts.botsPaused} pausado${counts.botsPaused === 1 ? "" : "s"}` : "entidades ativas"],
+            ["CONSELHOS", counts.councils, Users, "entidades ativas"],
+            ["LEAVES", counts.leaves, GitBranch, "entidades ativas"],
+            ["DECISÕES", counts.decisions, ShieldCheck, "entidades ativas"],
+          ] as const).map(([label, count, Icon, sub]) => (
             <div className="civ-metric" key={label}>
               <span className="civ-metric-label">{label}<Icon size={16} /></span>
               <strong>{!data ? "—" : count.toString().padStart(2, "0")}</strong>
-              <small>entidades ativas</small>
+              <small>{sub}</small>
             </div>
           ))}
         </section>
