@@ -362,6 +362,11 @@ _DOMAINS = {
         "past-month", "past-week", "trending-topics", "recent", "freshness",
         "cutoff", "latest-news", "time-window",
     ),
+    "lean-bot": (
+        "lean", "over-engineering", "overengineering", "yagni", "ponytail",
+        "boilerplate", "bloat", "simplify", "simplification", "dead-code",
+        "unnecessary-abstraction", "code-bloat",
+    ),
 }
 
 
