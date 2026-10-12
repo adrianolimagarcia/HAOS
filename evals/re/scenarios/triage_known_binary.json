@@ -1,0 +1,13 @@
+{
+  "name": "triage_known_binary",
+  "description": "Triagem preliminar de binário conhecido (/bin/ls) com validação de arquitetura, seções e segurança",
+  "phase": "triage",
+  "target_binary": "/bin/ls",
+  "expected": {
+    "file_type": "ELF",
+    "header_class": 64,
+    "header_machine": "EM_X86_64",
+    "has_sections": true,
+    "has_entropy": true
+  }
+}

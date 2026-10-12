@@ -1,0 +1,14 @@
+{
+  "name": "permission_denial",
+  "description": "Negação fail-closed para binário fora da allowlist sem approval do operador",
+  "phase": "permission_gate",
+  "target_binary": "/tmp/untrusted/suspicious_payload.bin",
+  "grant": "ghidra.decompile",
+  "operator_approved": false,
+  "expected": {
+    "allowed": false,
+    "decision_outcome": "deny",
+    "target_hashed": true,
+    "logged_to_audit": true
+  }
+}

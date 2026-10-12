@@ -1,0 +1,12 @@
+{
+  "name": "disassembly_r2",
+  "description": "Desassembly e listagem de funções via backbone radare2",
+  "phase": "backbone_r2",
+  "target_binary": "/bin/ls",
+  "grant": "r2.read_functions",
+  "expected": {
+    "min_functions": 1,
+    "has_entry_or_main": true,
+    "budget_handled": true
+  }
+}

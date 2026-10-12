@@ -1,0 +1,13 @@
+{
+  "name": "decompile_ghidra",
+  "description": "Decompilação profunda de função específica via Ghidra Headless",
+  "phase": "ghidra_headless",
+  "target_binary": "/bin/ls",
+  "function_name": "main",
+  "grant": "ghidra.decompile",
+  "expected": {
+    "status": "success",
+    "contains_c_syntax": true,
+    "has_timeout_protection": true
+  }
+}
