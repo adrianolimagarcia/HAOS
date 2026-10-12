@@ -3,10 +3,16 @@
 import unittest
 from hermes.platform.context.memory.candidate import MemoryCandidate
 from hermes.platform.context.memory.consolidation import MemoryConsolidator
+from hermes.platform.context.memory.evidence import bootstrap_eval_fixture_registry
 from hermes.platform.context.memory.router import MemoryRouter
 
 
 class TestMemoryCandidatesAndRouting(unittest.TestCase):
+    def setUp(self):
+        # O gate estrito do GBrain v2 exige evidencia registrada para promocao;
+        # atesta as referencias sinteticas do harness (ex.: "turn://1").
+        bootstrap_eval_fixture_registry()
+
     def test_candidate_creation_and_methods(self):
         c1 = MemoryCandidate(
             fact="User prefers dark mode and concise responses",

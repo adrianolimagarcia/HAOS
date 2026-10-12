@@ -14,20 +14,54 @@ Casos mínimos de teste contratuais:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 import pytest
 from pathlib import Path
 
 from hermes.platform.context.memory.candidate import MemoryCandidate, validate_candidate
+from hermes.platform.context.memory.evidence import (
+    EvidenceStatus,
+    bootstrap_eval_fixture_registry,
+    get_default_evidence_registry,
+)
 from hermes.platform.context.memory.schemas import KnowledgeItem, KnowledgeStatus
 from hermes.platform.context.memory.staging import MemoryStagingStore
 from hermes.platform.memory.reconciler import MemoryReconciler
 
 
+def _setup_harness_evidence() -> None:
+    """Atesta referencias sinteticas de evidencia EXCLUSIVAMENTE para o harness de teste.
+
+    O gate estrito do GBrain v2 (fail-closed) exige FACT_VERIFIED com evidence_refs
+    validos no EvidenceRegistry para promover qualquer candidato. Este setup registra
+    evidencias de teste no registry global -- sem tocar em nenhuma linha do codigo
+    de producao.
+    """
+    bootstrap_eval_fixture_registry()
+    reg = get_default_evidence_registry()
+    cases = [
+        ("test://editor-neovim", "Editor preferido é Neovim"),
+        ("test://editor-vscode", "Editor preferido é VS Code"),
+        ("test://vpn-gateway", "Work VPN gateway 10.0.0.1"),
+    ]
+    for uri, content in cases:
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        reg.register(
+            uri=uri,
+            status=EvidenceStatus.VERIFIED,
+            verifier="test_harness_authority",
+            digest=digest,
+            attestation={"content": content, "supported_claim": content},
+            supports_claim=True,
+        )
+
+
 @pytest.fixture
 def temp_memory_store(tmp_path: Path):
     """Fixture que isola SQLite de staging e reconciled em diretório temporário."""
+    _setup_harness_evidence()
     staging_dir = tmp_path / "staging"
     staging_dir.mkdir(parents=True, exist_ok=True)
     reconciled_db = tmp_path / "reconciled_memories.db"
@@ -55,6 +89,7 @@ def test_case_1_stable_preference_vs_casual_mention(temp_memory_store):
         category="preference",
         confidence=0.90,
         proof_count=3,
+        provenance=["turn://1"],  # atestado pelo bootstrap ("User prefers Python 3.11...")
     )
 
     # Menção casual não deve ser promovida para memória canônica ativa
@@ -99,6 +134,7 @@ def test_case_3_superseded_fact_temporal_history(temp_memory_store):
         confidence=0.95,
         proof_count=2,
         valid_from=t0,
+        provenance=["test://editor-neovim"],
     )
     res_a = reconciler.reconcile_candidate(cand_a)
     item_a: KnowledgeItem = res_a["item"]
@@ -112,6 +148,7 @@ def test_case_3_superseded_fact_temporal_history(temp_memory_store):
         proof_count=1,
         supersedes=item_a.id,
         valid_from=t1,
+        provenance=["test://editor-vscode"],
     )
     res_b = reconciler.reconcile_candidate(cand_b)
     item_b: KnowledgeItem = res_b["item"]
@@ -145,6 +182,7 @@ def test_case_4_contradiction_and_revocation(temp_memory_store):
         content="O servidor de staging roda na porta 8080",
         category="infrastructure",
         confidence=0.90,
+        provenance=["file://config"],  # atestado pelo bootstrap ("O servidor usa a porta 8080...")
     )
     res = reconciler.reconcile_candidate(fact)
     item: KnowledgeItem = res["item"]
@@ -156,6 +194,7 @@ def test_case_4_contradiction_and_revocation(temp_memory_store):
         category="infrastructure",
         supersedes=item.id,
         valid_until=time.time(),
+        provenance=["file://config"],
     )
     reconciler.reconcile_candidate(revocation)
 
@@ -211,6 +250,7 @@ def test_case_6_secrets_and_malicious_instructions_rejected():
 # Caso (vii): Isolamento entre perfis A -> B -> A
 # -------------------------------------------------------------------------
 def test_case_7_profile_isolation(tmp_path: Path):
+    _setup_harness_evidence()
     profile_a_dir = tmp_path / "profiles" / "work"
     profile_b_dir = tmp_path / "profiles" / "personal"
     profile_a_dir.mkdir(parents=True)
@@ -220,7 +260,12 @@ def test_case_7_profile_isolation(tmp_path: Path):
     store_b = MemoryReconciler(db_path=str(profile_b_dir / "reconciled_memories.db"))
 
     # Grava fato no perfil A
-    cand_a = MemoryCandidate(content="Work VPN gateway 10.0.0.1", category="network", confidence=0.95)
+    cand_a = MemoryCandidate(
+        content="Work VPN gateway 10.0.0.1",
+        category="network",
+        confidence=0.95,
+        provenance=["test://vpn-gateway"],
+    )
     store_a.reconcile_candidate(cand_a)
 
     # Perfil B deve estar completamente limpo desse fato
