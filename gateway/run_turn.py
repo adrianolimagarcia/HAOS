@@ -2099,6 +2099,33 @@ class GatewayTurnMixin:
             # Admission/typing is not execution. All routing, authorization and
             # turn preparation gates have passed when the agent runner is entered.
             event._heartbeat_execution_started = True
+            # Civilization gateway bridge (Phase 1: advisory/shadow). Consult
+            # delegation for a specialist suggestion; the suggestion is turn
+            # metadata only -- the normal flow below is unchanged. Any failure
+            # degrades silently to _civ_suggested_bot=None.
+            _civ_suggested_bot = None
+            try:
+                from hermes.platform.civilization.gateway_bridge import (
+                    gateway_routing_enabled,
+                    suggest_specialist,
+                )
+                if gateway_routing_enabled():
+                    _civ_suggested_bot = suggest_specialist(message_text)
+                    if _civ_suggested_bot:
+                        logger.info(
+                            "civ gateway bridge: suggested specialist=%s",
+                            _civ_suggested_bot,
+                        )
+            except Exception:
+                logger.debug(
+                    "civ gateway bridge failed; normal flow continues",
+                    exc_info=True,
+                )
+                _civ_suggested_bot = None
+            # Advisory metadata on the event (same pattern as
+            # event._heartbeat_execution_started above); the agent flow
+            # below is unchanged.
+            event._civ_suggested_bot = _civ_suggested_bot
             agent_result = await self._run_agent(
                 message=message_text, context_prompt=prepared.context_prompt, history=history, source=source,
                 session_id=_run_start_session_id, session_key=session_key,
