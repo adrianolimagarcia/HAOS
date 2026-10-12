@@ -41,6 +41,29 @@ jobs:
           # the invariant that EVERYTHING in plugin-catalog/ stays valid.
           python3 scripts/validate_plugin_catalog.py plugin-catalog/
 
+  cross-catalog-audit:
+    # Non-blocking: reports skill <-> plugin alignment gaps as a warning.
+    # Becomes a hard gate only after the catalog is fully cross-linked.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        uses: ./.github/actions/retry
+        with:
+          command: pip install pyyaml==6.0.2
+
+      - name: Audit skill <-> plugin alignment (warning only)
+        run: |
+          set -euo pipefail
+          python3 scripts/audit_skill_plugin_catalog.py
+
   pinned-source-validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
