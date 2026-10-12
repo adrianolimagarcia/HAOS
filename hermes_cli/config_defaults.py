@@ -1638,6 +1638,7 @@ DEFAULT_CONFIG = {
         # prompt expired before the user reached their phone), so the default is 300.
         "mode": "smart",
         "timeout": 300,
+        "timeout_policy": "abort",
         "cron_mode": "deny",
         "single_query_mode": "deny",
         "unattended_mode": "deny",

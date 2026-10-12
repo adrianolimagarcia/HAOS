@@ -859,8 +859,21 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
                             reason=f"approval was withdrawn before the user answered ({decision['cancelled']})",
                             reason_addendum="", timeout_addendum="", deny_reason=None)
             if not decision["resolved"]:
+                timeout_policy = approval_context._get_approval_timeout_policy()
+                severity = approval_context._get_operation_severity(command, description, spec.noun)
+                if timeout_policy == "proceed_read_only" and severity != "destructive":
+                    return {
+                        "approved": True,
+                        "proceed_read_only": True,
+                        "timeout_policy_applied": "proceed_read_only",
+                        "message": f"Approved under proceed_read_only timeout policy: {description}",
+                        "severity": severity,
+                    }
+                timeout_msg = " Silence is not consent."
+                if severity == "destructive" and timeout_policy == "proceed_read_only":
+                    timeout_msg = " Destructive operations cannot proceed on timeout, aborting."
                 return deny(spec.gateway_refused, "timeout", reason="timed out without user response",
-                            reason_addendum="", timeout_addendum=" Silence is not consent.",
+                            reason_addendum="", timeout_addendum=timeout_msg,
                             deny_reason=deny_reason)
             if choice is None or choice == "deny":
                 return deny(spec.gateway_refused, "denied", reason="denied by user",
@@ -893,6 +906,16 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
                                        smart_denied=smart_denied, approval_callback=approval_callback)
     approval_context._fire_approval_hook("post_approval_response", **hook_kwargs, choice=choice)
     if choice == "timeout":
+        timeout_policy = approval_context._get_approval_timeout_policy()
+        severity = approval_context._get_operation_severity(prompt_command, prompt_description, spec.noun)
+        if timeout_policy == "proceed_read_only" and severity != "destructive":
+            return {
+                "approved": True,
+                "proceed_read_only": True,
+                "timeout_policy_applied": "proceed_read_only",
+                "message": f"Approved under proceed_read_only timeout policy: {prompt_description}",
+                "severity": severity,
+            }
         return deny(spec.cli_timeout, "timeout")
     if choice == "cancelled":
         # The prompt never reached a human (callback raised, no callback under prompt_toolkit, interrupted

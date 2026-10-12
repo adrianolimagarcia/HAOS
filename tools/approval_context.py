@@ -329,3 +329,78 @@ def _get_approval_transport_config() -> tuple[str, str | None]:
         # prompt on a built-in surface the operator may not be watching.
         return "config-error", None
     return selected or "builtin", "builtin" if fallback == "builtin" else None
+
+
+_VALID_TIMEOUT_POLICIES = ("abort", "proceed_read_only")
+
+_DESTRUCTIVE_COMMAND_PATTERNS = (
+    r"\brm\b",
+    r"\brmdir\b",
+    r"\bshred\b",
+    r"\bunlink\b",
+    r"\bmkfs\b",
+    r"\bfdisk\b",
+    r"\bparted\b",
+    r"\bdd\b",
+    r"\bformat\b",
+    r"\bkill\b",
+    r"\bpkill\b",
+    r"\bkillall\b",
+    r"\breboot\b",
+    r"\bshutdown\b",
+    r"\bpoweroff\b",
+    r"\binit\s+[06]\b",
+    r"\bchmod\b",
+    r"\bchown\b",
+    r"\bsystemctl\s+(stop|restart|disable|mask)\b",
+    r"\bgit\s+push\b.*(--force|-f\b)",
+    r"\bgit\s+reset\s+--hard\b",
+    r"\bgit\s+clean\b.*-f",
+    r"\b(DROP|TRUNCATE)\s+(TABLE|DATABASE)\b",
+    r"\bDELETE\s+FROM\b",
+)
+
+_DESTRUCTIVE_DESC_WORDS = (
+    "delete", "destroy", "remove", "kill", "terminate",
+    "format", "wipe", "overwrite", "drop table", "truncate",
+)
+
+
+def _get_approval_timeout_policy() -> str:
+    """Read ``approvals.timeout_policy`` from config: 'abort' (default, safe)
+    or 'proceed_read_only'."""
+    try:
+        raw = str(_get_approval_config().get("timeout_policy", "abort")).strip().lower()
+        return raw if raw in _VALID_TIMEOUT_POLICIES else "abort"
+    except Exception:
+        return "abort"
+
+
+def _is_destructive_operation(command: str = "", description: str = "", noun: str = "command") -> bool:
+    """Classify whether an operation is destructive (file deletion, formatting, process killing, force pushes)."""
+    import re
+    cmd = (command or "").strip()
+    desc = (description or "").lower()
+
+    if any(word in desc for word in _DESTRUCTIVE_DESC_WORDS):
+        return True
+
+    for pattern in _DESTRUCTIVE_COMMAND_PATTERNS:
+        if re.search(pattern, cmd, flags=re.IGNORECASE):
+            return True
+
+    if ">" in cmd and not ">>" in cmd and not "2>&1" in cmd:
+        # Destructive truncation redirection
+        parts = cmd.split(">")
+        if len(parts) > 1 and parts[1].strip():
+            return True
+
+    return False
+
+
+def _get_operation_severity(command: str = "", description: str = "", noun: str = "command") -> str:
+    """Return operation severity: 'destructive' or 'read_only'."""
+    if _is_destructive_operation(command=command, description=description, noun=noun):
+        return "destructive"
+    return "read_only"
+
