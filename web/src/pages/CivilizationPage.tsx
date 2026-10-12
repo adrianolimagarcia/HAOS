@@ -157,6 +157,7 @@ export default function CivilizationPage() {
   const [updated, setUpdated] = useState<Date | null>(null);
   const [studioTab, setStudioTab] = useState<StudioTab>("observatory");
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [agentStatusFilter, setAgentStatusFilter] = useState<"active" | "disabled" | "all">("active");
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [sessionModel, setSessionModel] = useState("");
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -484,11 +485,20 @@ export default function CivilizationPage() {
           <section aria-label="Agent Studio">
             <div className="civ-agent-header">
               <div><span className="civ-kicker">CONTROL PLANE / AGENT REGISTRY</span><h2>Agent Studio</h2><p style={{ color: "var(--muted)", margin: "5px 0 0", fontSize: "0.82rem" }}>Configure bots declaratively. The kernel validates every capability and memory boundary.</p></div>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <select aria-label="Filter agents by status" value={agentStatusFilter}
+                onChange={e => setAgentStatusFilter(e.target.value as "active" | "disabled" | "all")}
+                style={{ padding: "8px 12px", borderRadius: "8px" }}>
+                <option value="active">Active only</option>
+                <option value="disabled">Paused only</option>
+                <option value="all">All agents</option>
+              </select>
               <button type="button" className="civ-btn-primary" onClick={() => openAgentEditor()}><Bot size={16} /> New agent</button>
+            </div>
             </div>
             <AgentImport key={profile} profile={profile} onChanged={() => void loadControlPlane()} />
             <div className="civ-agent-grid">
-              {agents.map(agent => (
+              {agents.filter(agent => agentStatusFilter === "all" || agent.status === agentStatusFilter).map(agent => (
                 <article className="civ-glass civ-agent-card" key={agent.id}>
                   <div>
                     <div className="civ-agent-top"><div className="civ-agent-title"><span className="civ-node-icon"><Bot size={18} /></span><div><strong>{agent.name}</strong><div style={{ color: "var(--muted)", fontSize: "0.7rem" }}>{agent.id}</div></div></div><span className={`civ-role-badge civ-role-${agent.role.toLowerCase()}`}>{agent.role}</span></div>
@@ -501,7 +511,7 @@ export default function CivilizationPage() {
                 </article>
               ))}
             </div>
-            {!agents.length && <div className="civ-glass civ-empty"><Bot size={30} /><strong>No configured agents</strong><span>Create the first agent to assemble your civilization.</span></div>}
+            {!agents.filter(agent => agentStatusFilter === "all" || agent.status === agentStatusFilter).length && <div className="civ-glass civ-empty"><Bot size={30} /><strong>No configured agents</strong><span>Create the first agent to assemble your civilization.</span></div>}
           </section>
         )}
 
