@@ -477,46 +477,6 @@ AVAILABLE_MODELS = [
 ]
 
 
-DEFAULT_CIV_MISSIONS = [
-    {
-        "id": "mis-001",
-        "title": "OAuth2 Authentication Hardening",
-        "goal": "Implement asymmetric JWT signing and strict rate-limiting for auth endpoints.",
-        "status": "READY",
-        "agents": ["architect-001", "builder-002", "critic-003", "validator-004"],
-        "workflow": {
-            "nodes": [
-                {"id": "step-1", "agent_id": "architect-001", "role": "planner", "action": "Design auth token flow", "status": "COMPLETED"},
-                {"id": "step-2", "agent_id": "builder-002", "role": "builder", "action": "Implement asymmetric JWT key pair", "status": "READY"},
-                {"id": "step-3", "agent_id": "critic-003", "role": "critic", "action": "Audit token expiry and entropy", "status": "PENDING"},
-                {"id": "step-4", "agent_id": "validator-004", "role": "validator", "action": "Run auth regression tests", "status": "PENDING"},
-            ],
-            "edges": [
-                {"from_node": "step-1", "to_node": "step-2"},
-                {"from_node": "step-2", "to_node": "step-3"},
-                {"from_node": "step-3", "to_node": "step-4"},
-            ],
-        },
-        "budget": {
-            "max_cost_usd": 10.0,
-            "max_tokens": 250000,
-            "timeout_seconds": 2400,
-        },
-        "policies": {
-            "require_human_gate_on_merge": True,
-            "allow_learning": True,
-        },
-        "simulation": None,
-        "events": [
-            {"time": 1774000000.0, "type": "civ.mission.created", "agent_id": "architect-001", "description": "Mission created and initialized in READY state.", "status": "completed"},
-            {"time": 1774000500.0, "type": "civ.mission.agent_state_changed", "agent_id": "architect-001", "description": "Architect finished token flow plan.", "status": "completed"},
-        ],
-        "progress_pct": 25.0,
-        "created_at": 1774000000.0,
-        "updated_at": 1774000500.0,
-    }
-]
-
 
 class ModelConfigDTO(BaseModel):
     inherit: bool = True
@@ -647,7 +607,7 @@ def _load_missions() -> List[dict]:
                 return data
         except Exception:
             pass
-    return [dict(m) for m in DEFAULT_CIV_MISSIONS]
+    return []
 
 
 def _save_missions(missions: List[dict]) -> None:

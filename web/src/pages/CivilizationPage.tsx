@@ -5,7 +5,7 @@ import { ModelsCatalog } from "@/components/civilization/ModelsCatalog";
 import { AgentImport, AgentLifecycle } from "@/components/civilization/AgentControls";
 import { ApprovalCenter } from "@/components/civilization/ApprovalCenter";
 import { MissionInsights } from "@/components/civilization/MissionInsights";
-import { Activity, ArrowUpRight, BookOpen, Bot, ChevronRight, Cpu, GitBranch, Network, Play, RefreshCw, RotateCcw, Save, Settings2, ShieldCheck, SlidersHorizontal, Users, X } from "lucide-react";
+import { Activity, ArrowUpRight, BookOpen, Bot, ChevronDown, ChevronRight, Cpu, GitBranch, Network, Play, RefreshCw, RotateCcw, Save, Settings2, ShieldCheck, SlidersHorizontal, Users, X } from "lucide-react";
 import { CivConstellation } from "@/components/CivConstellation";
 import { errorMessage } from "@/lib/api-error";
 import { useProfileScope } from "@/contexts/useProfileScope";
@@ -158,6 +158,7 @@ export default function CivilizationPage() {
   const [studioTab, setStudioTab] = useState<StudioTab>("observatory");
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [agentStatusFilter, setAgentStatusFilter] = useState<"active" | "disabled" | "all">("active");
+  const [expandedBots, setExpandedBots] = useState<Set<string>>(new Set());
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [sessionModel, setSessionModel] = useState("");
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -543,17 +544,43 @@ export default function CivilizationPage() {
                   <span>Eventos de Bots e Conselhos aparecerão aqui quando forem persistidos no perfil ativo.</span>
                 </div>
               ) : null}
-              {data?.bots.map(bot => (
+              {data?.bots.map(bot => {
+                const botLeaves = data.leaves.filter(leaf => leaf.parent_bot_id === bot.bot_id);
+                const botProposals = data.proposals?.filter(pr => pr.bot_id === bot.bot_id) ?? [];
+                const childCount = botLeaves.length + botProposals.length;
+                const expanded = expandedBots.has(bot.bot_id);
+                const toggleBot = () => setExpandedBots(prev => {
+                  const next = new Set(prev);
+                  if (next.has(bot.bot_id)) next.delete(bot.bot_id);
+                  else next.add(bot.bot_id);
+                  return next;
+                });
+                return (
                 <div className="civ-branch" key={bot.bot_id}>
-                  <NodeButton
-                    selected={selected?.kind === "bot" && selected.id === bot.bot_id}
-                    label={bot.name || bot.bot_id}
-                    subtitle={`BOT · ${bot.version == null ? "sem versão" : `v${bot.version}`} · ${bot.status}`}
-                    icon={<Bot size={17} />}
-                    onClick={() => choose("bot", bot.bot_id)}
-                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <button
+                      type="button"
+                      className="civ-node-toggle"
+                      aria-label={expanded ? `Recolher ${bot.name || bot.bot_id}` : `Expandir ${bot.name || bot.bot_id}`}
+                      aria-expanded={expanded}
+                      onClick={toggleBot}
+                      style={{ flexShrink: 0, padding: "8px", borderRadius: "8px", background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer" }}
+                    >
+                      {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <NodeButton
+                        selected={selected?.kind === "bot" && selected.id === bot.bot_id}
+                        label={bot.name || bot.bot_id}
+                        subtitle={`BOT · ${bot.version == null ? "sem versão" : `v${bot.version}`} · ${bot.status}${childCount > 0 && !expanded ? ` · ${childCount} ${childCount === 1 ? "item" : "itens"}` : ""}`}
+                        icon={<Bot size={17} />}
+                        onClick={() => choose("bot", bot.bot_id)}
+                      />
+                    </div>
+                  </div>
+                  {expanded && (
                   <div className="civ-children">
-                    {data.leaves.filter(leaf => leaf.parent_bot_id === bot.bot_id).map(leaf => (
+                    {botLeaves.map(leaf => (
                       <NodeButton
                         key={leaf.leaf_id}
                         selected={selected?.kind === "leaf" && selected.id === leaf.leaf_id}
@@ -563,19 +590,21 @@ export default function CivilizationPage() {
                         onClick={() => choose("leaf", leaf.leaf_id)}
                       />
                     ))}
-                    {data.proposals?.filter(p => p.bot_id === bot.bot_id).map(p => (
+                    {botProposals.map(pr => (
                       <NodeButton
-                        key={p.proposal_id}
-                        selected={selected?.kind === "proposal" && selected.id === p.proposal_id}
-                        label={p.proposal_id}
-                        subtitle={`EVOLUÇÃO · ${p.status}`}
+                        key={pr.proposal_id}
+                        selected={selected?.kind === "proposal" && selected.id === pr.proposal_id}
+                        label={pr.proposal_id}
+                        subtitle={`EVOLUÇÃO · ${pr.status}`}
                         icon={<ShieldCheck size={15} />}
-                        onClick={() => choose("proposal", p.proposal_id)}
+                        onClick={() => choose("proposal", pr.proposal_id)}
                       />
                     ))}
                   </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               {data?.leaves.filter(leaf => !botIds.has(leaf.parent_bot_id)).map(leaf => (
                 <NodeButton
                   key={leaf.leaf_id}
