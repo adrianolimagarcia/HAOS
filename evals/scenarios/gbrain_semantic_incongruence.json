@@ -1,0 +1,43 @@
+{
+  "name": "gbrain_semantic_incongruence_blocked",
+  "description": "Fato cuja evidência é semanticamente incongruente ou atesta claim diferente deve ter suporte negado e ser bloqueado pelo gate.",
+  "tags": ["gbrain", "memory", "negative", "incongruence"],
+  "initial_state": {},
+  "turns": [
+    {
+      "user_input": "Afirmo que o Postgres suporta 1 milhão de conexões simultâneas.",
+      "extracted_fact": "Architecture standard: Postgres database handles 1000000 concurrent sessions seamlessly.",
+      "source_uri": "session://test-session-202/turn-2",
+      "confidence": 0.95,
+      "evidence_attestation": {
+        "status": "REJECTED",
+        "verifier": "test_harness",
+        "digest": "sha256_incongruent_test_9988",
+        "supported_claim": "CSS stylesheet formatting guidelines",
+        "supports_claim": false
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "target": "evidence_status",
+      "expected_value": "REJECTED",
+      "description": "O status da evidência incongruente deve ser REJECTED"
+    },
+    {
+      "target": "gbrain_gate",
+      "expected_value": "FACT_UNVERIFIED",
+      "description": "Com evidência rejeitada, a afirmação permanece FACT_UNVERIFIED"
+    },
+    {
+      "target": "router",
+      "expected_value": "staged",
+      "description": "O router deve recusar promoção e reter em staging"
+    },
+    {
+      "target": "candidate_status",
+      "expected_value": "pending",
+      "description": "O candidato deve permanecer pendente"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "name": "gbrain_low_confidence_staging",
+  "description": "Fato com evidência válida mas confiança preliminar abaixo do limiar (0.70 < 0.85) é retido no degrau de staging.",
+  "tags": ["gbrain", "memory", "staging", "confidence"],
+  "initial_state": {},
+  "turns": [
+    {
+      "user_input": "Parece que a rota secundária de cache melhorou a latência em 5%.",
+      "extracted_fact": "Architecture decision: Secondary cache route improves latency by 5 percent.",
+      "source_uri": "session://test-session-303/turn-3",
+      "confidence": 0.70,
+      "evidence_attestation": {
+        "status": "VERIFIED",
+        "verifier": "test_harness",
+        "digest": "sha256_cache_latency_audit",
+        "supported_claim": "Secondary cache route improves latency by 5 percent",
+        "supports_claim": true
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "target": "gbrain_gate",
+      "expected_value": "FACT_VERIFIED",
+      "description": "Com evidência verificada, o tipo da asserção é FACT_VERIFIED"
+    },
+    {
+      "target": "candidate_status",
+      "expected_value": "pending",
+      "description": "Candidato abaixo do limiar de 0.85 permanece pending no staging"
+    },
+    {
+      "target": "staging_reason",
+      "expected_value": "below_confidence_threshold",
+      "description": "Razão de staging deve ser below_confidence_threshold"
+    },
+    {
+      "target": "router",
+      "expected_value": "staged",
+      "description": "Não consolida até acumular recorrência suficiente"
+    }
+  ]
+}

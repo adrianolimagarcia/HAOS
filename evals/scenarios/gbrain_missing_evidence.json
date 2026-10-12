@@ -1,0 +1,37 @@
+{
+  "name": "gbrain_missing_evidence_blocked",
+  "description": "Fato sem referências de evidência empírica deve ser classificado como FACT_UNVERIFIED e bloqueado pelo gate, caindo em staging.",
+  "tags": ["gbrain", "memory", "negative", "security"],
+  "initial_state": {},
+  "turns": [
+    {
+      "user_input": "Eu acho que a arquitetura do banco deve ser mudada para MongoDB.",
+      "extracted_fact": "Architecture decision: The database shall migrate to MongoDB without benchmark.",
+      "source_uri": "",
+      "confidence": 0.9,
+      "evidence_attestation": null
+    }
+  ],
+  "assertions": [
+    {
+      "target": "gbrain_gate",
+      "expected_value": "FACT_UNVERIFIED",
+      "description": "Sem evidência, o gate deve classificar como FACT_UNVERIFIED"
+    },
+    {
+      "target": "router",
+      "expected_value": "staged",
+      "description": "O router deve bloquear a consolidação direta e reter em staging"
+    },
+    {
+      "target": "candidate_status",
+      "expected_value": "pending",
+      "description": "O status do candidato deve ser pending"
+    },
+    {
+      "target": "staging_reason",
+      "expected_value": "blocked_assertion_type",
+      "description": "A razão do bloqueio deve ser assertion type não verificada"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "name": "gbrain_valid_evidence_promoted",
+  "description": "Fato com evidência empírica válida e atestada por autoridade confiável deve ser classificado como FACT_VERIFIED e promovido.",
+  "tags": ["gbrain", "memory", "positive"],
+  "initial_state": {},
+  "turns": [
+    {
+      "user_input": "Constatamos que o tempo de resposta do endpoint /api/v1/health caiu para 4ms.",
+      "extracted_fact": "Architecture decision: The endpoint /api/v1/health latency measured 4ms.",
+      "source_uri": "session://test-session-101/turn-5",
+      "confidence": 0.95,
+      "evidence_attestation": {
+        "status": "VERIFIED",
+        "verifier": "test_harness",
+        "digest": "sha256_abcdef1234567890",
+        "supported_claim": "The endpoint /api/v1/health latency measured 4ms",
+        "supports_claim": true
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "target": "gbrain_gate",
+      "expected_value": "FACT_VERIFIED",
+      "description": "O classificador deve reconhecer como FACT_VERIFIED com base na evidência atestada"
+    },
+    {
+      "target": "router",
+      "expected_value": "promoted",
+      "description": "O router deve consolidar o fato com alta confiança e evidência válida"
+    },
+    {
+      "target": "destination",
+      "expected_value": "obsidian",
+      "description": "Destino classificado como obsidian devido à convenção/arquitetura"
+    }
+  ]
+}
