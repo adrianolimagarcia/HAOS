@@ -605,16 +605,7 @@ export default function CivilizationPage() {
                 </div>
                 );
               })}
-              {data?.leaves.filter(leaf => !botIds.has(leaf.parent_bot_id)).map(leaf => (
-                <NodeButton
-                  key={leaf.leaf_id}
-                  selected={selected?.kind === "leaf" && selected.id === leaf.leaf_id}
-                  label={leaf.leaf_id}
-                  subtitle={`LEAF · pai não registrado: ${leaf.parent_bot_id}`}
-                  icon={<GitBranch size={15} />}
-                  onClick={() => choose("leaf", leaf.leaf_id)}
-                />
-              ))}
+
               {data && data.councils.length > 0 ? <div className="civ-group-label">CONSELHOS / COORDENAÇÃO</div> : null}
               {data?.councils.map(council => (
                 <div className="civ-branch" key={council.council_id}>
