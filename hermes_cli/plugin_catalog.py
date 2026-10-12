@@ -53,6 +53,9 @@ class CatalogCapabilities:
     provides_hooks: List[str] = field(default_factory=list)
     provides_middleware: List[str] = field(default_factory=list)
     requires_env: List[str] = field(default_factory=list)
+    # Cross-link to the skills world (optional): exact SKILL.md frontmatter
+    # `name:` values this plugin distributes. See scripts/audit_skill_plugin_catalog.py.
+    provides_skills: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -85,6 +88,7 @@ class PluginCatalogEntry:
             "capabilities": {
                 "provides_tools": list(caps.provides_tools), "provides_hooks": list(caps.provides_hooks),
                 "provides_middleware": list(caps.provides_middleware), "requires_env": list(caps.requires_env),
+                "provides_skills": list(caps.provides_skills),
             },
         }
 
@@ -133,6 +137,7 @@ def entry_from_mapping(data: Any, label: str) -> Optional[PluginCatalogEntry]:
         capabilities=CatalogCapabilities(
             provides_tools=_str_list(caps.get("provides_tools")), provides_hooks=_str_list(caps.get("provides_hooks")),
             provides_middleware=_str_list(caps.get("provides_middleware")),
+            provides_skills=_str_list(caps.get("provides_skills")),
             requires_env=_str_list(caps.get("requires_env"))),
     )
 

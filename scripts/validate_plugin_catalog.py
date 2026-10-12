@@ -49,6 +49,7 @@ CAPABILITY_KEYS = (
     "provides_hooks",
     "provides_middleware",
     "requires_env",
+    "provides_skills",
 )
 # Top-level keys the contract knows about. Unknown keys WARN (forward
 # compatibility: newer catalogs must stay valid under older validators).
@@ -160,6 +161,15 @@ def validate_entry(data: object) -> tuple[list[str], list[str]]:
                 isinstance(item, str) for item in value
             ):
                 errors.append(f"capabilities.{key} must be a list of strings")
+        # provides_skills entries must look like skill names (frontmatter `name:`)
+        provides_skills = caps.get("provides_skills", [])
+        if isinstance(provides_skills, list):
+            for skill_name in provides_skills:
+                if isinstance(skill_name, str) and not NAME_RE.match(skill_name):
+                    errors.append(
+                        f"capabilities.provides_skills entry {skill_name!r} "
+                        "must match [a-z0-9_-]{1,64} (exact SKILL.md frontmatter `name:`)"
+                    )
 
     return errors, warnings
 

@@ -39,6 +39,21 @@ class SkillSpec:
     checksum_sha256: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def plugin_provider(self) -> Optional[str]:
+        """Name of the plugin-catalog entry that distributes this skill.
+
+        Reads the optional ``metadata.hermes.plugin`` frontmatter field
+        (cross-link to ``plugin-catalog/<name>.yaml``). Returns None when
+        the skill is built-in / has no distributing plugin.
+        """
+        try:
+            hermes_meta = self.metadata.get("hermes", {})
+            plugin = hermes_meta.get("plugin") if isinstance(hermes_meta, dict) else None
+            return str(plugin).strip() or None
+        except (AttributeError, TypeError):
+            return None
+
     def calculate_checksum(self, skill_body: str) -> str:
         """Gera assinatura SHA-256 do conteúdo para proteção contra supply-chain tampering."""
         raw = f"{self.name}:{self.version}:{skill_body}".encode("utf-8")
