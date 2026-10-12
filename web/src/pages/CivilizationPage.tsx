@@ -378,7 +378,6 @@ export default function CivilizationPage() {
     }
   }, [activeCouncilId, profile]);
 
-  const botIds = useMemo(() => new Set(data?.bots.map(bot => bot.bot_id) ?? []), [data]);
 
   const chosen = selected?.kind === "bot" ? data?.bots.find(x => x.bot_id === selected.id)
     : selected?.kind === "council" ? data?.councils.find(x => x.council_id === selected.id)
