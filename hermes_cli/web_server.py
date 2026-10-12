@@ -971,8 +971,10 @@ from hermes_cli.web_routers import (  # noqa: E402
     chat_ws as _chat_ws_routes,
     dashboard_ui as _dashboard_ui_routes,
     webhooks_router as _webhooks_routes,
+    events_stream_router as _events_stream_routes,
 )
 
+app.include_router(_events_stream_routes.router)
 app.include_router(_webhooks_routes.router)
 app.include_router(_files_routes.router)
 app.include_router(_git_routes.router)
