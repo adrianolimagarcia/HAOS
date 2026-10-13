@@ -2,7 +2,7 @@
 
 Testa os contratos das 4 fases:
 - Fase 2A: Ponto de entrada e observação (0 efeitos colaterais).
-- Fase 2B: Delegação opt-in por flag/sessão e fallback resiliente.
+- Fase 2B: Delegação ativa por padrão (HAOS_CIV_DELEGATE default=1), override por sessão e fallback resiliente.
 - Fase 2C: Auto-criação controlada por flag e limite por sessão.
 - Fase 2D: Roteamento ativo no gateway e rollback instantâneo.
 """
@@ -93,8 +93,15 @@ def test_phase_2a_observe_zero_side_effects():
 # FASE 2B: Delegação Opt-in e Fallbacks
 # ===========================================================================
 
-def test_phase_2b_delegation_disabled_by_default():
-    """Por padrão, delegação ativa deve estar desativada."""
+def test_phase_2b_delegation_enabled_by_default():
+    """Por padrão, delegação ativa está ATIVADA (HAOS_CIV_DELEGATE default=1)."""
+    assert civ_delegation_enabled()
+    assert civ_delegation_enabled({})
+
+
+def test_phase_2b_delegation_explicit_disable_via_env(monkeypatch):
+    """HAOS_CIV_DELEGATE=0 desativa explicitamente a delegação."""
+    monkeypatch.setenv("HAOS_CIV_DELEGATE", "0")
     assert not civ_delegation_enabled()
     assert not civ_delegation_enabled({})
 
@@ -108,8 +115,9 @@ def test_phase_2b_delegation_enabled_via_env(monkeypatch):
     assert civ_delegation_enabled()
 
 
-def test_phase_2b_delegation_enabled_per_session():
-    """Sessão específica pode ativar civ_delegate mesmo com flag global OFF."""
+def test_phase_2b_delegation_enabled_per_session(monkeypatch):
+    """Sessão com civ_delegate=True ativa mesmo com flag global explicitamente OFF."""
+    monkeypatch.setenv("HAOS_CIV_DELEGATE", "0")
     assert not civ_delegation_enabled()
     session = {"civ_delegate": True}
     assert civ_delegation_enabled(session)
@@ -215,13 +223,16 @@ def test_phase_2d_gateway_rollback_instantaneo(monkeypatch):
     assert not bridge.gateway_active_routing_enabled()
 
 
-def test_phase_2d_gateway_active_routing_requires_delegate_opt_in(monkeypatch):
-    """Roteamento ativo no gateway exige opt-in explícito."""
+def test_phase_2d_gateway_active_routing_default_on(monkeypatch):
+    """Roteamento ativo no gateway está ON por padrão (delegação default=1)."""
     monkeypatch.delenv("HAOS_CIV_DELEGATE", raising=False)
-    assert not bridge.gateway_active_routing_enabled()
-
-    monkeypatch.setenv("HAOS_CIV_DELEGATE", "1")
     assert bridge.gateway_active_routing_enabled()
+
+
+def test_phase_2d_gateway_active_routing_explicit_disable(monkeypatch):
+    """HAOS_CIV_DELEGATE=0 desativa o roteamento ativo imediatamente."""
+    monkeypatch.setenv("HAOS_CIV_DELEGATE", "0")
+    assert not bridge.gateway_active_routing_enabled()
 
 
 def test_phase_2d_route_turn_to_specialist():

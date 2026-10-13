@@ -519,7 +519,12 @@ def is_task_delegatable(text: Optional[str]) -> bool:
 
 
 def civ_delegation_enabled(session: Optional[dict] = None) -> bool:
-    """Return True when active delegation is enabled (via session param or env var)."""
+    """Return True when active delegation is enabled (via session param or env var).
+
+    Default is ON: delegation is active unless HAOS_CIV_DELEGATE is explicitly
+    set to a falsy value ("0", "false", "no", "off"). A session with
+    civ_delegate truthy always forces ON.
+    """
     try:
         from .feature_flags import get_feature_flags
         if not get_feature_flags().civ_enabled:
@@ -533,7 +538,7 @@ def civ_delegation_enabled(session: Optional[dict] = None) -> bool:
         if str(session.get("civ_delegate", "")).strip().lower() in ("1", "true", "yes", "on"):
             return True
 
-    val = os.environ.get(_DELEGATE_ENV, "0").strip().lower()
+    val = os.environ.get(_DELEGATE_ENV, "1").strip().lower()
     return val in ("1", "true", "yes", "on")
 
 

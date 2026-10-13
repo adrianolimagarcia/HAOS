@@ -76,7 +76,7 @@ def gateway_active_routing_enabled(session: Optional[dict] = None) -> bool:
     Requires:
     1. HAOS_CIV_GATEWAY_ROUTING != 0 (instant rollback if set to 0)
     2. Master civ_enabled is True
-    3. Delegation opt-in flag HAOS_CIV_DELEGATE is True OR session['civ_delegate'] is True.
+    3. Delegation flag HAOS_CIV_DELEGATE is enabled (default ON) OR session['civ_delegate'] is True.
     """
     try:
         if not gateway_routing_enabled():
