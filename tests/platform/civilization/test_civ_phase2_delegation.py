@@ -55,13 +55,23 @@ def _clean_test_env(monkeypatch):
 
 def test_phase_2a_observe_reverse_engineering_prompt():
     """Prompt com termos de engenharia reversa deve sugerir reverse-bot."""
-    bot = route_task_observe("analise este binário ELF descompilando com ghidra para achar buffer overflow")
+    store = EventStore()
+    BotSpecManager(store).create_bot("reverse-bot", purpose="reverse engineering bot")
+    bot = route_task_observe(
+        "analise este binário ELF descompilando com ghidra para achar buffer overflow",
+        event_store=store,
+    )
     assert bot == "reverse-bot"
 
 
 def test_phase_2a_observe_research_prompt():
     """Prompt com termos de pesquisa deve sugerir research-bot."""
-    bot = route_task_observe("faça uma pesquisa aprofundada na web e sintetize as fontes técnicas")
+    store = EventStore()
+    BotSpecManager(store).create_bot("research-bot", purpose="research bot")
+    bot = route_task_observe(
+        "faça uma pesquisa aprofundada na web e sintetize as fontes técnicas",
+        event_store=store,
+    )
     assert bot == "research-bot"
 
 
