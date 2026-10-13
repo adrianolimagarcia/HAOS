@@ -66,6 +66,39 @@ def apply_mcp_result_budget(
     if len(text) <= effective_budget:
         return text
 
+    # Opt-in selective retrieval. Store the ENTIRE output before returning a
+    # small excerpt. Never claim success when indexing fails: the old lossless
+    # spill-to-file path remains the fallback.
+    if os.environ.get("HAOS_CONTEXT_RETRIEVAL_ENABLED", "").lower() in ("1", "true", "yes"):
+        try:
+            from hermes.platform.context.budget.artifact_index import ContextArtifactIndex
+            index = ContextArtifactIndex()
+            uri = index.put(
+                text, title=tool_name, kind="mcp_output", source=tool_name,
+                summary=text[:600], abstract=text[:160],
+            )
+            # Keep output compact even when the caller configures a high cap.
+            excerpt_budget = min(effective_budget, 4000)
+            headline = (
+                f"[MCP output indexed: {len(text)} chars; uri={uri}]\\n"
+                f"Use context_search or context_expand for exact full output.\\n"
+            )
+            lines = text.splitlines()
+            hot = [line for line in lines if re.search(
+                r"(?i)\\b(error|failed|failure|traceback|exception|fatal|critical|denied)\\b",
+                line,
+            )][:16]
+            if hot:
+                snippet = "\\n".join(hot)
+            else:
+                snippet = text[:1200] + ("\\n... [middle indexed] ...\\n" if len(text) > 2000 else "") + text[-800:]
+            return (headline + snippet)[:excerpt_budget]
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "MCP artifact indexing failed; falling back to spill-to-file"
+            )
+
     target_dir = spills_dir or get_spills_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
 
