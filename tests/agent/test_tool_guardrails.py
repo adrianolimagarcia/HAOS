@@ -376,3 +376,224 @@ def test_supervised_task_platforms_keep_warning_only_default():
     for platform in ("telegram", "discord", "cron", "kanban"):
         cfg = ToolCallGuardrailConfig.from_mapping({}, platform=platform)
         assert cfg.hard_stop_enabled is True, platform
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (wake-up guardrail): strategy counter
+# ---------------------------------------------------------------------------
+
+
+def _blocked_controller(**kwargs):
+    """Controller with hard stops on and a low no-progress block threshold."""
+    cfg = {
+        "hard_stop_enabled": True,
+        "no_progress_warn_after": 2,
+        "no_progress_block_after": 2,
+    }
+    cfg.update(kwargs)
+    return ToolCallGuardrailController(ToolCallGuardrailConfig(**cfg))
+
+
+def _drive_no_progress_block(controller, tool="search_files", args=None, result="same-result"):
+    """Drive identical idempotent calls until before_call blocks; return the decision."""
+    args = {"query": "x"} if args is None else args
+    blocked = None
+    for _ in range(6):
+        decision = controller.before_call(tool, args)
+        if decision.action == "block":
+            blocked = decision
+            break
+        controller.after_call(tool, args, result, failed=False)
+    assert blocked is not None, "expected a no-progress block"
+    assert blocked.code in (
+        "idempotent_no_progress_block",
+        "idempotent_no_progress_block_escalated",
+    )
+    return blocked
+
+
+def test_strategy_counter_escalates_after_three_alternatives_without_progress():
+    controller = _blocked_controller()
+    blocked = _drive_no_progress_block(controller)
+    assert blocked.code == "idempotent_no_progress_block"
+    assert "Ask the user" not in blocked.message
+
+    # The block halts the turn: episode state must survive reset_for_turn.
+    controller.reset_for_turn()
+    assert controller.blocked_episode["blocked"] is True
+
+    # Three distinct alternative approaches, none making progress (same result).
+    for tool, args in [
+        ("web_search", {"q": "a"}),
+        ("read_file", {"path": "/x"}),
+        ("web_search", {"q": "b"}),
+    ]:
+        assert controller.before_call(tool, args).action == "allow"
+        controller.after_call(tool, args, "same-result", failed=False)
+    assert controller.blocked_episode["alternative_attempts"] == 3
+
+    # Agent retries the blocked call -> block again, now escalated.
+    blocked2 = _drive_no_progress_block(controller)
+    assert blocked2.code == "idempotent_no_progress_block_escalated"
+    assert "Ask the user" in blocked2.message
+
+
+def test_strategy_counter_does_not_escalate_before_three_alternatives():
+    controller = _blocked_controller()
+    _drive_no_progress_block(controller)
+    controller.reset_for_turn()
+
+    for tool, args in [("web_search", {"q": "a"}), ("read_file", {"path": "/x"})]:
+        controller.before_call(tool, args)
+        controller.after_call(tool, args, "same-result", failed=False)
+    assert controller.blocked_episode["alternative_attempts"] == 2
+
+    blocked2 = _drive_no_progress_block(controller)
+    assert blocked2.code == "idempotent_no_progress_block"
+    assert "Ask the user" not in blocked2.message
+
+
+def test_strategy_counter_resets_when_alternative_returns_new_information():
+    controller = _blocked_controller()
+    _drive_no_progress_block(controller)
+    controller.reset_for_turn()
+
+    assert controller.before_call("web_search", {"q": "a"}).action == "allow"
+    controller.after_call("web_search", {"q": "a"}, "brand-new-result", failed=False)
+    assert controller.blocked_episode["blocked"] is False
+    assert controller.blocked_episode["alternative_attempts"] == 0
+
+    # A later block starts a fresh episode (not escalated).
+    blocked2 = _drive_no_progress_block(controller)
+    assert blocked2.code == "idempotent_no_progress_block"
+
+
+def test_strategy_counter_resets_on_successful_mutating_call():
+    controller = _blocked_controller()
+    _drive_no_progress_block(controller)
+    controller.reset_for_turn()
+
+    controller.before_call("web_search", {"q": "a"})
+    controller.after_call("web_search", {"q": "a"}, "same-result", failed=False)
+    assert controller.blocked_episode["alternative_attempts"] == 1
+
+    assert controller.before_call("write_file", {"path": "/x", "content": "y"}).action == "allow"
+    controller.after_call("write_file", {"path": "/x", "content": "y"}, "ok", failed=False)
+    assert controller.blocked_episode["blocked"] is False
+
+
+def test_strategy_counter_failed_alternative_counts_as_tried_but_not_progress():
+    controller = _blocked_controller()
+    _drive_no_progress_block(controller)
+    controller.reset_for_turn()
+
+    controller.before_call("web_search", {"q": "a"})
+    controller.after_call("web_search", {"q": "a"}, '{"error":"boom"}', failed=True)
+    assert controller.blocked_episode["blocked"] is True
+    assert controller.blocked_episode["alternative_attempts"] == 1
+
+
+def test_strategy_counter_ignores_repeats_of_blocked_call():
+    controller = _blocked_controller()
+    _drive_no_progress_block(controller, args={"query": "x"})
+    controller.reset_for_turn()
+
+    # Retrying the exact blocked signature is not an "alternative approach".
+    for _ in range(2):
+        controller.before_call("search_files", {"query": "x"})
+    assert controller.blocked_episode["alternative_attempts"] == 0
+
+
+def test_config_parses_max_alternative_attempts():
+    assert ToolCallGuardrailConfig().max_alternative_attempts == 3
+    assert (
+        ToolCallGuardrailConfig.from_mapping({"strategy": {"max_alternative_attempts": 5}}).max_alternative_attempts
+        == 5
+    )
+    assert (
+        ToolCallGuardrailConfig.from_mapping({"max_alternative_attempts": 1}).max_alternative_attempts == 1
+    )
+    # Below-minimum falls back to default.
+    assert (
+        ToolCallGuardrailConfig.from_mapping({"max_alternative_attempts": 0}).max_alternative_attempts == 3
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 (wake-up guardrail): agent.guardrail.blocked event
+# ---------------------------------------------------------------------------
+
+
+def test_build_guardrail_blocked_event_payload():
+    from agent.tool_guardrails import (
+        GUARDRAIL_BLOCKED_EVENT,
+        build_guardrail_blocked_event,
+    )
+
+    assert GUARDRAIL_BLOCKED_EVENT == "agent.guardrail.blocked"
+
+    controller = _blocked_controller()
+    blocked = _drive_no_progress_block(controller)
+    payload = build_guardrail_blocked_event(blocked, session_id="sess-1")
+    assert payload["session_id"] == "sess-1"
+    assert payload["code"] == "idempotent_no_progress_block"
+    assert payload["tool_name"] == "search_files"
+    assert payload["action"] == "block"
+    assert payload["escalated"] is False
+    assert payload["message"] == blocked.message
+
+    payload_none = build_guardrail_blocked_event(blocked)
+    assert payload_none["session_id"] is None
+
+
+def test_emit_guardrail_blocked_event_writes_to_event_store():
+    import os
+    import sqlite3
+    import tempfile
+
+    from agent.tool_guardrails import emit_guardrail_blocked_event
+
+    home = tempfile.mkdtemp(prefix="hermes_home_")
+    prev = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = home
+    try:
+        controller = _blocked_controller()
+        blocked = _drive_no_progress_block(controller)
+        assert emit_guardrail_blocked_event(blocked, session_id="sess-9") is True
+
+        conn = sqlite3.connect(os.path.join(home, "events.db"))
+        row = conn.execute(
+            "SELECT name, trace_id, payload FROM events WHERE name = 'agent.guardrail.blocked'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        name, trace_id, payload_raw = row
+        assert name == "agent.guardrail.blocked"
+        assert trace_id == "sess-9"
+        payload = json.loads(payload_raw)
+        assert payload["session_id"] == "sess-9"
+        assert payload["code"] == "idempotent_no_progress_block"
+    finally:
+        if prev is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = prev
+
+
+def test_emit_guardrail_blocked_event_never_raises():
+    import os
+
+    from agent.tool_guardrails import emit_guardrail_blocked_event
+
+    # Unwritable home -> store open fails -> must return False, not raise.
+    prev = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = "/nonexistent-dir-xyz"
+    try:
+        controller = _blocked_controller()
+        blocked = _drive_no_progress_block(controller)
+        assert emit_guardrail_blocked_event(blocked, session_id="sess-1") is False
+    finally:
+        if prev is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = prev
