@@ -437,6 +437,13 @@ def _preflight_compression(
             _apply_grown_window(agent, _compressor, _grown)
             _should_compress_now = _compressor.should_compress(_preflight_tokens)
     if _should_compress_now:
+        # Preserve compact, structured task evidence before destructive compaction.
+        # Best-effort and opt-in: failures must not block agent progress.
+        try:
+            from agent.context_checkpoint_capture import capture_compaction_checkpoint
+            capture_compaction_checkpoint(agent, out.messages, effective_task_id)
+        except Exception as exc:
+            logger.debug("Context checkpoint before compaction unavailable: %s", exc)
         _run_preflight_passes(
             agent, out, _compressor, _preflight_tokens, system_message, effective_task_id
         )
