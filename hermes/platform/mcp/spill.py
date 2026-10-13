@@ -92,7 +92,12 @@ def apply_mcp_result_budget(
                 snippet = "\n".join(hot)
             else:
                 snippet = text[:1200] + ("\n... [middle indexed] ...\n" if len(text) > 2000 else "") + text[-800:]
-            return (headline + snippet)[:excerpt_budget]
+            preview = (headline + snippet)[:excerpt_budget]
+            try:
+                index.record_usage(tool_name, len(text), len(preview))
+            except Exception:
+                pass  # Metrics must never affect tool-result delivery.
+            return preview
         except Exception:
             import logging
             logging.getLogger(__name__).exception(
