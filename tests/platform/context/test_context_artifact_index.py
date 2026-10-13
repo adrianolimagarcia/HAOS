@@ -105,7 +105,7 @@ def test_mcp_failure_falls_back_to_lossless_file(tmp_path, monkeypatch):
     assert "[truncado; completo em " in response
     files = list(tmp_path.glob("*-mcp.txt"))
     assert len(files) == 1
-    assert files[0].read_text() == full
+    assert files[0].read_text(encoding="utf-8") == full
 
 
 def test_budgeter_returns_expandable_pointer(index):
