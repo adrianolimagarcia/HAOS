@@ -58,7 +58,7 @@ class GatewayKanbanWatchersMixin:
             await asyncio.sleep(min(1.0, interval - slept))
             slept += 1.0
 
-    async def _kanban_notifier_watcher(self, interval: float = 5.0) -> None:
+    async def _kanban_notifier_watcher(self, interval: float = 30.0) -> None:
         """Poll ``kanban_notify_subs`` and deliver terminal events to users.
 
         Per subscription, claims ``task_events`` newer than the stored cursor

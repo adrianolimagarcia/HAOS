@@ -80,7 +80,7 @@ TICKER_HEARTBEAT_FILE = CRON_DIR / "ticker_heartbeat"
 TICKER_SUCCESS_FILE = CRON_DIR / "ticker_last_success"
 # Single source of truth for the ticker interval (scheduler_provider.py) and the staleness
 # threshold in `haos cron status` (hermes_cli/cron.py), so they never drift apart.
-TICKER_INTERVAL_SECONDS = 60
+TICKER_INTERVAL_SECONDS = 120
 
 # In-process lock for load_jobs→modify→save_jobs cycles; without it, parallel tick threads'
 # mark_job_run / advance_next_run calls clobber each other.

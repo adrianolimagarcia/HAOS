@@ -26,7 +26,7 @@ from utils import file_signature
 
 logger = logging.getLogger(__name__)
 
-_PROFILE_RESCAN_INTERVAL_SECS = 30.0
+_PROFILE_RESCAN_INTERVAL_SECS = 120.0
 _PROFILE_SIGNATURE_FILES = ("config.yaml", ".env")
 # Bound for one own-gateway liveness probe (``live_gateway_pid_for_home``): the control-socket
 # read it can end in has no timeout of its own — on Windows the named pipe stalls there until

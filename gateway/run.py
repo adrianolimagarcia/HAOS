@@ -4609,7 +4609,7 @@ def _drain_restart_safe_cron_deliveries(adapters, loop, runner=None) -> None:
 
 
 def _start_gateway_housekeeping(
-    stop_event: threading.Event, adapters=None, loop=None, interval: int = 60, cron_provider=None, runner=None,
+    stop_event: threading.Event, adapters=None, loop=None, interval: int = 180, cron_provider=None, runner=None,
     cron_thread=None,
 ):
     """Background thread for gateway-only periodic chores (NOT cron). Separate from the cron trigger

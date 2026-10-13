@@ -17,7 +17,7 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 MIN_INTERVAL_SECONDS = 60  # floor: re-entering more often than once a minute is a busy-loop, not a heartbeat
-POLL_SECONDS = 5.0  # how often drivers poll for due heartbeats; not user-facing
+POLL_SECONDS = 30.0  # how often drivers poll for due heartbeats; not user-facing
 
 HEARTBEAT_PROMPT_TEMPLATE = (
     "[Heartbeat — recurring instruction, fires every {interval}]\n{prompt}\n\n"
