@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from collections import deque
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Mapping
@@ -74,6 +75,9 @@ _THRESHOLD_SOURCES: dict[str, tuple[str, str]] = {
     "exact_failure_block_after": ("hard_stop_after", "exact_failure"),
     "same_tool_failure_halt_after": ("hard_stop_after", "same_tool_failure"),
     "no_progress_block_after": ("hard_stop_after", "idempotent_no_progress"),
+    # Phase 2 (wake-up guardrail): alternative approaches tried after a block
+    # before the agent is told to ask the user. Nested ``strategy`` section wins.
+    "max_alternative_attempts": ("strategy", "max_alternative_attempts"),
 }
 
 # Per-turn caps on runaway-prone tools (counters reset in reset_for_turn).
@@ -127,6 +131,10 @@ class ToolCallGuardrailConfig:
     same_tool_failure_halt_after: int = 8
     no_progress_warn_after: int = 2
     no_progress_block_after: int = 5
+    # Phase 2 (wake-up guardrail): how many distinct alternative approaches the
+    # agent may try after a no-progress block before the block message escalates
+    # to "ask the user". Minimum 1.
+    max_alternative_attempts: int = 3
     idempotent_tools: frozenset[str] = field(default_factory=lambda: IDEMPOTENT_TOOL_NAMES)
     mutating_tools: frozenset[str] = field(default_factory=lambda: MUTATING_TOOL_NAMES)
     loop_caps: LoopCapConfig = field(default_factory=LoopCapConfig)
@@ -232,6 +240,10 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
     return (True, " [error]") if '"error"' in lower or '"failed"' in lower or result.startswith("Error") else (False, "")
 
 
+# Phase 3 (wake-up guardrail): observability event emitted when the guardrail blocks.
+GUARDRAIL_BLOCKED_EVENT = "agent.guardrail.blocked"
+
+
 # Guardrail verdict text injected into the conversation, keyed by decision code.
 # ``same_tool_failure_warning`` is built by _tool_failure_recovery_hint (tool-specific).
 _DECISION_MESSAGES: dict[str, str] = {
@@ -245,6 +257,12 @@ _DECISION_MESSAGES: dict[str, str] = {
         "IMPORTANT: Do NOT stop the session or ask the user for guidance. "
         "Continue working: pick a different tool, change the search terms, or approach the goal from another angle. "
         "Only ask the user after you have tried 3 different approaches without progress."
+    ),
+    "idempotent_no_progress_block_escalated": (
+        "Blocked {tool_name}: this read-only call returned the same result {count} times, "
+        "and you have already tried {attempts} different approaches without making progress. "
+        "STOP trying on your own. Ask the user for guidance now: describe your goal, "
+        "the approaches you already tried, and the blocker you hit."
     ),
     "same_tool_failure_halt": (
         "Stopped {tool_name}: it failed {count} times this turn. "
@@ -303,6 +321,11 @@ class ToolCallGuardrailController:
 
     def __init__(self, config: ToolCallGuardrailConfig | None = None):
         self.config = config or ToolCallGuardrailConfig()
+        # Phase 2 (wake-up guardrail): blocked-episode state SURVIVES reset_for_turn —
+        # a block halts the turn, so alternative approaches are always tried on later turns.
+        self._blocked_signature: ToolCallSignature | None = None
+        self._blocked_result_hash: str = ""
+        self._alternative_signatures: set[ToolCallSignature] = set()
         self.reset_for_turn()
 
     def reset_for_turn(self) -> None:
@@ -353,6 +376,9 @@ class ToolCallGuardrailController:
         signature = ToolCallSignature.from_call(tool_name, args)
         allow = ToolGuardrailDecision(tool_name=tool_name, signature=signature)
 
+        # Phase 2: a call unlike the blocked one counts as an alternative approach tried.
+        self._track_post_block_alternative(signature)
+
         # Loop caps apply regardless of hard_stop_enabled (which only governs the detector).
         cap_block = self._check_loop_cap(tool_name, args, signature)
         if cap_block is not None or not self.config.hard_stop_enabled:
@@ -363,7 +389,19 @@ class ToolCallGuardrailController:
             return self._decide("block", "repeated_exact_failure_block", tool_name, exact_count, signature)
         record = self._no_progress.get(signature) if self._is_idempotent(tool_name) else None
         if record is not None and record[1] >= self.config.no_progress_block_after:
-            return self._decide("block", "idempotent_no_progress_block", tool_name, record[1], signature)
+            result_hash, count = record
+            # Phase 2: after max_alternative_attempts distinct approaches with no
+            # progress, escalate the block message to "ask the user".
+            attempts = len(self._alternative_signatures)
+            escalated = attempts >= self.config.max_alternative_attempts
+            self._record_no_progress_block(signature, result_hash)
+            code = (
+                "idempotent_no_progress_block_escalated"
+                if escalated
+                else "idempotent_no_progress_block"
+            )
+            fmt = {"attempts": attempts} if escalated else {}
+            return self._decide("block", code, tool_name, count, signature, **fmt)
         return allow
 
     def after_call(
@@ -409,6 +447,8 @@ class ToolCallGuardrailController:
 
         self._exact_failure_counts.pop(signature, None)
         self._same_tool_failure_counts.pop(tool_name, None)
+        # Phase 2: an alternative approach that makes progress closes the blocked episode.
+        self._observe_post_block_progress(tool_name, signature, result)
         # A successful mutation is progress for every failing signature still counted
         # this turn. Pure loops never mutate between attempts, so the replay detector keeps its teeth.
         if tool_name in PROGRESS_RESET_TOOL_NAMES or file_mutation_result_landed(tool_name, result):
@@ -428,6 +468,48 @@ class ToolCallGuardrailController:
 
     def _is_idempotent(self, tool_name: str) -> bool:
         return tool_name not in self.config.mutating_tools and tool_name in self.config.idempotent_tools
+
+    # -- Phase 2 (wake-up guardrail): strategy counter ---------------------------
+    def _record_no_progress_block(self, signature: ToolCallSignature, result_hash: str) -> None:
+        """Open a blocked episode; each new block starts a fresh episode."""
+        self._blocked_signature = signature
+        self._blocked_result_hash = result_hash
+        self._alternative_signatures = set()
+
+    def _track_post_block_alternative(self, signature: ToolCallSignature) -> None:
+        """Count a distinct tool call tried after a no-progress block as one alternative."""
+        if self._blocked_signature is None or signature == self._blocked_signature:
+            return
+        self._alternative_signatures.add(signature)
+
+    def _clear_blocked_episode(self) -> None:
+        """An alternative approach made progress — the episode is over."""
+        self._blocked_signature = None
+        self._blocked_result_hash = ""
+        self._alternative_signatures = set()
+
+    def _observe_post_block_progress(
+        self, tool_name: str, signature: ToolCallSignature, result: str | None,
+    ) -> None:
+        """Close the blocked episode when an alternative approach makes progress:
+        a successful mutating call, or a successful call returning new information
+        (a result unlike the one the block was issued for)."""
+        if self._blocked_signature is None or signature == self._blocked_signature:
+            return
+        if tool_name in self.config.mutating_tools:
+            self._clear_blocked_episode()
+            return
+        if result is not None and _result_hash(result) != self._blocked_result_hash:
+            self._clear_blocked_episode()
+
+    @property
+    def blocked_episode(self) -> dict[str, Any]:
+        """Read-only view of the Phase 2 blocked-episode state (observability)."""
+        return {
+            "blocked": self._blocked_signature is not None,
+            "alternative_attempts": len(self._alternative_signatures),
+            "max_alternative_attempts": self.config.max_alternative_attempts,
+        }
 
     def observe_call(
         self, tool_name: str, args: Mapping[str, Any] | None, result: str | None,
@@ -558,6 +640,46 @@ class ToolCallGuardrailController:
 def toolguard_synthetic_result(decision: ToolGuardrailDecision) -> str:
     """Build a synthetic role=tool content string for a blocked tool call."""
     return json.dumps({"error": decision.message, "guardrail": decision.to_metadata()}, ensure_ascii=False)
+
+
+def build_guardrail_blocked_event(
+    decision: ToolGuardrailDecision, *, session_id: str | None = None,
+) -> dict[str, Any]:
+    """Build the payload for the Phase 3 ``agent.guardrail.blocked`` observability event."""
+    return {
+        "session_id": session_id,
+        "code": decision.code,
+        "tool_name": decision.tool_name,
+        "count": decision.count,
+        "action": decision.action,
+        "escalated": decision.code == "idempotent_no_progress_block_escalated",
+        "message": decision.message,
+    }
+
+
+def emit_guardrail_blocked_event(
+    decision: ToolGuardrailDecision, *, session_id: str | None = None,
+) -> bool:
+    """Append a Phase 3 ``agent.guardrail.blocked`` event to the active event store.
+
+    Best-effort and side-effect guarded: never raises — a failing event store must
+    not break the turn that was just halted.
+    """
+    try:
+        from hermes.platform.observability.event_store import get_event_store
+        from hermes.platform.observability.events import Event
+
+        store = get_event_store()
+        store.append(
+            Event(
+                name=GUARDRAIL_BLOCKED_EVENT,
+                payload=build_guardrail_blocked_event(decision, session_id=session_id),
+                trace_id=session_id or str(uuid.uuid4()),
+            )
+        )
+        return True
+    except Exception:
+        return False
 
 
 def append_toolguard_guidance(result: str, decision: ToolGuardrailDecision) -> str:

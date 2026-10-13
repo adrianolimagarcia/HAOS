@@ -162,6 +162,14 @@ def run_tool_round(
     if agent._tool_guardrail_halt_decision is not None:
         decision = agent._tool_guardrail_halt_decision
         _turn_exit_reason = "guardrail_halt"
+        # Phase 3 (wake-up guardrail): observability event so the wake-up watcher
+        # can revive sessions stalled by a block. Best-effort; never breaks the turn.
+        try:
+            from agent.tool_guardrails import emit_guardrail_blocked_event
+
+            emit_guardrail_blocked_event(decision, session_id=getattr(agent, "session_id", None))
+        except Exception:
+            pass
         final_response = agent._toolguard_controlled_halt_response(decision)
         agent._emit_status(f"⚠️ Tool guardrail halted {decision.tool_name}: {decision.code}")
         append_message(messages, {"role": "assistant", "content": final_response})
