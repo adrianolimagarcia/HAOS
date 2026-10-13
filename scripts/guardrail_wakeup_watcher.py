@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Phase 3 wake-up watcher: revive sessions stalled by a guardrail block.
+"""Phase 3 wake-up watcher: revive sessions stalled by a guardrail block
+or orphaned by a service restart.
 
 Companion to the wake-up guardrail (agent/tool_guardrails.py, Phases 1-3).
 
@@ -11,21 +12,36 @@ How it works
    since the block (new messages in state.db) or still has a live turn lease.
 3. Sessions that are still quiet past the quiet threshold get ONE wake-up
    message injected through the WebUI API (``POST /api/chat/start``) telling
-   the agent to try a different approach — or, for escalated blocks, to ask
+   the agent to try a different approach \u2014 or, for escalated blocks, to ask
    the user for guidance as instructed.
+4. Orphan scan: sessions with no recent block event can still be dead \u2014
+   e.g. the agent loop was killed by a service restart (turn lease expired,
+   ``ended_at`` NULL, no new messages). A session looks orphaned when ALL hold:
+
+   - ``ended_at`` IS NULL (not formally ended),
+   - no live turn lease (missing row or ``expires_at`` <= now),
+   - no new messages for longer than ORPHAN_MIN (default 10 min),
+   - last activity is fresher than ORPHAN_LOOKBACK_MIN (default 180 min)
+     \u2014 older idleness is assumed to be a deliberate stop, not an orphan,
+   - the last message is not from the user (waiting on the user is not an
+     orphan) and does not look like a normal assistant conclusion.
+
+   Orphaned sessions get ONE ``[Wake-up]`` resume message (\u201cresume where
+   you left off\u201d).
 
 Idempotency: a state file records every handled ``(session_id, event_id)``
-pair, so each block event triggers at most one wake-up.
+pair for blocks and ``(session_id, orphan)`` for orphans, so each trigger
+fires at most one wake-up per session.
 
 Safety
 ------
-- Read-only opens (``mode=ro``) on events.db and state.db — never writes.
+- Read-only opens (``mode=ro``) on events.db and state.db \u2014 never writes.
 - Skips ended sessions and sessions with a live (unexpired) turn lease.
 - Skips blocks younger than the quiet threshold (default 5 min).
-- Caps wake-ups per run (default 5) to avoid storms.
+- Caps wake-ups per run (default 5, shared between blocks and orphans).
 - Never raises for expected conditions; prints a JSON summary to stdout.
 
-Scheduling (NOT done automatically — see deploy report)
+Scheduling (NOT done automatically \u2014 see deploy report)
 -------------------------------------------------------
 Run every 5 minutes ON cachyosdell (needs localhost access to the WebUI API
 and to /root/.haos/*.db). Example root crontab entry::
@@ -40,7 +56,9 @@ Environment overrides (all optional):
     GUARDRAIL_WATCHER_WEBUI       default http://127.0.0.1:8786
     GUARDRAIL_WATCHER_LOOKBACK_MIN default 120 (only consider blocks this fresh)
     GUARDRAIL_WATCHER_QUIET_MIN   default 5 (session quiet this long before wake-up)
-    GUARDRAIL_WATCHER_MAX_WAKEUPS default 5 (cap per run)
+    GUARDRAIL_WATCHER_ORPHAN_MIN  default 10 (orphan quiet threshold, minutes)
+    GUARDRAIL_WATCHER_ORPHAN_LOOKBACK_MIN default 180 (ignore orphans staler than this)
+    GUARDRAIL_WATCHER_MAX_WAKEUPS default 5 (cap per run, shared blocks+orphans)
 """
 
 from __future__ import annotations
@@ -62,8 +80,28 @@ DEFAULTS = {
     "WEBUI": "http://127.0.0.1:8786",
     "LOOKBACK_MIN": 120,
     "QUIET_MIN": 5,
+    "ORPHAN_MIN": 10,
+    "ORPHAN_LOOKBACK_MIN": 180,
     "MAX_WAKEUPS": 5,
 }
+
+# Case-insensitive phrases marking a normal assistant conclusion. A session
+# whose last activity looks like this is never treated as an orphan.
+CONCLUSION_SIGNALS = (
+    "conclu",
+    "veredito",
+    "resumo final",
+    "causa raiz",
+    "diagn\u00f3stico final",
+    "diagnostico final",
+    "relat\u00f3rio executivo",
+    "relatorio executivo",
+    "relat\u00f3rio final",
+    "relatorio final",
+    "finalizado",
+    "fixed",
+    "corrigido",
+)
 
 
 def cfg(name: str):
@@ -133,6 +171,71 @@ def session_status(state_db: str, session_id: str, now: float):
         conn.close()
 
 
+def looks_concluded(role, content) -> bool:
+    """True when the last activity looks like a normal assistant conclusion."""
+    if role != "assistant" or not content:
+        return False
+    text = str(content).lower()
+    return any(sig in text for sig in CONCLUSION_SIGNALS)
+
+
+def orphan_candidates(state_db: str, orphan_min: int, orphan_lookback_min: int, now: float):
+    """Return [(session_id, last_activity_ts)] for sessions that look orphaned.
+
+    A session looks orphaned when ALL hold: ended_at IS NULL, no live turn
+    lease, no new messages for longer than orphan_min, last activity fresher
+    than orphan_lookback_min, and the last message is neither from the user
+    nor a normal assistant conclusion.
+    """
+    conn = ro_connect(state_db)
+    try:
+        rows = conn.execute(
+            "SELECT s.id AS sid, MAX(m.timestamp) AS last_ts "
+            "FROM sessions s LEFT JOIN messages m "
+            "ON m.session_id = s.id AND m.active = 1 "
+            "WHERE s.ended_at IS NULL GROUP BY s.id"
+        ).fetchall()
+        out = []
+        for r in rows:
+            sid = r["sid"]
+            if r["last_ts"] is None:
+                continue
+            last_ts = float(r["last_ts"])
+            quiet = now - last_ts
+            if quiet < orphan_min * 60:
+                continue
+            if quiet > orphan_lookback_min * 60:
+                continue
+            msg = conn.execute(
+                "SELECT role, substr(content, 1, 800) AS c FROM messages "
+                "WHERE session_id = ? AND active = 1 "
+                "ORDER BY timestamp DESC LIMIT 1",
+                (sid,),
+            ).fetchone()
+            role = msg["role"] if msg else None
+            content = msg["c"] if msg and msg["c"] else ""
+            if role == "user":
+                continue  # waiting on the user is not an orphan
+            if looks_concluded(role, content):
+                continue
+            live_lease = False
+            try:
+                lease = conn.execute(
+                    "SELECT expires_at FROM session_turn_leases "
+                    "WHERE conversation_id = ?",
+                    (sid,),
+                ).fetchone()
+                live_lease = bool(lease and float(lease["expires_at"]) > now)
+            except sqlite3.Error:
+                pass
+            if live_lease:
+                continue
+            out.append((sid, last_ts))
+        return out
+    finally:
+        conn.close()
+
+
 def wakeup_message(payload: dict) -> str:
     tool = payload.get("tool_name") or "the tool"
     code = payload.get("code") or "blocked"
@@ -145,9 +248,18 @@ def wakeup_message(payload: dict) -> str:
     return (
         f"[Wake-up] The tool guardrail blocked {tool} ({code}). "
         "Try a different approach to your original goal: change the tool, "
-        "the parameters, or the search terms — do not repeat the blocked call unchanged. "
+        "the parameters, or the search terms \u2014 do not repeat the blocked call unchanged. "
         "If you already tried 3 different approaches without progress, "
         "summarize and ask the user for guidance."
+    )
+
+
+def orphan_wakeup_message() -> str:
+    return (
+        "[Wake-up] Your previous turn was interrupted by a service restart "
+        "(the agent runtime was killed before the turn finished). "
+        "Please resume where you left off: re-read your recent tool outputs "
+        "and continue toward your original goal. Do not repeat completed work."
     )
 
 
@@ -192,10 +304,13 @@ def main() -> int:
     webui = cfg("WEBUI")
     lookback_min = cfg("LOOKBACK_MIN")
     quiet_s = cfg("QUIET_MIN") * 60
+    orphan_min = cfg("ORPHAN_MIN")
+    orphan_lookback_min = cfg("ORPHAN_LOOKBACK_MIN")
     max_wakeups = cfg("MAX_WAKEUPS")
 
     summary = {
         "events_seen": 0,
+        "orphans_seen": 0,
         "woken": [],
         "skipped": [],
         "errors": [],
@@ -211,6 +326,7 @@ def main() -> int:
 
     handled = load_handled(state_file)
     wakeups = 0
+    woken_this_run = set()
 
     for event_id, event_ts, payload in events:
         session_id = payload.get("session_id")
@@ -248,9 +364,36 @@ def main() -> int:
         if ok:
             wakeups += 1
             handled.add(key)
-            summary["woken"].append({"session": session_id, "detail": detail})
+            woken_this_run.add(session_id)
+            summary["woken"].append({"session": session_id, "detail": detail, "kind": "block"})
         else:
             summary["errors"].append(f"wake {session_id}: {detail}")
+
+    try:
+        orphans = orphan_candidates(state_db, orphan_min, orphan_lookback_min, now)
+    except Exception as exc:  # noqa: BLE001
+        summary["errors"].append(f"orphan_scan: {type(exc).__name__}: {exc}"[:200])
+        orphans = []
+    summary["orphans_seen"] = len(orphans)
+
+    for session_id, last_ts in orphans:
+        key = f"{session_id}:orphan"
+        if key in handled:
+            continue
+        if session_id in woken_this_run:
+            # Already woken via a block event this run; do not double-wake.
+            continue
+        if wakeups >= max_wakeups:
+            summary["skipped"].append({"session": session_id, "reason": "cap", "kind": "orphan"})
+            continue
+        ok, detail = inject_wakeup(webui, session_id, orphan_wakeup_message())
+        if ok:
+            wakeups += 1
+            handled.add(key)
+            woken_this_run.add(session_id)
+            summary["woken"].append({"session": session_id, "detail": detail, "kind": "orphan"})
+        else:
+            summary["errors"].append(f"wake-orphan {session_id}: {detail}")
 
     try:
         save_handled(state_file, handled)
