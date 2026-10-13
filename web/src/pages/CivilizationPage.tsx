@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AvailableModel, MissionEvent } from "@/lib/civilization-contracts";
 import { civRequest } from "@/lib/civilization-api";
 import { ModelsCatalog } from "@/components/civilization/ModelsCatalog";
@@ -13,7 +13,7 @@ import "./CivilizationPage.css";
 
 interface BotNode { bot_id: string; name: string; status: string; version: number | null; bundle_hash: string | null }
 interface CouncilNode { council_id: string; purpose: string; members: string[]; version: number; decision_mode?: string }
-interface LeafNode { leaf_id: string; parent_bot_id: string; council_id: string | null; council_session_id: string | null; status: string }
+interface LeafNode { leaf_id: string; parent_bot_id: string; council_id: string | null; council_session_id: string | null; status: string; created_at: number | null }
 interface DecisionNode { decision_id: string; council_id: string; council_session_id: string; created_at: string; decision?: string; confidence?: number }
 interface CivEvent { seq: number; name: string; timestamp: string | number; bot_id?: string; council_id?: string; leaf_id?: string; decision_id?: string }
 interface ProposalNode { proposal_id: string; bot_id: string; status: string; risk_class: string; rationale?: string }
@@ -28,6 +28,27 @@ interface Overview {
   constitution: { version: number; title: string } | null;
   events: CivEvent[];
   cursor: number;
+}
+
+// TTL de leaves orfaos na arvore de linhagem: leaves cujo bot pai nao esta
+// registrado somem da projecao da UI apos LEAF_TTL_DAYS dias. O events.db
+// (append-only) continua sendo a trilha de auditoria completa.
+const LEAF_TTL_DAYS = 7;
+
+function leafCreatedAtMs(leaf: LeafNode): number | null {
+  const t = leaf.created_at;
+  if (typeof t === "number" && Number.isFinite(t)) return t * 1000;
+  if (typeof t === "string") {
+    const ms = Date.parse(t);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  return null;
+}
+
+function isLeafExpired(leaf: LeafNode): boolean {
+  const created = leafCreatedAtMs(leaf);
+  if (created == null) return false; // sem timestamp: nao expira (fail-open)
+  return Date.now() - created > LEAF_TTL_DAYS * 24 * 60 * 60 * 1000;
 }
 
 interface GraphNode {
@@ -379,6 +400,8 @@ export default function CivilizationPage() {
   }, [activeCouncilId, profile]);
 
 
+  const botIds = useMemo(() => new Set(data?.bots.map(bot => bot.bot_id) ?? []), [data]);
+
   const chosen = selected?.kind === "bot" ? data?.bots.find(x => x.bot_id === selected.id)
     : selected?.kind === "council" ? data?.councils.find(x => x.council_id === selected.id)
       : selected?.kind === "leaf" ? data?.leaves.find(x => x.leaf_id === selected.id)
@@ -604,6 +627,16 @@ export default function CivilizationPage() {
                 </div>
                 );
               })}
+              {data?.leaves.filter(leaf => !botIds.has(leaf.parent_bot_id) && !isLeafExpired(leaf)).map(leaf => (
+                <NodeButton
+                  key={leaf.leaf_id}
+                  selected={selected?.kind === "leaf" && selected.id === leaf.leaf_id}
+                  label={leaf.leaf_id}
+                  subtitle={`LEAF · pai não registrado: ${leaf.parent_bot_id}`}
+                  icon={<GitBranch size={15} />}
+                  onClick={() => choose("leaf", leaf.leaf_id)}
+                />
+              ))}
 
               {data && data.councils.length > 0 ? <div className="civ-group-label">CONSELHOS / COORDENAÇÃO</div> : null}
               {data?.councils.map(council => (

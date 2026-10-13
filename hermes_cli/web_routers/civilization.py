@@ -161,6 +161,8 @@ def _overview(store) -> dict:
             leaves[leaf["leaf_id"]] = {
                 "leaf_id": leaf["leaf_id"],
                 "parent_bot_id": leaf.get("parent_bot_id") or leaf.get("bot_id"),
+                # unix ts (float) do evento civ.leaf.created - usado pelo TTL de leaves orfaos na UI
+                "created_at": event.timestamp,
                 "council_id": snapshot.get("council_id")
                 if isinstance(snapshot.get("council_id"), str) else None,
                 "council_session_id": snapshot.get("council_session_id")

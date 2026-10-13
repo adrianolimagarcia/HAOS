@@ -142,9 +142,15 @@ def test_overview_normalizes_flat_leaf_payloads(client, homes):
     response = client.get("/api/civilization/overview")
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["leaves"] == [{"leaf_id": "leaf-flat", "parent_bot_id": "bot-r",
-                               "council_id": "council-r", "council_session_id": "sess-r",
-                               "status": "completed"}]
+    assert len(body["leaves"]) == 1
+    leaf = body["leaves"][0]
+    assert leaf["leaf_id"] == "leaf-flat"
+    assert leaf["parent_bot_id"] == "bot-r"
+    assert leaf["council_id"] == "council-r"
+    assert leaf["council_session_id"] == "sess-r"
+    assert leaf["status"] == "completed"
+    # TTL support: leaf carrega o unix ts (float) do evento civ.leaf.created
+    assert isinstance(leaf["created_at"], float)
     created_links = next(e for e in body["events"] if e["name"] == "civ.leaf.created")
     assert created_links["leaf_id"] == "leaf-flat"
     assert created_links["bot_id"] == "bot-r"
