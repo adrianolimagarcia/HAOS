@@ -2124,13 +2124,23 @@ class GatewayTurnMixin:
                 _civ_suggested_bot = None
             # Advisory metadata on the event (same pattern as
             # event._heartbeat_execution_started above); the agent flow
-            # below is unchanged.
+            # below is unchanged unless active routing is explicitly enabled (Phase 2D).
             event._civ_suggested_bot = _civ_suggested_bot
+            _civ_routed_bot = None
+            try:
+                from hermes.platform.civilization.gateway_bridge import gateway_active_routing_enabled
+                if _civ_suggested_bot and gateway_active_routing_enabled(getattr(session_entry, "metadata", None)):
+                    _civ_routed_bot = _civ_suggested_bot
+            except Exception:
+                _civ_routed_bot = None
+            event._civ_routed_bot = _civ_routed_bot
+
             agent_result = await self._run_agent(
                 message=message_text, context_prompt=prepared.context_prompt, history=history, source=source,
                 session_id=_run_start_session_id, session_key=session_key,
                 run_generation=run_generation, event_message_id=self._reply_anchor_for_event(event),
                 inbound_message_id=str(event.message_id) if event.message_id else None,
+                civ_bot_id=_civ_routed_bot,
                 channel_prompt=event.channel_prompt, moa_config=getattr(event, "_moa_config", None),
                 persist_user_message=prepared.persist_user_message,
                 persist_user_timestamp=prepared.persist_user_timestamp,

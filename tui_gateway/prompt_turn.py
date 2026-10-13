@@ -534,6 +534,24 @@ def _prepare_turn_input(sid: str, session: dict, st: _TurnRun, text: Any, images
             return None
         prompt = ctx.message
     st.prompt_text = prompt if isinstance(prompt, str) else ""
+
+    # Civilization Phase 2: Observation & active session delegation
+    try:
+        from hermes.platform.civilization.delegation import (
+            route_task_observe,
+            civ_delegation_enabled,
+            apply_civ_bot_to_session,
+        )
+        _civ_obs = route_task_observe(st.prompt_text, session_context=session)
+        if civ_delegation_enabled(session) and _civ_obs and _civ_obs.get("delegable"):
+            target_bot = _civ_obs.get("target_bot")
+            if target_bot:
+                if apply_civ_bot_to_session(session, target_bot, goal=st.prompt_text):
+                    st.agent = agent = session["agent"]
+    except Exception as _civ_err:
+        import logging as _logging
+        _logging.getLogger(__name__).debug("Civilization turn delegation hook error (ignored): %s", _civ_err, exc_info=True)
+
     run_message: Any = _route_turn_images(agent, prompt, images) if images else prompt
     st.tts_queue, st.thinking_started = _start_turn_voice()
     # Per-turn API-message notes: barge mid-speech, reactions, HUD surface (per-turn state

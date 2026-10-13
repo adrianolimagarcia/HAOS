@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, Iterable, Optional, Set
+from typing import Any, Dict, Iterable, Optional, Set
 
 logger = logging.getLogger("hermes.platform.civilization.gateway_bridge")
 
@@ -67,6 +67,62 @@ def gateway_routing_enabled() -> bool:
         return bool(get_feature_flags().civ_enabled)
     except Exception:
         # Fail closed: if we cannot even read the flags, do not consult.
+        return False
+
+
+def gateway_active_routing_enabled(session: Optional[dict] = None) -> bool:
+    """Return True when active routing of inbound gateway turns to specialists is enabled (Phase 2D).
+
+    Requires:
+    1. HAOS_CIV_GATEWAY_ROUTING != 0 (instant rollback if set to 0)
+    2. Master civ_enabled is True
+    3. Delegation opt-in flag HAOS_CIV_DELEGATE is True OR session['civ_delegate'] is True.
+    """
+    try:
+        if not gateway_routing_enabled():
+            return False
+        from hermes.platform.civilization.delegation import civ_delegation_enabled
+        return civ_delegation_enabled(session)
+    except Exception:
+        return False
+
+
+def route_turn_to_specialist(
+    agent: Any,
+    bot_id: str,
+    *,
+    store: Optional[Any] = None,
+) -> bool:
+    """Route an agent instance to the specified civilization specialist bot (Phase 2D).
+
+    Applies the bot_id and its active identity bundle to the agent.
+    Returns True if successfully applied, False otherwise (fail-safe).
+    """
+    if agent is None or not bot_id:
+        return False
+    try:
+        from hermes.platform.bots.identity_manager import IdentityManager
+        from hermes.platform.civilization.delegation import _store
+
+        st = store or _store()
+        identities = IdentityManager(st)
+        version = identities.get_active_version(bot_id)
+        bundle = version.bundle if version else None
+
+        agent.bot_id = bot_id
+        if bundle:
+            agent.identity_bundle = bundle
+
+        logger.info(
+            "[CIV_GATEWAY] Routed turn agent %s to specialist bot=%s (version=%s)",
+            id(agent), bot_id, getattr(version, "version_id", "unknown")
+        )
+        return True
+    except Exception as exc:
+        logger.warning(
+            "civ gateway active routing failed for bot %s; falling back to normal flow: %s",
+            bot_id, exc, exc_info=True
+        )
         return False
 
 

@@ -361,9 +361,25 @@ _DOMAINS = {
     "research-bot": (
         "last30days", "temporal", "temporal-research", "recent-news",
         "past-month", "past-week", "trending-topics", "recent", "freshness",
-        "cutoff", "latest-news", "time-window",
+        "cutoff", "latest-news", "time-window", "research", "pesquisa",
+        "pesquisar", "investigar", "investigation",
     ),
 }
+
+
+def _domain_match(text_lower: str, words: Iterable[str]) -> bool:
+    tokens = set(re.findall(r"[a-z0-9_\-]+", text_lower))
+    for w in words:
+        if "-" in w or " " in w:
+            if w in text_lower:
+                return True
+        elif len(w) <= 3:
+            if w in tokens:
+                return True
+        else:
+            if w in text_lower:
+                return True
+    return False
 
 
 def _store() -> EventStore:
@@ -427,10 +443,29 @@ def _create_bot(manager: BotSpecManager, identity_manager: IdentityManager, doma
 # do not change.
 # ---------------------------------------------------------------------------
 
-#: Kill-switch for automatic bot creation. Default ON preserves the historical
-#: behavior. When OFF (0/false/no), the router NEVER creates bots and routes
-#: everything it cannot match to the generic-bot generalist.
+import threading
+
+#: Kill-switch for automatic bot creation. Default OFF for safety (Phase 2C).
+#: When ON ("1", "true", "yes", "on"), the router can create a specialist bot if
+#: should_create_dedicated_bot() approves and session budget allows.
 _AUTO_CREATE_ENV = "HAOS_CIV_AUTO_CREATE"
+_DELEGATE_ENV = "HAOS_CIV_DELEGATE"
+_MAX_AUTO_CREATE_PER_SESSION_ENV = "HAOS_CIV_MAX_AUTO_CREATE_PER_SESSION"
+_DEFAULT_MAX_AUTO_CREATE_PER_SESSION = 3
+
+_SESSION_CREATION_LOCK = threading.Lock()
+_SESSION_AUTO_CREATE_COUNTS: Dict[str, int] = {}
+
+#: Exact non-delegable / conversational patterns (greetings, courtesies, acknowledgements).
+_NON_DELEGABLE_PATTERNS = {
+    "oi", "olá", "ola", "hello", "hi", "hey", "e aí", "e ai", "fala aí", "fala ai",
+    "bom dia", "boa tarde", "boa noite", "good morning", "good afternoon", "good evening",
+    "como vai", "como você está", "como voce esta", "tudo bem", "tudo bom", "how are you",
+    "obrigado", "obrigada", "valeu", "thanks", "thank you",
+    "tchau", "bye", "goodbye", "até logo", "ate logo", "até mais", "ate mais", "see you",
+    "ok", "beleza", "blz", "certo", "entendi", "sim", "não", "nao", "yes", "no",
+    "bom", "boa", "dia", "tarde", "noite", "tudo", "bem", "como", "vai", "você", "voce", "esta", "está",
+}
 
 #: Task text shorter than this is assumed simple; goes to generic-bot.
 _SIMPLE_TASK_CHAR_THRESHOLD = 200
@@ -452,9 +487,265 @@ _SIMPLE_TASK_PATTERNS = (
 )
 
 
-def _auto_create_allowed() -> bool:
-    """Return False only when HAOS_CIV_AUTO_CREATE is explicitly disabled."""
-    return os.environ.get(_AUTO_CREATE_ENV, "1").strip().lower() not in ("0", "false", "no", "off")
+def _keyword_matches(kw: str, text_words: set[str], full_text: str) -> bool:
+    """Safely match domain keywords: short keywords (<=3 chars like 'pe') require exact word match."""
+    kw = kw.lower()
+    if len(kw) <= 3:
+        return kw in text_words
+    return kw in text_words or kw in full_text
+
+
+def is_task_delegatable(text: Optional[str]) -> bool:
+    """Return True if text represents an actionable delegable task, False for greetings/chit-chat."""
+    if not text or not isinstance(text, str):
+        return False
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    normalized = re.sub(r"[^\w\s]", "", cleaned.lower()).strip()
+    if not normalized:
+        return False
+    if normalized in _NON_DELEGABLE_PATTERNS:
+        return False
+    residual = normalized
+    for phrase in sorted(_NON_DELEGABLE_PATTERNS, key=len, reverse=True):
+        residual = re.sub(rf"\b{re.escape(phrase)}\b", "", residual).strip()
+    if not residual:
+        return False
+    tokens = [w for w in normalized.split() if w]
+    if tokens and all(t in _NON_DELEGABLE_PATTERNS for t in tokens):
+        return False
+    return True
+
+
+def civ_delegation_enabled(session: Optional[dict] = None) -> bool:
+    """Return True when active delegation is enabled (via session param or env var)."""
+    try:
+        from .feature_flags import get_feature_flags
+        if not get_feature_flags().civ_enabled:
+            return False
+    except Exception:
+        return False
+
+    if session and isinstance(session, dict):
+        if session.get("civ_delegate") is True:
+            return True
+        if str(session.get("civ_delegate", "")).strip().lower() in ("1", "true", "yes", "on"):
+            return True
+
+    val = os.environ.get(_DELEGATE_ENV, "0").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+def _auto_create_allowed(session_id: Optional[str] = None) -> bool:
+    """Return True only when HAOS_CIV_AUTO_CREATE is explicitly enabled (default OFF)."""
+    try:
+        from .feature_flags import get_feature_flags
+        if not get_feature_flags().civ_enabled:
+            return False
+    except Exception:
+        return False
+
+    raw = os.environ.get(_AUTO_CREATE_ENV, "0").strip().lower()
+    if raw not in ("1", "true", "yes", "on"):
+        return False
+    if session_id:
+        with _SESSION_CREATION_LOCK:
+            count = _SESSION_AUTO_CREATE_COUNTS.get(session_id, 0)
+            try:
+                max_limit = int(os.environ.get(_MAX_AUTO_CREATE_PER_SESSION_ENV, str(_DEFAULT_MAX_AUTO_CREATE_PER_SESSION)))
+            except Exception:
+                max_limit = _DEFAULT_MAX_AUTO_CREATE_PER_SESSION
+            if count >= max_limit:
+                logger.warning(
+                    "[CIV_AUTO_CREATE_AUDIT] Bot creation limit reached for session %s (%d/%d). Falling back to generic-bot.",
+                    session_id, count, max_limit
+                )
+                return False
+    return True
+
+
+def _record_session_bot_creation(session_id: str) -> None:
+    """Record an auto-created bot count for the given session."""
+    if not session_id:
+        return
+    with _SESSION_CREATION_LOCK:
+        _SESSION_AUTO_CREATE_COUNTS[session_id] = _SESSION_AUTO_CREATE_COUNTS.get(session_id, 0) + 1
+
+
+def _record_auto_creation_audit_event(
+    store: EventStore, bot_id: str, domain: str, session_id: Optional[str], goal: str
+) -> None:
+    """Append an auditable event for auto-created bots."""
+    try:
+        payload = {
+            "bot_id": bot_id,
+            "domain": domain,
+            "session_id": session_id or "unknown",
+            "goal": goal[:200],
+            "timestamp": time.time(),
+        }
+        store.append(Event(name="civ_bot_auto_created", payload=payload, correlation_id=session_id or bot_id))
+        logger.info(
+            "[CIV_AUTO_CREATE_AUDIT] Created specialist bot %s for domain %s (session: %s)",
+            bot_id, domain, session_id or "none"
+        )
+    except Exception as exc:
+        logger.warning("Failed recording auto creation audit event: %s", exc)
+
+
+class ObservedDecision(str):
+    """Result of route_task_observe, behaving both as string bot_id and metadata dict."""
+    target_bot: str
+    reason: str
+    delegable: bool
+
+    def __new__(cls, target_bot: str, reason: str = "", delegable: bool = True):
+        obj = str.__new__(cls, target_bot)
+        obj.target_bot = target_bot
+        obj.reason = reason
+        obj.delegable = delegable
+        return obj
+
+    def __getitem__(self, item: Any) -> Any:
+        if item == "target_bot":
+            return self.target_bot
+        if item == "reason":
+            return self.reason
+        if item == "delegable":
+            return self.delegable
+        return super().__getitem__(item)  # type: ignore[return-value]
+
+    def get(self, item: str, default: Any = None) -> Any:
+        if item == "target_bot":
+            return self.target_bot
+        if item == "reason":
+            return self.reason
+        if item == "delegable":
+            return self.delegable
+        return default
+
+
+class RoutedTask(dict):
+    """Enriched task dictionary that also compares equal to its assigned bot_id string."""
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.get("bot_id") == other
+        return super().__eq__(other)
+
+
+def route_task_observe(
+    task_or_text: Any,
+    *,
+    session_context: Optional[Dict[str, Any]] = None,
+    event_store: Optional[EventStore] = None,
+) -> Optional[ObservedDecision]:
+    """Phase 2A Observation Mode: log what bot would be selected without mutating execution.
+
+    Returns ObservedDecision (comparable to bot_id string or dict) or None if non-delegable / disabled.
+    """
+    try:
+        if isinstance(task_or_text, dict):
+            goal = str(task_or_text.get("goal", "") or "")
+            ctx = str(task_or_text.get("context", "") or "")
+            text = f"{goal} {ctx}".strip()
+            explicit_bot = task_or_text.get("bot_id")
+        elif isinstance(task_or_text, str):
+            text = task_or_text.strip()
+            explicit_bot = None
+        else:
+            return None
+
+        if not is_task_delegatable(text):
+            logger.info("[CIV_OBSERVE] non-delegable task: text=%r target_bot=None", text[:80])
+            return None
+
+        store = event_store or _store()
+        manager = BotSpecManager(store)
+        available = _active_bots(manager)
+        if not available:
+            from hermes.platform.bots.builtin import GENERIC_BOT_ID
+            available = {"reverse-bot", "research-bot", "security-bot", "architect-bot", GENERIC_BOT_ID}
+
+        if explicit_bot and explicit_bot in available:
+            logger.info("[CIV_OBSERVE] delegable task: target_bot=%s reason=explicit text=%r", explicit_bot, text[:80])
+            return ObservedDecision(explicit_bot, reason="explicit", delegable=True)
+
+        lowered = text.lower()
+        candidates = [bid for bid, words in _DOMAINS.items() if bid in available and _domain_match(lowered, words)]
+        if candidates:
+            bot_id = candidates[0]
+            reason = "capability-match"
+        else:
+            # Check dedupe match
+            covering = _find_covering_bot(text, manager, available)
+            if covering is not None:
+                bot_id = covering
+                reason = "dedupe-match"
+            else:
+                session_id = session_context.get("session_key") or session_context.get("session_id") if session_context else None
+                if _auto_create_allowed(session_id) and should_create_dedicated_bot({"goal": text}, sorted(available)):
+                    bot_id = f"{_slug(text)}-bot"
+                    reason = "auto-created-specialist"
+                else:
+                    from hermes.platform.bots.builtin import GENERIC_BOT_ID
+                    bot_id = GENERIC_BOT_ID
+                    reason = "generic-fallback"
+
+        logger.info("[CIV_OBSERVE] delegable task: target_bot=%s reason=%s text=%r", bot_id, reason, text[:80])
+        return ObservedDecision(bot_id, reason=reason, delegable=True)
+    except Exception as exc:
+        logger.debug("route_task_observe failed (graceful degradation): %s", exc, exc_info=True)
+        return None
+
+
+def apply_civ_bot_to_session(
+    session: dict,
+    bot_id: str,
+    *,
+    goal: str = "",
+    event_store: Optional[EventStore] = None,
+) -> bool:
+    """Phase 2B: Apply the identity and metadata of a civilization bot to an active session agent."""
+    if not session or not isinstance(session, dict):
+        return False
+    agent = session.get("agent")
+    if agent is None:
+        return False
+    if getattr(agent, "bot_id", None) == bot_id:
+        session["bot_id"] = bot_id
+        return True  # Already assigned
+
+    try:
+        store = event_store or _store()
+        manager = BotSpecManager(store)
+        from hermes.platform.bots.builtin import GENERIC_BOT_ID, RESEARCH_BOT_ID, REVERSE_BOT_ID
+        builtin_ids = {GENERIC_BOT_ID, RESEARCH_BOT_ID, REVERSE_BOT_ID}
+        if manager.get(bot_id) is None and bot_id not in builtin_ids:
+            return False
+
+        identities = IdentityManager(store)
+        version = identities.get_active_version(bot_id)
+        bundle = version.bundle if version else None
+
+        agent.bot_id = bot_id
+        if bundle:
+            agent.identity_bundle = bundle
+
+        session["bot_id"] = bot_id
+        session["_civ_active_bot"] = bot_id
+        logger.info(
+            "[CIV_DELEGATE] Session %s bound to civilization bot %s (goal: %r)",
+            session.get("session_key") or id(session), bot_id, goal[:80]
+        )
+        return True
+    except Exception as exc:
+        logger.warning(
+            "Failed applying civilization bot %s to session (falling back to normal flow): %s",
+            bot_id, exc, exc_info=True
+        )
+        return False
+
 
 
 def _find_covering_bot(task_text: str, manager, available: set):
@@ -581,7 +872,7 @@ def route_task(
             task_domain = spec.capabilities[0]
     else:
         text = f"{task.get('goal', '')} {task.get('context', '')}".lower()
-        candidates = [bid for bid, words in _DOMAINS.items() if bid in available and any(w in text for w in words)]
+        candidates = [bid for bid, words in _DOMAINS.items() if bid in available and _domain_match(text, words)]
         if candidates:
             bot_id, reason = candidates[0], "capability-match"
             if "reverse" in bot_id:
@@ -638,6 +929,7 @@ def route_task(
 
         ensure_builtin_bots(store)
         available = _active_bots(manager)  # refresh: builtins now guaranteed present
+        session_id = task.get("session_id")
         task_text = f"{task.get('goal', '')} {task.get('context', '')}"
         covering = _find_covering_bot(task_text, manager, available)
         if covering is not None:
@@ -645,7 +937,7 @@ def route_task(
             spec = manager.get(bot_id)
             if spec and spec.capabilities:
                 task_domain = spec.capabilities[0]
-        elif not _auto_create_allowed():
+        elif not _auto_create_allowed(session_id):
             bot_id, reason = GENERIC_BOT_ID, "generic-fallback"
             task_domain = "general"
         elif not should_create_dedicated_bot(task, sorted(available)):
@@ -653,6 +945,9 @@ def route_task(
             task_domain = "general"
         else:
             bot_id = _create_bot(manager, identities, task_domain, str(task.get("goal", "")))
+            if session_id:
+                _record_session_bot_creation(session_id)
+            _record_auto_creation_audit_event(store, bot_id, task_domain, session_id, str(task.get("goal", "")))
             # reason stays "auto-created-specialist"
 
     leaf_id = task.get("leaf_id") or f"shadow-{bot_id}-{uuid.uuid4().hex[:10]}"
@@ -722,7 +1017,7 @@ def route_task(
 
     store.append(Event(name=_ROUTED, payload=payload, correlation_id=leaf_id))
     store.append(Event(name=_CREATED, payload=payload, correlation_id=leaf_id))
-    return task
+    return RoutedTask(task)
 
 
 def record_task_result(

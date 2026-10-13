@@ -1140,6 +1140,15 @@ class TurnRunner:
                     cache[ctx.session_key] = (agent, sig, msg_count, ctx.session_id)
                     runner._enforce_agent_cache_cap()
             logger.debug("Created new agent for session %s (sig=%s)", ctx.session_key, sig)
+
+        civ_bot = getattr(ctx, "civ_bot_id", None)
+        if civ_bot and agent is not None:
+            try:
+                from hermes.platform.civilization.gateway_bridge import route_turn_to_specialist
+                route_turn_to_specialist(agent, str(civ_bot))
+            except Exception:
+                logger.debug("Failed to apply civ specialist to agent", exc_info=True)
+
         return agent, found.reused
 
     # ── per-turn agent wiring ───────────────────────────────────────────────────────────────

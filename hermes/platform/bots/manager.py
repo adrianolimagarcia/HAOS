@@ -74,6 +74,25 @@ class BotSpecManager:
         if spec.id in self._state(): raise ValueError(f"BotSpec already exists: {spec.id}")
         self._append(_REGISTERED, spec); return spec
 
+    def create_bot(
+        self,
+        bot_id: str,
+        purpose: str = "",
+        description: str = "",
+        name: Optional[str] = None,
+        capabilities: Optional[List[str]] = None,
+        task_defaults: Optional[Dict[str, Any]] = None,
+    ) -> BotSpec:
+        """Convenience factory to create and register a BotSpec."""
+        spec = BotSpec(
+            id=bot_id,
+            name=name or bot_id,
+            description=description or purpose,
+            capabilities=capabilities or [],
+            task_defaults=task_defaults or {},
+        )
+        return self.register(spec)
+
     def update(self, spec: BotSpec) -> BotSpec:
         _validate_task_fields(spec.task_defaults)
         if spec.id not in self._state(): raise KeyError(spec.id)
