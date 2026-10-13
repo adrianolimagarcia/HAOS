@@ -212,3 +212,27 @@ registry.register(
     handler=_handle_context_checkpoint,
     emoji="📌",
 )
+
+
+CONTEXT_STATS_SCHEMA = {
+    "name": "context_stats",
+    "description": "Report observed HAOS MCP output characters avoided by indexed retrieval.",
+    "parameters": {"type": "object", "properties": {}},
+}
+
+
+def _handle_context_stats(args: Dict[str, Any], **kwargs: Any) -> str:
+    try:
+        from hermes.platform.context.budget.artifact_index import ContextArtifactIndex
+        return json.dumps(ContextArtifactIndex().usage_stats(), ensure_ascii=False)
+    except Exception:
+        return json.dumps({"error": "artifact_storage_unavailable"})
+
+
+registry.register(
+    name="context_stats",
+    toolset="memory",
+    schema=CONTEXT_STATS_SCHEMA,
+    handler=_handle_context_stats,
+    emoji="📊",
+)
