@@ -80,18 +80,18 @@ def apply_mcp_result_budget(
             # Keep output compact even when the caller configures a high cap.
             excerpt_budget = min(effective_budget, 4000)
             headline = (
-                f"[MCP output indexed: {len(text)} chars; uri={uri}]\\n"
-                f"Use context_search or context_expand for exact full output.\\n"
+                f"[MCP output indexed: {len(text)} chars; uri={uri}]\n"
+                f"Use context_search or context_expand for exact full output.\n"
             )
             lines = text.splitlines()
             hot = [line for line in lines if re.search(
-                r"(?i)\\b(error|failed|failure|traceback|exception|fatal|critical|denied)\\b",
+                r"(?i)\b(error|failed|failure|traceback|exception|fatal|critical|denied)\b",
                 line,
             )][:16]
             if hot:
-                snippet = "\\n".join(hot)
+                snippet = "\n".join(hot)
             else:
-                snippet = text[:1200] + ("\\n... [middle indexed] ...\\n" if len(text) > 2000 else "") + text[-800:]
+                snippet = text[:1200] + ("\n... [middle indexed] ...\n" if len(text) > 2000 else "") + text[-800:]
             return (headline + snippet)[:excerpt_budget]
         except Exception:
             import logging
