@@ -129,3 +129,14 @@ def test_budgeter_never_returns_broken_pointer(index, monkeypatch):
     )
     assert item.source_uri.startswith("artifact://inline/")
     assert item.content == "data" * 100
+
+
+def test_context_stats_tracks_observed_characters(index):
+    index.record_usage("mcp_read", 9000, 700)
+    index.record_usage("mcp_read", 2000, 300)
+    stats = ContextArtifactIndex(index.path).usage_stats()
+    assert stats["calls"] == 2
+    assert stats["raw_chars"] == 11000
+    assert stats["returned_chars"] == 1000
+    assert stats["chars_avoided"] == 10000
+    assert "Character reduction only" in stats["note"]
