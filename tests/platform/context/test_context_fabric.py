@@ -152,10 +152,13 @@ class TestBudgeterAndArtifactElision(unittest.TestCase):
         )
 
         self.assertEqual(item.item_type, "artifact_pointer")
-        self.assertIn("[ARTIFACT_POINTER uri='artifact://store/terminal-output-1'", item.content)
+        self.assertTrue(
+            item.content.startswith("[ARTIFACT_POINTER uri='artifact://store/"),
+            f"Expected URI pointer, got: {item.content[:80]}"
+        )
         self.assertIn("tokens=", item.content)
-        # O artefato completo está acessível via store
-        stored = store.get_artifact("artifact://store/terminal-output-1")
+        # O artefato completo está acessível via store pelo uri gerado
+        stored = store.get_artifact(item.source_uri)
         self.assertIsNotNone(stored)
         self.assertEqual(stored.content, huge_log)
 
