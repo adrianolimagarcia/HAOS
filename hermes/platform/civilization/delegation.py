@@ -364,6 +364,11 @@ _DOMAINS = {
         "cutoff", "latest-news", "time-window", "research", "pesquisa",
         "pesquisar", "investigar", "investigation",
     ),
+    "lean-bot": (
+        "lean", "over-engineering", "overengineering", "yagni", "ponytail",
+        "boilerplate", "bloat", "simplify", "simplification", "dead-code",
+        "unnecessary-abstraction", "code-bloat",
+    ),
 }
 
 
