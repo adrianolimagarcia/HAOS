@@ -285,3 +285,115 @@ def test_phase_2d_route_turn_to_specialist_nonexistent_bot():
 def test_phase_2d_route_turn_to_specialist_none_agent():
     """Agente nulo retorna False com segurança."""
     assert bridge.route_turn_to_specialist(None, "reverse-bot") is False
+
+
+# ===========================================================================
+# REGRESSAO 2026-10-13: kwarg civ_bot_id no pipeline do gateway
+# ===========================================================================
+# Incidente em producao: todo turno do gateway crashava com
+#   TypeError: GatewayTurnMixin._run_agent_inner() got an unexpected keyword
+#   argument 'civ_bot_id'
+# porque _handle_message_with_agent (Fase 2) passou civ_bot_id incondicionalmente
+# enquanto _run_agent_inner nao aceitava o kwarg. Estes testes pinam o repasse
+# _run_agent -> _run_agent_inner -> _run_agent_build_turn_context.
+
+
+def _gateway_mixin_instance():
+    from gateway.run_turn import GatewayTurnMixin
+
+    return GatewayTurnMixin.__new__(GatewayTurnMixin)
+
+
+def _run_coro(coro):
+    import asyncio
+
+    return asyncio.run(coro)
+
+
+def test_civ_bot_id_forwarded_run_agent_to_inner():
+    """_run_agent deve repassar civ_bot_id (valor ou None) a _run_agent_inner sem TypeError."""
+    from contextlib import nullcontext
+    from unittest.mock import AsyncMock, MagicMock
+
+    inst = _gateway_mixin_instance()
+    inst._profile_scope_for_source = MagicMock(return_value=nullcontext())
+    inst._run_agent_inner = AsyncMock(return_value={"completed": True})
+    source = MagicMock()
+
+    _run_coro(inst._run_agent("oi", "prompt", [], source, "sess-1", civ_bot_id="specialist-bot"))
+    _, kwargs = inst._run_agent_inner.await_args
+    assert kwargs["civ_bot_id"] == "specialist-bot"
+
+    _run_coro(inst._run_agent("oi", "prompt", [], source, "sess-1", civ_bot_id=None))
+    _, kwargs = inst._run_agent_inner.await_args
+    assert kwargs["civ_bot_id"] is None
+
+
+def test_run_agent_inner_signature_accepts_civ_bot_id():
+    """A assinatura de _run_agent_inner deve aceitar civ_bot_id (default None)."""
+    import inspect
+
+    from gateway.run_turn import GatewayTurnMixin
+
+    params = inspect.signature(GatewayTurnMixin._run_agent_inner).parameters
+    assert "civ_bot_id" in params
+    assert params["civ_bot_id"].default is None
+
+
+def _mocked_inner_flow(civ_bot_id_value):
+    """Roda _run_agent_inner com o maquinario pesado mockado; retorna os kwargs do build_turn_context."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    inst = _gateway_mixin_instance()
+    inst._get_proxy_url = MagicMock(return_value=None)
+
+    disp = MagicMock()
+    disp.needs_progress_queue = False
+    disp.log_mode_enabled = False
+    inst._run_agent_display_settings = MagicMock(return_value=disp)
+
+    ctx = MagicMock()
+    ctx.result_holder = [{"messages": []}]
+    runner = MagicMock()
+    inst._run_agent_build_turn_context = MagicMock(return_value=(ctx, runner, None))
+
+    inst._run_agent_bind_turn_wiring = MagicMock(return_value=None)
+    inst._run_agent_start_streaming_tts = MagicMock(return_value=None)
+    inst._run_agent_stream_consumer_task = AsyncMock()
+    inst._run_agent_track_agent = AsyncMock()
+    inst._run_agent_monitor_for_interrupt = AsyncMock()
+    inst._run_agent_notify_long_running = AsyncMock()
+    worker = MagicMock()
+    inst._run_agent_start_turn_worker = MagicMock(return_value=worker)
+    inst._run_agent_await_turn_worker = AsyncMock(return_value={"final_response": "ok"})
+    inst._run_agent_evict_on_fallback = MagicMock(return_value=None)
+    inst._adapter_for_source = MagicMock(return_value=MagicMock())
+    inst._run_agent_finalize_streaming_tts = AsyncMock()
+    inst._run_agent_drain_pending = AsyncMock(return_value=(None, None))
+    inst._run_agent_cleanup_turn_tasks = AsyncMock()
+    inst._run_agent_mark_streamed_delivery = AsyncMock()
+    inst._run_agent_schedule_bubble_cleanup = MagicMock(return_value=None)
+
+    source = MagicMock()
+    result = asyncio.run(
+        inst._run_agent_inner(
+            "oi", "prompt", [], source, "sess-1",
+            session_key="key-1", civ_bot_id=civ_bot_id_value,
+        )
+    )
+    assert result == {"final_response": "ok"}
+    _, kwargs = inst._run_agent_build_turn_context.call_args
+    return kwargs
+
+
+def test_run_agent_inner_forwards_civ_bot_id_to_turn_context():
+    """civ_bot_id setado deve chegar a _run_agent_build_turn_context (vira TurnContext.civ_bot_id)."""
+    kwargs = _mocked_inner_flow("specialist-bot")
+    assert kwargs["civ_bot_id"] == "specialist-bot"
+
+
+def test_run_agent_inner_forwards_civ_bot_id_none_to_turn_context():
+    """civ_bot_id=None (sem roteamento) tambem deve passar sem TypeError."""
+    kwargs = _mocked_inner_flow(None)
+    assert kwargs["civ_bot_id"] is None

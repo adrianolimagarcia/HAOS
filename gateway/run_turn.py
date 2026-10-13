@@ -4091,7 +4091,7 @@ class GatewayTurnMixin:
         channel_prompt: Optional[str] = None, moa_config: Optional[dict] = None,
         persist_user_message: Optional[Any] = None, persist_user_timestamp: Optional[float] = None,
         persist_user_display_kind: Optional[str] = None, message_type: Optional[str] = None,
-        persist_user_display_metadata: Optional[dict] = None,
+        persist_user_display_metadata: Optional[dict] = None, civ_bot_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run the agent; returns the full run_conversation result dict.
 
@@ -4115,7 +4115,7 @@ class GatewayTurnMixin:
             persist_user_message=persist_user_message,
             persist_user_timestamp=persist_user_timestamp,
             persist_user_display_kind=persist_user_display_kind,
-            persist_user_display_metadata=persist_user_display_metadata,
+            persist_user_display_metadata=persist_user_display_metadata, civ_bot_id=civ_bot_id,
         )
         _status_thread_metadata = self._run_agent_bind_turn_wiring(
             turn_ctx, turn_runner, source, event_message_id, disp._native_slack_task_cards,
