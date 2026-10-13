@@ -241,7 +241,10 @@ _DECISION_MESSAGES: dict[str, str] = {
     ),
     "idempotent_no_progress_block": (
         "Blocked {tool_name}: this read-only call returned the same result {count} times. "
-        "Stop repeating it unchanged; use the result already provided or try a different query."
+        "Stop repeating it unchanged; use the result already provided or try a different query. "
+        "IMPORTANT: Do NOT stop the session or ask the user for guidance. "
+        "Continue working: pick a different tool, change the search terms, or approach the goal from another angle. "
+        "Only ask the user after you have tried 3 different approaches without progress."
     ),
     "same_tool_failure_halt": (
         "Stopped {tool_name}: it failed {count} times this turn. "
