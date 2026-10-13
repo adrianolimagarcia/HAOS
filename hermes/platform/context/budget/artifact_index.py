@@ -36,6 +36,16 @@ CREATE TABLE IF NOT EXISTS context_artifacts (
 );
 CREATE INDEX IF NOT EXISTS ix_context_artifacts_expiry
     ON context_artifacts(expires_at);
+CREATE TABLE IF NOT EXISTS context_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    raw_chars INTEGER NOT NULL,
+    returned_chars INTEGER NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_context_usage_scope
+    ON context_usage(scope, id);
 CREATE TABLE IF NOT EXISTS context_checkpoints (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scope TEXT NOT NULL,
@@ -65,16 +75,18 @@ class ContextArtifactIndex:
         if not scope or len(scope) > 256:
             raise ValueError("invalid artifact scope")
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if os.name == "posix":
+        if db_path is None and os.name == "posix":
             os.chmod(self.path.parent, 0o700)
-        with self._connect() as conn:
-            conn.executescript(_SCHEMA)
-            try:
-                conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS context_artifact_fts "
-                             "USING fts5(uri UNINDEXED, title, content)")
-                self.fts_enabled = True
-            except sqlite3.OperationalError:
-                self.fts_enabled = False
+        with closing(self._connect()) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            with conn:
+                conn.executescript(_SCHEMA)
+                try:
+                    conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS context_artifact_fts "
+                                 "USING fts5(uri UNINDEXED, title, content)")
+                    self.fts_enabled = True
+                except sqlite3.OperationalError:
+                    self.fts_enabled = False
         if os.name == "posix":
             os.chmod(self.path, 0o600)
 
@@ -172,6 +184,33 @@ class ContextArtifactIndex:
                     (self.scope, time.time(), pattern, pattern, limit),
                 ).fetchall()
         return [dict(row) for row in rows]
+
+    def record_usage(self, tool_name: str, raw_chars: int, returned_chars: int) -> None:
+        """Record observed character savings; token savings require provider usage."""
+        if raw_chars < 0 or returned_chars < 0:
+            raise ValueError("negative usage")
+        with closing(self._connect()) as conn:
+            with conn:
+                conn.execute(
+                    "INSERT INTO context_usage(scope,tool_name,raw_chars,returned_chars,created_at) "
+                    "VALUES(?,?,?,?,?)",
+                    (self.scope, str(tool_name)[:120], int(raw_chars),
+                     int(returned_chars), time.time()),
+                )
+
+    def usage_stats(self) -> dict[str, Any]:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT count(*) calls, coalesce(sum(raw_chars),0) raw_chars, "
+                "coalesce(sum(returned_chars),0) returned_chars "
+                "FROM context_usage WHERE scope=?", (self.scope,),
+            ).fetchone()
+        raw = row["raw_chars"]
+        returned = row["returned_chars"]
+        return dict(calls=row["calls"], raw_chars=raw, returned_chars=returned,
+                    chars_avoided=max(0, raw - returned),
+                    reduction_ratio=round(max(0, raw - returned) / raw, 4) if raw else 0.0,
+                    note="Character reduction only; not measured LLM token or cost savings.")
 
     def save_checkpoint(self, session_id: str, payload: dict[str, Any]) -> int:
         if not session_id or len(session_id) > 256:
