@@ -66,9 +66,26 @@ class ArtifactStore:
             )
 
         # Elisão de artefato grande: armazena full e cria pointer
-        uri = f"artifact://store/{item_id}"
         auto_summary = summary or f"Large artifact ({token_cost} tokens) of type '{item_type}':\n" + content[:600] + "\n..."
         auto_abstract = abstract or f"Artifact pointer {item_id} ({token_cost} tokens)"
+        # Persist before returning any pointer: a failure must never produce a
+        # seemingly expandable URI whose content was silently lost.
+        try:
+            from hermes.platform.context.budget.artifact_index import ContextArtifactIndex
+            uri = ContextArtifactIndex().put(
+                content, title=title or item_id, kind=item_type,
+                source=f"context-item:{item_id}", summary=auto_summary,
+                abstract=auto_abstract,
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Artifact persistence failed; returning full content")
+            return ContextItem(
+                id=item_id, item_type=item_type,
+                source_uri=f"artifact://inline/{item_id}", content=content,
+                title=title or item_id, summary=auto_summary,
+                abstract=auto_abstract, trust=trust, token_cost=token_cost,
+            )
 
         self._store[uri] = StoredArtifact(
             uri=uri,
