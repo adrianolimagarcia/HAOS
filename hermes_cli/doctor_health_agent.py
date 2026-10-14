@@ -1,4 +1,4 @@
-"""Optional Rust health-agent check for ``hermes doctor``."""
+"""Optional Rust health-agent check for ``haos doctor``."""
 from __future__ import annotations
 
 from hermes_cli.doctor_report import Finding, check_fail, check_ok, check_warn, doctor_check

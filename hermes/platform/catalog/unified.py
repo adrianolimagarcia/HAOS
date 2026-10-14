@@ -108,7 +108,7 @@ class UnifiedIndex:
             if score > 0:
                 provider = self.skill_to_plugin.get(name)
                 hint = (f"plugin '{provider}' distributes it "
-                        f"(hermes plugins install {provider})" if provider
+                        f"(haos plugins install {provider})" if provider
                         else "built-in (no install needed)" if s.source == "builtin"
                         else f"install: haos skills install official/<category>/{name}")
                 scored.append(UnifiedResult(
@@ -121,7 +121,7 @@ class UnifiedIndex:
                 scored.append(UnifiedResult(
                     kind="plugin", name=name, description=p.description,
                     score=score, provides_skills=list(p.provides_skills),
-                    install_hint=f"hermes plugins install {name}"))
+                    install_hint=f"haos plugins install {name}"))
         scored.sort(key=lambda r: (-r.score, r.kind, r.name))
         return scored[:limit]
 

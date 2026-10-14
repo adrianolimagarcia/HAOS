@@ -110,7 +110,7 @@ def main():
     ]
 
     t0 = time.time()
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     elapsed = time.time() - t0
 
     if res.returncode != 0:

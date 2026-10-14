@@ -31,5 +31,5 @@ try:
 except Exception as e:
  r['status']='failed'; r['errors'].append(str(e))
 finally:
- with open(a.receipt,'w') as f: json.dump(r,f,sort_keys=True); f.write('\n')
+ with open(a.receipt,'w',encoding='utf-8') as f: json.dump(r,f,sort_keys=True); f.write('\n')
 print(json.dumps(r,sort_keys=True)); raise SystemExit(0 if r['status']=='passed' else 1)

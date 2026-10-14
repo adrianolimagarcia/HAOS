@@ -9,7 +9,7 @@ Status: **READY WITH BLOCKERS**. This is a read-only topology audit; no deployme
 - `haos-gateway.service`: user/group `haos`, working directory `/opt/haos`, `HAOS_HOME=/home/haos/.haos`, `PYTHONPATH=/opt/haos`, executable `/opt/haos/venv/bin/python /opt/haos/gateway/run.py`, `Restart=always`, `RestartSec=3`.
 - `haos-edge.service`: user/group `haos`, `HAOS_DATA_DIR=/var/lib/haos/edge`, upstream WebUI `127.0.0.1:8787`, gateway `127.0.0.1:9900`, binds `127.0.0.1:8788`, runs `/usr/local/bin/haos-edge server ...`, `Restart=always`, `RestartSec=3`.
 - Edge routes `/health`; the source registers it in `packages/haos-edge/src/server.rs`. Public edge routes include `/health`, `/login`, `/api/login`, and static assets; control routes require the WebUI session. No TLS is provided by the unit; external exposure requires a reverse proxy.
-- Gateway liveness is represented by `gateway_state.json`, including stamped `code_sha`/`code_version`; the update plan and verification compare every live gateway against the checkout SHA. `hermes update --plan` is documented as read-only.
+- Gateway liveness is represented by `gateway_state.json`, including stamped `code_sha`/`code_version`; the update plan and verification compare every live gateway against the checkout SHA. `haos update --plan` is documented as read-only.
 
 ## Preconditions and explicit blockers
 

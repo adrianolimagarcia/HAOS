@@ -208,7 +208,7 @@ Ressalva: o `plugin-catalog` é infraestrutura herdada do upstream Hermes (`READ
 **8.7 Comentário CVE nas dependências.** A0: `litellm==1.88.1  # CVE-2026-42271 fix: patched floor is 1.83.7`. O HAOS tem a política de bounds mas não o registro do motivo.
 **8.8 Indicador de janela de contexto no composer.** `plugins/_context_window/` do A0.
 **8.9 Modal "What's New" version-gated.** `_whats_new` do A0.
-**8.10 `hermes import --from agent-zero`.** `_migrate_agents` do A0 importa chats/projetos/memórias/skills de outros harnesses; hoje a simetria não existe.
+**8.10 `haos import --from agent-zero`.** `_migrate_agents` do A0 importa chats/projetos/memórias/skills de outros harnesses; hoje a simetria não existe.
 
 ---
 

@@ -152,7 +152,7 @@ def _cmd_memory_migrate(args):
 
 
 def _cmd_memory_raptor(args):
-    """``hermes memory raptor build`` — constrói a árvore RAPTOR do índice RAGFlow.
+    """``haos memory raptor build`` — constrói a árvore RAPTOR do índice RAGFlow.
 
     O ragflow.db é lido, nunca alterado; o RaptorStore é substituído por corpus
     (idempotente). Sem subcomando, mostra usage — mesma regra dos demais.
@@ -162,7 +162,7 @@ def _cmd_memory_raptor(args):
 
     sub = getattr(args, "raptor_command", None)
     if sub != "build":
-        print("Uso: hermes memory raptor build [--corpus ID] [--limit-docs N] [--json]")
+        print("Uso: haos memory raptor build [--corpus ID] [--limit-docs N] [--json]")
         return 2
     from hermes.platform.memory.ragflow_engine import RAGFlowStore
     from hermes.platform.memory.raptor_ingest import build_from_ragflow
@@ -171,7 +171,7 @@ def _cmd_memory_raptor(args):
     ragflow = RAGFlowStore()
     if not ragflow.db_path.exists():
         print(f"  ✗ índice RAGFlow não encontrado: {ragflow.db_path}")
-        print("    Rode a ingestão primeiro (hermes haos doc-index ou o fabric).")
+        print("    Rode a ingestão primeiro (haos haos doc-index ou o fabric).")
         return 2
     limit_docs = getattr(args, "limit_docs", 0) or None
     t0 = time.monotonic()

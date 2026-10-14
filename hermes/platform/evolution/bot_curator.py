@@ -29,6 +29,8 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from hermes_constants import get_hermes_home
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from hermes.platform.bots.identity_manager import IdentityManager
@@ -128,7 +130,7 @@ class EvolutionCurator:
                 from hermes_constants import get_hermes_home
                 self.state_dir = Path(get_hermes_home()) / "evolution"
             except ImportError:
-                self.state_dir = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "evolution"
+                self.state_dir = Path(get_hermes_home()) / "evolution"
 
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.state_file = self.state_dir / f"curator_state_{self.profile_id}.json"

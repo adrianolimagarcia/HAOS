@@ -237,6 +237,7 @@ def _spawn_powershell_es(root: str, ctx: ServerContext) -> Optional[SpawnSpec]:
         # haos-brand: PSES protocol args below (the -HostProfileId value and the -HostVersion flag), not a CLI hint
         f"& '{start_script}' -BundledModulesPath '{bundle}' "
         f"-LogPath '{os.path.join(session_dir, 'pses.log')}' "
+        # haos-brand: PowerShell Editor Services protocol flags, not a user-facing haos CLI hint
         f"-SessionDetailsPath '{os.path.join(session_dir, f'pses-session-{os.getpid()}.json')}' "
         f"-FeatureFlags @() -AdditionalModules @() "
         f"-HostName Hermes -HostProfileId hermes -HostVersion 1.0.0 -Stdio -LogLevel Normal"

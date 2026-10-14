@@ -9,7 +9,7 @@ HAOS (`docs/haos/STANDALONE_WEBUI.md`) e distinta do `hermes-webui`.
 
 O **servidor do dashboard oficial do agente** monta o `api: plugin_api.py`
 declarado no manifest do plugin. São dois subcomandos do MESMO servidor:
-`hermes dashboard` (com a UI) e `hermes serve` (headless — o backend que o
+`haos dashboard` (com a UI) e `haos serve` (headless — o backend que o
 Desktop e clientes remotos usam). O mount das rotas de plugin é de nível de
 módulo em `hermes_cli/web_server.py`, então **ambos** servem
 `/api/plugins/haos/*`.
@@ -41,14 +41,14 @@ Nesta máquina `plugins.disabled` não existe e o plugin é encontrado como
 npm/pnpm**:
 
 ```bash
-hermes dashboard --host 127.0.0.1 --port 9119 --skip-build --no-open &
+haos dashboard --host 127.0.0.1 --port 9119 --skip-build --no-open &
 python scripts/serve_hermes_dashboard_proxy.py &   # 0.0.0.0:9191 -> 127.0.0.1:9119
 ```
 
 Checagem:
 
 ```bash
-hermes dashboard --status
+haos dashboard --status
 ```
 
 ## 4. Armadilha de autenticação (crítico)
