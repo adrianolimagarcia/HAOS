@@ -410,81 +410,74 @@ def run_curator_cycle(request: Request, body: CuratorRunRequest, profile: Option
 # Phase 1 & 2: Civilization Control Plane, Agent Studio & Mission Orchestrator
 # ==============================================================================
 
-AVAILABLE_MODELS = [
-    {
-        "id": "deepseek-v4-flash",
-        "name": "DeepSeek V4 Flash",
-        "provider": "deepseek",
-        "context_length": 131072,
-        "cost_per_1m_input_usd": 0.14,
-        "cost_per_1m_output_usd": 0.28,
-        "recommended": True,
-    },
-    {
-        "id": "deepseek-chat",
-        "name": "DeepSeek Chat (V3)",
-        "provider": "deepseek",
-        "context_length": 65536,
-        "cost_per_1m_input_usd": 0.14,
-        "cost_per_1m_output_usd": 0.28,
-        "recommended": False,
-    },
-    {
-        "id": "claude-3-7-sonnet",
-        "name": "Claude 3.7 Sonnet (Hybrid)",
-        "provider": "anthropic",
-        "context_length": 200000,
-        "cost_per_1m_input_usd": 3.00,
-        "cost_per_1m_output_usd": 15.00,
-        "recommended": True,
-    },
-    {
-        "id": "claude-3-5-haiku",
-        "name": "Claude 3.5 Haiku",
-        "provider": "anthropic",
-        "context_length": 200000,
-        "cost_per_1m_input_usd": 0.80,
-        "cost_per_1m_output_usd": 4.00,
-        "recommended": False,
-    },
-    {
-        "id": "gpt-4o",
-        "name": "GPT-4o Omnimodal",
-        "provider": "openai",
-        "context_length": 128000,
-        "cost_per_1m_input_usd": 2.50,
-        "cost_per_1m_output_usd": 10.00,
-        "recommended": False,
-    },
-    {
-        "id": "gpt-4o-mini",
-        "name": "GPT-4o Mini",
-        "provider": "openai",
-        "context_length": 128000,
-        "cost_per_1m_input_usd": 0.15,
-        "cost_per_1m_output_usd": 0.60,
-        "recommended": False,
-    },
-    {
-        "id": "gemini-2.5-pro",
-        "name": "Gemini 2.5 Pro",
-        "provider": "google",
-        "context_length": 1000000,
-        "cost_per_1m_input_usd": 1.25,
-        "cost_per_1m_output_usd": 5.00,
-        "recommended": False,
-    },
-    {
-        "id": "gemini-2.5-flash",
-        "name": "Gemini 2.5 Flash",
-        "provider": "google",
-        "context_length": 1000000,
-        "cost_per_1m_input_usd": 0.075,
-        "cost_per_1m_output_usd": 0.30,
-        "recommended": False,
-    },
-]
+def _model_provider_base_url() -> Optional[str]:
+    """Base URL of the configured model provider, or None when unconfigured."""
+    try:
+        cfg = _load_config()
+        model_cfg = cfg.get("model", {})
+        if isinstance(model_cfg, dict):
+            base_url = model_cfg.get("base_url")
+            if isinstance(base_url, str) and base_url.strip():
+                return base_url.strip().rstrip("/")
+    except Exception:
+        pass
+    return None
 
+
+def _provider_label_for_model_id(model_id: str) -> str:
+    """Derive a provider label from a proxy model id.
+
+    Proxy ids carry the upstream router as a prefix (``a6api_x``,
+    ``openrouter_y``); bare ids come straight from the proxy itself.
+    """
+    for sep in ("_", "/"):
+        if sep in model_id:
+            label = model_id.split(sep, 1)[0].strip()
+            if label:
+                return label
+    return "antigravity"
+
+
+def _fetch_live_models(base_url: str, timeout: float = 5.0) -> List[Dict[str, Any]]:
+    """List models actually served by the configured model provider.
+
+    Returns [] (honestly) when the provider is unreachable or yields nothing
+    usable -- never invented catalog data. Context length and pricing are not
+    published by the provider, so they stay null ("Unknown" in the UI).
+    """
+    import urllib.request
+
+    try:
+        request = urllib.request.Request(
+            f"{base_url}/models", headers={"Accept": "application/json"}
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.warning("Could not fetch live model list from %s: %s", base_url, exc)
+        return []
+    entries = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        return []
+    models: List[Dict[str, Any]] = []
+    seen = set()
+    for entry in entries:
+        model_id = entry.get("id") if isinstance(entry, dict) else None
+        if not isinstance(model_id, str) or not model_id.strip() or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append(
+            {
+                "id": model_id,
+                "name": model_id,
+                "provider": _provider_label_for_model_id(model_id),
+                "context_length": None,
+                "cost_per_1m_input_usd": None,
+                "cost_per_1m_output_usd": None,
+            }
+        )
+    models.sort(key=lambda item: item["id"])
+    return models
 
 
 class ModelConfigDTO(BaseModel):
@@ -746,17 +739,21 @@ def _maybe_append_event(name: str, payload: dict) -> None:
 
 @router.get("/api/civilization/models/available")
 def get_available_models(request: Request, profile: Optional[str] = None):
-    """List available LLM models with pricing and context specifications."""
+    """List models actually available from the configured model provider.
+
+    Single live source: the provider's /models listing. An empty list means
+    the provider is unreachable or serves nothing -- never invented data.
+    """
     _require_token(request)
     with _config_profile_scope(profile):
         session_model = _get_session_model()
+        base_url = _model_provider_base_url()
+        models = _fetch_live_models(base_url) if base_url else []
         return {
-            "models": AVAILABLE_MODELS,
+            "models": models,
             "session_model": session_model,
             "global_default": "deepseek-v4-flash",
         }
-
-
 @router.get("/api/civilization/agents")
 def get_civilization_agents(request: Request, profile: Optional[str] = None):
     """List registered civilization bots from the canonical event store."""
@@ -1182,12 +1179,6 @@ def get_civilization_mission_events(request: Request, mission_id: str, profile: 
 # contract for external producers, not a synthesized gate from mission policies.
 _APPROVAL_REQUEST = "civ.council.approval_requested"
 _APPROVAL_DECISION = "civ.council.approval_decided"
-_APPROVAL_LIMITATIONS = [
-    "No approval request producer currently exists; only explicitly recorded requests are shown.",
-    "Recording a decision does not resume runtime execution.",
-]
-
-
 def _approval_projection(events) -> tuple[dict, set]:
     requests = {}
     decided = set()
@@ -1209,19 +1200,20 @@ def _approval_projection(events) -> tuple[dict, set]:
 
 @router.get("/api/civilization/approvals")
 def get_approvals(request: Request, mission_id: Optional[str] = None, profile: Optional[str] = None):
+    """List pending approvals from the single canonical source.
+
+    The canonical runtime gate store (MissionStore approval_gates) is the one
+    and only source: no event-projection merge, no divergent counts between
+    views. Empty when nothing is pending -- honestly.
+    """
     _require_token(request)
     with _config_profile_scope(profile):
         mstore = _mission_store()
         db_gates = mstore.list_pending_gates(mission_id=mission_id)
 
-        store = _get_read_only_store()
-        requests, decided = _approval_projection(store.get_all() if store else [])
-
         combined = []
-        seen_ids = set()
         for g in db_gates:
             aid = str(g.get("gate_id") or g.get("approval_id"))
-            seen_ids.add(aid)
             payload = g.get("payload") or {}
             if isinstance(payload, str):
                 try:
@@ -1240,19 +1232,11 @@ def get_approvals(request: Request, mission_id: Optional[str] = None, profile: O
                 "source": "canonical_runtime",
             })
 
-        for aid, r in requests.items():
-            if aid not in decided and aid not in seen_ids:
-                if mission_id is None or r.get("mission_id") == mission_id:
-                    seen_ids.add(aid)
-                    combined.append(r)
-
         return {
             "approvals": combined,
-            "quality": "canonical_gates" if db_gates else "event_projection",
-            "limitations": [] if db_gates else _APPROVAL_LIMITATIONS,
+            "quality": "canonical_gates",
+            "limitations": [],
         }
-
-
 @router.get("/api/civilization/missions/{mission_id}/analytics")
 def get_mission_analytics(request: Request, mission_id: str, profile: Optional[str] = None):
     """Only canonical runtime observations count; estimates and JSON demos do not."""
@@ -1314,7 +1298,12 @@ def record_approval_decision(request: Request, approval_id: str, body: ApprovalD
         if gate is not None:
             if gate.get("status") != "pending":
                 raise HTTPException(status_code=409, detail="Approval already decided")
-            decided = mstore.decide_gate(approval_id, approved=body.approved, decided_by="operator", reason=body.reason)
+            try:
+                decided = mstore.decide_gate(approval_id, approved=body.approved, decided_by="operator", reason=body.reason)
+            except KeyError:
+                raise HTTPException(status_code=404, detail="Approval not found")
+            except RuntimeError as exc:
+                raise HTTPException(status_code=409, detail="Approval already decided") from exc
             if not decided:
                 raise HTTPException(status_code=409, detail="Approval already decided")
 

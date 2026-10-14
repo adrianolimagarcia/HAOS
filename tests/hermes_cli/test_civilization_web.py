@@ -499,24 +499,34 @@ def test_real_approvals_atomic_decision_and_measured_analytics(client, homes):
     unmeasured = client.get(url + "/analytics").json()
     assert unmeasured["duration_seconds"] is None
     assert unmeasured["tokens"] is unmeasured["failures"] is unmeasured["retries"] is None
+    # Single canonical source: the mission-store runtime gate. No event-projection
+    # merge -- the approvals tab reads approval_gates only.
+    from hermes_cli.web_routers import civilization as civ
+    gate = civ._mission_store().request_gate(
+        mid, "approval", gate_id="gate-a", action="merge", requested_by="architect-001",
+        payload={"description": "merge gate", "risk_class": "high", "private": "SECRET"},
+    )
+    assert gate["gate_id"] == "gate-a"
     with EventStore(str(root / "events.db")) as store:
-        store.append(Event(name="civ.council.approval_requested", timestamp=100, payload={
-            "approval_id": "gate-a", "mission_id": mid, "agent_id": "architect-001", "gate": "merge", "private": "SECRET",
-        }))
         store.append(Event(name="team.formed", timestamp=200, payload={"mission_id": mid}))
         store.append(Event(name="mission.completed", timestamp=207, payload={"mission_id": mid, "status": "success"}))
         store.append(Event(name="civ.mission.agent_state_changed", timestamp=205, payload={
             "mission_id": mid, "node_id": "node-1", "mission_status": "RUNNING", "status": "EXECUTING", "private": "SECRET",
         }))
     response = client.get("/api/civilization/approvals", params={"mission_id": mid})
-    assert response.json()["approvals"][0]["approval_id"] == "gate-a"
+    assert response.json()["quality"] == "canonical_gates"
+    item = response.json()["approvals"][0]
+    assert item["approval_id"] == "gate-a"
+    assert item["agent_id"] == "architect-001"
+    assert item["gate"] == "merge"
+    assert item["source"] == "canonical_runtime"
     assert "SECRET" not in response.text
     assert client.get("/api/civilization/approvals?mission_id=other").json()["approvals"] == []
     assert client.get("/api/civilization/approvals?profile=other").json()["approvals"] == []
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda _: client.post("/api/civilization/approvals/gate-a/decision", json={"approved": bool(_)}), range(2)))
     assert sorted(r.status_code for r in responses) == [200, 409]
-    assert next(r for r in responses if r.status_code == 200).json()["runtime_resumed"] is False
+    assert next(r for r in responses if r.status_code == 200).json()["runtime_resumed"] is True
     assert client.post("/api/civilization/approvals/gate-a/decision", json={"approved": False}).status_code == 409
     assert client.get("/api/civilization/approvals").json()["approvals"] == []
     with EventStore(str(root / "events.db")) as store:
@@ -533,3 +543,84 @@ def test_real_approvals_atomic_decision_and_measured_analytics(client, homes):
     assert not (other / "events.db").exists()
     assert client.get(url + "/analytics?profile=other").status_code == 404
     assert client.get(url + "/analytics").json()["duration_seconds"] == 7
+
+
+def test_models_available_reads_live_provider_and_fails_empty(client, homes, monkeypatch):
+    from hermes_cli.web_routers import civilization as civ
+
+    monkeypatch.setattr(civ, "_model_provider_base_url", lambda: "http://provider:9999/v1")
+    monkeypatch.setattr(
+        civ,
+        "_fetch_live_models",
+        lambda base_url, timeout=5.0: [
+            {
+                "id": "a6api_x-model",
+                "name": "a6api_x-model",
+                "provider": "a6api",
+                "context_length": None,
+                "cost_per_1m_input_usd": None,
+                "cost_per_1m_output_usd": None,
+            }
+        ],
+    )
+    body = client.get("/api/civilization/models/available").json()
+    assert [m["id"] for m in body["models"]] == ["a6api_x-model"]
+    assert body["models"][0]["provider"] == "a6api"
+    assert body["session_model"]
+
+    # Unreachable provider -> honest empty list, never invented catalog data.
+    monkeypatch.setattr(civ, "_fetch_live_models", lambda base_url, timeout=5.0: [])
+    body = client.get("/api/civilization/models/available").json()
+    assert body["models"] == []
+    assert body["session_model"]
+
+
+def test_fetch_live_models_maps_providers_and_dedupes(monkeypatch):
+    import json as jsonlib
+
+    from hermes_cli.web_routers import civilization as civ
+
+    payload = {
+        "data": [
+            {"id": "a6api_DeepSeek-V4-Flash-0731"},
+            {"id": "claude-sonnet-4-6"},
+            {"id": "a6api_DeepSeek-V4-Flash-0731"},
+            {"id": "openrouter_deepseek/deepseek-v4-flash"},
+            {"id": ""},
+            {"foo": "bar"},
+        ]
+    }
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return jsonlib.dumps(payload).encode()
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=5.0: FakeResp())
+    models = civ._fetch_live_models("http://provider:9999/v1")
+    assert [m["id"] for m in models] == [
+        "a6api_DeepSeek-V4-Flash-0731",
+        "claude-sonnet-4-6",
+        "openrouter_deepseek/deepseek-v4-flash",
+    ]
+    by_id = {m["id"]: m for m in models}
+    assert by_id["a6api_DeepSeek-V4-Flash-0731"]["provider"] == "a6api"
+    assert by_id["claude-sonnet-4-6"]["provider"] == "antigravity"
+    assert by_id["openrouter_deepseek/deepseek-v4-flash"]["provider"] == "openrouter"
+    assert all(m["context_length"] is None for m in models)
+    assert all(m["cost_per_1m_input_usd"] is None for m in models)
+
+
+def test_fetch_live_models_unreachable_returns_empty(monkeypatch):
+    from hermes_cli.web_routers import civilization as civ
+
+    def boom(req, timeout=5.0):
+        raise ConnectionError("provider down")
+
+    monkeypatch.setattr("urllib.request.urlopen", boom)
+    assert civ._fetch_live_models("http://provider:9999/v1") == []
