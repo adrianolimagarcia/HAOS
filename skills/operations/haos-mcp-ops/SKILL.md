@@ -28,7 +28,7 @@ Use para diagnosticar o status de servidores MCP conectados, medir latência de 
 Execute diagnósticos de servidores MCP de maneira não destrutiva, validando listagem de tools e tempos de resposta:
 
 ```bash
-hermes mcp list
+haos mcp list
 python -m hermes_cli.main mcp status
 ```
 

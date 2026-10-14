@@ -6,7 +6,7 @@ def frame(x):
 p=argparse.ArgumentParser(); p.add_argument('--socket'); p.add_argument('--ready'); a=p.parse_args()
 try: os.unlink(a.socket)
 except FileNotFoundError: pass
-s=socket.socket(socket.AF_UNIX); s.bind(a.socket); s.listen(1); open(a.ready,'w').close()
+s=socket.socket(socket.AF_UNIX); s.bind(a.socket); s.listen(1); open(a.ready,'w',encoding='utf-8').close()
 while True:
  c,_=s.accept(); c.settimeout(2)
  try:

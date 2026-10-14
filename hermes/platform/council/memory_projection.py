@@ -14,6 +14,8 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from hermes_constants import get_hermes_home
 from typing import Any, Dict, List, Optional
 
 from hermes.platform.observability.event_store import EventStore
@@ -57,7 +59,7 @@ class CouncilMemoryProjectionEngine:
                 from hermes_constants import get_hermes_home
                 self.output_dir = Path(get_hermes_home()) / "councils"
             except ImportError:
-                self.output_dir = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "councils"
+                self.output_dir = Path(get_hermes_home()) / "councils"
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.meta_dir = self.output_dir / ".projection_meta"

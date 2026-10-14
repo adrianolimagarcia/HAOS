@@ -83,7 +83,7 @@ def _autonomy_status(base_dir: Path, args) -> dict:
 
     heartbeat_path = base_dir / "autonomy" / "service.json"
     HAOSStateManager._check_path(heartbeat_path)
-    heartbeat = json.loads(heartbeat_path.read_text()) if heartbeat_path.is_file() else None
+    heartbeat = json.loads(heartbeat_path.read_text(encoding="utf-8")) if heartbeat_path.is_file() else None
     if heartbeat is not None and (not isinstance(heartbeat, dict) or
             type(heartbeat.get("updated_at")) not in (int, float)):
         raise ValueError("Invalid autonomy service heartbeat")

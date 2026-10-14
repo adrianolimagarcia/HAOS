@@ -9,6 +9,8 @@ from __future__ import annotations
 import difflib
 import logging
 from pathlib import Path
+
+from hermes_constants import get_hermes_home
 from typing import Any, Dict, Optional, Tuple
 
 from .identity import (
@@ -53,7 +55,7 @@ class IdentityResolver:
                 self._root_dir = Path(get_hermes_home()) / "bots"
             except ImportError:
                 import os
-                self._root_dir = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "bots"
+                self._root_dir = Path(get_hermes_home()) / "bots"
         self._cache: Dict[Tuple[str, int], BotIdentityBundle] = {}
 
     def get_bot_dir(self, bot_id: str) -> Path:

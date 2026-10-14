@@ -38,7 +38,7 @@ logger = logging.getLogger("gateway.run")
 
 def _adapter_unavailable_message(platform: Platform, *, retrying: bool = True) -> str:
     """Actionable ``adapter_unavailable`` status text, shared by startup and the reconnect watcher so
-    ``hermes status`` keeps the plugin/deps/credentials hint after the first retry."""
+    ``haos status`` keeps the plugin/deps/credentials hint after the first retry."""
     message = (
         f"No adapter available for enabled {platform.value}; check the plugin, dependencies, and credentials."
     )

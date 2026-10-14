@@ -5,7 +5,7 @@
 validated and scanned at the pinned commit, self-updater and credential-store checks run". Two of
 those three clauses are enforced today; one is not, and the other stops at the JS boundary:
 
-  * "validated"        -> ``plugin-catalog-ci.yml`` clones the pin and runs ``hermes plugins validate``
+  * "validated"        -> ``plugin-catalog-ci.yml`` clones the pin and runs ``haos plugins validate``
   * "self-updater"     -> an inline grep in the same workflow, restricted to
                           ``*.js``/``*.mjs``/``*.cjs``/``*.ts`` — a self-updater written in Python
                           is not seen at all

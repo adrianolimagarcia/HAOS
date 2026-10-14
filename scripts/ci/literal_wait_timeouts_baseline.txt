@@ -39,7 +39,6 @@ tests/agent/test_compression_rotation_state.py 1
 tests/agent/test_compression_split_failure_cooldown.py 1
 tests/agent/test_compression_stall_fallback.py 1
 tests/agent/test_compression_stall_interrupt.py 2
-tests/agent/test_compression_worker_isolation.py 3
 tests/agent/test_context_compressor.py 2
 tests/agent/test_context_compressor_structural_backoff.py 2
 tests/agent/test_credential_pool.py 10
@@ -60,6 +59,7 @@ tests/agent/test_hygiene_timeout_cooldown_isolation.py 5
 tests/agent/test_infinite_compaction_loop.py 1
 tests/agent/test_interactive_interrupt.py 2
 tests/agent/test_interrupt_propagation.py 10
+tests/agent/test_learning_mutations.py 4
 tests/agent/test_memory_async_sync.py 4
 tests/agent/test_memory_provider.py 3
 tests/agent/test_moa_loop_mode.py 3
@@ -106,6 +106,7 @@ tests/agent/test_tool_executor_contextvar_propagation.py 5
 tests/agent/test_trajectory_file_locking.py 1
 tests/agent/test_treekill_consolidation.py 2
 tests/agent/test_turn_context_overflow_warning.py 6
+tests/agent/test_turn_end_stall_diagnostics.py 3
 tests/agent/test_turn_liveness_watchdog.py 15
 tests/agent/test_wait_state_visibility.py 1
 tests/agent/transports/test_codex_app_server_runtime.py 2
@@ -190,6 +191,7 @@ tests/gateway/test_login_command.py 1
 tests/gateway/test_loop_liveness_watchdog.py 10
 tests/gateway/test_media_resend_dedup.py 3
 tests/gateway/test_multiplex_adapter_registry.py 6
+tests/gateway/test_multiplex_hot_serve.py 3
 tests/gateway/test_multiplex_phase0.py 2
 tests/gateway/test_multiplex_residue_parity.py 1
 tests/gateway/test_peer_dm_hidden_e2e.py 3
@@ -227,6 +229,7 @@ tests/gateway/test_slack_unfurl_duplicate_turn.py 3
 tests/gateway/test_sse_agent_cancel.py 4
 tests/gateway/test_stale_finalize_suppression.py 1
 tests/gateway/test_startup_connect_parallel.py 1
+tests/gateway/test_startup_failed_platform_reports_degraded.py 3
 tests/gateway/test_startup_restart_race.py 2
 tests/gateway/test_startup_watchdog.py 23
 tests/gateway/test_status_free_tier_line.py 1
@@ -253,6 +256,8 @@ tests/gateway/test_watchdog_review.py 5
 tests/gateway/test_webhook_adapter.py 1
 tests/gateway/test_webhook_offloop_delivery.py 1
 tests/gateway/test_wecom_double_send.py 1
+tests/haos_edge/test_readonly_sse_contract.py 7
+tests/haos_edge/test_rust_writer_contract_v2.py 2
 tests/hermes_cli/anon_portal.py 1
 tests/hermes_cli/test_active_sessions.py 6
 tests/hermes_cli/test_actual_provider.py 3
@@ -323,7 +328,7 @@ tests/hermes_cli/test_plugin_ownership_ledger.py 14
 tests/hermes_cli/test_plugins.py 13
 tests/hermes_cli/test_plugins_hub_perf_guard.py 2
 tests/hermes_cli/test_prompt_text_input_thread_safety.py 1
-tests/hermes_cli/test_pty_bridge.py 2
+tests/hermes_cli/test_pty_bridge.py 5
 tests/hermes_cli/test_pty_session.py 5
 tests/hermes_cli/test_refresh_singleflight.py 2
 tests/hermes_cli/test_relay_shared_metrics.py 5
@@ -348,6 +353,7 @@ tests/hermes_cli/test_update_eol_churn.py 1
 tests/hermes_cli/test_update_live_output.py 2
 tests/hermes_cli/test_update_wedged_gateway.py 10
 tests/hermes_cli/test_venv_holder_windows_live.py 2
+tests/hermes_cli/test_web_analytics_waste.py 1
 tests/hermes_cli/test_web_oauth_dispatch.py 6
 tests/hermes_cli/test_web_read_coalescing.py 2
 tests/hermes_cli/test_web_server.py 1
@@ -383,6 +389,7 @@ tests/hermes_state/test_state_db_malformed_repair.py 1
 tests/hermes_state/test_state_db_repair_live_writer_guard.py 2
 tests/hermes_state/test_state_db_repair_non_destructive.py 8
 tests/hermes_state/test_state_db_second_process_maintenance.py 1
+tests/hermes_state/test_surgical_lifecycle_contracts.py 9
 tests/hermes_state/test_sweep_orphaned_sessions.py 5
 tests/hermes_state/test_write_lock_patience.py 6
 tests/hermes_state/test_writer_conn_thread_safety.py 1
@@ -400,10 +407,16 @@ tests/honcho_plugin/test_shutdown.py 17
 tests/honcho_plugin/test_turn_author_peers.py 2
 tests/integration/test_checkpoint_resumption.py 1
 tests/openviking_plugin/test_openviking.py 14
+tests/platform/agent_framework/test_autonomy_service.py 2
+tests/platform/agent_framework/test_hierarchy.py 2
+tests/platform/agent_framework/test_investigator.py 4
 tests/platform/capabilities/test_lsp.py 1
 tests/platform/context/memory/test_embedding.py 1
 tests/platform/context/memory/test_fabric_recovery_integration.py 2
 tests/platform/execution/test_heartbeat.py 2
+tests/platform/execution/test_mission_integration_e2e.py 4
+tests/platform/execution/test_mission_supervisor.py 4
+tests/platform/memory/test_dream_delta_user_extraction.py 1
 tests/platform/webui/test_standalone_webui.py 1
 tests/plugins/memory/test_hindsight_provider.py 17
 tests/plugins/memory/test_mem0_v3.py 7
@@ -427,6 +440,7 @@ tests/plugins/test_kanban_read_admission.py 2
 tests/plugins/test_kanban_worker_runs.py 2
 tests/plugins/test_kanban_ws_idle_disconnect.py 1
 tests/plugins/test_multiplex_plugin_cache_scope.py 3
+tests/plugins/test_plugin_loader.py 6
 tests/plugins/test_retaindb_plugin.py 2
 tests/plugins/test_telegram_polling_progress_ptb.py 3
 tests/run_interrupt_test.py 2
@@ -443,13 +457,14 @@ tests/tools/test_approval.py 9
 tests/tools/test_approval_cancelled_attribution.py 8
 tests/tools/test_approval_interrupt.py 4
 tests/tools/test_approved_command_clean_slate.py 2
-tests/tools/test_async_delegation.py 22
+tests/tools/test_async_delegation.py 26
 tests/tools/test_async_delegation_stale_profile_scope.py 2
 tests/tools/test_bot_mode_canonical_chat_resolution.py 1
 tests/tools/test_bot_turn_lock.py 15
 tests/tools/test_browser_cdp_tool.py 2
 tests/tools/test_browser_cloud_provider_cache.py 3
 tests/tools/test_browser_eval_supervisor_path.py 2
+tests/tools/test_browser_process_tree.py 5
 tests/tools/test_browser_supervisor.py 5
 tests/tools/test_clarify_gateway.py 5
 tests/tools/test_clawhub_owner_http.py 1
@@ -485,6 +500,7 @@ tests/tools/test_local_setsid_descendant_sweep.py 1
 tests/tools/test_mcp_cancelled_error_propagation.py 6
 tests/tools/test_mcp_circuit_breaker.py 2
 tests/tools/test_mcp_client_cert.py 3
+tests/tools/test_mcp_connect_secret_scope.py 1
 tests/tools/test_mcp_death_supervisor.py 17
 tests/tools/test_mcp_discovery_cross_process.py 1
 tests/tools/test_mcp_failure_classification.py 2
@@ -582,4 +598,4 @@ tests/tui_gateway/test_tui_gateway_queue_on_busy.py 6
 tests/tui_gateway/test_tui_gateway_server.py 84
 tests/tui_gateway/test_tui_gateway_ws.py 2
 tests/tui_gateway/test_ws_send_timeout.py 1
-tests/verify/test_environment_and_runner.py 1
+tests/verify/test_environment_and_runner.py 3

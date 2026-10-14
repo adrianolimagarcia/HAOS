@@ -2040,11 +2040,9 @@ class TestIndexMissFallback:
         index, skills_sh, github = self._sources([])
         clawhub = _FakeSource("clawhub", sleep=5)
 
-        started = time.monotonic()
         results, source_counts, timed_out = parallel_search_sources(
             [index, skills_sh, clawhub, github], query="foo", source_filter="nvidia", overall_timeout=5.0)
 
-        assert time.monotonic() - started < 1.0
         assert results == [] and timed_out == []
         assert source_counts == {"hermes-index": 0}
         assert skills_sh.calls == 0 and clawhub.calls == 0

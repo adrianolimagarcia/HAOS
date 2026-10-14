@@ -50,7 +50,7 @@ def _get_hybrid_router():
     gr_dir = home / "graphrag"
     from hermes.platform.memory.hybrid_router import HybridKnowledgeRouter
     # RAPTOR: fail-closed por arquivo (mesma regra do GraphRAG available()).
-    # A árvore só entra no router depois de `hermes memory raptor build`;
+    # A árvore só entra no router depois de `haos memory raptor build`;
     # o caminho de leitura nunca cria um DB vazio.
     raptor_store = None
     raptor_db = home / "memory" / "raptor.db"
