@@ -4654,10 +4654,13 @@ def _start_gateway_housekeeping(
     logger.info("Gateway housekeeping stopped")
 
 
-def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, interval: int = 60):
+def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, interval: int = None):
     """DEPRECATED shim — runs ONLY the built-in in-process cron tick loop; the trigger now lives behind
     the ``CronScheduler`` provider and housekeeping in ``_start_gateway_housekeeping``."""
+    from cron.jobs import TICKER_INTERVAL_SECONDS
     from cron.scheduler_provider import InProcessCronScheduler
+    if interval is None:
+        interval = TICKER_INTERVAL_SECONDS
     InProcessCronScheduler().start(stop_event, adapters=adapters, loop=loop, interval=interval)
 
 
@@ -5154,11 +5157,16 @@ def _start_gateway_start_cron_and_housekeeping(runner):
     # The event loop is passed so cron delivery can use live adapters (E2EE support).
     from cron.scheduler_provider import (
         InProcessCronScheduler, resolve_cron_scheduler, scheduler_for_profile_mode)
+    from cron.jobs import TICKER_INTERVAL_SECONDS
     cron_stop = threading.Event()
     multiplex_cron = bool(getattr(runner.config, "multiplex_profiles", False))
     cron_provider = scheduler_for_profile_mode(
         resolve_cron_scheduler(), multiplex_profiles=multiplex_cron)
-    cron_start_kwargs: Dict[str, Any] = {"adapters": runner.adapters, "loop": asyncio.get_running_loop()}
+    # Ticker cadence: single source of truth (cron/jobs.py). The scheduler's own
+    # default matches it, but wire it explicitly so a future default drift can't
+    # silently re-enable the 60s cadence (M3, review 2026-10-18).
+    cron_start_kwargs: Dict[str, Any] = {"adapters": runner.adapters, "loop": asyncio.get_running_loop(),
+                                         "interval": TICKER_INTERVAL_SECONDS}
 
     # Multiplex: tell the ticker which profile homes to tick (else secondary profiles' jobs never
     # run, #69377), including a ``--profile <name>`` multiplexer's OWN store.

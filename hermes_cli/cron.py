@@ -363,7 +363,7 @@ def _print_ticker_health(pids: list) -> None:
         get_ticker_heartbeat_age, get_ticker_last_error, get_ticker_success_age,
         TICKER_INTERVAL_SECONDS)
     from cron.scheduler import _is_fd_exhaustion_text as _cron_is_fd_exhaustion_text
-    STALE_AFTER = TICKER_INTERVAL_SECONDS * 3 + 20  # ~3 missed iterations + slack (200s @ 60s)
+    STALE_AFTER = TICKER_INTERVAL_SECONDS * 3 + 20  # ~3 missed iterations + slack (380s @ 120s)
     hb_age = get_ticker_heartbeat_age()
     ok_age = get_ticker_success_age()
     pid_line = f"  PID: {', '.join(map(str, pids))}" if pids else None
@@ -377,11 +377,11 @@ def _print_ticker_health(pids: list) -> None:
         # Ticker never started (non-cron profile, gateway just started, or a config issue).
         _warn("⚠ Gateway is running but the cron ticker has not reported a heartbeat.")
         print("  Cron jobs will NOT fire until the ticker writes its first heartbeat.\n" +
-              "  If the gateway just started, wait ~60s and re-run `" + product_command("cron") + " status`.\n" +
+              "  If the gateway just started, wait ~120s and re-run `" + product_command("cron") + " status`.\n" +
               "  If heartbeat never appears, restart: " + product_command("gateway") + " restart")
     elif hb_age > STALE_AFTER:  # ticker thread is gone
         _warn("⚠ Gateway is running but the cron ticker looks STALLED — "
-              f"no heartbeat for {int(hb_age)}s (expected every ~60s).")
+              f"no heartbeat for {int(hb_age)}s (expected every ~120s).")
         print("  Cron jobs may NOT be firing. Restart: " + product_command("gateway") + " restart")
     elif ok_age is not None and ok_age > STALE_AFTER:  # loop alive but every tick fails
         _warn("⚠ Gateway and cron ticker are running, but no tick has "

@@ -13,6 +13,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from cron.jobs import TICKER_INTERVAL_SECONDS
+
 logger = logging.getLogger(__name__)
 
 # Cap for exponential tick backoff during fd exhaustion (interval doubled per failure).
@@ -21,7 +23,7 @@ DEFAULT_MISFIRE_GRACE_MINUTES = 10
 
 
 # Cap for the exponential tick backoff applied while consecutive ticks fail with fd exhaustion
-# (EMFILE/ENFILE, #87644). Base is the tick interval (60s by default); each consecutive EMFILE failure
+# (EMFILE/ENFILE, #87644). Base is the tick interval (TICKER_INTERVAL_SECONDS, 120s); each consecutive EMFILE failure
 # doubles the wait, capped here so a still-alive-but-exhausted gateway never sleeps longer than this between
 # recovery attempts.
 def _backoff_wait_seconds(interval: float, consecutive_failures: int) -> float:
@@ -416,7 +418,7 @@ def scheduler_for_profile_mode(
 
 
 class InProcessCronScheduler(CronScheduler):
-    """Default in-process 60s ticker; ``start()`` blocks until ``stop_event``. ``can_dispatch`` is
+    """Default in-process ticker (interval=TICKER_INTERVAL_SECONDS); ``start()`` blocks until ``stop_event``. ``can_dispatch`` is
     an optional drain gate; skipped ticks leave due jobs intact for the next allowed tick."""
 
     @property
@@ -424,7 +426,7 @@ class InProcessCronScheduler(CronScheduler):
         return "builtin"
 
     def start(
-        self, stop_event, *, adapters=None, loop=None, interval=60, can_dispatch=None,
+        self, stop_event, *, adapters=None, loop=None, interval=TICKER_INTERVAL_SECONDS, can_dispatch=None,
         profile_homes=None, profile_adapters=None, default_profile=None, profile_gate=None,
     ):
         from cron.scheduler import CronTickYielded
@@ -508,7 +510,7 @@ class InProcessCronScheduler(CronScheduler):
             stop_event.wait(_backoff_wait_seconds(interval, consecutive_failures))
 
     def _start_multiplex(
-        self, stop_event, *, profile_homes, adapters=None, loop=None, interval=60,
+        self, stop_event, *, profile_homes, adapters=None, loop=None, interval=TICKER_INTERVAL_SECONDS,
         can_dispatch=None, profile_adapters=None, default_profile=None, profile_gate=None,
     ):
         """Tick every profile's store, each scoped via ``_profile_cron_scope``. ``profile_gate(name,

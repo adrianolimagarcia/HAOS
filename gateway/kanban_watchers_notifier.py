@@ -37,7 +37,7 @@ TERMINAL_KINDS = ("completed", "blocked", "gave_up", "crashed", "timed_out", "st
 # status/archived/unblocked are bookkeeping.
 _WAKE_KINDS = ("completed", "gave_up", "crashed", "timed_out", "blocked", "review_requested", "changes_requested", "block_loop_detected")
 # Consecutive send failures (adapter raised OR reported SendResult(success=False))
-# before a sub is dropped as a dead chat. 12 ≈ 60s at the 5s cadence: a transient
+# before a sub is dropped as a dead chat. 12 ≈ 360s at the 30s cadence: a transient
 # API outage must not permanently unsubscribe a live review-gate channel.
 # Subscriptions are removed only when the task reaches the irreversible archived status. ``done`` is
 # reversible in review/controller flows, so removing its subscription would silence a later reopen. We used
@@ -49,7 +49,7 @@ _WAKE_KINDS = ("completed", "gave_up", "crashed", "timed_out", "blocked", "revie
 # (advanced atomically by claim_unseen_events_for_sub) handle dedup, and any retry-loop event reaches the
 # user. Per-subscription send-failure counter. Adapter.send raising means the chat is dead (deleted, bot
 # kicked, etc.) — after N consecutive send failures the sub is dropped so we don't spin against a dead chat
-# every 5 seconds forever. A genuinely dead chat still drops, just ~60s later — a fine trade for an
+# every 30 seconds forever. A genuinely dead chat still drops, just ~360s (6 min) later — a fine trade for an
 # unattended gate where a false drop means silent work pileup.
 MAX_SEND_FAILURES = 12
 
