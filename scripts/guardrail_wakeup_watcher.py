@@ -21,8 +21,9 @@ How it works
    - ``ended_at`` IS NULL (not formally ended),
    - no live turn lease (missing row or ``expires_at`` <= now),
    - no new messages for longer than ORPHAN_MIN (default 10 min),
-   - last activity is fresher than ORPHAN_LOOKBACK_MIN (default 180 min)
-     \u2014 older idleness is assumed to be a deliberate stop, not an orphan,
+   - last activity is fresher than ORPHAN_LOOKBACK_MIN (default 180 min;
+     60 min in production via the timer unit) \u2014 older idleness is assumed
+     to be a deliberate stop, not an orphan,
    - the last message is not from the user (waiting on the user is not an
      orphan) and does not look like a normal assistant conclusion.
 
@@ -41,12 +42,14 @@ Safety
 - Caps wake-ups per run (default 5, shared between blocks and orphans).
 - Never raises for expected conditions; prints a JSON summary to stdout.
 
-Scheduling (NOT done automatically \u2014 see deploy report)
--------------------------------------------------------
-Run every 5 minutes ON cachyosdell (needs localhost access to the WebUI API
-and to /root/.haos/*.db). Example root crontab entry::
+Scheduling
+----------
+systemd timer ``guardrail-wakeup-watcher.timer`` (Type=oneshot, every 5 min)
+runs ``guardrail-wakeup-watcher.service`` on cachyosdell (needs localhost access
+to the WebUI API and to /root/.haos/*.db). ``flock -n`` in ExecStart prevents
+overlapping runs. Inspect with::
 
-    */5 * * * * /usr/bin/python3 /usr/local/lib/haos-agent/scripts/guardrail_wakeup_watcher.py >> /var/log/guardrail-wakeup-watcher.log 2>&1
+    systemctl cat guardrail-wakeup-watcher.timer guardrail-wakeup-watcher.service
 
 Environment overrides (all optional):
 
@@ -57,8 +60,11 @@ Environment overrides (all optional):
     GUARDRAIL_WATCHER_LOOKBACK_MIN default 120 (only consider blocks this fresh)
     GUARDRAIL_WATCHER_QUIET_MIN   default 5 (session quiet this long before wake-up)
     GUARDRAIL_WATCHER_ORPHAN_MIN  default 10 (orphan quiet threshold, minutes)
-    GUARDRAIL_WATCHER_ORPHAN_LOOKBACK_MIN default 180 (ignore orphans staler than this)
+    GUARDRAIL_WATCHER_ORPHAN_LOOKBACK_MIN default 180 (ignore orphans staler than this;
+        the production timer unit currently overrides this to 60 via Environment=)
     GUARDRAIL_WATCHER_MAX_WAKEUPS default 5 (cap per run, shared blocks+orphans)
+    GUARDRAIL_WATCHER_WAKE_COOLDOWN_MIN default 45 (per-session wake-up cooldown, minutes)
+    GUARDRAIL_WATCHER_HANDLED_TTL_DAYS default 30 (prune handled entries older than this)
 """
 
 from __future__ import annotations
@@ -83,6 +89,8 @@ DEFAULTS = {
     "ORPHAN_MIN": 10,
     "ORPHAN_LOOKBACK_MIN": 180,
     "MAX_WAKEUPS": 5,
+    "WAKE_COOLDOWN_MIN": 45,
+    "HANDLED_TTL_DAYS": 30,
 }
 
 # Case-insensitive phrases marking a normal assistant conclusion. A session
@@ -141,6 +149,68 @@ def recent_block_events(events_db: str, lookback_min: int, now: float):
     return out
 
 
+def resolve_conversation_id(conn: sqlite3.Connection, session_id: str) -> str:
+    """Map a session id to the ``session_turn_leases.conversation_id`` key.
+
+    Read-only mirror of ``hermes_state_compression._session_turn_lease_key_on_conn``:
+    leases are keyed by the compression-lineage ROOT, so querying the lease table
+    with a child session id never matches (this used to make the live-lease
+    guard dead code). Walk ``parent_session_id`` while the parent ended with
+    ``end_reason='compression'`` (cycle-guarded; explicit fork/tool children stop
+    the walk). Any schema/read error falls back to ``session_id`` unchanged.
+    """
+    try:
+        def _row(sid: str):
+            r = conn.execute(
+                "SELECT id, parent_session_id, source, model_config, end_reason "
+                "FROM sessions WHERE id = ?",
+                (sid,),
+            ).fetchone()
+            return dict(r) if r else None
+
+        def _is_fork_child(row: dict) -> bool:
+            if row.get("source") == "tool":
+                return True
+            cfg = row.get("model_config")
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except (ValueError, TypeError):
+                    return False
+            if not isinstance(cfg, dict):
+                return False
+            markers = (cfg.get("_branched_from"), cfg.get("_delegate_from"))
+            parent_id = row.get("parent_session_id")
+            return parent_id in markers if parent_id else any(m is not None for m in markers)
+
+        current = _row(session_id)
+        seen = {session_id}
+        while current:
+            parent_id = current.get("parent_session_id")
+            if not parent_id or parent_id in seen or _is_fork_child(current):
+                break
+            parent = _row(parent_id)
+            if not parent or parent.get("end_reason") != "compression":
+                break
+            seen.add(parent_id)
+            current = parent
+        return str(current.get("id") or session_id) if current else session_id
+    except sqlite3.Error:
+        return session_id
+
+
+def _has_live_lease(conn: sqlite3.Connection, session_id: str, now: float) -> bool:
+    """True when the session's conversation lineage holds an unexpired turn lease."""
+    try:
+        lease = conn.execute(
+            "SELECT expires_at FROM session_turn_leases WHERE conversation_id = ?",
+            (resolve_conversation_id(conn, session_id),),
+        ).fetchone()
+        return bool(lease and float(lease["expires_at"]) > now)
+    except sqlite3.Error:
+        return False  # table missing or unreadable: fall back to quiet heuristic
+
+
 def session_status(state_db: str, session_id: str, now: float):
     """Return (ended: bool, last_activity_ts: float|None, live_lease: bool)."""
     conn = ro_connect(state_db)
@@ -157,15 +227,7 @@ def session_status(state_db: str, session_id: str, now: float):
             (session_id,),
         ).fetchone()
         last_ts = float(msg["ts"]) if msg and msg["ts"] is not None else None
-        live_lease = False
-        try:
-            lease = conn.execute(
-                "SELECT expires_at FROM session_turn_leases WHERE conversation_id = ?",
-                (session_id,),
-            ).fetchone()
-            live_lease = bool(lease and float(lease["expires_at"]) > now)
-        except sqlite3.Error:
-            pass  # table missing or unreadable: fall back to quiet heuristic
+        live_lease = _has_live_lease(conn, session_id, now)
         return False, last_ts, live_lease
     finally:
         conn.close()
@@ -218,17 +280,7 @@ def orphan_candidates(state_db: str, orphan_min: int, orphan_lookback_min: int, 
                 continue  # waiting on the user is not an orphan
             if looks_concluded(role, content):
                 continue
-            live_lease = False
-            try:
-                lease = conn.execute(
-                    "SELECT expires_at FROM session_turn_leases "
-                    "WHERE conversation_id = ?",
-                    (sid,),
-                ).fetchone()
-                live_lease = bool(lease and float(lease["expires_at"]) > now)
-            except sqlite3.Error:
-                pass
-            if live_lease:
+            if _has_live_lease(conn, sid, now):
                 continue
             out.append((sid, last_ts))
         return out
@@ -249,8 +301,8 @@ def wakeup_message(payload: dict) -> str:
         f"[Wake-up] The tool guardrail blocked {tool} ({code}). "
         "Try a different approach to your original goal: change the tool, "
         "the parameters, or the search terms \u2014 do not repeat the blocked call unchanged. "
-        "If you already tried 3 different approaches without progress, "
-        "summarize and ask the user for guidance."
+        "If you have already tried 3 different approaches without making progress, "
+        "summarize what you tried and ask the user for guidance."
     )
 
 
@@ -280,20 +332,77 @@ def inject_wakeup(webui: str, session_id: str, message: str) -> tuple[bool, str]
         return False, f"{type(exc).__name__}: {exc}"[:200]
 
 
-def load_handled(path: str) -> set:
+def load_watcher_state(path: str):
+    """Return (handled, handled_ts, last_wake).
+
+    ``handled`` is the set of consumed ``(session_id, event_id)`` / orphan keys,
+    ``handled_ts`` maps each key to the unix ts it was consumed, ``last_wake``
+    maps session_id to the unix ts of its last wake-up (per-session cooldown).
+    Backward compatible: state files written before timestamps existed carry
+    only ``handled``; missing timestamps are stamped on prune (one full TTL).
+    """
+    handled: set = set()
+    handled_ts: dict = {}
+    last_wake: dict = {}
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-        return set(data.get("handled", []))
     except (OSError, ValueError):
-        return set()
+        return handled, handled_ts, last_wake
+    if isinstance(data, dict):
+        for k in data.get("handled", []) or []:
+            handled.add(str(k))
+        hts = data.get("handled_ts")
+        if isinstance(hts, dict):
+            for k, v in hts.items():
+                try:
+                    handled_ts[str(k)] = float(v)
+                except (TypeError, ValueError):
+                    pass
+        lw = data.get("last_wake")
+        if isinstance(lw, dict):
+            for k, v in lw.items():
+                try:
+                    last_wake[str(k)] = float(v)
+                except (TypeError, ValueError):
+                    pass
+    return handled, handled_ts, last_wake
 
 
-def save_handled(path: str, handled: set) -> None:
+def save_watcher_state(path: str, handled: set, handled_ts: dict, last_wake: dict) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"handled": sorted(handled)}, fh)
+        json.dump(
+            {
+                "handled": sorted(handled),
+                "handled_ts": {k: handled_ts.get(k, 0.0) for k in sorted(handled)},
+                "last_wake": last_wake,
+            },
+            fh,
+        )
     os.replace(tmp, path)
+
+
+def prune_watcher_state(handled: set, handled_ts: dict, last_wake: dict,
+                        now: float, ttl_days: int):
+    """Drop handled entries and last-wake marks older than ``ttl_days`` (M10).
+
+    The dedup store would otherwise grow unbounded; pruning also lets a reused
+    session id be woken again after the TTL. Legacy entries without a timestamp
+    are stamped with ``now`` (kept one full TTL, fail-safe direction).
+    """
+    cutoff = now - max(1, int(ttl_days)) * 86400.0
+    for key in list(handled):
+        ts = handled_ts.get(key)
+        if ts is None:
+            handled_ts[key] = now
+        elif ts < cutoff:
+            handled.discard(key)
+            handled_ts.pop(key, None)
+    for sid in list(last_wake):
+        if last_wake[sid] < cutoff:
+            last_wake.pop(sid, None)
+    return handled, handled_ts, last_wake
 
 
 def main() -> int:
@@ -307,6 +416,8 @@ def main() -> int:
     orphan_min = cfg("ORPHAN_MIN")
     orphan_lookback_min = cfg("ORPHAN_LOOKBACK_MIN")
     max_wakeups = cfg("MAX_WAKEUPS")
+    wake_cooldown_s = cfg("WAKE_COOLDOWN_MIN") * 60
+    handled_ttl_days = cfg("HANDLED_TTL_DAYS")
 
     summary = {
         "events_seen": 0,
@@ -324,7 +435,9 @@ def main() -> int:
         return 1
     summary["events_seen"] = len(events)
 
-    handled = load_handled(state_file)
+    handled, handled_ts, last_wake = load_watcher_state(state_file)
+    handled, handled_ts, last_wake = prune_watcher_state(
+        handled, handled_ts, last_wake, now, handled_ttl_days)
     wakeups = 0
     woken_this_run = set()
 
@@ -357,6 +470,11 @@ def main() -> int:
         if now - event_ts < quiet_s:
             summary["skipped"].append({"session": session_id, "reason": "too soon"})
             continue
+        if now - last_wake.get(session_id, 0.0) < wake_cooldown_s:
+            # Per-session cooldown (M1): a stuck session re-blocks with a fresh
+            # event_id every few minutes; do not re-wake it in a tight loop.
+            summary["skipped"].append({"session": session_id, "reason": "cooldown"})
+            continue
         if wakeups >= max_wakeups:
             summary["skipped"].append({"session": session_id, "reason": "cap"})
             continue
@@ -364,6 +482,8 @@ def main() -> int:
         if ok:
             wakeups += 1
             handled.add(key)
+            handled_ts[key] = now
+            last_wake[session_id] = now
             woken_this_run.add(session_id)
             summary["woken"].append({"session": session_id, "detail": detail, "kind": "block"})
         else:
@@ -383,6 +503,9 @@ def main() -> int:
         if session_id in woken_this_run:
             # Already woken via a block event this run; do not double-wake.
             continue
+        if now - last_wake.get(session_id, 0.0) < wake_cooldown_s:
+            summary["skipped"].append({"session": session_id, "reason": "cooldown", "kind": "orphan"})
+            continue
         if wakeups >= max_wakeups:
             summary["skipped"].append({"session": session_id, "reason": "cap", "kind": "orphan"})
             continue
@@ -390,13 +513,17 @@ def main() -> int:
         if ok:
             wakeups += 1
             handled.add(key)
+            handled_ts[key] = now
+            last_wake[session_id] = now
             woken_this_run.add(session_id)
             summary["woken"].append({"session": session_id, "detail": detail, "kind": "orphan"})
         else:
             summary["errors"].append(f"wake-orphan {session_id}: {detail}")
 
+    for key in handled:
+        handled_ts.setdefault(key, now)
     try:
-        save_handled(state_file, handled)
+        save_watcher_state(state_file, handled, handled_ts, last_wake)
     except OSError as exc:
         summary["errors"].append(f"state_file: {exc}"[:200])
 

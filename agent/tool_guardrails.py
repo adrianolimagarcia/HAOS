@@ -391,7 +391,8 @@ class ToolCallGuardrailController:
         if record is not None and record[1] >= self.config.no_progress_block_after:
             result_hash, count = record
             # Phase 2: after max_alternative_attempts distinct approaches with no
-            # progress, escalate the block message to "ask the user".
+            # progress (counted cumulatively across blocks until progress is
+            # observed), escalate the block message to "ask the user".
             attempts = len(self._alternative_signatures)
             escalated = attempts >= self.config.max_alternative_attempts
             self._record_no_progress_block(signature, result_hash)
@@ -471,10 +472,20 @@ class ToolCallGuardrailController:
 
     # -- Phase 2 (wake-up guardrail): strategy counter ---------------------------
     def _record_no_progress_block(self, signature: ToolCallSignature, result_hash: str) -> None:
-        """Open a blocked episode; each new block starts a fresh episode."""
+        """Open (or continue) a blocked episode.
+
+        Alternative approaches accumulate CUMULATIVELY across blocks until one of
+        them makes progress (see _clear_blocked_episode): a stuck agent that tries
+        fewer than max_alternative_attempts approaches per episode and re-triggers
+        the block must still escalate to "ask the user" once the cumulative total
+        reaches the threshold. Resetting the counter on every block (the old
+        "fresh episode" behavior) let such an agent evade escalation forever,
+        and each new block emitted a fresh event_id that re-woke the session.
+        """
         self._blocked_signature = signature
         self._blocked_result_hash = result_hash
-        self._alternative_signatures = set()
+        # NOTE: _alternative_signatures is intentionally NOT cleared here: see docstring.
+
 
     def _track_post_block_alternative(self, signature: ToolCallSignature) -> None:
         """Count a distinct tool call tried after a no-progress block as one alternative."""

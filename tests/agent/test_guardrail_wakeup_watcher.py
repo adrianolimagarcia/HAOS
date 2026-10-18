@@ -41,7 +41,10 @@ def make_dbs(tmp):
     e.commit()
     e.close()
     s = sqlite3.connect(state_db)
-    s.execute("CREATE TABLE sessions(id TEXT PRIMARY KEY, ended_at REAL)")
+    s.execute(
+        "CREATE TABLE sessions(id TEXT PRIMARY KEY, ended_at REAL, "
+        "parent_session_id TEXT, source TEXT, model_config TEXT, end_reason TEXT)"
+    )
     s.execute("CREATE TABLE messages(session_id TEXT, role TEXT, content TEXT, timestamp REAL, active INTEGER)")
     s.execute("CREATE TABLE session_turn_leases(conversation_id TEXT PRIMARY KEY, holder TEXT, acquired_at REAL, expires_at REAL)")
     s.commit()
@@ -52,6 +55,18 @@ def make_dbs(tmp):
 def add_session(state_db, sid, ended_at=None):
     s = sqlite3.connect(state_db)
     s.execute("INSERT INTO sessions(id, ended_at) VALUES (?, ?)", (sid, ended_at))
+    s.commit()
+    s.close()
+
+
+def add_session_full(state_db, sid, ended_at=None, parent_session_id=None,
+                   source=None, model_config=None, end_reason=None):
+    s = sqlite3.connect(state_db)
+    s.execute(
+        "INSERT INTO sessions(id, ended_at, parent_session_id, source, model_config, end_reason)"
+        " VALUES (?,?,?,?,?,?)",
+        (sid, ended_at, parent_session_id, source, model_config, end_reason),
+    )
     s.commit()
     s.close()
 
@@ -235,6 +250,118 @@ def test_shared_cap_blocks_and_orphans():
     assert len(h.calls) == 1, h.calls
     assert h.calls[0][0] == "sb"  # block path wins; orphan capped
     assert h.summary["orphans_seen"] == 2  # sb also qualifies as orphan; already woken via block, no double-wake
+
+
+def test_block_live_lease_on_lineage_root_not_woken():
+    """H1 regression: the live-lease guard resolves session_id -> conversation_id.
+
+    The lease row is keyed by the compression-lineage root, not by the child
+    session id. The watcher must NOT wake a blocked child whose lineage holds
+    a live turn lease.
+    """
+    h = Harness()
+    now = time.time()
+    add_session_full(h.state_db, "root", ended_at=now - 1000, end_reason="compression")
+    add_session_full(h.state_db, "child", parent_session_id="root")
+    add_message(h.state_db, "child", "assistant", "tentando de novo", now - 600)
+    add_lease(h.state_db, "root", now + 600)  # live lease on the lineage root
+    add_block_event(h.events_db, "ev1", "child", now - 360)
+    h.run()
+    assert h.summary["events_seen"] == 1, h.summary
+    assert h.calls == [], h.calls
+    assert any(s.get("reason") == "live lease" for s in h.summary["skipped"]), h.summary
+
+
+def test_orphan_live_lease_on_lineage_root_not_woken():
+    """H1 regression (orphan path): same lineage-root lease skips the orphan wake."""
+    h = Harness()
+    now = time.time()
+    add_session_full(h.state_db, "root", ended_at=now - 2000, end_reason="compression")
+    add_session_full(h.state_db, "child", parent_session_id="root")
+    add_message(h.state_db, "child", "assistant", "verificando o deploy", now - 900)
+    add_lease(h.state_db, "root", now + 600)  # live lease on the lineage root
+    h.run()
+    assert h.summary["orphans_seen"] == 0, h.summary
+    assert h.calls == [], h.calls
+
+
+def test_block_expired_lease_on_lineage_root_woken():
+    """Control for the H1 tests: an EXPIRED lease on the lineage root still wakes."""
+    h = Harness()
+    now = time.time()
+    add_session_full(h.state_db, "root", ended_at=now - 1000, end_reason="compression")
+    add_session_full(h.state_db, "child", parent_session_id="root")
+    add_message(h.state_db, "child", "assistant", "tentando de novo", now - 600)
+    add_lease(h.state_db, "root", now - 60)  # expired lease
+    add_block_event(h.events_db, "ev1", "child", now - 360)
+    h.run()
+    assert len(h.calls) == 1, h.calls
+    assert h.calls[0][0] == "child" and h.calls[0][1] == "block"
+
+
+def test_block_wakeup_cooldown_per_session():
+    """M1 regression: no re-wake for the same session inside the wake cooldown.
+
+    A stuck session re-blocks with a fresh event_id every few minutes; the
+    watcher must skip (reason=cooldown) instead of waking again.
+    """
+    h = Harness()
+    now = time.time()
+    add_session(h.state_db, "s10")
+    add_message(h.state_db, "s10", "assistant", "tentando de novo", now - 600)
+    add_block_event(h.events_db, "ev1", "s10", now - 360)
+    h.run()
+    assert len(h.calls) == 1, h.calls
+
+    # A second block event for the same session, minutes later: cooled down.
+    e = sqlite3.connect(h.events_db)
+    e.execute(
+        "INSERT INTO events(event_id, timestamp, name, payload) VALUES (?,?,?,?)",
+        ("ev2", time.time() - 60, "agent.guardrail.blocked",
+         json.dumps({"session_id": "s10", "tool_name": "search_files",
+                     "code": "x", "escalated": False})),
+    )
+    e.commit()
+    e.close()
+    h.run()
+    assert len(h.calls) == 1, h.calls  # no second wake-up
+    assert any(s.get("reason") == "cooldown" for s in h.summary["skipped"]), h.summary
+
+
+def test_handled_entries_pruned_after_ttl():
+    """M10 regression: handled entries older than HANDLED_TTL_DAYS are pruned."""
+    h = Harness()
+    now = time.time()
+    add_session(h.state_db, "s11")
+    add_message(h.state_db, "s11", "assistant", "tentando", now - 600)
+    add_block_event(h.events_db, "ev1", "s11", now - 360)
+    h.run()
+    assert len(h.calls) == 1
+
+    state = json.load(open(h.state_file, encoding="utf-8"))
+    assert "s11:ev1" in state["handled"], state
+    # Age the entry 31 days back and re-run: it must be pruned from the store.
+    state["handled_ts"]["s11:ev1"] = now - 31 * 86400
+    json.dump(state, open(h.state_file, "w", encoding="utf-8"))
+    h.run()
+    state = json.load(open(h.state_file, encoding="utf-8"))
+    assert "s11:ev1" not in state["handled"], state
+    assert "s11:ev1" not in state["handled_ts"], state
+
+
+def test_handled_legacy_entries_without_timestamp_are_kept():
+    """M10: pre-timestamp state files are stamped (kept one full TTL), not dropped."""
+    h = Harness()
+    now = time.time()
+    add_session(h.state_db, "s12")
+    add_message(h.state_db, "s12", "assistant", "tentando", now - 600)
+    add_block_event(h.events_db, "ev1", "s12", now - 360)
+    # Legacy format: only "handled", no timestamps.
+    json.dump({"handled": ["s12:ev1"]}, open(h.state_file, "w", encoding="utf-8"))
+    h.run()
+    state = json.load(open(h.state_file, encoding="utf-8"))
+    assert "s12:ev1" in state["handled"], state
+    assert state["handled_ts"]["s12:ev1"] >= now - 5, state
 
 
 if __name__ == "__main__":

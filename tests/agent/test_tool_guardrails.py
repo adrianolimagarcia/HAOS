@@ -438,6 +438,42 @@ def test_strategy_counter_escalates_after_three_alternatives_without_progress():
     assert "Ask the user" in blocked2.message
 
 
+def test_strategy_counter_escalates_cumulatively_across_blocks():
+    """M1 regression: alternative approaches accumulate ACROSS block episodes.
+
+    A stuck agent that tries <=2 alternatives per episode and re-triggers the
+    block must still escalate to "ask the user" once the cumulative total
+    reaches max_alternative_attempts. (The old per-block reset let it evade
+    escalation forever, re-waking the session on every fresh event_id.)
+    """
+    controller = _blocked_controller()
+    _drive_no_progress_block(controller)  # block 1
+    controller.reset_for_turn()
+
+    # Episode 1: one alternative, no progress -> block 2 (not escalated: 1/3).
+    controller.before_call("web_search", {"q": "a"})
+    controller.after_call("web_search", {"q": "a"}, "same-result", failed=False)
+    blocked2 = _drive_no_progress_block(controller)
+    assert blocked2.code == "idempotent_no_progress_block"
+    assert "Ask the user" not in blocked2.message
+    controller.reset_for_turn()
+
+    # Episode 2: second alternative, no progress -> block 3 (not escalated: 2/3).
+    controller.before_call("read_file", {"path": "/x"})
+    controller.after_call("read_file", {"path": "/x"}, "same-result", failed=False)
+    blocked3 = _drive_no_progress_block(controller)
+    assert blocked3.code == "idempotent_no_progress_block"
+    assert "Ask the user" not in blocked3.message
+    controller.reset_for_turn()
+
+    # Episode 3: third alternative, no progress -> block 4 ESCALATES (3/3).
+    controller.before_call("web_search", {"q": "b"})
+    controller.after_call("web_search", {"q": "b"}, "same-result", failed=False)
+    blocked4 = _drive_no_progress_block(controller)
+    assert blocked4.code == "idempotent_no_progress_block_escalated"
+    assert "Ask the user" in blocked4.message
+
+
 def test_strategy_counter_does_not_escalate_before_three_alternatives():
     controller = _blocked_controller()
     _drive_no_progress_block(controller)
