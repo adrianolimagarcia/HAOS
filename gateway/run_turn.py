@@ -2645,11 +2645,18 @@ class GatewayTurnMixin:
         self, message: str, context_prompt: str, history: List[Dict[str, Any]],
         source: "SessionSource", session_id: str, session_key: str = None,
         run_generation: Optional[int] = None, event_message_id: Optional[str] = None,
+        civ_bot_id: Optional[str] = None, channel_prompt: Optional[str] = None,
+        moa_config: Optional[dict] = None, message_type: Optional[str] = None,
+        _interrupt_depth: int = 0, inbound_message_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Forward the message to a remote Hermes API server instead of running a local AIAgent.
 
         Lets a Docker container handle Matrix E2EE while the agent runs on the host with full
-        access to local files, memory, skills, and a unified session store."""
+        access to local files, memory, skills, and a unified session store.
+
+        Turn-scoped kwargs (civ_bot_id, channel_prompt, moa_config, message_type,
+        _interrupt_depth, inbound_message_id) are forwarded as X-Hermes-* headers so the
+        proxy branch of _run_agent_inner no longer drops them silently."""
         from gateway.run import _GATEWAY_PROXY_SSE_BUFFER_MAX_CHARS
         try:
             from aiohttp import ClientSession as _AioClientSession, ClientTimeout
@@ -2699,6 +2706,30 @@ class GatewayTurnMixin:
             headers["Authorization"] = f"Bearer {proxy_key}"
         if session_id:
             headers["X-Hermes-Session-Id"] = session_id
+        # M4: forward the turn-scoped kwargs that _run_agent_inner would otherwise
+        # silently drop in proxy mode (same bug class as the 2026-10-12 civ_bot_id
+        # TypeError, different branch). The X-Hermes-* header convention is already
+        # established by X-Hermes-Session-Id above; headers are safely ignored by
+        # remotes that don't understand them (unlike unknown body fields, which
+        # strict OpenAI-compatible validators may reject with 400).
+        # NOTE: the remote API server does not yet honor these headers — it keeps
+        # applying its default routing/personality. Honoring them server-side
+        # (gateway/platforms/api_server_openai_routes.py) is the follow-up.
+        # persist_user_* are intentionally NOT propagated: in proxy mode the
+        # remote agent host owns session persistence (unified store); the user
+        # message itself already travels in the request body.
+        if civ_bot_id:
+            headers["X-Hermes-Civ-Bot-Id"] = str(civ_bot_id)
+        if channel_prompt:
+            headers["X-Hermes-Channel-Prompt"] = str(channel_prompt)
+        if moa_config:
+            headers["X-Hermes-Moa-Config"] = json.dumps(moa_config)
+        if message_type:
+            headers["X-Hermes-Message-Type"] = str(message_type)
+        if _interrupt_depth:
+            headers["X-Hermes-Interrupt-Depth"] = str(int(_interrupt_depth))
+        if inbound_message_id:
+            headers["X-Hermes-Inbound-Message-Id"] = str(inbound_message_id)
         body = {"model": "hermes-agent", "messages": api_messages, "stream": True}
 
         _thread_metadata: Optional[Dict[str, Any]] = self._thread_metadata_for_source(source, event_message_id)
@@ -4101,6 +4132,9 @@ class GatewayTurnMixin:
                 message=message, context_prompt=context_prompt, history=history, source=source,
                 session_id=session_id, session_key=session_key, run_generation=run_generation,
                 event_message_id=event_message_id,
+                _interrupt_depth=_interrupt_depth, inbound_message_id=inbound_message_id,
+                channel_prompt=channel_prompt, moa_config=moa_config,
+                message_type=message_type, civ_bot_id=civ_bot_id,
             )
 
         from run_agent import AIAgent

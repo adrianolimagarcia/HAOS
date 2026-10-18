@@ -486,3 +486,120 @@ class TestEnvVarRegistration:
         assert info["category"] == "messaging"
         assert info["password"] is False
 
+
+
+class TestProxyKwargForwarding:
+    """M4 (revisao-haos-20261018): _run_agent_inner's proxy branch silently dropped
+    civ_bot_id, channel_prompt, moa_config, message_type, persist_user_*,
+    inbound_message_id and _interrupt_depth — same bug class as the 2026-10-12
+    civ_bot_id TypeError, different branch. They are now forwarded as X-Hermes-*
+    headers (persist_user_* intentionally stay local: the remote agent host owns
+    persistence in proxy mode)."""
+
+    @pytest.mark.asyncio
+    async def test_forwards_turn_kwargs_as_headers(self, monkeypatch):
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
+        runner = _make_runner()
+        source = _make_source()
+
+        resp = _FakeSSEResponse(
+            status=200,
+            sse_chunks=[b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'],
+        )
+        session = _FakeSession(resp)
+
+        with patch("gateway.run._load_gateway_config", return_value={}):
+            with _patch_aiohttp(session):
+                with patch("aiohttp.ClientTimeout"):
+                    await runner._run_agent_via_proxy(
+                        message="hello",
+                        context_prompt="",
+                        history=[],
+                        source=source,
+                        session_id="test",
+                        civ_bot_id="lean-bot",
+                        channel_prompt="channel prompt text",
+                        moa_config={"rounds": 2},
+                        message_type="voice",
+                        _interrupt_depth=2,
+                        inbound_message_id="evt-123",
+                    )
+
+        headers = session.captured_headers
+        assert headers["X-Hermes-Civ-Bot-Id"] == "lean-bot"
+        assert headers["X-Hermes-Channel-Prompt"] == "channel prompt text"
+        assert headers["X-Hermes-Moa-Config"] == '{"rounds": 2}'
+        assert headers["X-Hermes-Message-Type"] == "voice"
+        assert headers["X-Hermes-Interrupt-Depth"] == "2"
+        assert headers["X-Hermes-Inbound-Message-Id"] == "evt-123"
+
+    @pytest.mark.asyncio
+    async def test_no_kwarg_headers_when_unset(self, monkeypatch):
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        monkeypatch.delenv("GATEWAY_PROXY_KEY", raising=False)
+        runner = _make_runner()
+        source = _make_source()
+
+        resp = _FakeSSEResponse(
+            status=200,
+            sse_chunks=[b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'],
+        )
+        session = _FakeSession(resp)
+
+        with patch("gateway.run._load_gateway_config", return_value={}):
+            with _patch_aiohttp(session):
+                with patch("aiohttp.ClientTimeout"):
+                    await runner._run_agent_via_proxy(
+                        message="hello",
+                        context_prompt="",
+                        history=[],
+                        source=source,
+                        session_id="test",
+                    )
+
+        headers = session.captured_headers
+        for name in (
+            "X-Hermes-Civ-Bot-Id",
+            "X-Hermes-Channel-Prompt",
+            "X-Hermes-Moa-Config",
+            "X-Hermes-Message-Type",
+            "X-Hermes-Interrupt-Depth",
+            "X-Hermes-Inbound-Message-Id",
+        ):
+            assert name not in headers
+
+    @pytest.mark.asyncio
+    async def test_inner_propagates_kwargs_to_via_proxy(self, monkeypatch):
+        """_run_agent_inner must pass the turn kwargs through (not just accept them)."""
+        monkeypatch.setenv("GATEWAY_PROXY_URL", "http://host:8642")
+        runner = _make_runner()
+        source = _make_source()
+
+        captured = {}
+
+        async def _fake_via_proxy(**kwargs):
+            captured.update(kwargs)
+            return {"final_response": "", "messages": [], "api_calls": 0, "tools": []}
+
+        runner._run_agent_via_proxy = _fake_via_proxy
+        await runner._run_agent_inner(
+            message="hi",
+            context_prompt="",
+            history=[],
+            source=source,
+            session_id="s1",
+            civ_bot_id="reverse-bot",
+            channel_prompt="cp",
+            moa_config={"a": 1},
+            message_type="text",
+            _interrupt_depth=3,
+            inbound_message_id="in-9",
+        )
+
+        assert captured["civ_bot_id"] == "reverse-bot"
+        assert captured["channel_prompt"] == "cp"
+        assert captured["moa_config"] == {"a": 1}
+        assert captured["message_type"] == "text"
+        assert captured["_interrupt_depth"] == 3
+        assert captured["inbound_message_id"] == "in-9"
