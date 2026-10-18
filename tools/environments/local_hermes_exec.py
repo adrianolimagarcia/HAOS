@@ -33,7 +33,7 @@ def healthcheck() -> tuple[bool, str]:
         child_env["HERMES_EXEC_ROOT"] = cwd
         req = {"id": 1, "method": "exec", "params": {"command": command, "cwd": ".", "timeout_ms": int(timeout) * 1000, "stdin": stdin_data}}
         try:
-            p = subprocess.run([binary], input=json.dumps(req)+"\n", text=True, capture_output=True, env=child_env, timeout=max(1, int(timeout)+5))
+            p = subprocess.run([binary], input=json.dumps(req)+"\n", text=True, encoding="utf-8", errors="replace", capture_output=True, env=child_env, timeout=max(1, int(timeout)+5))
         except subprocess.TimeoutExpired:
             return "hermes-exec healthcheck timeout", 124
         if p.returncode:

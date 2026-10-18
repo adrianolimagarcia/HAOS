@@ -310,7 +310,7 @@ SQLite, não mock.
   com o gate de cobertura 0.21.83 as interceptações caíram de 35 → 4 e **todas as 4 são
   aliases legítimos**. Não existe evidência de falso-positivo que justifique a máquina.
   Reavaliar **depois** da Fase 1, quando a base de comparação muda.
-* **Não** adicionar ferramenta core nem novo `HERMES_*`. Superfície: `hermes memory self-index
+* **Não** adicionar ferramenta core nem novo `HERMES_*`. Superfície: `haos memory self-index
   {build|report|prune}` no `hermes_cli/subcommands/memory.py`, espelhando `memory raptor build`.
 
 ---

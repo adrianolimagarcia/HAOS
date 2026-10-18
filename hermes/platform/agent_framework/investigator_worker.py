@@ -104,7 +104,7 @@ def main():
         raw = sys.stdin.buffer.read(MAX_IPC_BYTES + 1)
         if len(raw) > MAX_IPC_BYTES:
             return 1
-        with open(os.devnull, "w") as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        with open(os.devnull, "w", encoding="utf-8") as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             result = investigate_request(decode_json(raw))
         output = json.dumps(result, allow_nan=False, separators=(",", ":")).encode("utf-8")
         if len(output) > MAX_IPC_BYTES:

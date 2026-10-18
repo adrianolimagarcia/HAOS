@@ -19,7 +19,7 @@ SESSION_ID_PATTERN = re.compile(r"^\d{8}_\d{6}_")
 # Not every session id is minted by ``new_session_id``. Several first-class surfaces derive an id
 # from something they already have (a job id, a clock, a room hash) so the id itself carries the
 # provenance. Salvage classifies schema-less rows by these shapes, so a surface missing here (a)
-# has its sessions DROPPED by ``hermes sessions recover`` (classify returns None) and (b) poisons
+# has its sessions DROPPED by ``haos sessions recover`` (classify returns None) and (b) poisons
 # layout inference for the WHOLE table via ``parent_session_id``: an ordinary child session of a
 # cron job classifies fine but carries the unrecognised parent id, and one bad sampled value vetoes
 # every candidate layout, which drops recovery onto the positional-guessing fallback. Measured on a

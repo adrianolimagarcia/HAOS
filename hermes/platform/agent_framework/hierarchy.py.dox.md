@@ -1,5 +1,25 @@
 # Bounded operational hierarchy
 
+## Purpose
+Implement a bounded operational hierarchy that diagnoses supplied storage,
+memory and system telemetry. It does not perform remediation, background host
+probing, model invocation or deployment.
+
+## Contract
+HierarchicalDiagnostician.diagnose(telemetry) provides synchronous results and
+run(telemetry, tasks=None, cancel_event=None) provides asynchronous task-DAG
+execution using canonical TaskSpec dependencies. Worker inputs are copied,
+readiness follows declared prerequisites, and output follows task order.
+Invalid DAGs, failure, timeout and cancellation are explicit result statuses
+rather than implicit success. Async workers must cooperate with cancellation.
+
+## Side effects
+The built-in workers inspect only supplied telemetry, and this module does not
+write files, invoke subprocesses, mutate host settings or make network calls.
+The diagnostician records its latest result on the instance. Callers own any
+persistence or action execution; injected trusted worker functions are
+responsible for their own side effects.
+
 ## API
 `HierarchicalDiagnostician` provides synchronous `diagnose(telemetry)` for the
 operational pipeline and asynchronous `run(telemetry, tasks=None,
