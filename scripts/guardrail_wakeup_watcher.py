@@ -103,6 +103,28 @@ CONCLUSION_SIGNALS = (
     "corrigido",
 )
 
+# Negations that flip a conclusion signal into a FAILURE report (B-i): the raw
+# substring signals above also match failure phrasing — "conclu" is inside
+# "não consegui concluir", "inconclusivo", etc. A session whose last assistant
+# message reports that it could NOT conclude died mid-failure, not mid-conclusion,
+# and must stay wakeable as an orphan. Checked before CONCLUSION_SIGNALS.
+_CONCLUSION_NEGATIONS = (
+    "não consegui concluir",
+    "nao consegui concluir",
+    "não foi possível concluir",
+    "nao foi possivel concluir",
+    "não foi possivel concluir",
+    "nao foi possível concluir",
+    "não conclui",
+    "nao conclui",
+    "não concluído",
+    "nao concluido",
+    "inconclusiv",
+    "sem concluir",
+    "falha ao concluir",
+    "falhei ao concluir",
+)
+
 
 def cfg(name: str):
     val = os.environ.get("GUARDRAIL_WATCHER_" + name, DEFAULTS[name])
@@ -172,10 +194,17 @@ def session_status(state_db: str, session_id: str, now: float):
 
 
 def looks_concluded(role, content) -> bool:
-    """True when the last activity looks like a normal assistant conclusion."""
+    """True when the last activity looks like a normal assistant conclusion.
+
+    Negation-aware (B-i): failure reports that merely mention a conclusion word
+    ("não consegui concluir") return False — the session died mid-failure and
+    must be woken as an orphan, not filed as concluded.
+    """
     if role != "assistant" or not content:
         return False
     text = str(content).lower()
+    if any(neg in text for neg in _CONCLUSION_NEGATIONS):
+        return False
     return any(sig in text for sig in CONCLUSION_SIGNALS)
 
 

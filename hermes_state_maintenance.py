@@ -124,13 +124,17 @@ class SessionMaintenanceMixin:
         exclude_ids: Tuple[str, ...] = (), exclude_pinned: bool = False,
         heartbeat_staleness_seconds: Optional[float] = None,
         heartbeat_ownership_grace_seconds: Optional[float] = None, respect_gateway_heartbeats: bool = True,
+        end_reason: str = "startup_orphan_reap",
     ) -> List[str]:
         """Close session rows orphaned by a dead gateway process (its in-process disconnect grace timer died
         with it, leaving ``ended_at IS NULL`` forever).  Rows of ``sources`` whose ``started_at`` AND
         canonical last activity are both older than ``max_idle_seconds`` get
-        ``end_reason='startup_orphan_reap'`` (the ``started_at`` predicate protects fresh compression/branch
-        children whose copied activity is old).  Only pass sources whose lifecycle the caller owns — never
-        messaging platforms like ``telegram`` (ending those triggers a routing loop).  ``exclude_ids`` spares
+        ``end_reason`` (default ``'startup_orphan_reap'``; the ``started_at`` predicate protects fresh
+        compression/branch children whose copied activity is old).  Only pass sources whose lifecycle the
+        caller owns.  Messaging platforms (``telegram``) and ``webui`` join only through the dedicated
+        interactive idle-reap in :meth:`maybe_auto_prune_and_vacuum` (idle > 7 days,
+        ``end_reason='idle_reap'``) — ad-hoc reaps of messaging rows risk routing loops in clients that
+        watch for session end.  ``exclude_ids`` spares
         rows this process still holds.  Non-destructive: messages kept, row resumable, first-reason-wins.
         With ``respect_gateway_heartbeats`` a row is reaped only when no live backend (heartbeat within
         ``heartbeat_staleness_seconds``, default ``2 * max_idle_seconds``) could own it: B owns S if
@@ -147,6 +151,8 @@ class SessionMaintenanceMixin:
         srcs = tuple(s for s in sources if s)
         if max_idle_seconds <= 0 or not srcs:
             return []
+        if end_reason not in ("startup_orphan_reap", "idle_reap"):
+            raise ValueError(f"unknown sweep end_reason: {end_reason!r}")
         hb_staleness, hb_grace = heartbeat_staleness_seconds, heartbeat_ownership_grace_seconds
         if not (hb_staleness and hb_staleness > 0):
             hb_staleness = max_idle_seconds * 2
@@ -172,9 +178,9 @@ class SessionMaintenanceMixin:
                 return []
             # Re-apply every predicate under the write lock.
             conn.execute(
-                f"UPDATE sessions SET ended_at = ?, end_reason = 'startup_orphan_reap'"
+                f"UPDATE sessions SET ended_at = ?, end_reason = ?"
                 f" WHERE id IN ({_placeholders(victims)}) AND ended_at IS NULL{scope_sql}",
-                (time.time(), *victims, *scope_params))
+                (time.time(), end_reason, *victims, *scope_params))
             return victims
         return self._execute_write(_do) or []
 
@@ -377,19 +383,25 @@ class SessionMaintenanceMixin:
         rewrite.  Stale-open reconciliation: cron/kanban/subagent/one-shot CLI rows never set ``ended_at``
         when their process dies and prune only deletes ended rows, so after pruning, open rows from
         :attr:`_AUTO_PRUNE_STALE_OPEN_SOURCES` older than ``retention_days`` are closed
-        (``startup_orphan_reap``); they stay resumable and age from their close.  Returns ``{"skipped",
-        "pruned", "closed", "vacuumed"}`` plus ``"freelist_ratio"`` when a VACUUM was considered and
-        ``"error"`` on failure.
+        (``startup_orphan_reap``); they stay resumable and age from their close.  Stored
+        message counters are realigned with the active-row truth
+        (``reconcile_session_message_counts``, H2) and interactive (webui/telegram)
+        rows idle over 7 days are closed as ``idle_reap`` (M5; resumable,
+        first-reason-wins).  Returns ``{"skipped", "pruned", "closed", "reconciled",
+        "idle_reaped", "vacuumed"}`` plus ``"freelist_ratio"`` when a VACUUM was
+        considered and ``"error"`` on failure.
 
         Records the last run timestamp in state_meta so subsequent calls within ``min_interval_hours``
         no-op. Designed to be called once at startup from long-lived entrypoints (CLI, gateway, cron
         scheduler). See #54189.
         When *sessions_dir* is provided, on-disk transcript files (``.json`` / ``.jsonl`` /
         ``request_dump_*``) for pruned sessions are removed as part of the same sweep (issue #3015).
-        Messaging and UI sources are never touched here. See #54189.
+        Messaging/UI sources join only the 7-day idle reap above, never the
+        retention-days stale-open sweep. See #54189.
         """
         from hermes_state_repair import _release_auto_maintenance_lock, _try_acquire_auto_maintenance_lock
-        result: Dict[str, Any] = {"skipped": False, "pruned": 0, "closed": 0, "vacuumed": False}
+        result: Dict[str, Any] = {"skipped": False, "pruned": 0, "closed": 0, "reconciled": 0,
+                                 "idle_reaped": 0, "vacuumed": False}
         maintenance_lock = _try_acquire_auto_maintenance_lock(self.db_path)
         if maintenance_lock is None:
             result["skipped"] = True
@@ -415,6 +427,25 @@ class SessionMaintenanceMixin:
                 respect_gateway_heartbeats=False,  # state-owned lifecycles, not gateway heartbeats
             )
             result["closed"] = len(closed)
+            # H2: the incremental message_count bump only adds, so compacted /
+            # rolled-back rows leave stored counters permanently inflated
+            # (observed 8,392,043 vs 1,356 active rows). One bounded SQL pass
+            # realigns them with the active-row truth; idempotent (rewrites to
+            # the true count) and throttled by min_interval_hours with the rest
+            # of this maintenance.
+            report_startup_progress(900.0, phase="state_db_message_count_reconcile")
+            result["reconciled"] = self.reconcile_session_message_counts()
+            # M5: interactive (webui/telegram) rows whose owner died never get
+            # ended_at either. Reap them after 7 idle days as 'idle_reap'
+            # (resumable, first-reason-wins); the 7-day bar keeps watched and
+            # active sessions untouched (dry-run 2026-10-18 reaped 0 rows).
+            report_startup_progress(900.0, phase="state_db_idle_reap_interactive")
+            idle_reaped = self.sweep_orphaned_sessions(
+                max_idle_seconds=self._IDLE_REAP_INTERACTIVE_SECONDS,
+                sources=self._IDLE_REAP_INTERACTIVE_SOURCES, exclude_pinned=True,
+                end_reason="idle_reap",
+            )
+            result["idle_reaped"] = len(idle_reaped)
             # VACUUM only if rows were freed, the time throttle passed AND the
             # freelist ratio passed — it holds an exclusive lock for a full rewrite.
             since_vacuum = _seconds_since(now, self.get_meta("last_vacuum"))
@@ -437,10 +468,12 @@ class SessionMaintenanceMixin:
                                  ratio * 100.0, min_vacuum_freelist_ratio * 100.0)
             # Record even when pruned == 0 so the throttle holds.
             self.set_meta("last_auto_prune", str(now))
-            if closed or pruned > 0:
+            if closed or pruned > 0 or result["reconciled"] or result["idle_reaped"]:
                 logger.info("state.db auto-maintenance: closed %d stale open session(s), "
-                            "pruned %d session(s) inactive for %d days%s",
-                            len(closed), pruned, retention_days, " + VACUUM" if result["vacuumed"] else "")
+                            "reconciled %d message counter(s), idle-reaped %d interactive "
+                            "session(s), pruned %d session(s) inactive for %d days%s",
+                            len(closed), result["reconciled"], result["idle_reaped"],
+                            pruned, retention_days, " + VACUUM" if result["vacuumed"] else "")
         except Exception as exc:
             # Maintenance must never block startup.
             logger.warning("state.db auto-maintenance failed: %s", exc)

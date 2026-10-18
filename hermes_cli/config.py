@@ -1901,13 +1901,24 @@ def _canonicalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
 # the iteration budget without an "unlimited" special case, and is unreachable in practice.
 TURN_LIMIT_UNLIMITED = sys.maxsize
 
+# Fail-closed fallback for UNPARSEABLE values (M6): a typo like "unlimted" must
+# never silently buy sys.maxsize iterations. Deliberately finite yet generous —
+# the same order as the built-in per-agent default (500).
+TURN_LIMIT_FALLBACK = 500
+
 # Spellings that mean "no limit" (compared lowercased, whitespace-stripped).
 _UNLIMITED_SPELLINGS = frozenset({
     "none", "null", "unlimited", "infinite", "infinity", "inf", "∞", "-1", "0"})
 
 
 def resolve_turn_limit(raw: Any, default: int = TURN_LIMIT_UNLIMITED) -> int:
-    """Normalize a raw ``agent.max_turns`` value into an int iteration cap (always >= 1)."""
+    """Normalize a raw ``agent.max_turns`` value into an int iteration cap (always >= 1).
+
+    Fail-closed (M6): only an exact documented spelling yields ``TURN_LIMIT_UNLIMITED``;
+    an unparseable value (typo, wrong type) falls back to the finite
+    ``TURN_LIMIT_FALLBACK`` (500), never to unlimited. ``None``/unset keeps the
+    caller's ``default`` (documented default: unlimited).
+    """
     # bool is a subclass of int; reject explicitly so True/False don't become 1/0.
     if raw is None or isinstance(raw, bool):
         return default
@@ -1925,12 +1936,15 @@ def resolve_turn_limit(raw: Any, default: int = TURN_LIMIT_UNLIMITED) -> int:
             try:
                 n = int(float(s))
             except ValueError:
-                logger.debug("resolve_turn_limit: unparseable value %r → default %d", raw, default)
-                return default
+                logger.debug("resolve_turn_limit: unparseable value %r → finite fallback %d",
+                             raw, TURN_LIMIT_FALLBACK)
+                return TURN_LIMIT_FALLBACK
     else:
-        # Unknown type (list, dict, …) — don't crash the agent over a bad config.
-        logger.debug("resolve_turn_limit: unsupported type %s (%r) → default %d", type(raw).__name__, raw, default)
-        return default
+        # Unknown type (list, dict, …) — don't crash the agent over a bad config,
+        # and don't hand it unlimited iterations either (M6).
+        logger.debug("resolve_turn_limit: unsupported type %s (%r) → finite fallback %d",
+                     type(raw).__name__, raw, TURN_LIMIT_FALLBACK)
+        return TURN_LIMIT_FALLBACK
     return TURN_LIMIT_UNLIMITED if n <= 0 else n
 
 

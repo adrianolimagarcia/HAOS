@@ -331,8 +331,10 @@ class TestSweepOrphanedSessions:
         assert db.get_session("live-turn")["ended_at"] is None
         assert db.get_session("recent-orphan")["ended_at"] is None
         assert db.get_session("runtime-owned-ui")["ended_at"] is None
-        assert db.get_session("keyed")["ended_at"] is None
-        assert db.get_session("unkeyed-gateway")["ended_at"] is None
+        # M5: messaging rows idle > 7 days are closed as 'idle_reap' (resumable),
+        # no longer left open forever.
+        assert db.get_session("keyed")["end_reason"] == "idle_reap"
+        assert db.get_session("unkeyed-gateway")["end_reason"] == "idle_reap"
 
         second = db.maybe_auto_prune_and_vacuum(
             retention_days=90,
@@ -340,7 +342,10 @@ class TestSweepOrphanedSessions:
             vacuum=False,
         )
 
-        assert second["pruned"] == 0
+        # M5: the two telegram rows closed as idle_reap on pass 1 were already
+        # 100d inactive, so the regular 90-day ended-session prune collects them
+        # on pass 2.
+        assert second["pruned"] == 2
         assert db.get_session("orphan") is not None
         assert db.get_session("stale-cron") is not None
 
@@ -541,8 +546,9 @@ class TestSweepOrphanedSessions:
     ):
         """#54189 end-to-end: leaky producers (cron/kanban/subagent) never set
         ``ended_at``; pass 1 closes them (reported via ``closed``), pass 2 —
-        after a further retention window — deletes them, and a messaging row
-        is never touched by either pass."""
+        after a further retention window — deletes them. A messaging row idle
+        > 7 days is closed as ``idle_reap`` on pass 1 (M5; resumable) but never
+        by the retention-days stale-open sweep."""
         stale = time.time() - 200 * 86400
         for sid, source in (
             ("cron-0", "cron"),
@@ -560,7 +566,9 @@ class TestSweepOrphanedSessions:
         assert first["pruned"] == 0
         for sid in ("cron-0", "kanban-1", "subagent-2"):
             assert db.get_session(sid)["end_reason"] == "startup_orphan_reap"
-        assert db.get_session("telegram-3")["ended_at"] is None
+        # M5: the messaging row joins the 7-day idle reap, not the 90-day sweep.
+        assert first["idle_reaped"] == 1
+        assert db.get_session("telegram-3")["end_reason"] == "idle_reap"
 
         # Simulate the next maintenance pass after another retention window.
         db._conn.execute(
@@ -572,12 +580,68 @@ class TestSweepOrphanedSessions:
             retention_days=90, min_interval_hours=0, vacuum=False
         )
         assert second["closed"] == 0
-        assert second["pruned"] == 3
+        # M5: telegram-3 was already 200d inactive at pass 1, so the regular
+        # 90-day ended-session prune collects it on pass 2 alongside the
+        # state-owned rows (the idle_reap close itself stays non-destructive).
+        assert second["pruned"] == 4
         remaining = [r["id"] for r in db._conn.execute("SELECT id FROM sessions")]
-        assert remaining == ["telegram-3"]
+        assert remaining == []
 
     def test_zero_ttl_is_noop(self, db):
         stale = time.time() - 8 * 3600
         _make_session(db, "stale-tui", source="tui", started_at=stale, message_at=stale)
         assert db.sweep_orphaned_sessions(max_idle_seconds=0) == []
         assert db.get_session("stale-tui")["ended_at"] is None
+
+
+class TestInteractiveIdleReap:
+    """M5: webui/telegram rows idle > 7 days are closed as 'idle_reap' by the
+    startup auto-maintenance; watched/active sessions (idle ~2d) are untouched."""
+
+    def test_webui_idle_over_7d_reaped_as_idle_reap(self, db):
+        old = time.time() - 8 * 86400
+        _make_session(db, "old-webui", source="webui", started_at=old, message_at=old)
+
+        result = db.maybe_auto_prune_and_vacuum(min_interval_hours=0, vacuum=False)
+
+        row = db.get_session("old-webui")
+        assert row["ended_at"] is not None
+        assert row["end_reason"] == "idle_reap"
+        assert result["idle_reaped"] == 1
+        # non-destructive: transcript kept, row resumable
+        assert len(db.get_messages("old-webui")) == 1
+
+    def test_telegram_idle_over_7d_reaped(self, db):
+        old = time.time() - 8 * 86400
+        _make_session(db, "old-tg", source="telegram", started_at=old, message_at=old)
+
+        db.maybe_auto_prune_and_vacuum(min_interval_hours=0, vacuum=False)
+
+        row = db.get_session("old-tg")
+        assert row["ended_at"] is not None
+        assert row["end_reason"] == "idle_reap"
+
+    def test_watched_session_idle_2d_not_reaped(self, db):
+        """The monitored-sessions case (2b012c82/3d6c89e8, idle ~2d): stays open."""
+        recent = time.time() - 2 * 86400
+        _make_session(db, "watched", source="webui", started_at=recent, message_at=recent)
+
+        result = db.maybe_auto_prune_and_vacuum(min_interval_hours=0, vacuum=False)
+
+        assert db.get_session("watched")["ended_at"] is None
+        assert result["idle_reaped"] == 0
+
+    def test_sweep_end_reason_param(self, db):
+        old = time.time() - 8 * 86400
+        _make_session(db, "s", source="webui", started_at=old, message_at=old)
+
+        reaped = db.sweep_orphaned_sessions(
+            max_idle_seconds=7 * 86400, sources=("webui",), end_reason="idle_reap")
+
+        assert reaped == ["s"]
+        assert db.get_session("s")["end_reason"] == "idle_reap"
+
+    def test_sweep_rejects_unknown_end_reason(self, db):
+        with pytest.raises(ValueError):
+            db.sweep_orphaned_sessions(
+                max_idle_seconds=1, sources=("webui",), end_reason="bogus")

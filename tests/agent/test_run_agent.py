@@ -5809,15 +5809,6 @@ class TestSystemPromptStability:
         assert "Hermes Agent" in agent._cached_system_prompt
 
 
-class TestBudgetPressure:
-    """Budget exhaustion grace call system."""
-
-    def test_grace_call_flags_initialized(self, agent):
-        """Agent should have budget grace call flags."""
-        assert agent._budget_exhausted_injected is False
-        assert agent._budget_grace_call is False
-
-
 class TestSafeWriter:
     """Verify _SafeWriter guards stdout against OSError (broken pipes)."""
 

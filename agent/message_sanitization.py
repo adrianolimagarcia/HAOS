@@ -142,7 +142,20 @@ def _loads_ok(text: str) -> bool:
 
 def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
     """Repair malformed tool_call argument JSON (truncation, trailing commas, Python ``None``,
-    control chars); ``"{}"`` if unrepairable so the request succeeds. Repairs log at WARNING."""
+    control chars); ``"{}"`` if unrepairable so the request succeeds. Repairs log at WARNING.
+
+    Deliberate fail-open tradeoff (B-g): when the arguments are unrepairable this
+    executes the tool with ``{}`` instead of failing the turn. Rationale: a hard
+    failure here aborts the whole turn (and can wedge strict providers that
+    require valid JSON on every tool call), while ``{}`` lets the tool itself
+    reject the call with a domain error the model can see and recover from —
+    most tools treat missing required args as a validation error, not as a
+    default-action trigger. Blast radius: a tool whose *absence* of arguments
+    means "do the destructive default" would act on garbage input; tools must
+    keep fail-closed validation on required parameters and never infer a
+    destructive default from ``{}``. The original raw arguments always survive
+    in the WARNING log (bounded by ``_FULL_ARGS_LOG_BOUND``) for forensics.
+    """
     raw_stripped = raw_args.strip() if isinstance(raw_args, str) else ""
 
     if not raw_stripped:

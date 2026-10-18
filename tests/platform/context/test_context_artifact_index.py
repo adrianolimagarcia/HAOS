@@ -140,3 +140,40 @@ def test_context_stats_tracks_observed_characters(index):
     assert stats["returned_chars"] == 1000
     assert stats["chars_avoided"] == 10000
     assert "Character reduction only" in stats["note"]
+
+
+def test_checkpoint_retention_keeps_last_n_per_session(index):
+    """B-d: checkpoints are INSERT-only no more — keep newest 20 per session."""
+    for i in range(25):
+        index.save_checkpoint("session-1", {"i": i})
+    with sqlite3.connect(index.path) as db:
+        n = db.execute(
+            "SELECT COUNT(*) FROM context_checkpoints WHERE session_id='session-1'"
+        ).fetchone()[0]
+    assert n == 20
+    assert index.latest_checkpoint("session-1")["payload"]["i"] == 24
+
+
+def test_checkpoint_ttl_pruned(index):
+    """B-d: checkpoints older than 30 days are swept by prune()."""
+    index.save_checkpoint("session-1", {"a": 1})
+    with sqlite3.connect(index.path) as db:
+        db.execute("UPDATE context_checkpoints SET created_at=0")
+        db.commit()
+    assert index.prune() == 0  # prune() still returns the artifact count
+    with sqlite3.connect(index.path) as db:
+        n = db.execute("SELECT COUNT(*) FROM context_checkpoints").fetchone()[0]
+    assert n == 0
+
+
+def test_checkpoint_scopes_isolated_by_retention(index):
+    """Retention is per (scope, session): other scopes are untouched."""
+    for i in range(25):
+        index.save_checkpoint("session-1", {"i": i})
+    other = ContextArtifactIndex(index.path, scope="other")
+    other.save_checkpoint("session-1", {"i": "other"})
+    with sqlite3.connect(index.path) as db:
+        n = db.execute(
+            "SELECT COUNT(*) FROM context_checkpoints WHERE scope='other'"
+        ).fetchone()[0]
+    assert n == 1

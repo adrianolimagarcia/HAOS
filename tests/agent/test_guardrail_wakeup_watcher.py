@@ -250,3 +250,42 @@ if __name__ == "__main__":
             traceback.print_exc()
     print(f"{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+def test_looks_concluded_negated_concluir_is_not_concluded():
+    """B-i: 'não consegui concluir' is a failure report, not a conclusion —
+    the session must stay wakeable as an orphan."""
+    assert W.looks_concluded(
+        "assistant", "não consegui concluir a migração: permissão negada no deploy"
+    ) is False
+    assert W.looks_concluded(
+        "assistant", "Na verdade nao consegui concluir; vou precisar de ajuda"
+    ) is False
+
+
+def test_looks_concluded_genuine_conclusion_still_detected():
+    assert W.looks_concluded(
+        "assistant", "Concluído com sucesso. Veredito: a causa raiz era o lock."
+    ) is True
+    assert W.looks_concluded(
+        "assistant", "### Relatório final — trabalho finalizado sem erros"
+    ) is True
+
+
+def test_looks_concluded_inconclusivo_is_not_concluded():
+    assert W.looks_concluded(
+        "assistant", "resultado inconclusivo, preciso de mais dados para decidir"
+    ) is False
+
+
+def test_orphan_failed_session_is_woken():
+    """End-to-end B-i: a session that died mid-failure is woken as an orphan."""
+    h = Harness()
+    now = time.time()
+    add_session(h.state_db, "s9")
+    add_message(
+        h.state_db, "s9", "assistant",
+        "não consegui concluir a tarefa: o gateway caiu no meio do deploy", now - 900,
+    )
+    h.run()
+    assert h.summary["orphans_seen"] == 1, h.summary

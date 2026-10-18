@@ -454,6 +454,14 @@ class SessionDB(
         "cli", "cron", "kanban", "acp", "api_server", "subagent", "tool",
     )
 
+    # Interactive sources whose owner (browser tab, telegram poller) can die without
+    # ever stamping ended_at. They join auto-maintenance only via the 7-day idle
+    # reap (end_reason='idle_reap', resumable, first-reason-wins) — never the
+    # retention-days stale-open sweep. The 7-day bar keeps watched/active sessions
+    # (idle ~2 days) untouched. M5.
+    _IDLE_REAP_INTERACTIVE_SOURCES: Tuple[str, ...] = ("webui", "telegram")
+    _IDLE_REAP_INTERACTIVE_SECONDS: float = 7 * 86400.0
+
     # ── Write-contention tuning ──
     # SQLite's deterministic busy handler convoys under many hermes processes: keep its
     # timeout short (1s) and retry with random jitter. Patience is TIME-based (a sibling

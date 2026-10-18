@@ -20,6 +20,10 @@ from hermes_constants import get_hermes_home
 _URI = re.compile(r"^artifact://store/[0-9a-f]{32}$")
 _WORD = re.compile(r"\w+", re.UNICODE)
 _DEFAULT_TTL = 30 * 86400
+# Checkpoint retention (B-d): checkpoints were INSERT-only with no expiry. Keep
+# the newest N per (scope, session) and drop anything older than the TTL.
+_CHECKPOINT_KEEP_PER_SESSION = 20
+_CHECKPOINT_TTL_SECONDS = 30 * 86400
 _MAX_CONTENT_CHARS = 2_000_000
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS context_artifacts (
@@ -227,7 +231,18 @@ class ContextArtifactIndex:
                     "VALUES(?,?,?,?)",
                     (self.scope, session_id, time.time(), document),
                 )
-                return int(cur.lastrowid)
+                checkpoint_id = int(cur.lastrowid)
+                # Retention (B-d): TTL expiry plus keep-newest-N per session, so
+                # the table cannot grow without bound while the feature is on.
+                conn.execute(
+                    "DELETE FROM context_checkpoints "
+                    "WHERE scope=? AND session_id=? AND (created_at < ? OR id NOT IN ("
+                    "  SELECT id FROM context_checkpoints "
+                    "  WHERE scope=? AND session_id=? ORDER BY id DESC LIMIT ?))",
+                    (self.scope, session_id, time.time() - _CHECKPOINT_TTL_SECONDS,
+                     self.scope, session_id, _CHECKPOINT_KEEP_PER_SESSION),
+                )
+                return checkpoint_id
 
     def latest_checkpoint(self, session_id: str) -> Optional[dict[str, Any]]:
         with closing(self._connect()) as conn:
@@ -242,7 +257,7 @@ class ContextArtifactIndex:
                     session_id=session_id, payload=json.loads(row["payload"]))
 
     def prune(self) -> int:
-        """Delete expired artifacts and their search rows; checkpoints are retained separately."""
+        """Delete expired artifacts and their search rows; TTL-expired checkpoints too (B-d)."""
         with closing(self._connect()) as conn:
             with conn:
                 rows = conn.execute(
@@ -255,4 +270,8 @@ class ContextArtifactIndex:
                         [(row[0],) for row in rows],
                     )
                 conn.execute("DELETE FROM context_artifacts WHERE expires_at<=?", (time.time(),))
+                conn.execute(
+                    "DELETE FROM context_checkpoints WHERE created_at < ?",
+                    (time.time() - _CHECKPOINT_TTL_SECONDS,),
+                )
         return len(rows)

@@ -117,3 +117,17 @@ def test_one_pass_fixes_many_sessions_and_skips_healthy_ones(db):
     assert _message_count(db) == 60
     assert _message_count(db, "s2") == 60
     assert _message_count(db, "s3") == 60
+
+
+def test_reconcile_runs_on_startup_auto_maintenance(db):
+    """H2 regression: reconcile_session_message_counts is wired into the
+    startup auto-maintenance (maybe_auto_prune_and_vacuum) — the remediator
+    must not be production-dead again."""
+    for index in range(10):
+        db.append_message("s1", "user", content=f"u{index}")
+    _set_counter(db, 8_392_043)
+
+    result = db.maybe_auto_prune_and_vacuum(min_interval_hours=0, vacuum=False)
+
+    assert result["reconciled"] == 1
+    assert _message_count(db) == 10

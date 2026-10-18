@@ -2,14 +2,16 @@
 ``TURN_LIMIT_UNLIMITED`` sentinel.
 
 Covers the full spelling table (int, float, numeric string, ``"none"``,
-``"unlimited"``, ``"infinite"``, ``"-1"``, ``"0"``, YAML ``None``, bool,
-garbage) and the str→int env-var round-trip that the gateway bridge relies on.
+``"unlimited"``, ``"infinite"``, ``"-1"``, ``"0"``, YAML ``None``, bool)
+and the str→int env-var round-trip that the gateway bridge relies on.
+Invalid inputs (garbage strings, lists, dicts) fail closed to the finite
+``TURN_LIMIT_FALLBACK`` (M6) — never to unlimited.
 """
 import os
 import sys
 import pytest
 
-from hermes_cli.config import resolve_turn_limit, TURN_LIMIT_UNLIMITED
+from hermes_cli.config import resolve_turn_limit, TURN_LIMIT_FALLBACK, TURN_LIMIT_UNLIMITED
 
 
 class TestNumericValues:
@@ -83,17 +85,20 @@ class TestInvalidInputs:
         assert resolve_turn_limit(True) == TURN_LIMIT_UNLIMITED
         assert resolve_turn_limit(False) == TURN_LIMIT_UNLIMITED
 
-    def test_garbage_string_returns_default(self):
-        assert resolve_turn_limit("garbage") == TURN_LIMIT_UNLIMITED
-        assert resolve_turn_limit("not_a_number") == TURN_LIMIT_UNLIMITED
+    def test_garbage_string_fail_closed(self):
+        # M6: unparseable values fail closed to the finite fallback — a typo
+        # like "unlimted" must never buy sys.maxsize iterations.
+        assert resolve_turn_limit("garbage") == TURN_LIMIT_FALLBACK == 500
+        assert resolve_turn_limit("not_a_number") == TURN_LIMIT_FALLBACK
+        assert resolve_turn_limit("unlimted") == TURN_LIMIT_FALLBACK
 
-    def test_list_returns_default(self):
-        assert resolve_turn_limit([]) == TURN_LIMIT_UNLIMITED
-        assert resolve_turn_limit([90]) == TURN_LIMIT_UNLIMITED
+    def test_list_fail_closed(self):
+        assert resolve_turn_limit([]) == TURN_LIMIT_FALLBACK
+        assert resolve_turn_limit([90]) == TURN_LIMIT_FALLBACK
 
-    def test_dict_returns_default(self):
-        assert resolve_turn_limit({}) == TURN_LIMIT_UNLIMITED
-        assert resolve_turn_limit({"max_turns": 90}) == TURN_LIMIT_UNLIMITED
+    def test_dict_fail_closed(self):
+        assert resolve_turn_limit({}) == TURN_LIMIT_FALLBACK
+        assert resolve_turn_limit({"max_turns": 90}) == TURN_LIMIT_FALLBACK
 
 
 class TestSentinelProperties:
