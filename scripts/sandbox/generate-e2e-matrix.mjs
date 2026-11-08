@@ -415,9 +415,15 @@ async function main() {
       artifacts: { type: 'string' },
     },
   });
+  // Empty/absent --tags means "no release tags" (the no-release state):
+  // normalize it to [] here, once, at the boundary. Anything else that
+  // is not valid JSON still throws in JSON.parse below — the invalid
+  // input gate is unchanged.
+  const rawTags = (values.tags ?? '').trim();
+  const parsedTags = rawTags === '' ? [] : JSON.parse(rawTags);
   if (values.format === 'results') {
     const jobs = (await readStdin()).split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
-    const annotations = /** @type {TagAnnotation[]} */ (JSON.parse(values.tags));
+    const annotations = /** @type {TagAnnotation[]} */ (parsedTags);
     /** @type {Map<string, number>} */
     const artifactById = new Map();
     if (values.artifacts) {
@@ -430,7 +436,7 @@ async function main() {
     process.stdout.write(renderMarkdownResults(jobs, annotations, artifactById));
     return;
   }
-  const tags = /** @type {TagAnnotation[]} */ (JSON.parse(values.tags));
+  const tags = /** @type {TagAnnotation[]} */ (parsedTags);
   const envs = generateEnvironments(SPEC);
   if (values.format === 'markdown') {
     process.stdout.write(renderMarkdownPlan(envs, tags));

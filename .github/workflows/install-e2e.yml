@@ -119,6 +119,10 @@ jobs:
             tags="$(scripts/sandbox/pick-release-tags.sh --count "$TAG_COUNT")"
           fi
           echo "Testing updates from: $tags"
+          if [ "$tags" = '[]' ]; then
+            echo '::warning title=Install & Update E2E::No release tags found — nothing to test until the first release is cut'
+            echo 'No release tags found — nothing to test until the first release is cut.' >> "$GITHUB_STEP_SUMMARY"
+          fi
           # Annotate each tag with what its own tree supports, so run
           # workflows can natively skip surfaces the starting version does
           # not have. Today: does the release ship the desktop app
