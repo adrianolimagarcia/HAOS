@@ -20,9 +20,10 @@
 #   --repo    repository to read tags from (default: this checkout).
 #
 # Reads tags from the local checkout, so it needs one fetched with tags
-# (actions/checkout with fetch-depth: 0, or `fetch-tags: true`). A shallow
-# checkout has no tags and this exits non-zero rather than silently emitting an
-# empty matrix.
+# (actions/checkout with fetch-depth: 0, or `fetch-tags: true`). With no
+# release tags it emits `[]` and exits 0: there is nothing to test until the
+# first release is cut. The honest signal is the workflow's warning on `[]`,
+# not a red run; a checkout with no tags at all is called out on stderr.
 #
 # Only vYYYY.M.D[.N] release tags are considered; the repo also carries
 # backup/* and one-off tags that are not releases.
@@ -64,6 +65,19 @@ if [ -z "$REPO" ]; then
   REPO="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$script_dir")"
 fi
 
+# A checkout that is not a git repository at all is a broken input, not an
+# empty one: keep the old hard failure for it, so it can never pass as "no
+# releases yet" (which the workflow would only warn about).
+git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 \
+  || { echo "error: not a git repository: $REPO" >&2; exit 1; }
+
+# Count every tag in the checkout first, so the empty case can tell the two
+# apart: "no tags at all" (plausibly a shallow checkout fetched without tags)
+# versus "tags exist, but none is a release" (the repo simply has no release
+# yet -- the shallow-clone hint would be a lie in that case).
+mapfile -t all_tags < <(git -C "$REPO" tag --list)
+all_total="${#all_tags[@]}"
+
 # sort -V orders v2026.4.8 before v2026.4.13 (numeric), which a plain
 # lexicographic sort gets wrong.
 mapfile -t tags < <(
@@ -74,10 +88,15 @@ mapfile -t tags < <(
 
 total="${#tags[@]}"
 if [ "$total" -eq 0 ]; then
-  echo "error: no release tags found in $REPO" >&2
-  echo '       A shallow clone has no tags: fetch with tags (actions/checkout' >&2
-  echo '       with fetch-depth: 0, or fetch-tags: true).' >&2
-  exit 1
+  if [ "$all_total" -gt 0 ]; then
+    echo "error: no release tags found in $REPO ($all_total tag(s) exist, none matching vYYYY.M.D) — nothing to test until the first release is cut" >&2
+  else
+    echo "error: no release tags found in $REPO" >&2
+    echo '       A shallow clone has no tags: fetch with tags (actions/checkout' >&2
+    echo '       with fetch-depth: 0, or fetch-tags: true).' >&2
+  fi
+  printf '[]\n'
+  exit 0
 fi
 
 if [ "$total" -le "$COUNT" ]; then
